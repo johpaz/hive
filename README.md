@@ -37,8 +37,8 @@ La forma más rápida. Sin instalar Node, Bun ni dependencias.
 **Con el script incluido** (abre el navegador automáticamente):
 
 ```bash
-curl -O https://raw.githubusercontent.com/johpaz/hive/main/docker-compose.yml
-curl -O https://raw.githubusercontent.com/johpaz/hive/main/hive-docker.sh
+curl -O https://raw.githubusercontent.com/johpaz/hive/master/docker-compose.yml
+curl -O https://raw.githubusercontent.com/johpaz/hive/master/hive-docker.sh
 chmod +x hive-docker.sh
 ./hive-docker.sh
 ```
