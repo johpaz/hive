@@ -1,0 +1,26 @@
+{
+  "name": "@johpaz/hive-mcp",
+  "version": "1.7.2",
+  "private": true,
+  "description": "Hive MCP Client — Model Context Protocol client layer",
+  "main": "./src/index.ts",
+  "license": "MIT",
+  "files": [
+    "src/"
+  ],
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "typescript": "latest",
+    "@types/bun": "latest"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./transports": "./src/transports/index.ts"
+  }
+}

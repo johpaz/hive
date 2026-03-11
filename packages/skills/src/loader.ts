@@ -1,0 +1,346 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as yaml from "js-yaml";
+
+export interface SkillsConfig {
+  allowBundled?: string[];
+  managedDir?: string;
+  extraDirs?: string[];
+  hotReload?: boolean;
+  maxSkillSizeKB?: number;
+}
+
+export interface Config {
+  skills?: SkillsConfig;
+  workspacePath?: string;
+}
+
+interface Logger {
+  debug: (msg: string, ...args: unknown[]) => void;
+  info: (msg: string, ...args: unknown[]) => void;
+  warn: (msg: string, ...args: unknown[]) => void;
+  error: (msg: string, ...args: unknown[]) => void;
+}
+
+function createLogger(): Logger {
+  return {
+    debug: (msg, ...args) => console.debug(`[skills] ${msg}`, ...args),
+    info: (msg, ...args) => console.info(`[skills] ${msg}`, ...args),
+    warn: (msg, ...args) => console.warn(`[skills] ${msg}`, ...args),
+    error: (msg, ...args) => console.error(`[skills] ${msg}`, ...args),
+  };
+}
+
+export interface SkillStep {
+  step: number;
+  action: string;
+  instruction: string;
+  output?: string;
+  params?: Record<string, any>;
+}
+
+export interface OutputFormat {
+  structure: "markdown" | "code" | "json" | "text";
+  language?: string;
+  sections?: string[];
+  max_length?: string;
+  include_diff?: boolean;
+}
+
+export interface SkillExample {
+  user_input: string;
+  expected_behavior: string;
+}
+
+export interface SkillMetadata {
+  name: string;
+  version?: string;
+  author?: string;
+  description: string;
+  icon?: string;
+  category?: string;
+  permissions?: string[];
+  dependencies?: string[];
+  tools?: string[];
+  
+  // Structured skill fields
+  triggers?: string[];              // Patrones de activación explícita
+  steps?: SkillStep[];              // Workflow secuenciado
+  rules?: string[];                 // Reglas de ejecución
+  output_format?: OutputFormat;     // Estructura de output esperado
+  preferred_agents?: string[];      // Agents preferidos para delegación
+  examples?: SkillExample[];        // Ejemplos de uso
+  
+  requirements?: {
+    os?: string[];
+    bins?: string[];
+    env?: string[];
+    config?: string[];
+  };
+  // Retrocompatibilidad con el campo metadata.hive previo
+  metadata?: {
+    hive?: {
+      emoji?: string;
+      bins?: string[];
+      userInvocable?: boolean;
+      requires?: {
+        config?: string[];
+        env?: string[];
+      };
+      install?: {
+        brew?: string;
+        apt?: string;
+        npm?: string;
+      };
+      os?: string[];
+    };
+  };
+}
+
+export interface Skill {
+  name: string;
+  description: string;
+  version?: string;
+  author?: string;
+  icon?: string;
+  category?: string;
+  content: string;
+  raw: string;
+  metadata: SkillMetadata;
+  source: "bundled" | "managed" | "workspace";
+  path: string;
+  permissions?: string[];
+  dependencies?: string[];
+  tools?: string[];
+  // Structured skill fields (parsed from frontmatter)
+  triggers?: string[];
+  steps?: SkillStep[];
+  rules?: string[];
+  output_format?: OutputFormat;
+  preferred_agents?: string[];
+  examples?: SkillExample[];
+}
+
+function parseFrontmatter(content: string): { frontmatter: Record<string, unknown>; body: string } {
+  const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+
+  if (!match) {
+    return { frontmatter: {}, body: content };
+  }
+
+  try {
+    const frontmatter = yaml.load(match[1]!) as Record<string, unknown>;
+    const body = match[2]!;
+    return { frontmatter, body };
+  } catch {
+    return { frontmatter: {}, body: content };
+  }
+}
+
+export class SkillLoader {
+  private config: Config;
+  private log: Logger;
+  private cache: Map<string, Skill> = new Map();
+  private bundledDir: string;
+
+  constructor(config: Config) {
+    this.config = config;
+    this.log = createLogger();
+    this.bundledDir = path.join(__dirname, "bundled");
+  }
+
+  private expandPath(p: string): string {
+    if (p.startsWith("~")) {
+      return path.join(process.env.HOME ?? "", p.slice(1));
+    }
+    return p;
+  }
+
+  loadSkill(skillPath: string, source: Skill["source"]): Skill | null {
+    try {
+      const skillMdPath = path.join(skillPath, "SKILL.md");
+
+      if (!fs.existsSync(skillMdPath)) {
+        return null;
+      }
+
+      const content = fs.readFileSync(skillMdPath, "utf-8");
+      const { frontmatter, body } = parseFrontmatter(content);
+
+      const rawMetadata = (frontmatter.metadata as any) ?? {};
+      const hiveMetadata = rawMetadata.hive ?? {};
+
+      const name = (frontmatter.name as string) ?? path.basename(skillPath);
+      const description = (frontmatter.description as string) ?? "";
+      const version = (frontmatter.version as string) ?? "0.0.1";
+      const author = (frontmatter.author as string) ?? "Anonymous";
+      const icon = (frontmatter.icon as string) ?? hiveMetadata.emoji ?? "🧩";
+      const category = (frontmatter.category as string) ?? "general";
+
+      const permissions = (frontmatter.permissions as string[]) ?? [];
+      const dependencies = (frontmatter.dependencies as string[]) ?? [];
+      const tools = (frontmatter.tools as string[]) ?? [];
+      
+      // Structured skill fields
+      const triggers = (frontmatter.triggers as string[]) ?? [];
+      const steps = (frontmatter.steps as SkillStep[]) ?? [];
+      const rules = (frontmatter.rules as string[]) ?? [];
+      const output_format = (frontmatter.output_format as OutputFormat) ?? undefined;
+      const preferred_agents = (frontmatter.preferred_agents as string[]) ?? [];
+      const examples = (frontmatter.examples as SkillExample[]) ?? [];
+
+      const metadata: SkillMetadata = {
+        ...(frontmatter as any),
+        name,
+        description,
+        version,
+        author,
+        icon,
+        category,
+        permissions,
+        dependencies,
+        tools,
+        triggers,
+        steps,
+        rules,
+        output_format,
+        preferred_agents,
+        examples
+      };
+
+      const skill: Skill = {
+        name,
+        description,
+        version,
+        author,
+        icon,
+        category,
+        content: body,
+        raw: content,
+        metadata,
+        source,
+        path: skillPath,
+        permissions,
+        dependencies,
+        tools,
+        triggers,
+        steps,
+        rules,
+        output_format,
+        preferred_agents,
+        examples
+      };
+
+      this.cache.set(name, skill);
+      return skill;
+    } catch (error) {
+      this.log.error(`Failed to load skill: ${skillPath}`, { error: (error as Error).message });
+      return null;
+    }
+  }
+
+  loadBundledSkills(): Skill[] {
+    const skills: Map<string, Skill> = new Map();
+
+    if (!fs.existsSync(this.bundledDir)) {
+      this.log.debug(`Bundled skills directory not found: ${this.bundledDir}`);
+      return [];
+    }
+
+    const scanDir = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const entryPath = path.join(dir, entry.name);
+        if (fs.existsSync(path.join(entryPath, "SKILL.md"))) {
+          const skill = this.loadSkill(entryPath, "bundled");
+          if (skill) skills.set(skill.name, skill);
+        } else {
+          // Es un directorio de categoría — bajar un nivel más
+          scanDir(entryPath);
+        }
+      }
+    };
+
+    scanDir(this.bundledDir);
+
+    this.log.debug(`Loaded ${skills.size} bundled skills`);
+    return Array.from(skills.values());
+  }
+
+  loadAllSkills(): Skill[] {
+    const skills: Map<string, Skill> = new Map();
+    const allowBundled = this.config.skills?.allowBundled;
+
+    // 1. Load bundled skills (lowest priority)
+    const bundledSkills = this.loadBundledSkills();
+    for (const skill of bundledSkills) {
+      // If allowBundled is undefined, empty, or contains the skill name, include it
+      if (!allowBundled || allowBundled.length === 0 || allowBundled.includes(skill.name)) {
+        skills.set(skill.name, skill);
+      }
+    }
+
+    // 2. Load managed skills (medium priority)
+    const managedDir = this.expandPath(this.config.skills?.managedDir ?? "~/.hive/skills");
+    if (fs.existsSync(managedDir)) {
+      for (const entry of fs.readdirSync(managedDir, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          const skill = this.loadSkill(path.join(managedDir, entry.name), "managed");
+          if (skill) {
+            skills.set(skill.name, skill);
+          }
+        }
+      }
+    }
+
+    // 3. Load extra directories
+    const extraDirs = this.config.skills?.extraDirs ?? [];
+    for (const extraDir of extraDirs) {
+      const expandedDir = this.expandPath(extraDir);
+      if (fs.existsSync(expandedDir)) {
+        for (const entry of fs.readdirSync(expandedDir, { withFileTypes: true })) {
+          if (entry.isDirectory()) {
+            const skill = this.loadSkill(path.join(expandedDir, entry.name), "managed");
+            if (skill) {
+              skills.set(skill.name, skill);
+            }
+          }
+        }
+      }
+    }
+
+    // 4. Load workspace skills (highest priority)
+    const workspacePath = this.config.workspacePath ?? process.cwd();
+    const workspaceSkillsDir = path.join(workspacePath, "skills");
+    if (fs.existsSync(workspaceSkillsDir)) {
+      for (const entry of fs.readdirSync(workspaceSkillsDir, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          const skill = this.loadSkill(path.join(workspaceSkillsDir, entry.name), "workspace");
+          if (skill) {
+            skills.set(skill.name, skill);
+          }
+        }
+      }
+    }
+
+    this.log.info(`Loaded ${skills.size} total skills`);
+    return Array.from(skills.values());
+  }
+
+  getSkill(name: string): Skill | undefined {
+    return this.cache.get(name);
+  }
+
+  listSkills(): string[] {
+    return Array.from(this.cache.keys());
+  }
+
+  clearCache(): void {
+    this.cache.clear();
+  }
+}
+
+export function createSkillLoader(config: Config): SkillLoader {
+  return new SkillLoader(config);
+}
+

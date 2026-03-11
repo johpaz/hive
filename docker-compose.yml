@@ -1,0 +1,25 @@
+services:
+  hive:
+    image: johpaz/hive:latest
+    # build: .   # uncomment to build locally instead of pulling
+    ports:
+      - "18790:18790"
+    volumes:
+      - hive-data:/root/.hive
+    environment:
+      HIVE_HOST: 0.0.0.0
+      HIVE_PORT: 18790
+      # Optional overrides:
+      # HIVE_LOG_LEVEL: info
+      # HIVE_AUTH_TOKEN: your-token-here
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:18790/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+volumes:
+  hive-data:
+    driver: local

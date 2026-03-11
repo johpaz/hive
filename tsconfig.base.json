@@ -1,0 +1,60 @@
+{
+  "compilerOptions": {
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "paths": {
+      "@johpaz/hive-core": [
+        "./packages/core/src/index.ts"
+      ],
+      "@johpaz/hive-core/*": [
+        "./packages/core/src/*"
+      ],
+      "@johpaz/hive-code-bridge": [
+        "./packages/code-bridge/src/index.ts"
+      ],
+      "@johpaz/hive-code-bridge/*": [
+        "./packages/code-bridge/src/*"
+      ],
+      "@hive/core": [
+        "./packages/core/src/index.ts"
+      ],
+      "@hive/core/*": [
+        "./packages/core/src/*"
+      ],
+      "@hive/mcp": [
+        "./packages/mcp/src/index.ts"
+      ],
+      "@hive/mcp/*": [
+        "./packages/mcp/src/*"
+      ],
+      "@hive/skills": [
+        "./packages/skills/src/index.ts"
+      ],
+      "@hive/skills/*": [
+        "./packages/skills/src/*"
+      ],
+      "@hive/cli": [
+        "./packages/cli/src/index.ts"
+      ]
+    }
+  }
+}

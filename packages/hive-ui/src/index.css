@@ -1,0 +1,620 @@
+@import "tailwindcss";
+@plugin "tailwindcss-animate";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  --color-sidebar: hsl(var(--sidebar-background));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+
+  --color-hive-surface: hsl(var(--hive-surface));
+  --color-hive-surface-foreground: hsl(var(--hive-surface-foreground));
+  --color-hive-connected: hsl(var(--hive-connected));
+  --color-hive-disconnected: hsl(var(--hive-disconnected));
+  --color-hive-thinking: hsl(var(--hive-thinking));
+  --color-hive-glow: hsl(var(--hive-glow));
+
+  --shadow-blue-glow: 0 0 10px rgba(59, 130, 246, 1);
+  --shadow-amber-glow: 0 0 15px rgba(245, 158, 11, 0.4);
+  --shadow-violet-glow: 0 0 15px rgba(139, 92, 246, 0.4);
+  --shadow-card-active: 0 0 20px rgba(59, 130, 246, 0.15);
+  --shadow-icon-glow: 0 0 15px rgba(59, 130, 246, 0.2);
+  --shadow-icon-glow-amber: 0 0 15px rgba(245, 158, 11, 0.2);
+  --shadow-icon-glow-violet: 0 0 15px rgba(139, 92, 246, 0.2);
+  --shadow-status-glow: 0 0 8px rgba(59, 130, 246, 0.6);
+  --shadow-status-glow-amber: 0 0 8px rgba(245, 158, 11, 0.6);
+  --shadow-btn-primary: 0 4px 20px rgba(37, 99, 235, 0.4);
+  --shadow-btn-primary-hover: 0 8px 30px rgba(37, 99, 235, 0.6);
+  --shadow-btn-submit: 0 0 20px rgba(37, 99, 235, 0.3);
+  --shadow-btn-submit-amber: 0 0 20px rgba(245, 158, 11, 0.3);
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+
+    to {
+      height: 0;
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  --animation-accordion-down: accordion-down 0.2s ease-out;
+  --animation-accordion-up: accordion-up 0.2s ease-out;
+  --animation-fade-in: fade-in 0.3s ease-out;
+}
+
+@layer base {
+  :root {
+    --background: 40 10% 96%;
+    --foreground: 30 10% 10%;
+
+    --card: 40 10% 93%;
+    --card-foreground: 30 10% 10%;
+
+    --popover: 40 10% 96%;
+    --popover-foreground: 30 10% 10%;
+
+    --primary: 38 92% 50%;
+    --primary-foreground: 30 10% 5%;
+
+    --secondary: 35 20% 88%;
+    --secondary-foreground: 30 10% 15%;
+
+    --muted: 35 10% 90%;
+    --muted-foreground: 30 8% 45%;
+
+    --accent: 30 80% 55%;
+    --accent-foreground: 30 10% 5%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 35 12% 82%;
+    --input: 35 12% 82%;
+    --ring: 38 92% 50%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 35 10% 93%;
+    --sidebar-foreground: 30 8% 30%;
+    --sidebar-primary: 38 92% 50%;
+    --sidebar-primary-foreground: 30 10% 5%;
+    --sidebar-accent: 35 15% 88%;
+    --sidebar-accent-foreground: 30 10% 10%;
+    --sidebar-border: 35 12% 82%;
+    --sidebar-ring: 38 92% 50%;
+
+    /* Custom Hive tokens */
+    --hive-glow: 38 92% 50%;
+    --hive-surface: 220 15% 13%;
+    --hive-surface-foreground: 40 10% 90%;
+    --hive-connected: 142 71% 45%;
+    --hive-disconnected: 0 72% 51%;
+    --hive-thinking: 38 92% 50%;
+  }
+
+  .dark {
+    --background: 220 15% 8%;
+    --foreground: 40 10% 90%;
+
+    --card: 220 15% 11%;
+    --card-foreground: 40 10% 90%;
+
+    --popover: 220 15% 11%;
+    --popover-foreground: 40 10% 90%;
+
+    --primary: 38 92% 50%;
+    --primary-foreground: 30 10% 5%;
+
+    --secondary: 220 12% 16%;
+    --secondary-foreground: 40 10% 85%;
+
+    --muted: 220 12% 16%;
+    --muted-foreground: 220 8% 55%;
+
+    --accent: 30 80% 55%;
+    --accent-foreground: 30 10% 5%;
+
+    --destructive: 0 62% 40%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 220 12% 18%;
+    --input: 220 12% 18%;
+    --ring: 38 92% 50%;
+
+    --sidebar-background: 220 15% 10%;
+    --sidebar-foreground: 40 10% 80%;
+    --sidebar-primary: 38 92% 50%;
+    --sidebar-primary-foreground: 30 10% 5%;
+    --sidebar-accent: 220 12% 14%;
+    --sidebar-accent-foreground: 40 10% 85%;
+    --sidebar-border: 220 12% 16%;
+    --sidebar-ring: 38 92% 50%;
+
+    --hive-surface: 220 15% 13%;
+    --hive-surface-foreground: 40 10% 90%;
+    --hive-connected: 142 71% 45%;
+    --hive-disconnected: 0 62% 40%;
+    --hive-thinking: 38 92% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    @apply w-2;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-border;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/30;
+  }
+
+}
+
+@layer utilities {
+
+  /* ─── Glow ─── */
+  .hive-glow {
+    box-shadow: 0 0 20px hsl(var(--hive-glow) / 0.15);
+  }
+
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* ══════════════════════════════════════════
+     HIVE DESIGN SYSTEM  –  Component Tokens
+     ══════════════════════════════════════════ */
+
+  /* ─── Page Layout ─── */
+  .hive-page {
+    @apply min-h-screen bg-transparent;
+  }
+
+  .hive-page-container {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4 duration-700;
+  }
+
+  /* ─── Page Header ─── */
+  .hive-page-header {
+    @apply relative mb-12 flex flex-col sm:flex-row sm:items-end justify-between gap-6;
+  }
+
+  .hive-page-header__eyebrow {
+    @apply flex items-center gap-3 mb-2;
+  }
+
+  .hive-page-header__dot {
+    @apply h-2 w-2 rounded-full bg-blue-500 animate-pulse shadow-blue-glow;
+  }
+
+  .hive-page-header__label {
+    @apply text-[10px] font-bold tracking-[0.2em] text-blue-400 uppercase;
+  }
+
+  /* ─── Typography ─── */
+  .hive-title-page {
+    @apply text-4xl font-black tracking-tighter text-white;
+  }
+
+  .hive-title-page__accent {
+    @apply text-blue-500 italic;
+  }
+
+  .hive-title-section {
+    @apply text-xs font-bold uppercase tracking-widest text-blue-400/80;
+  }
+
+  .hive-subtitle {
+    @apply mt-3 text-sm text-white/40 max-w-lg leading-relaxed;
+  }
+
+  .hive-label {
+    @apply text-[10px] uppercase tracking-widest text-white/30 font-bold;
+  }
+
+  .hive-label--field {
+    @apply text-xs font-bold uppercase tracking-widest text-white/50;
+  }
+
+  .hive-mono {
+    @apply text-[8px] font-mono text-white/10 tracking-[0.3em] uppercase;
+  }
+
+  /* ─── Cards ─── */
+  .hive-card {
+    @apply relative overflow-hidden rounded-xl border border-white/10 bg-black/20 backdrop-blur-md transition-all duration-300;
+  }
+
+  .hive-card--active {
+    @apply hover:shadow-card-active hover:border-blue-500/30;
+  }
+
+  .hive-card--disabled {
+    @apply border-white/5 bg-black/10 grayscale-[0.5] opacity-80;
+  }
+
+  .hive-card--form {
+    @apply w-full max-w-2xl border-white/10 bg-black/40 backdrop-blur-xl shadow-2xl relative overflow-hidden;
+  }
+
+  .hive-card--internal {
+    @apply relative overflow-hidden rounded-3xl border backdrop-blur-2xl p-8 mb-8 shadow-2xl transition-all duration-500;
+  }
+
+  .hive-card--internal-active {
+    @apply border-white/10 bg-zinc-950/50;
+  }
+
+  .hive-card--internal-disabled {
+    @apply border-white/5 bg-zinc-950/20 grayscale-[0.3];
+  }
+
+  .hive-card-body {
+    @apply relative p-5;
+  }
+
+  .hive-card-divider {
+    @apply h-px bg-gradient-to-r from-transparent via-white/10 to-transparent;
+  }
+
+  /* Info Sub-card (used inside AgentInternalCard) */
+  .hive-info-card {
+    @apply p-4 rounded-2xl bg-white/[0.03] border transition-colors;
+  }
+
+  .hive-info-card--active {
+    @apply border-white/5 hover:border-white/10;
+  }
+
+  .hive-info-card--disabled {
+    @apply border-white/0;
+  }
+
+  .hive-info-card__label {
+    @apply text-[9px] font-bold uppercase tracking-widest text-white/30 truncate;
+  }
+
+  .hive-info-card__value {
+    @apply text-sm font-bold transition-colors truncate;
+  }
+
+  .hive-info-card__sub {
+    @apply text-[10px] font-mono truncate;
+  }
+
+  /* ─── Icon Wrapper ─── */
+  .hive-icon-wrap {
+    @apply p-2 rounded-lg border;
+  }
+
+  .hive-icon-wrap--primary {
+    @apply bg-blue-500/10 border-blue-500/20 text-blue-400;
+  }
+
+  .hive-icon-wrap--internal {
+    @apply p-3 rounded-2xl border transition-transform duration-500;
+  }
+
+  .hive-icon-wrap--internal-active {
+    @apply bg-blue-600/10 border-blue-500/20 shadow-icon-glow group-hover:scale-110;
+  }
+
+  .hive-icon-wrap--internal-disabled {
+    @apply bg-white/5 border-white/10;
+  }
+
+  /* ─── Badges / Tags ─── */
+  .hive-tag {
+    @apply flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-medium uppercase tracking-wider;
+  }
+
+  .hive-tag--provider {
+    @apply bg-blue-500/10 border-blue-500/20 text-blue-400;
+  }
+
+  .hive-tag--model {
+    @apply px-2 py-0.5 rounded-full border bg-white/5 border-white/10 text-zinc-400 text-[10px] font-medium max-w-[120px] truncate;
+  }
+
+  .hive-tag--tone {
+    @apply bg-purple-500/10 border-purple-500/20 text-purple-400;
+  }
+
+  .hive-tag--disabled {
+    @apply bg-white/5 border-white/10 text-white/20;
+  }
+
+  .hive-tag--coordinator {
+    @apply bg-purple-500/10 text-purple-400 border-purple-500/20 text-[9px] uppercase tracking-tighter px-1.5 py-0 hover:bg-transparent;
+  }
+
+  /* ─── Stat Block (inside card footer) ─── */
+  .hive-stat {
+    @apply space-y-0.5;
+  }
+
+  .hive-stat__label {
+    @apply text-[10px] uppercase tracking-widest text-white/30 font-bold;
+  }
+
+  .hive-stat__value {
+    @apply text-sm font-semibold;
+  }
+
+  .hive-stat__value--active {
+    @apply text-white/80;
+  }
+
+  .hive-stat__value--disabled {
+    @apply text-white/20;
+  }
+
+  /* ─── Status Indicator ─── */
+  .hive-status-dot--active {
+    @apply h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse shadow-status-glow;
+  }
+
+  .hive-status-dot--disabled {
+    @apply h-1.5 w-1.5 rounded-full bg-red-500/50;
+  }
+
+  .hive-status-label--active {
+    @apply text-[10px] font-bold uppercase tracking-tighter text-blue-400;
+  }
+
+  .hive-status-label--disabled {
+    @apply text-[10px] font-bold uppercase tracking-tighter text-white/20;
+  }
+
+  /* ─── CTA Hint ("INGRESAR →") ─── */
+  .hive-card-cta {
+    @apply text-[10px] font-bold transform translate-x-4 transition-all duration-300 group-hover:translate-x-0;
+  }
+
+  .hive-card-cta--active {
+    @apply text-blue-400/0 group-hover:text-blue-400/100;
+  }
+
+  .hive-card-cta--disabled {
+    @apply text-white/0 group-hover:text-white/40;
+  }
+
+  /* ─── Ambient Glow Blobs ─── */
+  .hive-glow-blob {
+    @apply absolute rounded-full blur-[120px] pointer-events-none animate-pulse;
+  }
+
+  .hive-glow-blob--blue {
+    @apply bg-blue-600/10;
+  }
+
+  .hive-glow-blob--purple {
+    @apply bg-purple-600/10;
+  }
+
+  .hive-glow-blob--card {
+    @apply absolute rounded-full blur-[80px] pointer-events-none transition-all duration-500;
+  }
+
+  /* ─── Buttons ─── */
+  .hive-btn {
+    @apply flex items-center gap-2 font-semibold rounded-xl transition-all transform active:scale-95;
+  }
+
+  .hive-btn--ghost {
+    @apply px-4 py-2.5 text-sm bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 hover:text-white;
+  }
+
+  .hive-btn--primary {
+    @apply px-6 py-2.5 text-sm font-bold text-white bg-blue-600 shadow-btn-primary hover:bg-blue-500 hover:shadow-btn-primary-hover;
+  }
+
+  .hive-btn--form-submit {
+    @apply flex-[2] bg-blue-600 hover:bg-blue-500 text-white font-bold transition-all h-12 shadow-btn-submit active:scale-95;
+  }
+
+  .hive-btn--form-cancel {
+    @apply flex-1 bg-transparent border-white/10 text-white/70 hover:bg-white/5 hover:text-white transition-all h-12;
+  }
+
+  /* ─── Form Fields ─── */
+  .hive-input {
+    @apply bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-blue-500/50 transition-all h-11;
+  }
+
+  .hive-textarea {
+    @apply bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-blue-500/50 transition-all min-h-[100px] resize-none;
+  }
+
+  .hive-select-trigger {
+    @apply bg-white/5 border-white/10 text-white focus:ring-blue-500/30;
+  }
+
+  .hive-select-content {
+    @apply bg-zinc-900 border-white/10 text-white;
+  }
+
+  .hive-select-item {
+    @apply focus:bg-blue-600 focus:text-white;
+  }
+
+  .hive-toggle-panel {
+    @apply flex flex-col justify-end gap-4 p-4 rounded-xl bg-white/5 border border-white/10;
+  }
+
+  /* ─── Dropdown ─── */
+  .hive-dropdown-content {
+    @apply bg-zinc-900 border-white/10 text-white;
+  }
+
+  .hive-dropdown-item {
+    @apply gap-2 focus:bg-blue-600 focus:text-white cursor-pointer;
+  }
+
+  .hive-dropdown-item--danger {
+    @apply gap-2 text-red-400 focus:bg-red-600 focus:text-white cursor-pointer;
+  }
+
+  /* ─── Error / Alert ─── */
+  .hive-error-banner {
+    @apply relative z-10 p-1 rounded-2xl bg-gradient-to-br from-red-500/20 to-transparent border border-red-500/20 backdrop-blur-xl;
+  }
+
+  .hive-form-error {
+    @apply p-3 text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg animate-in fade-in zoom-in-95 duration-300;
+  }
+
+  /* ─── Empty State ─── */
+  .hive-empty-state {
+    @apply flex h-60 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/5 backdrop-blur-sm animate-in fade-in duration-500;
+  }
+
+  /* ─── Skeleton / Loading ─── */
+  .hive-skeleton-card {
+    @apply h-[240px] rounded-2xl bg-white/5 border border-white/10 animate-pulse border-dashed;
+  }
+
+  /* ─── Network Load Bar (AgentInternalCard) ─── */
+  .hive-network-panel {
+    @apply flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm w-full;
+  }
+
+  .hive-network-track {
+    @apply h-1.5 w-32 bg-white/10 rounded-full overflow-hidden;
+  }
+
+  .hive-network-fill {
+    @apply h-full w-2/3 bg-blue-500 animate-pulse rounded-full;
+  }
+
+  /* ─── Decorative Gradient Strip ─── */
+  .hive-strip--bottom {
+    @apply absolute bottom-0 right-0 left-0 h-1 bg-gradient-to-r from-transparent via-blue-500/20 to-transparent;
+  }
+
+  /* ─── Sidebar Premium ─── */
+  .hive-sidebar {
+    @apply border-r border-white/5 bg-zinc-950/50 backdrop-blur-xl;
+  }
+
+  .hive-sidebar-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300;
+  }
+
+  .hive-sidebar-item--active {
+    @apply bg-blue-500/10 text-blue-400 border border-blue-500/20 shadow-blue-glow;
+  }
+
+  /* ─── Tabs Hive ─── */
+  .hive-tabs-list {
+    @apply inline-flex h-12 items-center justify-center rounded-xl bg-white/5 p-1 text-white/40 border border-white/10;
+  }
+
+  .hive-tabs-trigger {
+    @apply inline-flex items-center justify-center whitespace-nowrap rounded-lg px-6 py-2 text-xs font-bold uppercase tracking-widest transition-all focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-btn-primary;
+  }
+
+  /* ─── Scroll Area ─── */
+  .hive-scroll {
+    @apply overflow-auto pr-2;
+  }
+
+  /* ─── Overlay / Modal Backdrop ─── */
+  .hive-overlay {
+    @apply fixed inset-0 z-50 flex items-center justify-center p-4;
+  }
+
+  .hive-overlay__backdrop {
+    @apply absolute inset-0 bg-black/80 backdrop-blur-md animate-in fade-in duration-300;
+  }
+
+  .hive-overlay__content {
+    @apply relative z-10 w-full animate-in zoom-in-95 slide-in-from-bottom-5 duration-300;
+  }
+}

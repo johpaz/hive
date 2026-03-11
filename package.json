@@ -1,0 +1,98 @@
+{
+  "name": "@johpaz/hive",
+  "version": "1.7.2",
+  "description": "Tu colmena de agentes IA. Local-first. Multi-canal. Open source. Construido desde Colombia para el mundo.",
+  "private": false,
+  "bin": {
+    "hive": "packages/cli/src/index.ts"
+  },
+  "main": "packages/core/src/index.ts",
+  "types": "packages/core/src/index.ts",
+  "workspaces": [
+    "packages/*"
+  ],
+  "exports": {
+    ".": "./packages/core/src/index.ts",
+    "./core": "./packages/core/src/index.ts",
+    "./core/*": "./packages/core/src/*",
+    "./mcp": "./packages/mcp/src/index.ts",
+    "./mcp/*": "./packages/mcp/src/*",
+    "./skills": "./packages/skills/src/index.ts",
+    "./skills/*": "./packages/skills/src/*",
+    "./code-bridge": "./packages/code-bridge/src/index.ts",
+    "./cli": "./packages/cli/src/index.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johpaz/hive.git"
+  },
+  "keywords": [
+    "hive",
+    "agents",
+    "ai",
+    "llm",
+    "context-engine",
+    "local-first",
+    "multi-channel",
+    "telegram",
+    "discord",
+    "whatsapp",
+    "bun",
+    "sqlite",
+    "mcp",
+    "open-source",
+    "latam",
+    "colombia"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "hive": "bun packages/cli/src/index.ts",
+    "dev": "HIVE_HOME=$HOME/.hive-dev HIVE_DEV=true bun run packages/cli/src/index.ts dev",
+    "doctor:dev": "HIVE_HOME=$HOME/.hive-dev HIVE_DEV=true bun run packages/cli/src/index.ts doctor",
+    "dev:keep": "HIVE_HOME=$HOME/.hive-dev HIVE_DEV=true HIVE_DEV_CLEAN=false bun run packages/cli/src/index.ts dev",
+    "start": "bun run packages/cli/src/index.ts start",
+    "build": "cd packages/cli && bun build src/index.ts --compile --outfile dist/hive-binary",
+    "test": "bun test",
+    "test:ci": "bun test --coverage",
+    "lint": "bunx tsc --noEmit",
+    "build:binaries": "bun run scripts/build-binaries.ts",
+    "bench": "bun run scripts/bench.ts"
+  },
+  "dependencies": {
+    "@ag-ui/core": "^0.0.46",
+    "@anthropic-ai/sdk": "^0.74.0",
+    "@clack/prompts": "^0.5.0",
+    "@google/genai": "^1.43.0",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@sapphire/snowflake": "latest",
+    "@slack/bolt": "latest",
+    "@vitejs/plugin-react": "^5.1.4",
+    "@whiskeysockets/baileys": "latest",
+    "async-mutex": "^0.5.0",
+    "cron-parser": "^5.5.0",
+    "croner": "^10.0.1",
+    "discord.js": "latest",
+    "grammy": "latest",
+    "groq-sdk": "^0.37.0",
+    "isomorphic-git": "^1.37.2",
+    "js-yaml": "^4.1.1",
+    "ollama": "^0.6.3",
+    "openai": "^6.18.0",
+    "qrcode-terminal": "latest",
+    "react-markdown": "^10.1.0",
+    "toon-format-parser": "^1.1.0",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/js-yaml": "^4.0.9",
+    "@types/react": "^18.3.23",
+    "typescript": "latest"
+  },
+  "overrides": {
+    "vite": "^7.3.1"
+  },
+  "resolutions": {
+    "vite": "^7.3.1"
+  }
+}

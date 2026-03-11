@@ -1,0 +1,10 @@
+# Hive configuration for Bun runtime
+
+[install]
+production = false
+
+[run]
+hot = true
+
+[test]
+coverage = false

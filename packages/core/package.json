@@ -1,0 +1,55 @@
+{
+  "name": "@johpaz/hive-core",
+  "version": "1.7.2",
+  "private": true,
+  "description": "Hive Gateway — Personal AI agent runtime",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "license": "MIT",
+  "files": [
+    "src/"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ag-ui/core": "^0.0.46",
+    "@johpaz/hive-mcp": "^1.7.2",
+    "@johpaz/hive-skills": "^1.7.2",
+    "@johpaz/hive-code-bridge": "^1.7.2",
+    "@modelcontextprotocol/sdk": "latest",
+    "@sapphire/snowflake": "latest",
+    "@slack/bolt": "latest",
+    "@whiskeysockets/baileys": "latest",
+    "croner": "^10.0.1",
+    "discord.js": "latest",
+    "grammy": "latest",
+    "js-yaml": "latest",
+    "qrcode-terminal": "latest",
+    "toon-format-parser": "1.1.3",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "typescript": "latest",
+    "@types/bun": "latest"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./gateway": "./src/gateway/index.ts",
+    "./agent": "./src/agent/index.ts",
+    "./channels": "./src/channels/index.ts",
+    "./config": "./src/config/loader.ts",
+    "./config/loader": "./src/config/loader.ts",
+    "./utils": "./src/utils/logger.ts",
+    "./utils/logger": "./src/utils/logger.ts",
+    "./storage/sqlite": "./src/storage/sqlite.ts",
+    "./storage/onboarding": "./src/storage/onboarding.ts",
+    "./storage/crypto": "./src/storage/crypto.ts",
+    "./integrations": "./src/integrations/index.ts",
+    "./integrations/catalog": "./src/integrations/catalog.ts",
+    "./integrations/env": "./src/integrations/env.ts",
+    "./voice": "./src/voice/index.ts"
+  }
+}

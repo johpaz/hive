@@ -1,0 +1,57 @@
+# Tests
+tests/
+*.test.ts
+*.spec.ts
+__tests__/
+packages/*/tests/
+packages/*/*.test.ts
+
+# Development
+.vscode/
+.idea/
+*.log
+*.lock
+
+# Claude
+.claude/
+bunfig.toml
+
+# Configuration
+.env
+.env.*
+!.env.example
+tsconfig.json
+tsconfig*.json
+eslint.config.*
+.prettierrc*
+vitest.config.*
+*.config.ts
+*.config.js
+
+# Git
+.git/
+.github/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs
+dist/
+build/
+coverage/
+
+# Node modules
+**/node_modules/**
+
+# Root level
+scripts/
+temp/
+tmp/
+
+# Docs (except README and LICENSE)
+docs/
+*.md
+!README.md
+!LICENSE
+!CONTRIBUTING.md

@@ -1,0 +1,141 @@
+---
+name: agent_spawner
+description: "Create and manage specialized worker agents with optimal tool assignments and lifecycle control"
+version: 1.0.0
+author: Hive Team
+icon: "🤖"
+category: agents
+permissions:
+  - agent_manage
+dependencies: []
+tools: [create_agent, find_agent, archive_agent]
+
+# Structured skill fields
+triggers:
+  - "creá un agente"
+  - "create agent"
+  - "creá un worker"
+  - "create worker"
+  - "nuevo agente"
+  - "new agent"
+  - "agente especializado"
+  - "specialized agent"
+  - "buscá un agente"
+  - "find agent"
+  - "archivá agente"
+  - "archive agent"
+  - "worker inactivo"
+  - "inactive worker"
+
+preferred_agents: []
+
+steps:
+  - step: 1
+    action: find_agent
+    instruction: "Search for existing agents before creating new one"
+    params:
+      search: "agent name or specialty"
+      status: "idle"
+    output: existing_agents
+
+  - step: 2
+    action: decision_reuse_or_create
+    instruction: "If suitable agent exists, reuse it. Otherwise, proceed to create"
+    output: decision
+
+  - step: 3
+    action: create_agent
+    instruction: "Create new worker with focused system_prompt and minimal tools"
+    params:
+      name: "specialty_name"
+      description: "Clear specialty description"
+      system_prompt: "Focused instructions for role"
+      tools_json: ["minimal", "required", "tools"]
+    output: new_agent_id
+
+  - step: 4
+    action: archive_agent (if needed)
+    instruction: "Archive workers that are no longer needed or inactive >14 days"
+    params:
+      agent_id: "agent to archive"
+      reason: "no longer needed"
+    output: archived
+
+rules:
+  - "ALWAYS use find_agent BEFORE create_agent — never duplicate workers"
+  - "Workers have role='worker', coordinator has role='coordinator'"
+  - "Assign MINIMUM required tools (principle of least privilege)"
+  - "system_prompt must be specific and focused on specialty"
+  - "Use descriptive names that indicate agent's purpose"
+  - "Archive agents inactive >14 days (Curator does this automatically)"
+
+output_format:
+  structure: markdown
+  sections:
+    - "action_taken"
+    - "agent_name"
+    - "specialty"
+    - "tools_assigned"
+    - "status"
+  max_length: "Agent creation/management summary"
+
+examples:
+  - user_input: "creá un agente para investigación web"
+    expected_behavior: "find_agent('researcher') → if not exists, create_agent({ name: 'ai_researcher', tools: ['web_search', 'web_fetch'] })"
+
+  - user_input: "hay un worker para escribir contenido"
+    expected_behavior: "find_agent({ search: 'writer' }) → return existing writer agents"
+
+  - user_input: "archivá los agentes inactivos"
+    expected_behavior: "find_agent({ status: 'idle' }) → archive_agent for those inactive >14 days"
+---
+
+# Agent Spawner Skill
+
+## Cuándo se Activa
+
+Para crear nuevos workers especializados o gestionar el ciclo de vida de agents existentes.
+
+## Herramientas Disponibles
+
+| Tool | Qué hace | Cuándo usarla |
+|------|----------|---------------|
+| `find_agent` | Busca agents existentes | **PRIMERO** — antes de crear |
+| `create_agent` | Crea nuevo worker | Si no existe apto |
+| `archive_agent` | Archiva worker | Limpieza, inactivos |
+
+## Workflow
+
+### Crear Agent
+1. **Buscar** → `find_agent({ search })` — ¿existe?
+2. **Si existe** → Reutilizar
+3. **Si no existe** → `create_agent({...})`
+
+### Create Agent Config
+```javascript
+create_agent({
+  name: "ai_researcher",
+  description: "Especialista en búsqueda web y verificación",
+  system_prompt: `
+    Sos investigador experto. Tu rol:
+    1. Buscar información actualizada
+    2. Verificar fuentes cruzando datos
+    3. Resumir hallazgos claramente
+  `,
+  tools_json: ["web_search", "web_fetch", "save_note"]
+})
+```
+
+## Mejores Prácticas
+
+- **Buscar primero**: Nunca duplicar workers
+- **System prompt específico**: Enfocado en especialidad
+- **Mínimo privilegio**: Solo tools necesarias
+- **Nombres descriptivos**: Que indiquen propósito
+
+## Errores a Evitar
+
+- ❌ Crear sin buscar primero
+- ❌ Tools en exceso ("por las dudas")
+- ❌ System prompt genérico
+- ❌ Nombres vagos ("worker1", "agent1")
