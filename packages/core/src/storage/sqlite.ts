@@ -15,14 +15,6 @@ export function getDbPathLazy(): string {
 
 let _db: Database | null = null;
 
-export interface NoteRow {
-    id: string;
-    title: string;
-    content: string;
-    createdAt: string;
-    updatedAt: string;
-}
-
 export function getDb(): Database {
     if (!_db) throw new Error("DB no inicializada. Llama initializeDatabase() primero.");
     return _db;
@@ -116,6 +108,10 @@ function ensureSchemaSync(): void {
     ensureColumnExists("cron_jobs", "run_count", "INTEGER NOT NULL DEFAULT 0");
     ensureColumnExists("cron_jobs", "expires_at", "INTEGER");
 
+    // Sync usage_records (TOON savings columns — added after initial schema)
+    ensureColumnExists("usage_records", "toon_saved_tokens", "INTEGER NOT NULL DEFAULT 0");
+    ensureColumnExists("usage_records", "toon_saved_cost", "REAL NOT NULL DEFAULT 0");
+
     // Context Engine tables — ensure created_at/updated_at columns exist
     ensureColumnExists("conversations", "created_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
     ensureColumnExists("conversations", "updated_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
@@ -156,47 +152,6 @@ export class DatabaseService {
             _db.close();
             _db = null;
         }
-    }
-
-    public writeNote(title: string, content: string): NoteRow {
-        const stmt = this.db.query(`
-            INSERT INTO notes (id, title, content) 
-            VALUES ($id, $title, $content)
-            ON CONFLICT(title) DO UPDATE SET 
-                content = excluded.content,
-                updatedAt = CURRENT_TIMESTAMP
-            RETURNING *
-        `);
-        return stmt.get({
-            $id: crypto.randomUUID(),
-            $title: title,
-            $content: content
-        }) as NoteRow;
-    }
-
-    public readNote(title: string): NoteRow | null {
-        const stmt = this.db.query(`SELECT * FROM notes WHERE title = $title`);
-        return stmt.get({ $title: title }) as NoteRow | null;
-    }
-
-    public listNotes(): NoteRow[] {
-        const stmt = this.db.query(`SELECT * FROM notes ORDER BY updatedAt DESC`);
-        return stmt.all() as NoteRow[];
-    }
-
-    public searchNotes(queryText: string): NoteRow[] {
-        const stmt = this.db.query(`
-            SELECT * FROM notes 
-            WHERE title LIKE $query OR content LIKE $query
-            ORDER BY updatedAt DESC
-        `);
-        return stmt.all({ $query: `%${queryText}%` }) as NoteRow[];
-    }
-
-    public deleteNote(title: string): boolean {
-        const stmt = this.db.query(`DELETE FROM notes WHERE title = $title`);
-        const result = stmt.run({ $title: title });
-        return result.changes > 0;
     }
 
     public updateMCPServer(id: string, updates: any): void {

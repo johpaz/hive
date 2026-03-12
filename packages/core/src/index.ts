@@ -8,7 +8,6 @@ export * from "./utils/crypto.ts";
 export * from "./utils/retry.ts";
 export * from "./security/index.ts";
 export * from "./heartbeat/index.ts";
-export * from "./memory/notes.ts";
 export * from "./events/event-bus.ts";
 export * from "./events/agent-bus.ts";
 export * from "./state/store.ts";

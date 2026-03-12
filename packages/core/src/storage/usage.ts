@@ -176,7 +176,7 @@ export function getUsageStats(hours: number = 24): UsageSummary {
       COALESCE(SUM(output_tokens), 0) as output_tokens,
       COALESCE(SUM(cost_usd), 0) as cost_usd
     FROM usage_records
-    WHERE created_at >= ?
+    WHERE created_at >= ? AND provider != 'toon'
     GROUP BY provider
   `).all(since) as Array<{ provider: string; input_tokens: number; output_tokens: number; cost_usd: number }>;
 
@@ -188,7 +188,7 @@ export function getUsageStats(hours: number = 24): UsageSummary {
       COALESCE(SUM(output_tokens), 0) as output_tokens,
       COALESCE(SUM(cost_usd), 0) as cost_usd
     FROM usage_records
-    WHERE created_at >= ?
+    WHERE created_at >= ? AND provider != 'toon'
     GROUP BY model
     ORDER BY cost_usd DESC
   `).all(since) as Array<{ model: string; provider: string; input_tokens: number; output_tokens: number; cost_usd: number }>;
@@ -222,8 +222,9 @@ export function getUsageStats(hours: number = 24): UsageSummary {
   }
 
   const totalTokens = totals.total_input + totals.total_output;
-  const toonSavingsPercent = totalTokens > 0
-    ? (totals.toon_saved_tokens / (totalTokens + totals.toon_saved_tokens)) * 100
+  const totalIncludingSaved = totalTokens + totals.toon_saved_tokens;
+  const toonSavingsPercent = totalIncludingSaved > 0
+    ? (totals.toon_saved_tokens / totalIncludingSaved) * 100
     : 0;
 
   return {
@@ -253,7 +254,28 @@ export function estimateCostForTokens(model: string, tokens: number): number {
  * Get average cost per token for a model (input + output average)
  */
 export function getAverageTokenCost(model: string): number {
-  const pricing = MODEL_PRICING[model] || { inputPer1M: 0, outputPer1M: 0 };
+  // 1. Exact match
+  let pricing = MODEL_PRICING[model];
+
+  // 2. Try stripping a single provider prefix (e.g. "openrouter/moonshotai/kimi" → "moonshotai/kimi")
+  if (!pricing) {
+    const slashIdx = model.indexOf('/');
+    if (slashIdx !== -1) {
+      pricing = MODEL_PRICING[model.slice(slashIdx + 1)];
+    }
+  }
+
+  // 3. Partial match — find any key whose name is contained in the model string
+  if (!pricing) {
+    for (const [key, p] of Object.entries(MODEL_PRICING)) {
+      if (model.includes(key) || key.includes(model)) {
+        pricing = p;
+        break;
+      }
+    }
+  }
+
+  if (!pricing) return 0;
   // Average of input and output cost per token
   return (pricing.inputPer1M + pricing.outputPer1M) / 2 / 1_000_000;
 }

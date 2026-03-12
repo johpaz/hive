@@ -91,6 +91,8 @@ interface ModelsState {
   createModel: (providerId: string, name: string) => Promise<void>;
   syncModels: (providerId: string) => Promise<{ synced: number }>;
   getModelsByProvider: (providerId: string) => Model[];
+  deleteModel: (id: string) => Promise<void>;
+  updateModel: (id: string, data: { name?: string; id?: string }) => Promise<void>;
 }
 
 const createModelsSlice = () => ({
@@ -192,6 +194,51 @@ const createModelsSlice = () => ({
       const mProviderId = m.providerId || m.provider_id;
       return mProviderId === providerId && (m.enabled || m.active);
     });
+  },
+
+  deleteModel: async (id: string) => {
+    try {
+      await apiClient(`/api/models/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        showLoader: "Eliminando modelo...",
+        showError: true,
+        showSuccess: "Modelo eliminado"
+      });
+      const state = useGlobalConfigStore.getState();
+      const updatedModels = state.models.filter(m => m.id !== id);
+      useGlobalConfigStore.setState({
+        models: updatedModels,
+        availableModels: updatedModels.filter(m => m.enabled || m.active),
+      });
+    } catch (error) {
+      console.error("Failed to delete model:", error);
+      throw error;
+    }
+  },
+
+  updateModel: async (id: string, data: { name?: string; id?: string }) => {
+    try {
+      const response = await apiClient<{ ok: boolean; model: any }>(`/api/models/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        body: data,
+        showLoader: "Actualizando modelo...",
+        showError: true,
+        showSuccess: "Modelo actualizado"
+      });
+      if (response?.model) {
+        const state = useGlobalConfigStore.getState();
+        const updatedModels = state.models.map(m =>
+          m.id === id ? { ...m, ...response.model } : m
+        );
+        useGlobalConfigStore.setState({
+          models: updatedModels,
+          availableModels: updatedModels.filter(m => m.enabled || m.active),
+        });
+      }
+    } catch (error) {
+      console.error("Failed to update model:", error);
+      throw error;
+    }
   },
 });
 
@@ -568,9 +615,59 @@ const createChannelsSlice = () => ({
   },
 });
 
+// ==================== VOICE ====================
+interface VoiceState {
+  voiceProviders: string[];
+  configuredVoiceProviders: Record<string, boolean>;
+  fetchVoiceProviders: () => Promise<void>;
+  fetchConfiguredVoiceProviders: () => Promise<void>;
+  saveVoiceProviderKey: (providerId: string, apiKey: string) => Promise<void>;
+}
+
+const createVoiceSlice = () => ({
+  voiceProviders: [] as string[],
+  configuredVoiceProviders: {} as Record<string, boolean>,
+
+  fetchVoiceProviders: async () => {
+    try {
+      const response = await apiClient<{ providers: string[] }>("/api/voice/providers");
+      return {
+        voiceProviders: response.providers,
+      };
+    } catch (error) {
+      console.error("Failed to fetch voice providers:", error);
+      return { voiceProviders: [] };
+    }
+  },
+
+  fetchConfiguredVoiceProviders: async () => {
+    try {
+      const response = await apiClient<Record<string, boolean>>("/api/voice/configured-providers");
+      return {
+        configuredVoiceProviders: response,
+      };
+    } catch (error) {
+      console.error("Failed to fetch configured voice providers:", error);
+      return { configuredVoiceProviders: {} };
+    }
+  },
+
+  saveVoiceProviderKey: async (providerId: string, apiKey: string) => {
+    try {
+      await apiClient(`/api/voice/providers/${providerId}/key`, {
+        method: "POST",
+        body: { apiKey },
+      });
+    } catch (error) {
+      console.error("Failed to save voice provider key:", error);
+      throw error;
+    }
+  },
+});
+
 
 // ==================== GLOBAL STORE ====================
-type GlobalConfigState = ProvidersState & ModelsState & AgentsState & ToolsState & SkillsState & MCPServersState & ChannelsState & {
+type GlobalConfigState = ProvidersState & ModelsState & AgentsState & ToolsState & SkillsState & MCPServersState & ChannelsState & VoiceState & {
   isLoading: boolean;
   isInitialized: boolean;
   error: string | null;
@@ -606,6 +703,9 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
   channels: [],
   activeChannels: [],
 
+  // Voice
+  voiceProviders: [],
+  configuredVoiceProviders: {},
 
   // State
   isLoading: false,
@@ -630,6 +730,7 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
         skillsData,
         mcpData,
         channelsData,
+        voiceData,
       ] = await Promise.all([
         createProvidersSlice().fetchProviders(),
         createModelsSlice().fetchModels(),
@@ -638,7 +739,11 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
         createSkillsSlice().fetchSkills(),
         createMCPServersSlice().fetchMCPServers(),
         createChannelsSlice().fetchChannels(),
+        createVoiceSlice().fetchVoiceProviders(),
       ]);
+
+      // Also fetch configured voice providers (depends on voice providers being loaded)
+      const configuredVoiceData = await createVoiceSlice().fetchConfiguredVoiceProviders();
 
       set({
         ...providersData,
@@ -648,6 +753,8 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
         ...skillsData,
         ...mcpData,
         ...channelsData,
+        ...voiceData,
+        ...configuredVoiceData,
         isLoading: false,
         isInitialized: true,
       });
@@ -717,6 +824,8 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
   createModel: createModelsSlice().createModel,
   syncModels: createModelsSlice().syncModels,
   getModelsByProvider: createModelsSlice().getModelsByProvider,
+  deleteModel: createModelsSlice().deleteModel,
+  updateModel: createModelsSlice().updateModel,
 
   // Agents methods
   fetchAgents: async () => {
@@ -819,6 +928,8 @@ export function useModels() {
   const createModel = useGlobalConfigStore((state) => state.createModel);
   const syncModels = useGlobalConfigStore((state) => state.syncModels);
   const getModelsByProvider = useGlobalConfigStore((state) => state.getModelsByProvider);
+  const deleteModel = useGlobalConfigStore((state) => state.deleteModel);
+  const updateModel = useGlobalConfigStore((state) => state.updateModel);
   const error = useGlobalConfigStore((state) => state.error);
 
   return {
@@ -831,6 +942,8 @@ export function useModels() {
     createModel,
     syncModels,
     getModelsByProvider,
+    deleteModel,
+    updateModel,
   };
 }
 
@@ -932,6 +1045,26 @@ export function useChannels() {
     fetchChannels,
     toggleChannel,
     updateChannel: useGlobalConfigStore((state) => state.updateChannel),
+  };
+}
+
+export function useVoice() {
+  const voiceProviders = useGlobalConfigStore((state) => state.voiceProviders);
+  const configuredVoiceProviders = useGlobalConfigStore((state) => state.configuredVoiceProviders);
+  const isLoading = useGlobalConfigStore((state) => state.isLoading);
+  const fetchVoiceProviders = useGlobalConfigStore((state) => state.fetchVoiceProviders);
+  const fetchConfiguredVoiceProviders = useGlobalConfigStore((state) => state.fetchConfiguredVoiceProviders);
+  const saveVoiceProviderKey = useGlobalConfigStore((state) => state.saveVoiceProviderKey);
+  const error = useGlobalConfigStore((state) => state.error);
+
+  return {
+    voiceProviders,
+    configuredVoiceProviders,
+    isLoading,
+    error,
+    fetchVoiceProviders,
+    fetchConfiguredVoiceProviders,
+    saveVoiceProviderKey,
   };
 }
 

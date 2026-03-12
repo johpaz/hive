@@ -5,11 +5,12 @@ import { ToolManager } from "@/modules/agent-config/tools/ToolManager";
 import { MCPServerList } from "@/modules/agent-config/mcp/MCPServerList";
 import { UserProfileEditor } from "@/modules/agent-config/user/UserProfileEditor";
 import { SkillsTab } from "@/modules/agent-config/skills/SkillsTab";
+import { VoiceProvidersPanel } from "@/modules/agent-config/voice/VoiceProvidersPanel";
 import { NotesPanel } from "@/components/NotesPanel";
 import { CronJobsPanel } from "@/components/CronJobsPanel";
 import { useSkills, useTools, useMCPServers } from "@/hooks/useProviders";
 
-type PanelId = "etica" | "herramientas" | "mcp" | "skills" | "perfil" | "notas" | "cron-jobs";
+type PanelId = "etica" | "herramientas" | "mcp" | "skills" | "perfil" | "notas" | "cron-jobs" | "voz";
 
 function PanelContent({ panel }: { panel: PanelId }) {
   switch (panel) {
@@ -55,12 +56,18 @@ function PanelContent({ panel }: { panel: PanelId }) {
           <CronJobsPanel />
         </div>
       );
+    case "voz":
+      return (
+        <div className="p-4">
+          <VoiceProvidersPanel />
+        </div>
+      );
     default:
       return null;
   }
 }
 
-const VALID_PANELS: PanelId[] = ["etica", "herramientas", "mcp", "skills", "perfil", "notas", "cron-jobs"];
+const VALID_PANELS: PanelId[] = ["etica", "herramientas", "mcp", "skills", "perfil", "notas", "cron-jobs", "voz"];
 
 export function SettingsPage({ forcePanel }: { forcePanel?: PanelId }) {
   const { panel } = useParams<{ panel: string }>();
@@ -113,6 +120,11 @@ export function SettingsPage({ forcePanel }: { forcePanel?: PanelId }) {
       eyebrow: "AUTOMATIZACIÓN TEMPORAL",
       title: "Tareas Programadas",
       subtitle: "Gestión de ejecuciones recurrentes y disparadores cron."
+    },
+    voz: {
+      eyebrow: "INTERFAZ DE VOZ",
+      title: "Configuración de Voz",
+      subtitle: "Configura las API keys de los providers de STT (Speech-to-Text) y TTS (Text-to-Speech) para habilitar la comunicación por voz."
     }
   };
 

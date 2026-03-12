@@ -71,6 +71,76 @@ export async function handleGetModelsConfig(
   }), req);
 }
 
+export async function handleDeleteModel(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
+  const url = new URL(req.url)
+  const pathMatch = url.pathname.match(/^\/api\/models\/([^/]+)$/)
+  const modelId = pathMatch ? decodeURIComponent(pathMatch[1]) : null
+
+  if (!modelId) {
+    return addCorsHeaders(Response.json({ ok: false, error: "model id required" }, { status: 400 }), req)
+  }
+
+  const existing = getDb().query("SELECT * FROM models WHERE id = ?").get(modelId) as any
+  if (!existing) {
+    return addCorsHeaders(Response.json({ ok: false, error: "Model not found" }, { status: 404 }), req)
+  }
+
+  const agents = getDb().query("SELECT id, name FROM agents WHERE model_id = ?").all(modelId) as any[]
+  if (agents.length > 0) {
+    const names = agents.map(a => a.name).join(", ")
+    return addCorsHeaders(Response.json({ ok: false, error: `En uso por agentes: ${names}` }, { status: 409 }), req)
+  }
+
+  getDb().query("DELETE FROM models WHERE id = ?").run(modelId)
+  return addCorsHeaders(Response.json({ ok: true }), req)
+}
+
+export async function handleUpdateModel(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
+  const url = new URL(req.url)
+  const pathMatch = url.pathname.match(/^\/api\/models\/([^/]+)$/)
+  const oldId = pathMatch ? decodeURIComponent(pathMatch[1]) : null
+
+  if (!oldId) {
+    return addCorsHeaders(Response.json({ ok: false, error: "model id required" }, { status: 400 }), req)
+  }
+
+  const existing = getDb().query("SELECT * FROM models WHERE id = ?").get(oldId) as any
+  if (!existing) {
+    return addCorsHeaders(Response.json({ ok: false, error: "Model not found" }, { status: 404 }), req)
+  }
+
+  const body = await req.json().catch(() => ({}))
+  const newId: string | undefined = body.id
+  const newName: string | undefined = body.name
+
+  if (!newId || newId === oldId) {
+    // Only name change
+    const name = newName || existing.name
+    getDb().query("UPDATE models SET name = ? WHERE id = ?").run(name, oldId)
+    const model = getDb().query("SELECT * FROM models WHERE id = ?").get(oldId)
+    return addCorsHeaders(Response.json({ ok: true, model }), req)
+  }
+
+  // ID is changing — use a transaction to migrate agents references
+  const checkConflict = getDb().query("SELECT id FROM models WHERE id = ?").get(newId) as any
+  if (checkConflict) {
+    return addCorsHeaders(Response.json({ ok: false, error: "Ya existe un modelo con ese ID" }, { status: 409 }), req)
+  }
+
+  const name = newName || existing.name
+  getDb().transaction(() => {
+    getDb().query(`
+      INSERT INTO models(id, name, provider_id, model_type, context_window, capabilities, enabled, active)
+      SELECT ?, ?, provider_id, model_type, context_window, capabilities, enabled, active FROM models WHERE id = ?
+    `).run(newId, name, oldId)
+    getDb().query("UPDATE agents SET model_id = ? WHERE model_id = ?").run(newId, oldId)
+    getDb().query("DELETE FROM models WHERE id = ?").run(oldId)
+  })()
+
+  const model = getDb().query("SELECT * FROM models WHERE id = ?").get(newId)
+  return addCorsHeaders(Response.json({ ok: true, model }), req)
+}
+
 export async function handleUpdateModelsConfig(
   req: Request,
   addCorsHeaders: (r: Response, req: Request) => Response,

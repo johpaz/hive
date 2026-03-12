@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { apiClient } from '../lib/api';
-import type { Note, CronJob, CronChannel } from '../types/notes-crons';
+import type { ScratchpadNote, CronJob, CronChannel } from '../types/notes-crons';
 
 interface CronChannelsResponse {
     channels: CronChannel[];
@@ -9,7 +9,7 @@ interface CronChannelsResponse {
 }
 
 interface NotesAndCronsState {
-    notes: Note[];
+    notes: ScratchpadNote[];
     cronJobs: CronJob[];
     cronChannels: CronChannel[];
     cronRecommended: string;
@@ -19,7 +19,6 @@ interface NotesAndCronsState {
     fetchNotes: () => Promise<void>;
     fetchCronJobs: () => Promise<void>;
     fetchCronChannels: () => Promise<void>;
-    toggleNoteActive: (id: string, active: boolean) => Promise<void>;
     toggleCronJobActive: (id: string, enabled: boolean) => Promise<void>;
     saveCronChannelPreference: (channelId: string) => Promise<void>;
 }
@@ -36,7 +35,7 @@ export const useNotesAndCronsStore = create<NotesAndCronsState>((set) => ({
     fetchNotes: async () => {
         set({ isLoading: true, error: null });
         try {
-            const data = await apiClient<{ notes: Note[] }>('/api/notes');
+            const data = await apiClient<{ notes: ScratchpadNote[] }>('/api/notes');
             set({ notes: data.notes, isLoading: false });
         } catch (err) {
             set({ error: (err as Error).message, isLoading: false });
@@ -98,20 +97,6 @@ export const useNotesAndCronsStore = create<NotesAndCronsState>((set) => ({
             });
         } catch (err) {
             console.error("[CronStore] Error en fetchCronChannels:", err);
-            set({ error: (err as Error).message });
-        }
-    },
-
-    toggleNoteActive: async (id: string, active: boolean) => {
-        try {
-            await apiClient(`/api/notes/${id}/toggle`, {
-                method: 'PATCH',
-                body: { active: active ? 1 : 0 }
-            });
-            set((state) => ({
-                notes: state.notes.map((n) => (n.id === id ? { ...n, active: active ? 1 : 0 } : n)),
-            }));
-        } catch (err) {
             set({ error: (err as Error).message });
         }
     },

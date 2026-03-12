@@ -128,8 +128,8 @@ const SEED_DATA: SeedData = {
     { id: "search_knowledge", name: "search_knowledge", category: "search-knowledge", description: "Search in the knowledge base. Spanish: buscar en la base de conocimientos" },
 
     // 11. CORE — Notificaciones y notas
-    { id: "notify",          name: "notify",          category: "core", description: "Send notification to user. Spanish: notificar, enviar notificación, alertar, aviso" },
-    { id: "save_note",       name: "save_note",       category: "core", description: "Save persistent note to scratchpad. Spanish: guardar nota, escribir nota, recordatorio rápido, apuntar" },
+    { id: "notify", name: "notify", category: "core", description: "Send notification to user. Spanish: notificar, enviar notificación, alertar, aviso" },
+    { id: "save_note", name: "save_note", category: "core", description: "Save persistent note to scratchpad. Spanish: guardar nota, escribir nota, recordatorio rápido, apuntar" },
     { id: "report_progress", name: "report_progress", category: "core", description: "Report current progress to user. Spanish: reportar progreso, informar estado, actualizar progreso, porcentaje" },
 
   ],
@@ -228,6 +228,9 @@ const SEED_DATA: SeedData = {
     // Qwen
     { id: "qwen/qwen3.5-plus-02-15", providerId: "openrouter", name: "Qwen3.5 Plus", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "reasoning"]) },
     { id: "qwen/qwen3.5-flash-02-23", providerId: "openrouter", name: "Qwen3.5 Flash", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
+    { id: "qwen/qwen3-next-80b-a3b-instruct:free", providerId: "openrouter", name: "Qwen3 Next 80B", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
+    { id: "qwen/qwen3-coder:free", providerId: "openrouter", name: "Qwen3 Coder", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
+
 
     // ── Groq (fuente: console.groq.com/docs/models) ──
     { id: "llama-3.3-70b-versatile", providerId: "groq", name: "Llama 3.3 70B", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },

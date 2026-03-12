@@ -57,7 +57,8 @@ export function addMessage(
     tool_calls_json,
     opts?.tool_call_id ?? null,
     opts?.reasoning_content ?? null,
-    estimateTokens(content) + estimateTokens(tool_calls_json ?? ""),
+    // Estimate tokens: content + tool_calls JSON (often content="" for tool-call-only assistant msgs)
+    Math.max(1, estimateTokens(content) + estimateTokens(tool_calls_json ?? "")),
   ) as { id: number }
 
   return result.id

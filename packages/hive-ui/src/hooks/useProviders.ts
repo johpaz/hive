@@ -9,6 +9,7 @@ export {
   useMCPServers,
   useChannels,
   useChannels as useChannelStore,  // Alias para compatibilidad
+  useVoice,
   useInitializeGlobalConfig,
   useGlobalConfigStore,
 } from "@/stores/useGlobalConfigStore";

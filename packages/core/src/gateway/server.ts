@@ -42,8 +42,8 @@ import { setChannelSendFn } from "./channel-notify";
 import { handleGetCronJobs, handleGetCronChannels, handleUpdateCronJob } from "./routes/cron";
 import { handleGetChannels, handleGetChannelConfig, handleActivateChannel, handleDeactivateChannel, handleCreateChannel, handleGetChannelAccount, handleUpdateChannelAccount, handleDeleteChannelAccount, handleChannelAction, handleUpdateChannelSettings, handleToggleChannel } from "./routes/channels";
 import { handleGetMcpServers, handleCreateMcpServer, handleUpdateMcpServer, handleDeleteMcpServer, handleToggleMcpServer, handleGetMCPServerTools } from "./routes/mcp";
-import { handleGetModels, handleCreateModel, handleToggleModel, handleGetModelsConfig, handleUpdateModelsConfig } from "./routes/models";
-import { handleGetVoiceProviders, handleGetConfiguredVoiceProviders, handleTestVoice, handleGetChannelVoice, handleUpdateChannelVoice } from "./routes/voice";
+import { handleGetModels, handleCreateModel, handleToggleModel, handleGetModelsConfig, handleUpdateModelsConfig, handleDeleteModel, handleUpdateModel } from "./routes/models";
+import { handleGetVoiceProviders, handleGetConfiguredVoiceProviders, handleSaveVoiceProviderKey, handleTestVoice, handleGetChannelVoice, handleUpdateChannelVoice } from "./routes/voice";
 import { handleGetActivityStats, handleGetSystemStats, handleGetUsageStats, handleSystemReload, handleApiReload } from "./routes/system";
 import { handleGetChatHistory, handleGetCanvas, handleGetNotes, handleUpdateNote } from "./routes/chat";
 import { handleChat as handlePostChat } from "./routes/chat";
@@ -1032,9 +1032,14 @@ Please execute it now.`;
           return await handleToggleModel(req, addCorsHeaders)
         }
 
-        // ── Channels API ───────────────────────────────────────────────────
-        if (url.pathname === "/api/channels" && req.method === "GET") {
-          return await handleGetChannels(req, addCorsHeaders)
+        // DELETE /api/models/:id
+        if (url.pathname.match(/^\/api\/models\/[^/]+$/) && req.method === "DELETE") {
+          return await handleDeleteModel(req, addCorsHeaders)
+        }
+
+        // PUT /api/models/:id
+        if (url.pathname.match(/^\/api\/models\/[^/]+$/) && req.method === "PUT") {
+          return await handleUpdateModel(req, addCorsHeaders)
         }
 
         // ── Skills API ─────────────────────────────────────────────────────
@@ -1277,8 +1282,7 @@ Please execute it now.`;
 
         // ── Channels API ───────────────────────────────────────────────────
         if (url.pathname === "/api/channels" && req.method === "GET") {
-          const channels = getDb().query("SELECT id, type, id as account_id, enabled, active, status FROM channels").all();
-          return addCorsHeaders(Response.json({ channels }), req);
+          return await handleGetChannels(req, addCorsHeaders);
         }
 
         // PUT /api/channels/:id - Update channel settings
@@ -1302,6 +1306,12 @@ Please execute it now.`;
 
         if (url.pathname === "/api/voice/configured-providers" && req.method === "GET") {
           return await handleGetConfiguredVoiceProviders(req, addCorsHeaders)
+        }
+
+        // POST /api/voice/providers/:providerId/key - Save API key for a voice provider
+        const voiceProviderKeyMatch = url.pathname.match(/^\/api\/voice\/providers\/([^/]+)\/key$/)
+        if (voiceProviderKeyMatch && req.method === "POST") {
+          return await handleSaveVoiceProviderKey(req, addCorsHeaders)
         }
 
         if (url.pathname === "/api/voice/test" && req.method === "POST") {

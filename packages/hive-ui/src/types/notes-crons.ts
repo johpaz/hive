@@ -1,10 +1,11 @@
-export interface Note {
-    id: string;
-    title: string;
-    content: string;
-    active: boolean | number;
-    createdAt: number;
-    updatedAt: number;
+export interface ScratchpadNote {
+    id: number;
+    thread_id: string;
+    key: string;
+    value: string;
+    source: string | null;
+    created_at: number;
+    updated_at: number;
 }
 
 export interface CronJob {

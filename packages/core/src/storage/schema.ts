@@ -257,16 +257,6 @@ export const SCHEMA = `
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
 
-  -- NOTES
-  CREATE TABLE IF NOT EXISTS notes (
-    id        TEXT PRIMARY KEY,
-    title     TEXT NOT NULL UNIQUE,
-    content   TEXT,
-    active    INTEGER NOT NULL DEFAULT 1,
-    createdAt INTEGER DEFAULT (unixepoch()),
-    updatedAt INTEGER DEFAULT (unixepoch())
-  );
-
   -- USAGE TRACKING (tokens, costs)
   CREATE TABLE IF NOT EXISTS usage_records (
     id            TEXT PRIMARY KEY,

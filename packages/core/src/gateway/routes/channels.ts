@@ -2,10 +2,58 @@ import { getDb } from "../../storage/sqlite"
 
 export async function handleGetChannels(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const channels = getDb().query(`
-    SELECT channel, COUNT(*) as count FROM user_channels GROUP BY channel
-  `).all() as Record<string, unknown>[]
-  
-  return addCorsHeaders(Response.json({ channels }), req)
+    SELECT id, type, id as account_id, enabled, active, status, last_active, voice_enabled, tts_enabled, stt_provider, tts_provider, tts_voice_id, step_delivery_mode
+    FROM channels
+  `).all() as Array<{
+    id: string;
+    type: string;
+    account_id: string;
+    enabled: number;
+    active: number;
+    status: string;
+    last_active: number | null;
+    voice_enabled: number;
+    tts_enabled: number;
+    stt_provider: string | null;
+    tts_provider: string | null;
+    tts_voice_id: string | null;
+    step_delivery_mode: string | null;
+  }>
+
+  // Convert to format expected by UI (ConnectedChannel[])
+  const formattedChannels = channels.map(c => ({
+    id: c.id,
+    type: c.type as ConnectedChannel["type"],
+    accountId: c.account_id,
+    enabled: c.enabled === 1,
+    active: c.active === 1,
+    status: c.status as ConnectedChannel["status"],
+    last_active: c.last_active ?? undefined,
+    voice_enabled: c.voice_enabled === 1,
+    tts_enabled: c.tts_enabled === 1,
+    stt_provider: c.stt_provider ?? undefined,
+    tts_provider: c.tts_provider ?? undefined,
+    tts_voice_id: c.tts_voice_id ?? undefined,
+    step_delivery_mode: c.step_delivery_mode ?? undefined,
+  }))
+
+  return addCorsHeaders(Response.json({ channels: formattedChannels }), req)
+}
+
+type ConnectedChannel = {
+  id: string;
+  type: string;
+  accountId?: string;
+  enabled: boolean;
+  active: boolean;
+  status: string;
+  last_active?: number;
+  voice_enabled: boolean;
+  tts_enabled: boolean;
+  stt_provider?: string;
+  tts_provider?: string;
+  tts_voice_id?: string;
+  step_delivery_mode?: string;
 }
 
 export async function handleGetChannelConfig(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {

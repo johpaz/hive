@@ -167,8 +167,9 @@ export async function compileContext(opts: {
               description: mcpTool.description || `Tool from ${server.name}`,
               parameters: mcpTool.inputSchema || { type: "object", properties: {} },
               execute: async (params: Record<string, unknown>) => {
-                const result = await effectiveMcpManager.callTool(server.id, mcpTool.name, params)
-                return typeof result === "string" ? result : JSON.stringify(result)
+                // Return raw JS value — agent-loop will TOON-encode via formatToolResult.
+                // Never pre-stringify here: formatToolResult(string) double-encodes.
+                return await effectiveMcpManager.callTool(server.id, mcpTool.name, params)
               },
             })
 
