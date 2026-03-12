@@ -143,59 +143,274 @@ docker compose logs -f hive
 
 ---
 
+#### Docker portable — USB o disco externo
+
+Docker también puede viajar en una USB. La clave es exportar la imagen como archivo `.tar` y montar el volumen de datos desde la USB en vez de un volumen gestionado por Docker.
+
+**Paso 1 — Exportar la imagen a un archivo**
+
+En el equipo donde tienes conexión a internet:
+
+```bash
+# Descargar la imagen si no la tienes
+docker pull johpaz/hive:1.7.7
+
+# Exportar a archivo tar (cabe en cualquier USB de 512 MB+)
+docker save johpaz/hive:1.7.7 -o /media/usb/hive-image.tar
+```
+
+**Paso 2 — Crear la estructura en la USB**
+
+```
+/usb/
+├── hive-image.tar         ← imagen Docker exportada (~120 MB)
+├── docker-compose.yml     ← archivo de configuración
+└── datos/                 ← directorio de datos de Hive (se crea al primer arranque)
+    └── hive.db
+```
+
+Crea el `docker-compose.yml` en la USB con el volumen apuntando a la USB:
+
+```yaml
+services:
+  hive:
+    image: johpaz/hive:1.7.7
+    ports:
+      - "18790:18790"
+    volumes:
+      - ./datos:/root/.hive
+    restart: unless-stopped
+```
+
+> La clave es `./datos:/root/.hive` — monta la carpeta `datos/` relativa al `docker-compose.yml`, que está en la USB. Así los datos viajan con la USB, no quedan en el equipo.
+
+**Paso 3 — Cargar y ejecutar en cualquier equipo con Docker**
+
+```bash
+# 1. Cargar la imagen desde el archivo (sin internet)
+docker load -i /media/usb/hive-image.tar
+
+# 2. Ir al directorio de la USB
+cd /media/usb
+
+# 3. Levantar
+docker compose up -d
+```
+
+Abre `http://localhost:18790` en el navegador. Si es la primera vez en ese equipo, muestra el wizard de setup. Si la USB ya tiene datos, carga tu agente directamente.
+
+**Detener y llevar la USB a otro equipo:**
+
+```bash
+# Detener el contenedor
+docker compose down
+
+# En el otro equipo, volver al Paso 3
+```
+
+> **Nota para Windows:** Docker Desktop usa rutas como `D:\` para la USB. Ajusta el volumen en el `docker-compose.yml` a la letra de tu unidad:
+> ```yaml
+> volumes:
+>   - D:\datos:/root/.hive
+> ```
+
+**Backup de los datos del contenedor:**
+
+```bash
+# Copiar la BD desde la USB a tu máquina
+cp /media/usb/datos/hive.db ~/backup-hive-$(date +%Y%m%d).db
+
+# Restaurar
+cp ~/backup-hive-20260312.db /media/usb/datos/hive.db
+```
+
+**Actualizar la imagen en la USB:**
+
+```bash
+# En un equipo con internet
+docker pull johpaz/hive:latest
+docker save johpaz/hive:latest -o /media/usb/hive-image.tar
+
+# Actualizar el tag en docker-compose.yml
+# Luego en cualquier equipo:
+docker load -i /media/usb/hive-image.tar
+docker compose up -d
+```
+
+---
+
 ### Opción 2 — Binario standalone (Sin dependencias)
 
 Descarga un ejecutable único para tu plataforma. No requiere Node, Bun ni Docker. Al ejecutarlo, **el navegador se abre automáticamente** en `/setup` (primera vez) o en el dashboard.
 
-| Plataforma | Descarga |
-|------------|----------|
-| Linux x64 | [hive-v1.7.7-linux-x64](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-linux-x64) |
-| Linux ARM64 | [hive-v1.7.7-linux-arm64](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-linux-arm64) |
-| macOS Intel | [hive-v1.7.7-macos-x64](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-macos-x64) |
-| macOS Apple Silicon | [hive-v1.7.7-macos-arm64](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-macos-arm64) |
-| Windows x64 | [hive-v1.7.7-windows-x64.exe](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-windows-x64.exe) |
+#### Dónde descargar
 
-**Instalación en Linux / macOS:**
+**Desde la web** — [hiveagents.io](https://www.hiveagents.io/#installation)
+La página detecta tu sistema operativo automáticamente y muestra el botón de descarga correcto. También puedes seleccionar otra plataforma desde el selector.
+
+**Desde GitHub Releases** — [github.com/johpaz/hive/releases/latest](https://github.com/johpaz/hive/releases/latest)
+Descarga manual de cualquier plataforma o versión específica.
+
+| Plataforma | Archivo | Descarga directa |
+|------------|---------|------------------|
+| Linux x64 | `hive-v1.7.7-linux-x64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-linux-x64) |
+| Linux ARM64 (Raspberry Pi, etc.) | `hive-v1.7.7-linux-arm64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-linux-arm64) |
+| macOS Apple Silicon (M1/M2/M3/M4) | `hive-v1.7.7-macos-arm64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-macos-arm64) |
+| macOS Intel | `hive-v1.7.7-macos-x64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-macos-x64) |
+| Windows x64 | `hive-v1.7.7-windows-x64.exe` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-windows-x64.exe) |
+
+> Los links anteriores siempre apuntan a la última versión publicada. Si necesitas una versión específica, visita la [página de releases](https://github.com/johpaz/hive/releases).
+
+---
+
+#### Linux x64 / ARM64
 
 ```bash
-# 1. Descargar binario (ajusta la URL a tu plataforma)
+# 1. Descargar el binario (reemplaza "linux-x64" por "linux-arm64" si es ARM)
 curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-linux-x64
+
+# 2. Dar permisos de ejecución
 chmod +x hive
 
-# 2. Descargar la UI
-curl -L https://github.com/johpaz/hive/releases/latest/download/ui-dist.tar.gz | tar -xz
-mkdir -p ~/.hive/ui && mv ui-dist/* ~/.hive/ui/
+# 3. Descargar la UI web
+curl -L https://github.com/johpaz/hive/releases/latest/download/ui-dist.tar.gz \
+  | tar -xz --one-top-level=ui-dist
 
-# 3. Ejecutar — el navegador se abre automáticamente
+# 4. Colocar la UI donde Hive la espera
+mkdir -p ~/.hive/ui
+cp -r ui-dist/* ~/.hive/ui/
+
+# 5. Ejecutar
 ./hive start
 ```
 
-**Instalación en Windows:**
+El gateway levanta en `http://localhost:18790`. El navegador se abre automáticamente.
+
+**Agregar al PATH (opcional)** para ejecutar `hive` desde cualquier directorio:
+
+```bash
+sudo mv hive /usr/local/bin/hive
+hive start
+```
+
+---
+
+#### macOS — Apple Silicon (M1/M2/M3/M4)
+
+```bash
+# 1. Descargar
+curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-macos-arm64
+
+# 2. Dar permisos de ejecución
+chmod +x hive
+
+# 3. Quitar la cuarentena de Gatekeeper (necesario en todos los binarios descargados)
+xattr -d com.apple.quarantine hive
+
+# 4. Descargar la UI
+curl -L https://github.com/johpaz/hive/releases/latest/download/ui-dist.tar.gz \
+  | tar -xz --one-top-level=ui-dist
+mkdir -p ~/.hive/ui && cp -r ui-dist/* ~/.hive/ui/
+
+# 5. Ejecutar
+./hive start
+```
+
+> **¿Por qué el paso `xattr`?** macOS bloquea binarios descargados de internet que no tienen firma de Apple. El comando `xattr -d com.apple.quarantine` elimina esa restricción. Si lo omites, verás el error: _"hive no se puede abrir porque Apple no puede comprobar que no contiene software malicioso"_.
+>
+> Alternativa: en Finder, haz clic derecho sobre el archivo → **Abrir** → **Abrir** de nuevo en el diálogo. Esto también lo desbloquea.
+
+**Agregar al PATH:**
+
+```bash
+sudo mv hive /usr/local/bin/hive
+hive start
+```
+
+---
+
+#### macOS — Intel
+
+Igual que Apple Silicon pero descarga `macos-x64`:
+
+```bash
+curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-macos-x64
+chmod +x hive
+xattr -d com.apple.quarantine hive
+curl -L https://github.com/johpaz/hive/releases/latest/download/ui-dist.tar.gz \
+  | tar -xz --one-top-level=ui-dist
+mkdir -p ~/.hive/ui && cp -r ui-dist/* ~/.hive/ui/
+./hive start
+```
+
+---
+
+#### Windows x64
+
+**Paso 1 — Descargar el binario**
+
+Descarga [`hive-v1.7.7-windows-x64.exe`](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-windows-x64.exe) desde GitHub o desde [hiveagents.io](https://www.hiveagents.io/#installation).
+
+**Paso 2 — Windows SmartScreen**
+
+Al ejecutar por primera vez, Windows puede mostrar _"Windows protegió tu PC"_. Es normal para binarios sin firma de código.
+
+1. Haz clic en **"Más información"**
+2. Luego en **"Ejecutar de todas formas"**
+
+**Paso 3 — Descargar la UI**
+
+Descarga [`ui-dist.tar.gz`](https://github.com/johpaz/hive/releases/latest/download/ui-dist.tar.gz) y extrae su contenido en:
+
+```
+C:\Users\TU_USUARIO\.hive\ui\
+```
+
+Puedes usar [7-Zip](https://www.7-zip.org/) o WSL para extraer el `.tar.gz`. Con PowerShell 5+:
 
 ```powershell
-# 1. Descargar hive-v1.7.7-windows-x64.exe desde el link de arriba
-# 2. Descargar ui-dist.tar.gz y extraer en %USERPROFILE%\.hive\ui\
-# 3. Ejecutar
+# Crear la carpeta de destino
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.hive\ui"
+
+# Extraer (requiere PowerShell 5+ o Windows 11)
+tar -xzf ui-dist.tar.gz -C "$env:USERPROFILE\.hive\ui"
+```
+
+**Paso 4 — Ejecutar**
+
+```powershell
 .\hive-v1.7.7-windows-x64.exe start
 ```
 
-**¿Dónde se guardan los datos?**
+El navegador se abre automáticamente en `http://localhost:18790`.
 
-Todos los datos (base de datos, configuración, logs) se guardan en `~/.hive/` por defecto:
+**Agregar al PATH (opcional):**
+
+```powershell
+# Mover a una carpeta ya en el PATH, por ejemplo:
+Move-Item .\hive-v1.7.7-windows-x64.exe C:\Windows\System32\hive.exe
+
+# Luego ejecutar desde cualquier lugar:
+hive start
+```
+
+---
+
+#### ¿Dónde se guardan los datos?
+
+Todos los datos (base de datos, configuración, logs) se guardan en `~/.hive/`:
 
 ```
-~/.hive/
+~/.hive/                         # Windows: C:\Users\TU_USUARIO\.hive\
 ├── data/
-│   └── hive.db        ← base de datos SQLite (agentes, conversaciones, config)
+│   └── hive.db        ← SQLite (agentes, conversaciones, config)
 ├── ui/                ← archivos de la interfaz web
 ├── logs/
 │   └── gateway.log
 └── gateway.pid
 ```
 
-La UI se sirve desde `~/.hive/ui/`. Puedes apuntar a una ruta alternativa con la variable `HIVE_UI_DIR`.
-
-**Variables de entorno:**
+**Variables de entorno disponibles:**
 
 | Variable | Default | Descripción |
 |----------|---------|-------------|
@@ -206,7 +421,7 @@ La UI se sirve desde `~/.hive/ui/`. Puedes apuntar a una ruta alternativa con la
 
 ---
 
-### Uso portable — USB o disco externo
+#### Uso portable — USB o disco externo
 
 El binario standalone es ideal para llevarlo en una USB. Tu agente viaja contigo con toda su memoria, historial y configuración.
 
@@ -215,48 +430,37 @@ El binario standalone es ideal para llevarlo en una USB. Tu agente viaja contigo
 ```
 /usb/
 ├── hive                  ← binario ejecutable
-├── ui/                   ← archivos de la interfaz web (copiar de ui-dist/)
+├── ui/                   ← archivos de la UI (extraídos de ui-dist.tar.gz)
 └── datos/                ← directorio de datos (se crea automáticamente)
     ├── data/hive.db
     └── ...
 ```
 
-**Preparar la USB (desde tu máquina):**
+**Preparar la USB:**
 
 ```bash
-# Copiar binario
 cp hive-v1.7.7-linux-x64 /media/usb/hive
 chmod +x /media/usb/hive
-
-# Copiar UI
 cp -r ui-dist/* /media/usb/ui/
 
-# (Opcional) Copiar datos existentes
+# (Opcional) llevar los datos existentes
 cp -r ~/.hive/data /media/usb/datos/
 ```
 
-**Ejecutar en cualquier equipo Linux:**
+**Ejecutar desde la USB:**
 
 ```bash
+# Linux
 HIVE_HOME=/media/usb/datos HIVE_UI_DIR=/media/usb/ui /media/usb/hive start
-```
 
-El navegador se abre automáticamente. Si es la primera vez en ese equipo, muestra el wizard de setup. Si ya tienes datos en la USB, carga tu agente directamente.
-
-**En macOS:**
-
-```bash
+# macOS
 HIVE_HOME=/Volumes/USB/datos HIVE_UI_DIR=/Volumes/USB/ui /Volumes/USB/hive start
 ```
 
 **Backup de datos:**
 
 ```bash
-# Hacer backup de la BD
 cp ~/.hive/data/hive.db ~/backup-hive-$(date +%Y%m%d).db
-
-# Restaurar
-cp ~/backup-hive-20260310.db ~/.hive/data/hive.db
 ```
 
 ---
@@ -309,6 +513,33 @@ hive stop && hive start        # reinicia el gateway
 git clone https://github.com/johpaz/hive.git && cd hive
 bun install
 bun run dev
+```
+
+**Migrar datos a otro equipo (portable):**
+
+El ejecutable de Hive queda instalado globalmente en el sistema, pero **todos los datos viven en `~/.hive/`** — agentes, conversaciones, configuración, API keys. Para llevarlos a otro equipo basta con copiar esa carpeta:
+
+```bash
+# En el equipo origen — comprimir los datos
+tar -czf hive-datos.tar.gz -C ~ .hive
+
+# Copiar a USB, disco externo o transferir por red
+cp hive-datos.tar.gz /media/usb/
+
+# En el equipo destino — instalar Hive y restaurar datos
+bun install -g @johpaz/hive
+tar -xzf /media/usb/hive-datos.tar.gz -C ~
+
+# Arrancar — carga tu agente con toda su memoria
+hive start
+```
+
+> La carpeta `.hive` contiene la BD SQLite (`data/hive.db`), la UI web (`ui/`) y los logs. No contiene el binario de Hive — ese se reinstala con `bun install -g`.
+
+**Backup rápido solo de la BD:**
+
+```bash
+cp ~/.hive/data/hive.db ~/backup-hive-$(date +%Y%m%d).db
 ```
 
 ---
