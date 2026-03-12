@@ -114,7 +114,7 @@ docker run -d \
   -v hive-data:/root/.hive \
   --name hive \
   --restart unless-stopped \
-  johpaz/hive:latest
+  johpaz/hive:1.7.7
 ```
 
 **Variables de entorno disponibles:**
@@ -149,17 +149,17 @@ Descarga un ejecutable único para tu plataforma. No requiere Node, Bun ni Docke
 
 | Plataforma | Descarga |
 |------------|----------|
-| Linux x64 | [hive-v1.7.2-linux-x64](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.2-linux-x64) |
-| Linux ARM64 | [hive-v1.7.2-linux-arm64](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.2-linux-arm64) |
-| macOS Intel | [hive-v1.7.2-macos-x64](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.2-macos-x64) |
-| macOS Apple Silicon | [hive-v1.7.2-macos-arm64](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.2-macos-arm64) |
-| Windows x64 | [hive-v1.7.2-windows-x64.exe](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.2-windows-x64.exe) |
+| Linux x64 | [hive-v1.7.7-linux-x64](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-linux-x64) |
+| Linux ARM64 | [hive-v1.7.7-linux-arm64](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-linux-arm64) |
+| macOS Intel | [hive-v1.7.7-macos-x64](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-macos-x64) |
+| macOS Apple Silicon | [hive-v1.7.7-macos-arm64](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-macos-arm64) |
+| Windows x64 | [hive-v1.7.7-windows-x64.exe](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-windows-x64.exe) |
 
 **Instalación en Linux / macOS:**
 
 ```bash
 # 1. Descargar binario (ajusta la URL a tu plataforma)
-curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.2-linux-x64
+curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.7-linux-x64
 chmod +x hive
 
 # 2. Descargar la UI
@@ -173,10 +173,10 @@ mkdir -p ~/.hive/ui && mv ui-dist/* ~/.hive/ui/
 **Instalación en Windows:**
 
 ```powershell
-# 1. Descargar hive-v1.7.2-windows-x64.exe desde el link de arriba
+# 1. Descargar hive-v1.7.7-windows-x64.exe desde el link de arriba
 # 2. Descargar ui-dist.tar.gz y extraer en %USERPROFILE%\.hive\ui\
 # 3. Ejecutar
-.\hive-v1.7.2-windows-x64.exe start
+.\hive-v1.7.7-windows-x64.exe start
 ```
 
 **¿Dónde se guardan los datos?**
@@ -225,7 +225,7 @@ El binario standalone es ideal para llevarlo en una USB. Tu agente viaja contigo
 
 ```bash
 # Copiar binario
-cp hive-v1.7.2-linux-x64 /media/usb/hive
+cp hive-v1.7.7-linux-x64 /media/usb/hive
 chmod +x /media/usb/hive
 
 # Copiar UI

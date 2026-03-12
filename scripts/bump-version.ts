@@ -109,6 +109,16 @@ async function main() {
       pattern: /Personal Swarm AI Gateway — v[\d.]+/g,
       replacement: `Personal Swarm AI Gateway — v${newVersion}`,
     },
+    {
+      path: "README.md",
+      pattern: /hive-v[\d.]+/g,
+      replacement: `hive-v${newVersion}`,
+    },
+    {
+      path: "README.md",
+      pattern: /johpaz\/hive:[\d.]+/g,
+      replacement: `johpaz/hive:${newVersion}`,
+    },
   ];
 
   for (const file of tsFiles) {
