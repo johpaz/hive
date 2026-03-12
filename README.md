@@ -17,6 +17,28 @@ Hive es un Gateway de IA Orquestado — un Enjambre de Agentes Especializados qu
 
 ---
 
+## Por dentro
+
+51.937 líneas de TypeScript. Sin frameworks de agentes. Sin LangChain. Sin abstracciones intermedias. Todo construido desde cero sobre Bun + SQLite.
+
+```
+Language          files     blank   comment      code
+─────────────────────────────────────────────────────
+TypeScript          434      7671      2683     51937   ← motor, gateway, canales, UI
+Markdown             45      2225         0      8233
+JSON                 15         5         0       575
+CSS                   1       141        29       450
+YAML                  2        35        11       197
+Shell                 2        14         5        61
+Dockerfile            1        19        10        38
+─────────────────────────────────────────────────────
+TOTAL               504     10119      2741     61546
+```
+
+La imagen Docker pesa ~120 MB. El bundle npm pesa ~12 MB. El binario standalone ~50 MB. Todo el runtime cabe en una Raspberry Pi Zero 2W con 512 MB de RAM.
+
+---
+
 ## Instalación
 
 ### Prerequisito — Bun
