@@ -497,15 +497,22 @@ Please execute it now.`;
               ttsMimeType = audioOutput.mimeType;
               responseType = "audio";
 
-              const channel = channelManager.getChannel(message.channel);
-              if (channel?.sendAudio) {
-                await channel.sendAudio(routingSessionId, audioOutput.data as Buffer, audioOutput.mimeType);
-                log.info(`✅ Audio sent to ${routingSessionId}`);
-              } else {
+              try {
+                const channel = channelManager.getChannel(message.channel);
+                if (channel?.sendAudio) {
+                  await channel.sendAudio(routingSessionId, audioOutput.data as Buffer, audioOutput.mimeType);
+                  log.info(`✅ Audio sent to ${routingSessionId}`);
+                } else {
+                  log.warn(`Channel ${message.channel} does not support audio, sending text`);
+                  await channelManager.send(message.channel, routingSessionId, { content: responseContent });
+                }
+              } catch (audioError) {
+                log.error(`❌ Audio send failed: ${(audioError as Error).message}, sending text instead`);
+                // Fallback to text
                 await channelManager.send(message.channel, routingSessionId, { content: responseContent });
               }
-            } catch (error) {
-              log.error(`❌ TTS failed: ${(error as Error).message}), sending text instead`);
+            } catch (ttsError) {
+              log.error(`❌ TTS failed: ${(ttsError as Error).message}, sending text instead`);
               await channelManager.send(message.channel, routingSessionId, { content: responseContent });
             }
           }

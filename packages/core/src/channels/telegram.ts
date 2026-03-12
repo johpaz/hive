@@ -396,14 +396,41 @@ export class TelegramChannel extends BaseChannel {
       throw new Error(`Invalid chat ID from session: ${sessionId}`);
     }
 
-    try {
-      const inputFile = new InputFile(audio, "voice.ogg");
-      await this.bot!.api.sendVoice(chatId, inputFile);
-    } catch (error: unknown) {
-      if (error instanceof Error) {
-        this.log.error(`Telegram sendAudio error: ${error.message}`);
+    // Retry logic for sendVoice with exponential backoff
+    const maxRetries = 2;
+    const backoffMs = [3000, 6000];
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const inputFile = new InputFile(audio, "voice.ogg");
+        // Use explicit timeout for sendVoice (30 seconds)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        
+        await this.bot!.api.sendVoice(chatId, inputFile, {
+          signal: controller.signal,
+        });
+        
+        clearTimeout(timeoutId);
+        this.log.info(`✅ Voice sent to ${chatId}`);
+        return;
+      } catch (error: unknown) {
+        const err = error as Error & { error_code?: number };
+        
+        // Don't retry on client errors (4xx)
+        if (err.error_code === 400) {
+          this.log.error(`Bad Request: ${err.message}`);
+          throw error;
+        }
+
+        if (attempt < maxRetries - 1) {
+          this.log.warn(`sendVoice attempt ${attempt + 1} failed, retrying in ${backoffMs[attempt]}ms: ${err.message}`);
+          await new Promise(resolve => setTimeout(resolve, backoffMs[attempt]));
+        } else {
+          this.log.error(`Telegram sendVoice failed after ${maxRetries} attempts: ${err.message}`);
+          throw error;
+        }
       }
-      throw error;
     }
   }
 
