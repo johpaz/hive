@@ -106,8 +106,8 @@ async function main() {
     },
     {
       path: "packages/cli/src/commands/gateway.ts",
-      pattern: /Personal AI Gateway — v[\d.]+/g,
-      replacement: `Personal AI Gateway — v${newVersion}`,
+      pattern: /Personal Swarm AI Gateway — v[\d.]+/g,
+      replacement: `Personal Swarm AI Gateway — v${newVersion}`,
     },
   ];
 

@@ -51,10 +51,10 @@ jobs:
             runner: ubuntu-latest
             target: bun-linux-arm64
           - name: macos-x64
-            runner: macos-13
+            runner: ubuntu-latest
             target: bun-darwin-x64
           - name: macos-arm64
-            runner: macos-latest
+            runner: ubuntu-latest
             target: bun-darwin-arm64
           - name: windows-x64
             runner: ubuntu-latest
