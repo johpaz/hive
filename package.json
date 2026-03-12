@@ -1,10 +1,10 @@
 {
   "name": "@johpaz/hive",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "description": "Tu colmena de agentes IA. Local-first. Multi-canal. Open source. Construido desde Colombia para el mundo.",
   "private": false,
   "bin": {
-    "hive": "packages/cli/src/index.ts"
+    "hive": "dist/hive.js"
   },
   "main": "packages/core/src/index.ts",
   "types": "packages/core/src/index.ts",
@@ -22,6 +22,11 @@
     "./code-bridge": "./packages/code-bridge/src/index.ts",
     "./cli": "./packages/cli/src/index.ts"
   },
+  "files": [
+    "dist/hive.js",
+    "README.md",
+    "LICENSE"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/johpaz/hive.git"
@@ -51,7 +56,9 @@
     "doctor:dev": "HIVE_HOME=$HOME/.hive-dev HIVE_DEV=true bun run packages/cli/src/index.ts doctor",
     "dev:keep": "HIVE_HOME=$HOME/.hive-dev HIVE_DEV=true HIVE_DEV_CLEAN=false bun run packages/cli/src/index.ts dev",
     "start": "bun run packages/cli/src/index.ts start",
-    "build": "cd packages/cli && bun build src/index.ts --compile --outfile dist/hive-binary",
+    "build": "bun build packages/cli/src/index.ts --bundle --outfile dist/hive.js --target bun",
+    "build:binary": "cd packages/cli && bun build src/index.ts --compile --outfile dist/hive-binary",
+    "prepublishOnly": "bun run build",
     "test": "bun test",
     "test:ci": "bun test --coverage",
     "lint": "bunx tsc --noEmit",

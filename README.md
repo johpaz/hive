@@ -19,22 +19,38 @@ Hive es un Gateway de IA Orquestado — un Enjambre de Agentes Especializados qu
 
 ## Instalación
 
+### Prerequisito — Bun
+
+Hive requiere [Bun](https://bun.sh) como runtime para las opciones de binario y npm. Docker no lo requiere.
+
+```bash
+curl -fsSL https://bun.sh/install | bash
+source ~/.bashrc   # o reinicia la terminal
+bun --version      # verifica que quedó instalado
+```
+
+---
+
 Elige la opción que mejor se adapte a tu caso:
 
-| | Docker | Binario | npm |
+| | Docker | Binario | npm / bun |
 |---|---|---|---|
-| Requiere | Docker | Nada | Node o Bun |
-| Setup | 1 comando | descarga + ejecuta | `npm install -g` |
-| Ideal para | servidores, VPS | uso personal | desarrolladores |
-| Tamaño | ~120 MB imagen | ~50 MB | deps en node_modules |
+| Requiere | Docker | Bun | Bun |
+| Setup | 1 comando | descarga + ejecuta | `bun install -g @johpaz/hive` |
+| Actualizar | `docker compose pull` | descarga nueva versión | `bun install -g @johpaz/hive` |
+| Ideal para | Raspberry Pi, VPS, laptop vieja, VM | uso personal, USB | desarrolladores |
+| Abre navegador | automático (con GUI) / por IP (headless) | automático | automático |
+| Tamaño | ~120 MB imagen | ~50 MB | ~12 MB bundle |
 
 ---
 
 ### Opción 1 — Docker (Recomendada para servidores y VPS)
 
-La forma más rápida. Sin instalar Node, Bun ni dependencias.
+La forma más rápida. Sin instalar Node, Bun ni dependencias. Solo necesitas Docker.
 
-**Con el script incluido** (abre el navegador automáticamente):
+#### Laptop, PC o VM con interfaz gráfica
+
+Un solo comando que levanta todo y abre el navegador automáticamente:
 
 ```bash
 curl -O https://raw.githubusercontent.com/johpaz/hive/master/docker-compose.yml
@@ -45,14 +61,28 @@ chmod +x hive-docker.sh
 
 El script levanta el contenedor, espera a que el gateway esté listo y abre el navegador directamente en `/setup` (primera vez) o en el dashboard (si ya está configurado).
 
-**Con Docker Compose directamente** (sin abrir navegador):
+#### Raspberry Pi, VPS o servidor headless
+
+Sin interfaz gráfica, usa Docker Compose directamente:
 
 ```bash
+curl -O https://raw.githubusercontent.com/johpaz/hive/master/docker-compose.yml
 docker compose up -d
-# Luego abre manualmente: http://localhost:18790
 ```
 
-En la primera ejecución, `http://localhost:18790` redirige automáticamente a `/setup`.
+Luego accede desde cualquier equipo en la misma red usando la IP del servidor:
+
+```
+http://<ip-del-servidor>:18790
+```
+
+Para conocer la IP del servidor:
+
+```bash
+ip a | grep "inet " | grep -v 127.0.0.1
+```
+
+> **Raspberry Pi tip:** si usas el mismo Pi para todo, `http://raspberrypi.local:18790` suele funcionar sin necesitar la IP.
 
 **Con un solo comando** (sin Compose):
 
@@ -74,11 +104,19 @@ docker run -d \
 | `HIVE_AUTH_TOKEN` | — | Token de autenticación (opcional) |
 | `HIVE_LOG_LEVEL` | `info` | Nivel de logs (`debug`, `info`, `warn`, `error`) |
 
-**Persistencia:** todos los datos (DB, config, logs) se guardan en el volumen `hive-data`. Actualizar a una nueva versión no borra tu configuración:
+**Actualizar a la última versión:**
 
 ```bash
-docker pull johpaz/hive:latest
-docker compose up -d   # reinicia con la nueva imagen
+docker compose pull        # descarga la imagen más reciente de Docker Hub
+docker compose up -d       # reinicia el contenedor con la nueva imagen
+```
+
+Los datos (BD, config, logs) se persisten en el volumen `hive-data` — actualizar no borra tu configuración.
+
+**Ver logs en tiempo real:**
+
+```bash
+docker compose logs -f hive
 ```
 
 ---
@@ -201,28 +239,49 @@ cp ~/backup-hive-20260310.db ~/.hive/data/hive.db
 
 ---
 
-### Opción 3 — npm / bun (Para desarrolladores)
+### Opción 3 — bun (Para desarrolladores)
+
+> Requiere Bun instalado — ver prerequisito al inicio de esta sección.
+
+**Instalación global:**
 
 ```bash
-# Con npm
-npm install -g @johpaz/hive
-
-# Con bun
 bun install -g @johpaz/hive
+```
 
-# Iniciar — abre el navegador automáticamente
+> Si instalas con `npm install -g @johpaz/hive` también funciona, pero igualmente necesitas Bun instalado — el CLI lo usa como runtime.
+
+**Iniciar:**
+
+```bash
 hive start
 ```
 
-Si es la primera vez, el navegador se abre en `http://localhost:18790/setup` automáticamente.
+El navegador se abre automáticamente en `http://localhost:18790`. Si es la primera vez, redirige a `/setup` para configurar tu agente.
 
-Para configurar desde la terminal en lugar del browser:
+**Configurar desde terminal** (sin browser):
 
 ```bash
 hive onboard
 ```
 
-Para modo desarrollo (hot-reload + Vite):
+**Comandos útiles:**
+
+```bash
+hive status          # estado del gateway
+hive logs --follow   # logs en tiempo real
+hive stop            # detener el gateway
+hive doctor          # diagnóstico del sistema
+```
+
+**Actualizar a la última versión:**
+
+```bash
+bun install -g @johpaz/hive   # instala la versión más reciente
+hive stop && hive start        # reinicia el gateway
+```
+
+**Modo desarrollo** (hot-reload + Vite, para contribuir al proyecto):
 
 ```bash
 git clone https://github.com/johpaz/hive.git && cd hive

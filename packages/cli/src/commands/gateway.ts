@@ -124,7 +124,7 @@ async function waitForPort(port: number, timeout: number = 30000): Promise<boole
       });
       if (response.ok) {
         // Distinguish "gateway fully initialized" from "still starting up"
-        const body = await response.json().catch(() => ({}))
+        const body = (await response.json().catch(() => ({}))) as { status?: string };
         if (body?.status === "ok") return true;
         // status === "starting" → keep waiting
       }
@@ -196,7 +196,7 @@ export async function start(flags: string[]): Promise<void> {
  ║   ██║  ██║██║ ╚████╔╝ ███████╗             ║
  ║   ╚═╝  ╚═╝╚═╝  ╚═══╝  ╚══════╝             ║
  ║                                            ║
- ║   Personal Swarm AI Gateway — v1.7.2       ║
+ ║   Personal Swarm AI Gateway — v1.7.3       ║
  ╚════════════════════════════════════════════╝
 `);
   }
