@@ -112,7 +112,7 @@ export async function handleGetUsageStats(req: Request, addCorsHeaders: (r: Resp
   const toonSavedTokens = toonTotals?.toonSavedTokens || 0
   const toonSavedCost = toonTotals?.toonSavedCost || 0
   const toonSavingsPercent = totalTokens > 0
-    ? (toonSavedTokens / totalTokens) * 100
+    ? (toonSavedTokens / (totalTokens + toonSavedTokens)) * 100
     : 0
 
   const stats: UsageStats = {
@@ -141,7 +141,7 @@ export async function handleGetUsageStats(req: Request, addCorsHeaders: (r: Resp
       }])
     ),
   }
-  
+
   return addCorsHeaders(Response.json(stats), req)
 }
 

@@ -119,6 +119,7 @@ function ensureSchemaSync(): void {
     // Context Engine tables — ensure created_at/updated_at columns exist
     ensureColumnExists("conversations", "created_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
     ensureColumnExists("conversations", "updated_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
+    ensureColumnExists("conversations", "reasoning_content", "TEXT"); // Kimi K2 thinking round-trip
     ensureColumnExists("summaries", "created_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
     ensureColumnExists("summaries", "updated_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
     ensureColumnExists("scratchpad", "created_at", "INTEGER NOT NULL DEFAULT (unixepoch())");

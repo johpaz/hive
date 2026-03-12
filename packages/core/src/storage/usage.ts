@@ -17,9 +17,9 @@ const MODEL_PRICING: Record<string, { inputPer1M: number; outputPer1M: number }>
   // ── OpenAI (fuente: openrouter.ai/api/v1/models) ──
   "gpt-4o":         { inputPer1M: 2.5,  outputPer1M: 10    },
   "gpt-4o-mini":    { inputPer1M: 0.15, outputPer1M: 0.6   },
-  "gpt-5.4":        { inputPer1M: 2.5,  outputPer1M: 15    },  // $0.0000025 / $0.000015
-  "gpt-5.4-pro":    { inputPer1M: 30,   outputPer1M: 180   },  // $0.00003 / $0.00018
-  "gpt-5.3":        { inputPer1M: 1.75, outputPer1M: 14    },  // $0.00000175 / $0.000014
+  "gpt-5.4":        { inputPer1M: 2.5,  outputPer1M: 15    },
+  "gpt-5.4-pro":    { inputPer1M: 30,   outputPer1M: 180   },
+  "gpt-5.3":        { inputPer1M: 1.75, outputPer1M: 14    },
   "gpt-5.2":        { inputPer1M: 1.75, outputPer1M: 14    },
   "o4-mini":        { inputPer1M: 1.1,  outputPer1M: 4.4   },
   "openai/gpt-5.4":     { inputPer1M: 2.5,  outputPer1M: 15  },
@@ -30,9 +30,9 @@ const MODEL_PRICING: Record<string, { inputPer1M: number; outputPer1M: number }>
   "openai/gpt-oss-20b":  { inputPer1M: 0.075, outputPer1M: 0.3 },
 
   // ── Google Gemini (fuente: openrouter.ai/api/v1/models) ──
-  "gemini-3.1-pro-preview":        { inputPer1M: 2,    outputPer1M: 12   },  // $0.000002 / $0.000012
-  "gemini-3.1-flash-lite-preview":  { inputPer1M: 0.25, outputPer1M: 1.5  },  // $0.00000025 / $0.0000015
-  "gemini-3-flash-preview":         { inputPer1M: 0.5,  outputPer1M: 3    },  // $0.0000005 / $0.000003
+  "gemini-3.1-pro-preview":        { inputPer1M: 2,    outputPer1M: 12   },
+  "gemini-3.1-flash-lite-preview":  { inputPer1M: 0.25, outputPer1M: 1.5  },
+  "gemini-3-flash-preview":         { inputPer1M: 0.5,  outputPer1M: 3    },
   "gemini-2.5-pro":                 { inputPer1M: 1.25, outputPer1M: 10   },
   "gemini-2.5-flash":               { inputPer1M: 0.15, outputPer1M: 0.6  },
   "gemini-2.0-flash":               { inputPer1M: 0.1,  outputPer1M: 0.4  },
@@ -43,7 +43,7 @@ const MODEL_PRICING: Record<string, { inputPer1M: number; outputPer1M: number }>
   "google/gemini-2.5-flash":              { inputPer1M: 0.15, outputPer1M: 0.6 },
 
   // ── Mistral (fuente: openrouter.ai/api/v1/models) ──
-  "mistral-large-2512":             { inputPer1M: 0.5,  outputPer1M: 1.5  },  // $0.0000005 / $0.0000015
+  "mistral-large-2512":             { inputPer1M: 0.5,  outputPer1M: 1.5  },
   "devstral-2512":                  { inputPer1M: 0.4,  outputPer1M: 2    },
   "ministral-14b-2512":             { inputPer1M: 0.2,  outputPer1M: 0.2  },
   "ministral-8b-2512":              { inputPer1M: 0.15, outputPer1M: 0.15 },
@@ -55,7 +55,7 @@ const MODEL_PRICING: Record<string, { inputPer1M: number; outputPer1M: number }>
   // ── DeepSeek (fuente: api-docs.deepseek.com/quick_start/pricing) ──
   "deepseek-chat":     { inputPer1M: 0.28, outputPer1M: 0.42 },
   "deepseek-reasoner": { inputPer1M: 0.28, outputPer1M: 0.42 },
-  "deepseek/deepseek-v3.2":   { inputPer1M: 0.25, outputPer1M: 0.4  },  // $0.00000025 / $0.0000004
+  "deepseek/deepseek-v3.2":   { inputPer1M: 0.25, outputPer1M: 0.4  },
   "deepseek/deepseek-r1:free": { inputPer1M: 0,    outputPer1M: 0    },
 
   // ── Kimi / Moonshot (fuente: openrouter.ai/moonshotai) ──
@@ -74,7 +74,7 @@ const MODEL_PRICING: Record<string, { inputPer1M: number; outputPer1M: number }>
   // ── Qwen (vía OpenRouter) ──
   "qwen/qwen3.5-plus-02-15":  { inputPer1M: 0.26, outputPer1M: 1.56 },
   "qwen/qwen3.5-flash-02-23": { inputPer1M: 0.1,  outputPer1M: 0.4  },
-  "qwen/qwen3-32b":           { inputPer1M: 0,    outputPer1M: 0    },  // Groq free
+  "qwen/qwen3-32b":           { inputPer1M: 0,    outputPer1M: 0    },
 
   // ── Groq (fuente: console.groq.com/docs/models) ──
   "llama-3.3-70b-versatile": { inputPer1M: 0.59, outputPer1M: 0.79 },
@@ -129,16 +129,14 @@ export function recordUsage(options: {
   inputTokens: number;
   outputTokens: number;
   latencyMs?: number;
-  toonSavedTokens?: number;
-  toonSavedCost?: number;
 }): void {
   try {
     const db = getDb();
     const costUsd = calculateCost(options.model, options.inputTokens, options.outputTokens);
-    
+
     db.prepare(`
-      INSERT INTO usage_records (id, provider, model, input_tokens, output_tokens, cost_usd, latency_ms, toon_saved_tokens, toon_saved_cost, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO usage_records (id, provider, model, input_tokens, output_tokens, cost_usd, latency_ms, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       randomUUID(),
       options.provider,
@@ -147,11 +145,9 @@ export function recordUsage(options: {
       options.outputTokens,
       costUsd,
       options.latencyMs || null,
-      options.toonSavedTokens || 0,
-      options.toonSavedCost || 0,
       Math.floor(Date.now() / 1000)
     );
-    log.info(`[USAGE RECORDED] provider=${options.provider} model=${options.model} input=${options.inputTokens} output=${options.outputTokens} cost=$${costUsd.toFixed(4)} toonSaved=${options.toonSavedTokens || 0}`);
+    log.info(`[USAGE RECORDED] provider=${options.provider} model=${options.model} input=${options.inputTokens} output=${options.outputTokens} cost=$${costUsd.toFixed(4)}`);
   } catch (error) {
     console.error("Failed to record usage:", error);
   }
@@ -163,7 +159,7 @@ export function getUsageStats(hours: number = 24): UsageSummary {
   const since = Math.floor(Date.now() / 1000) - (hours * 3600);
 
   const totals = db.prepare(`
-    SELECT 
+    SELECT
       COALESCE(SUM(input_tokens), 0) as total_input,
       COALESCE(SUM(output_tokens), 0) as total_output,
       COALESCE(SUM(cost_usd), 0) as total_cost,
@@ -174,7 +170,7 @@ export function getUsageStats(hours: number = 24): UsageSummary {
   `).get(since) as { total_input: number; total_output: number; total_cost: number; toon_saved_tokens: number; toon_saved_cost: number };
 
   const byProvider = db.prepare(`
-    SELECT 
+    SELECT
       provider,
       COALESCE(SUM(input_tokens), 0) as input_tokens,
       COALESCE(SUM(output_tokens), 0) as output_tokens,
@@ -185,7 +181,7 @@ export function getUsageStats(hours: number = 24): UsageSummary {
   `).all(since) as Array<{ provider: string; input_tokens: number; output_tokens: number; cost_usd: number }>;
 
   const byModel = db.prepare(`
-    SELECT 
+    SELECT
       model,
       provider,
       COALESCE(SUM(input_tokens), 0) as input_tokens,
@@ -226,8 +222,8 @@ export function getUsageStats(hours: number = 24): UsageSummary {
   }
 
   const totalTokens = totals.total_input + totals.total_output;
-  const toonSavingsPercent = totalTokens > 0 
-    ? (totals.toon_saved_tokens / totalTokens) * 100 
+  const toonSavingsPercent = totalTokens > 0
+    ? (totals.toon_saved_tokens / (totalTokens + totals.toon_saved_tokens)) * 100
     : 0;
 
   return {
@@ -253,18 +249,47 @@ export function estimateCostForTokens(model: string, tokens: number): number {
   return (tokens / 1_000_000) * pricing.inputPer1M;
 }
 
-// Pending TOON savings — set before LLM invoke, consumed in handleLLMEnd callback
-let pendingToonTokens = 0;
-let pendingToonCost = 0;
-
-export function setPendingToonSavings(tokens: number, cost: number): void {
-  pendingToonTokens = tokens;
-  pendingToonCost = cost;
+/**
+ * Get average cost per token for a model (input + output average)
+ */
+export function getAverageTokenCost(model: string): number {
+  const pricing = MODEL_PRICING[model] || { inputPer1M: 0, outputPer1M: 0 };
+  // Average of input and output cost per token
+  return (pricing.inputPer1M + pricing.outputPer1M) / 2 / 1_000_000;
 }
 
-export function consumePendingToonSavings(): { tokens: number; cost: number } {
-  const result = { tokens: pendingToonTokens, cost: pendingToonCost };
-  pendingToonTokens = 0;
-  pendingToonCost = 0;
-  return result;
+/**
+ * Record TOON savings for metrics tracking
+ * This updates the usage_records table with TOON savings
+ */
+export function recordToonSavings(tokensSaved: number, costSaved: number, category: string): void {
+  // Fire-and-forget to avoid blocking
+  Promise.resolve().then(async () => {
+    try {
+      const db = getDb();
+
+      // Update or insert TOON savings record
+      db.query(`
+        INSERT INTO usage_records (id, provider, model, input_tokens, output_tokens, cost_usd, toon_saved_tokens, toon_saved_cost, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          toon_saved_tokens = toon_saved_tokens + excluded.toon_saved_tokens,
+          toon_saved_cost = toon_saved_cost + excluded.toon_saved_cost
+      `).run(
+        `toon_${category}_${Date.now()}`,
+        'toon',
+        category,
+        0,
+        0,
+        0,
+        tokensSaved,
+        costSaved,
+        Math.floor(Date.now() / 1000),
+      )
+
+      log.debug(`[TOON] Recorded ${tokensSaved} tokens ($${costSaved.toFixed(6)}) saved for ${category}`)
+    } catch (error) {
+      log.warn(`[TOON] Failed to record savings:`, error)
+    }
+  })
 }

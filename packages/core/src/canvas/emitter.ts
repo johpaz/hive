@@ -21,6 +21,10 @@ export type CanvasEventType =
 
 const subscribers = new Set<{ send: (data: string) => void }>()
 
+interface AgentLiveState { status: string; currentTool: string | null }
+const agentLiveState = new Map<string, AgentLiveState>()
+const canvasComponents = new Map<string, unknown>()
+
 export function subscribeCanvas(ws: { send: (data: string) => void }) {
   subscribers.add(ws)
 }
@@ -30,6 +34,23 @@ export function unsubscribeCanvas(ws: { send: (data: string) => void }) {
 }
 
 export function emitCanvas(type: CanvasEventType, data: any) {
+  // Track canvas components for new subscribers
+  if (type === "canvas:render" && data?.component?.id) {
+    canvasComponents.set(data.component.id, data.component)
+  }
+  if (type === "canvas:clear") {
+    canvasComponents.clear()
+  }
+
+  // Track live agent state for new subscribers
+  if (type === "canvas:node_update" && data?.nodeId && data?.changes) {
+    const prev = agentLiveState.get(data.nodeId) ?? { status: "idle", currentTool: null }
+    agentLiveState.set(data.nodeId, {
+      status: data.changes.status ?? prev.status,
+      currentTool: "currentTool" in data.changes ? data.changes.currentTool : prev.currentTool,
+    })
+  }
+
   const event: CanvasEvent = { type, data, timestamp: Date.now() }
   const payload = JSON.stringify(event)
   for (const ws of subscribers) {
@@ -47,13 +68,17 @@ export function getCanvasSnapshot() {
   const agentNodes = db
     .query<any, []>("SELECT id, name, description, status FROM agents")
     .all()
-    .map((a: any) => ({
-      id: a.id,
-      name: a.name,
-      description: a.description,
-      status: a.status,
-      type: "agent",
-    }))
+    .map((a: any) => {
+      const live = agentLiveState.get(a.id)
+      return {
+        id: a.id,
+        name: a.name,
+        description: a.description,
+        status: live?.status ?? a.status,
+        type: "agent",
+        data: { currentTool: live?.currentTool ?? null },
+      }
+    })
 
   const mcpNodes = db
     .query<any, []>("SELECT id, name, status FROM mcp_servers WHERE enabled = 1")
@@ -115,5 +140,6 @@ export function getCanvasSnapshot() {
   return {
     nodes: [...agentNodes, ...mcpNodes, ...projectNodes, ...taskNodes],
     edges: [...projectTaskEdges, ...taskAgentEdges],
+    components: Array.from(canvasComponents.values()),
   }
 }

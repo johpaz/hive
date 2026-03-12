@@ -13,6 +13,8 @@ interface RequestOptions {
   showSuccess?: boolean | string | ((data: any) => boolean | string);
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
 export async function apiClient<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
   const {
     method = "GET",
@@ -38,7 +40,7 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
     requireAuth
   });
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const fetchOpts: RequestInit = {
     method,
     headers: {
       "Content-Type": "application/json",
@@ -47,7 +49,27 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
       ...headers,
     },
     body: body ? JSON.stringify(body) : undefined,
-  });
+  }
+
+  // Retry on network errors (gateway may still be starting up)
+  let response: Response | null = null
+  const MAX_RETRIES = 3
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      response = await fetch(`${API_BASE_URL}${endpoint}`, fetchOpts)
+      break
+    } catch (err) {
+      // TypeError: Failed to fetch = network error (CORS, connection refused, gateway starting)
+      if (attempt < MAX_RETRIES) {
+        console.warn(`[API] Network error on ${endpoint}, retrying in ${(attempt + 1) * 2}s…`)
+        await sleep((attempt + 1) * 2000)
+      } else {
+        if (showLoader) useLoaderStore.getState().hideLoader()
+        throw err
+      }
+    }
+  }
+  response = response!
 
   if (showLoader) {
     useLoaderStore.getState().hideLoader();

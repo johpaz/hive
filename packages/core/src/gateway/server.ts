@@ -97,7 +97,18 @@ export async function startGateway(config: Config): Promise<void> {
   let server = Bun.serve<WebSocketData>({
     port,
     hostname: host,
-    fetch: (_req) => Response.json({ status: "starting" }),
+    fetch: (req) => {
+      const origin = req.headers.get("Origin") ?? ""
+      const isLocalhost = origin.includes("localhost") || origin.includes("127.0.0.1")
+      const corsHeaders = isLocalhost ? {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, X-Requested-With",
+        "Access-Control-Allow-Credentials": "true",
+      } : {}
+      if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders })
+      return Response.json({ status: "starting" }, { headers: corsHeaders })
+    },
     websocket: { open() { }, message() { }, close() { } },
   });
   log.info(`Port ${port} bound (initializing gateway...)`);

@@ -25,6 +25,7 @@ interface GatewayMessage {
     nodes?: GraphNode[];
     edges?: GraphEdge[];
     id?: string;
+    components?: CanvasComponent[];
     [key: string]: unknown;
   };
 }
@@ -35,6 +36,7 @@ interface CanvasState {
   selectedComponentId: string | null;
   sessionId: string | null;
   isConnected: boolean;
+  isReconnecting: boolean;
   graphNodes: GraphNode[];
   graphEdges: GraphEdge[];
 
@@ -58,6 +60,8 @@ interface CanvasState {
 }
 
 let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+let reconnectDelay = 3000;
+const MAX_RECONNECT_DELAY = 60000;
 
 export const useCanvasStore = create<CanvasState>((set, get) => ({
   ws: null,
@@ -65,6 +69,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   selectedComponentId: null,
   sessionId: null,
   isConnected: false,
+  isReconnecting: false,
   graphNodes: [],
   graphEdges: [],
 
@@ -127,7 +132,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
     socket.onopen = () => {
       console.log(`[CanvasStore] Connected with sessionId: ${sessionId}`);
-      set({ isConnected: true, sessionId, ws: socket });
+      reconnectDelay = 3000;
+      set({ isConnected: true, isReconnecting: false, sessionId, ws: socket });
 
       // Handshake
       socket.send(JSON.stringify({
@@ -170,7 +176,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         } else if (message.type === "canvas:snapshot") {
           const d = message.data;
           if (d && Array.isArray(d.nodes) && Array.isArray(d.edges)) {
-            set({ graphNodes: d.nodes as GraphNode[], graphEdges: d.edges as GraphEdge[] });
+            const updates: Partial<CanvasState> = {
+              graphNodes: d.nodes as GraphNode[],
+              graphEdges: d.edges as GraphEdge[],
+            };
+            if (Array.isArray(d.components)) {
+              updates.components = d.components as CanvasComponent[];
+            }
+            set(updates);
           }
         } else if (message.type === "canvas:node_add") {
           const raw = message.data as Record<string, unknown>;
@@ -202,6 +215,36 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         } else if (message.type === "canvas:edge_add") {
           const edge = message.data as unknown as GraphEdge;
           if (edge?.id) get().addGraphEdge(edge);
+        } else if (message.type === "canvas:ask") {
+          const d = message.data as Record<string, unknown> ?? {};
+          const component: CanvasComponent = {
+            id: (d.id as string) || `ask_${Date.now()}`,
+            type: "form",
+            props: { question: d.question, fields: d.fields ?? [], raw: d },
+            position: { x: 0, y: 0 },
+            size: { width: 400, height: 300 },
+            agentId: (d.agentId as string) || "",
+          };
+          set((s) => {
+            const existing = s.components.find((c) => c.id === component.id);
+            if (existing) return { components: s.components.map(c => c.id === component.id ? component : c) };
+            return { components: [...s.components, component] };
+          });
+        } else if (message.type === "canvas:confirm") {
+          const d = message.data as Record<string, unknown> ?? {};
+          const component: CanvasComponent = {
+            id: (d.id as string) || `confirm_${Date.now()}`,
+            type: "alert-dialog",
+            props: { message: d.message, confirmLabel: d.confirmLabel ?? "Confirmar", cancelLabel: d.cancelLabel ?? "Cancelar", raw: d },
+            position: { x: 0, y: 0 },
+            size: { width: 400, height: 200 },
+            agentId: (d.agentId as string) || "",
+          };
+          set((s) => {
+            const existing = s.components.find((c) => c.id === component.id);
+            if (existing) return { components: s.components.map(c => c.id === component.id ? component : c) };
+            return { components: [...s.components, component] };
+          });
         }
       } catch (e) {
         console.error("[CanvasStore] Parse error:", e);
@@ -222,9 +265,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         heartbeatInterval = null;
       }
 
-      // Auto-reconnect after 3 seconds if not intentionally closed
+      // Auto-reconnect with exponential backoff if not intentionally closed
       if (event.code !== 1000 && event.code !== 1001) {
-        setTimeout(() => get().connect(sessionId, userId), 3000);
+        set({ isReconnecting: true });
+        console.log(`[CanvasStore] Reconnecting in ${reconnectDelay}ms...`);
+        setTimeout(() => {
+          reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
+          get().connect(sessionId, userId);
+        }, reconnectDelay);
       }
     };
   },

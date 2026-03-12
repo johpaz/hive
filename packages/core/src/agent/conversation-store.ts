@@ -22,6 +22,7 @@ export interface StoredMessage {
   content: string
   tool_calls_json: string | null
   tool_call_id: string | null
+  reasoning_content: string | null  // Kimi K2 thinking — must be round-tripped
   token_count: number
   created_at: number
 }
@@ -36,6 +37,7 @@ export function addMessage(
     channel?: string
     tool_calls?: LLMMessage["tool_calls"]
     tool_call_id?: string
+    reasoning_content?: string
   }
 ): number {
   const db = getDb()
@@ -44,8 +46,8 @@ export function addMessage(
     : null
 
   const result = db.query(`
-    INSERT INTO conversations (thread_id, channel, role, content, tool_calls_json, tool_call_id, token_count, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())
+    INSERT INTO conversations (thread_id, channel, role, content, tool_calls_json, tool_call_id, reasoning_content, token_count, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
     RETURNING id
   `).get(
     threadId,
@@ -54,6 +56,7 @@ export function addMessage(
     content,
     tool_calls_json,
     opts?.tool_call_id ?? null,
+    opts?.reasoning_content ?? null,
     estimateTokens(content) + estimateTokens(tool_calls_json ?? ""),
   ) as { id: number }
 
@@ -74,7 +77,12 @@ export function getHistory(threadId: string, limit = 200): StoredMessage[] {
 }
 
 /**
- * Returns only the last N messages (oldest → newest order).
+ * Returns only the last N messages (oldest → newest order),
+ * with leading orphaned tool messages stripped from the window start.
+ *
+ * A tool message is "orphaned" when the assistant message that issued its
+ * tool_call_id is not present in the loaded window (it was compacted away).
+ * Sending orphaned tool messages to the LLM causes provider errors.
  */
 export function getRecentMessages(threadId: string, n: number): StoredMessage[] {
   const db = getDb()
@@ -84,7 +92,36 @@ export function getRecentMessages(threadId: string, n: number): StoredMessage[] 
     ORDER BY id DESC
     LIMIT ?
   `).all(threadId, n) as StoredMessage[]
-  return rows.reverse()
+  return stripLeadingOrphanedTools(rows.reverse())
+}
+
+function stripLeadingOrphanedTools(rows: StoredMessage[]): StoredMessage[] {
+  // Collect all tool_call_ids referenced by assistant messages in this window
+  const knownIds = new Set<string>()
+  for (const r of rows) {
+    if (r.role === "assistant" && r.tool_calls_json) {
+      try {
+        const tcs = JSON.parse(r.tool_calls_json) as Array<{ id: string }>
+        for (const tc of tcs) knownIds.add(tc.id)
+      } catch { /* ignore malformed JSON */ }
+    }
+  }
+
+  // Drop tool messages at the start of the window whose assistant is missing
+  let start = 0
+  while (
+    start < rows.length &&
+    rows[start].role === "tool" &&
+    rows[start].tool_call_id !== null &&
+    !knownIds.has(rows[start].tool_call_id!)
+  ) {
+    start++
+  }
+
+  if (start > 0) {
+    log.warn(`[conv-store] Stripped ${start} leading orphaned tool message(s) from window (tool_call_ids outside window)`)
+  }
+  return start > 0 ? rows.slice(start) : rows
 }
 
 export function getMessageCount(threadId: string): number {
@@ -124,6 +161,7 @@ export function toAPIMessages(rows: StoredMessage[]): LLMMessage[] {
       try { msg.tool_calls = JSON.parse(r.tool_calls_json) } catch { /* ignore */ }
     }
     if (r.tool_call_id) msg.tool_call_id = r.tool_call_id
+    if (r.reasoning_content) msg.reasoning_content = r.reasoning_content
     return msg
   })
 }

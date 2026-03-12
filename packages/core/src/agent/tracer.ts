@@ -94,8 +94,6 @@ export function recordLLMUsage(opts: {
         model: opts.model,
         inputTokens: opts.inputTokens,
         outputTokens: opts.outputTokens,
-        toonSavedTokens: 0,
-        toonSavedCost: 0,
       })
     } catch { /* ignore */ }
   })

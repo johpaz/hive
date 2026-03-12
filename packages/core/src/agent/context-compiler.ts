@@ -123,7 +123,7 @@ export async function compileContext(opts: {
     throw new Error(`Agent not found: ${agentId}`)
   }
 
-  const isWorker = agent.role === 'worker' || isolated
+  const isWorker = agent.role === 'worker' || !!isolated
   log.info(`[context-compiler] [STEP-1] ✅ Compiling for ${isWorker ? 'worker' : 'coordinator'} agent=${agent.name}`)
 
   // [STEP-2] STRATEGY 1: WRITE — Load scratchpad (persistent notes)

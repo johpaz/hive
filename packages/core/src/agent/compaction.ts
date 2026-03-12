@@ -72,7 +72,18 @@ export async function compactThread(
   const allMessages = getHistory(threadId)
   if (allMessages.length <= KEEP_LAST_N_MESSAGES) return
 
-  const toSummarize = allMessages.slice(0, allMessages.length - KEEP_LAST_N_MESSAGES)
+  // Find a clean cut point: the "keep" side must begin with a user turn so
+  // we never leave orphaned tool messages at the start of the visible window.
+  let cutIndex = allMessages.length - KEEP_LAST_N_MESSAGES
+  while (cutIndex > 0 && allMessages[cutIndex]?.role !== "user") {
+    cutIndex--
+  }
+  if (cutIndex <= 0) {
+    log.info(`[compaction] No clean user-turn boundary found — skipping`)
+    return
+  }
+
+  const toSummarize = allMessages.slice(0, cutIndex)
   if (toSummarize.length === 0) return
 
   const lastSummarizedId = toSummarize[toSummarize.length - 1].id

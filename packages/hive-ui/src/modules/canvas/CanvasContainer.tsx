@@ -72,12 +72,14 @@ function TaskStatusIcon({ status }: { status: string }) {
 }
 
 function AgentGraphNode({ node }: { node: GraphNode }) {
+  const currentTool = (node.data?.currentTool as string | null) ?? null;
+  const isActive = node.status === "thinking" || node.status === "tool_call";
   return (
     <div className="hive-card group">
       <div className="hive-card-body">
         <div className="flex items-center gap-2">
           <div className="hive-icon-wrap hive-icon-wrap--primary">
-            <Bot className="h-3.5 w-3.5" />
+            <Bot className={`h-3.5 w-3.5 ${isActive ? "animate-pulse" : ""}`} />
           </div>
           <span className="text-sm font-medium truncate flex-1">{node.name}</span>
         </div>
@@ -87,6 +89,9 @@ function AgentGraphNode({ node }: { node: GraphNode }) {
         >
           {STATUS_LABELS[node.status] ?? node.status}
         </Badge>
+        {node.status === "tool_call" && currentTool && (
+          <p className="text-[10px] text-cyan-400 mt-1 font-mono truncate">⚙ {currentTool}</p>
+        )}
       </div>
     </div>
   );
@@ -253,6 +258,7 @@ function GraphView({ nodes, edges }: { nodes: GraphNode[]; edges: GraphEdge[] })
 export function CanvasContainer({ sessionId: propSessionId }: CanvasContainerProps) {
   const user = useUserStore((s) => s.currentUser);
   const isConnected = useCanvasStore((s) => s.isConnected);
+  const isReconnecting = useCanvasStore((s) => s.isReconnecting);
   const components = useCanvasStore((s) => s.components);
   const graphNodes = useCanvasStore((s) => s.graphNodes);
   const graphEdges = useCanvasStore((s) => s.graphEdges);
@@ -301,13 +307,24 @@ export function CanvasContainer({ sessionId: propSessionId }: CanvasContainerPro
         </div>
 
         <Badge
-          variant={isConnected ? "default" : "destructive"}
-          className={`flex items-center gap-1.5 px-3 py-1 transition-all duration-500 ${isConnected ? "bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/20" : "bg-red-500/15 text-red-500 hover:bg-red-500/20"}`}
+          variant="outline"
+          className={`flex items-center gap-1.5 px-3 py-1 transition-all duration-500 border ${
+            isConnected
+              ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/20"
+              : isReconnecting
+              ? "bg-yellow-500/15 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20"
+              : "bg-red-500/15 text-red-500 border-red-500/20 hover:bg-red-500/20"
+          }`}
         >
           {isConnected ? (
             <>
               <Wifi className="h-3.5 w-3.5 animate-pulse" />
               <span className="font-semibold uppercase tracking-wider text-[10px]">Live</span>
+            </>
+          ) : isReconnecting ? (
+            <>
+              <Wifi className="h-3.5 w-3.5 animate-pulse" />
+              <span className="font-semibold uppercase tracking-wider text-[10px]">Reconectando</span>
             </>
           ) : (
             <>

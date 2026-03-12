@@ -120,11 +120,13 @@ async function waitForPort(port: number, timeout: number = 30000): Promise<boole
   while (Date.now() - start < timeout) {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/health`, {
-        method: "HEAD",
         signal: AbortSignal.timeout(1000)
       });
-      if (response.ok || response.status === 204) {
-        return true;
+      if (response.ok) {
+        // Distinguish "gateway fully initialized" from "still starting up"
+        const body = await response.json().catch(() => ({}))
+        if (body?.status === "ok") return true;
+        // status === "starting" → keep waiting
       }
     } catch {
       // Port not ready yet

@@ -128,8 +128,24 @@ function sanitizeMessages(messages: LLMMessage[]): LLMMessage[] {
 
 const GEMINI_PROVIDERS = new Set(["gemini", "google"])
 
-// Models that only accept temperature=1 (reasoning/thinking models)
-const FIXED_TEMPERATURE_1_MODELS = new Set(["kimi-k2.5", "kimi-k2"])
+// Models that only accept temperature=1 (reasoning/thinking models).
+// Kimi K2 and variants: match by substring since model_id may include
+// prefix/suffix like "kimi/kimi-k2", "kimi-k2.5", "kimi-k2-5", etc.
+const FIXED_TEMPERATURE_1_MODELS = new Set(["kimi-k2.5", "kimi-k2", "kimi-k2-5"])
+
+/**
+ * Returns true when the model requires temperature=1.
+ * Used for Kimi K2 thinking mode which rejects any other temperature.
+ */
+function requiresTemperature1(provider: string, model: string): boolean {
+  if (FIXED_TEMPERATURE_1_MODELS.has(model)) return true
+  // Catch variants stored with provider prefix or dot/dash differences
+  if (provider === "kimi") {
+    const m = model.toLowerCase()
+    if (m.includes("k2")) return true
+  }
+  return false
+}
 
 const OPENAI_COMPAT_BASE_URLS: Record<string, string> = {
   groq: "https://api.groq.com/openai/v1",
@@ -204,6 +220,13 @@ async function callGemini(options: LLMCallOptions): Promise<LLMResponse> {
   // Each pass may create new violations (stripping an fc orphans its fr, etc.).
   // Iterating until stable guarantees convergence since each pass reduces parts/turns.
   const contents: any[] = rawContents
+
+  // Strip leading model turns — they have no preceding user turn by definition and
+  // would cascade into orphaned functionResponse strips during constraint enforcement.
+  while (contents.length > 0 && contents[0].role === "model") {
+    log.warn(`[llm-client] Gemini: removed leading model turn (no preceding user turn)`)
+    contents.shift()
+  }
 
   let changed = true
   let safetyLimit = 10
@@ -534,10 +557,20 @@ async function callOpenAICompat(options: LLMCallOptions): Promise<LLMResponse> {
 
   const client = new OpenAI({ apiKey, baseURL })
 
+  const isKimi = options.provider === "kimi"
+
+  // Kimi K2 requires reasoning_content to be round-tripped in assistant messages
+  // (thinking mode). Every other OpenAI-compat provider rejects unknown fields —
+  // strip reasoning_content from messages before sending.
+  const sanitized = sanitizeMessages(options.messages)
+  const messagesForProvider = isKimi
+    ? sanitized
+    : sanitized.map(({ reasoning_content: _rc, ...rest }) => rest as LLMMessage)
+
   const body: any = {
     model: options.provider === "ollama" ? options.model.replace(/^ollama\//, "") : options.model,
-    messages: sanitizeMessages(options.messages),
-    temperature: FIXED_TEMPERATURE_1_MODELS.has(options.model) ? 1 : (options.temperature ?? 0.7),
+    messages: messagesForProvider,
+    temperature: requiresTemperature1(options.provider, options.model) ? 1 : (options.temperature ?? 0.7),
   }
   if (options.maxTokens) body.max_tokens = options.maxTokens
   if (options.numCtx && isLocal) body.num_ctx = options.numCtx

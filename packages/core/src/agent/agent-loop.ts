@@ -22,38 +22,36 @@ import { maybeCompact, clearOldToolResults } from "./compaction"
 import { emitCanvas } from "../canvas/emitter"
 import type { MCPClientManager } from "@johpaz/hive-mcp"
 import { compileContext } from "./context-compiler"
-import { formatToolResult, parse as parseToon } from "../utils/toon"
+import { formatToolResult } from "../utils/toon"
+import { getAverageTokenCost } from "../storage/usage"
 import { resolveUserId, resolveAgentId } from "../storage/onboarding"
 
 /**
  * Execute a tool by name from the available tools list
  * This is a local helper function since executeTool is not exported elsewhere
- * 
- * Tool results are formatted in TOON to save tokens on input to the model.
+ *
+ * Returns: JS object normal (se encodea solo al enviar al LLM)
  */
 async function executeTool(
   allTools: Array<{ name: string; execute?: (params: Record<string, unknown>, config?: any) => Promise<unknown> }>,
   toolName: string,
   args: unknown,
   config: { user_id?: string; thread_id?: string; channel?: string; workspace?: string | null }
-): Promise<string> {
+): Promise<unknown> {
   const tool = allTools.find(t => t.name === toolName)
   if (!tool?.execute) {
-    return `[Tool Error] Tool '${toolName}' not found or not executable`
+    return { error: true, message: `Tool '${toolName}' not found or not executable` }
   }
   try {
     const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args
-    const result = await tool.execute(parsedArgs as Record<string, unknown>, { configurable: config })
-    // TOON format for token savings on model input
-    return formatToolResult(result)
+    return await tool.execute(parsedArgs as Record<string, unknown>, { configurable: config })
   } catch (err) {
-    // Also format errors as TOON
-    return formatToolResult({
+    return {
       error: true,
       tool: toolName,
       message: (err as Error).message,
       timestamp: new Date().toISOString(),
-    })
+    }
   }
 }
 
@@ -116,7 +114,7 @@ export async function* runAgent(
   log.info(`[agent-loop] Starting: agent=${agentName} thread=${opts.threadId} provider=${providerCfg.provider}/${cleanModel}`)
 
   emitCanvas("canvas:node_update", {
-    nodeId: agentName,
+    nodeId: opts.agentId,
     changes: { status: "thinking" },
   })
 
@@ -214,6 +212,7 @@ export async function* runAgent(
       addMessage(opts.threadId, "assistant", response.content || "", {
         channel: opts.channel,
         tool_calls: response.tool_calls,
+        reasoning_content: response.reasoning_content,
       })
     }
 
@@ -221,7 +220,7 @@ export async function* runAgent(
       const toolName = tc.function.name
 
       emitCanvas("canvas:node_update", {
-        nodeId: agentName,
+        nodeId: opts.agentId,
         changes: { status: "tool_call", currentTool: toolName },
       })
 
@@ -237,7 +236,7 @@ export async function* runAgent(
       }
 
       const tTool = performance.now()
-      const toolResult = await executeTool(
+      const toolResultJS = await executeTool(
         ctx.allTools,
         toolName,
         tc.function.arguments,
@@ -250,12 +249,15 @@ export async function* runAgent(
       )
       const toolMs = Math.round(performance.now() - tTool)
 
+      // Encode TOON only for LLM consumption (with cost calculation)
+      const toolResultLLM = formatToolResult(toolResultJS, cleanModel)
+
       log.info(`[agent-loop] Tool ${toolName} completed in ${toolMs}ms`)
 
-      // Log tool result before returning to agent (truncated to avoid flooding logs)
-      const resultPreview = toolResult.length > 500
-        ? toolResult.substring(0, 500) + `… (+${toolResult.length - 500} chars)`
-        : toolResult
+      // Log tool result preview (truncated to avoid flooding logs)
+      const resultPreview = toolResultLLM.length > 500
+        ? toolResultLLM.substring(0, 500) + `… (+${toolResultLLM.length - 500} chars)`
+        : toolResultLLM
       log.info(`[agent-loop] Tool result [${toolName}]: ${resultPreview}`)
 
       // Clean timestamp from message for trace
@@ -268,27 +270,27 @@ export async function* runAgent(
         agentName,
         toolUsed: toolName,
         inputSummary: `${cleanMessage.substring(0, 200)} → ${toolName}`,
-        outputSummary: toolResult.substring(0, 300),
-        success: !toolResult.startsWith("[Tool Error]"),
-        errorMessage: toolResult.startsWith("[Tool Error]") ? toolResult : null,
+        outputSummary: toolResultLLM.substring(0, 300),
+        success: !toolResultLLM.startsWith("[Tool Error]"),
+        errorMessage: toolResultLLM.startsWith("[Tool Error]") ? toolResultLLM : null,
         durationMs: toolMs,
       })
 
-      // Emit tool chunk
-      yield { tools: { messages: [{ content: toolResult, tool_call_id: tc.id }] } }
+      // Emit tool chunk (TOON encoded for LLM)
+      yield { tools: { messages: [{ content: toolResultLLM, tool_call_id: tc.id }] } }
 
       if (opts.onStep) {
-        await opts.onStep({ type: "tool_result", message: toolResult })
+        await opts.onStep({ type: "tool_result", message: toolResultLLM })
       }
 
-      // Add tool result to messages for next model call AND persist
+      // Add tool result to messages for next model call AND persist (TOON encoded)
       messages.push({
         role: "tool",
-        content: toolResult,
+        content: toolResultLLM,
         tool_call_id: tc.id,
       })
       if (!opts.isolated) {
-        addMessage(opts.threadId, "tool", toolResult, {
+        addMessage(opts.threadId, "tool", toolResultLLM, {
           channel: opts.channel,
           tool_call_id: tc.id,
         })
@@ -297,9 +299,10 @@ export async function* runAgent(
       // Dynamic tool injection: when search_knowledge finds NATIVE tools, add them to ctx.tools
       // Note: MCP tools are already available directly, no injection needed
       if (toolName === "search_knowledge") {
+        // Use JS object directly (no parse needed)
         try {
-          const parsed = parseToon(toolResult).data
-          const foundTools: Array<{ name: string }> = parsed?.tools ?? []
+          const result = toolResultJS as any
+          const foundTools: Array<{ name: string }> = result?.tools ?? []
           const currentToolNames = new Set(ctx.tools.map((t: any) => t.function?.name))
 
           // Inject native tools only (MCP tools already available)
@@ -326,9 +329,9 @@ export async function* runAgent(
 
         // Enrich the tool result with skill instructions and playbook rules
         try {
-          const parsed = parseToon(toolResult).data
-          const foundSkills: Array<{ name: string; body?: string }> = parsed?.skills ?? []
-          const foundPlaybook: Array<{ rule: string; category?: string }> = parsed?.playbook ?? []
+          const result = toolResultJS as any
+          const foundSkills: Array<{ name: string; body?: string }> = result?.skills ?? []
+          const foundPlaybook: Array<{ rule: string; category?: string }> = result?.playbook ?? []
 
           if (foundSkills.length > 0 || foundPlaybook.length > 0) {
             const extras: string[] = []
@@ -378,7 +381,7 @@ export async function* runAgent(
     if (loopDetected) break
 
     emitCanvas("canvas:node_update", {
-      nodeId: agentName,
+      nodeId: opts.agentId,
       changes: { status: "thinking", currentTool: null },
     })
   }
@@ -421,7 +424,7 @@ export async function* runAgent(
   const durationMs = Math.round(performance.now() - t0)
 
   emitCanvas("canvas:node_update", {
-    nodeId: agentName,
+    nodeId: opts.agentId,
     changes: { status: "idle", currentTool: null },
   })
 
