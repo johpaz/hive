@@ -619,8 +619,8 @@ const createChannelsSlice = () => ({
 interface VoiceState {
   voiceProviders: string[];
   configuredVoiceProviders: Record<string, boolean>;
-  fetchVoiceProviders: () => Promise<void>;
-  fetchConfiguredVoiceProviders: () => Promise<void>;
+  fetchVoiceProviders: () => Promise<{ voiceProviders: string[]; configuredVoiceProviders: Record<string, boolean> }>;
+  fetchConfiguredVoiceProviders: () => Promise<{ configuredVoiceProviders: Record<string, boolean> }>;
   saveVoiceProviderKey: (providerId: string, apiKey: string) => Promise<void>;
 }
 
@@ -633,10 +633,11 @@ const createVoiceSlice = () => ({
       const response = await apiClient<{ providers: string[] }>("/api/voice/providers");
       return {
         voiceProviders: response.providers,
+        configuredVoiceProviders: {},
       };
     } catch (error) {
       console.error("Failed to fetch voice providers:", error);
-      return { voiceProviders: [] };
+      return { voiceProviders: [], configuredVoiceProviders: {} };
     }
   },
 
@@ -658,6 +659,9 @@ const createVoiceSlice = () => ({
         method: "POST",
         body: { apiKey },
       });
+      // Refresh configured providers after saving
+      const configuredData = await createVoiceSlice().fetchConfiguredVoiceProviders();
+      set(configuredData);
     } catch (error) {
       console.error("Failed to save voice provider key:", error);
       throw error;

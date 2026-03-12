@@ -47,7 +47,7 @@ export async function handleSaveVoiceProviderKey(
 
   try {
     const db = getDb()
-    const encrypted = await encryptApiKey(apiKey)
+    const encrypted = encryptApiKey(apiKey)
 
     // Get base URL for the provider
     let baseUrl = ""
@@ -77,7 +77,7 @@ export async function handleSaveVoiceProviderKey(
       VALUES (?, ?, ?, ?, ?, 1, 1)
     `).run(providerId, providerId, baseUrl, encrypted.encrypted, encrypted.iv)
 
-    return addCorsHeaders(Response.json({ success: true, provider: providerId }))
+    return addCorsHeaders(Response.json({ success: true, provider: providerId }), req)
   } catch (error) {
     return addCorsHeaders(Response.json(
       { success: false, error: (error as Error).message },

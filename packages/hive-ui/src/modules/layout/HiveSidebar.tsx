@@ -15,6 +15,7 @@ import {
   FolderKanban,
   StickyNote,
   Clock,
+  Mic,
   type LucideProps,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
@@ -64,6 +65,7 @@ const configGroups = [
     label: "Usuario",
     items: [
       { id: "perfil", label: "Perfil", icon: User },
+      { id: "voz", label: "Voz", icon: Mic },
     ],
   },
 ];
