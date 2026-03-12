@@ -43,7 +43,7 @@ import { handleGetCronJobs, handleGetCronChannels, handleUpdateCronJob } from ".
 import { handleGetChannels, handleGetChannelConfig, handleActivateChannel, handleDeactivateChannel, handleCreateChannel, handleGetChannelAccount, handleUpdateChannelAccount, handleDeleteChannelAccount, handleChannelAction, handleUpdateChannelSettings, handleToggleChannel } from "./routes/channels";
 import { handleGetMcpServers, handleCreateMcpServer, handleUpdateMcpServer, handleDeleteMcpServer, handleToggleMcpServer, handleGetMCPServerTools } from "./routes/mcp";
 import { handleGetModels, handleCreateModel, handleToggleModel, handleGetModelsConfig, handleUpdateModelsConfig, handleDeleteModel, handleUpdateModel } from "./routes/models";
-import { handleGetVoiceProviders, handleGetConfiguredVoiceProviders, handleSaveVoiceProviderKey, handleTestVoice, handleGetChannelVoice, handleUpdateChannelVoice } from "./routes/voice";
+import { handleGetVoiceProviders, handleGetConfiguredVoiceProviders, handleSaveVoiceProviderKey, handleTestVoice, handleGetChannelVoice, handleUpdateChannelVoice, handleGetVoiceProviderVoices } from "./routes/voice";
 import { handleGetActivityStats, handleGetSystemStats, handleGetUsageStats, handleSystemReload, handleApiReload } from "./routes/system";
 import { handleGetChatHistory, handleGetCanvas, handleGetNotes, handleUpdateNote } from "./routes/chat";
 import { handleChat as handlePostChat } from "./routes/chat";
@@ -1316,6 +1316,13 @@ Please execute it now.`;
 
         if (url.pathname === "/api/voice/test" && req.method === "POST") {
           return await handleTestVoice(req, addCorsHeaders)
+        }
+
+        // GET /api/voice/:provider/voices - Get available voices for a provider
+        const voiceProviderVoicesMatch = url.pathname.match(/^\/api\/voice\/([^/]+)\/voices$/)
+        if (voiceProviderVoicesMatch && req.method === "GET") {
+          const providerId = voiceProviderVoicesMatch[1]
+          return await handleGetVoiceProviderVoices(req, addCorsHeaders, providerId)
         }
 
         // GET /api/channels/:id/voice - Get voice config for a channel

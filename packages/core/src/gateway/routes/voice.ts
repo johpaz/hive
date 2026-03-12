@@ -86,6 +86,40 @@ export async function handleSaveVoiceProviderKey(
   }
 }
 
+export async function handleGetVoiceProviderVoices(
+  req: Request,
+  addCorsHeaders: (r: Response, req: Request) => Response,
+  providerId: string
+): Promise<Response> {
+  try {
+    let voices: Array<{ id: string; name: string }>
+
+    switch (providerId) {
+      case "elevenlabs":
+        voices = await voiceService.getElevenLabsVoices()
+        break
+      case "openai":
+        voices = voiceService.getOpenAIVoices()
+        break
+      case "gemini":
+        voices = voiceService.getGeminiVoices()
+        break
+      case "qwen":
+        voices = voiceService.getQwenVoices()
+        break
+      default:
+        return addCorsHeaders(Response.json({ voices: [] }), req)
+    }
+
+    return addCorsHeaders(Response.json({ voices }), req)
+  } catch (error) {
+    return addCorsHeaders(Response.json(
+      { voices: [], error: (error as Error).message },
+      { status: 200 }
+    ), req)
+  }
+}
+
 export async function handleTestVoice(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const body = await req.json().catch(() => ({}))
   const { text, provider, voiceId } = body

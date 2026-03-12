@@ -873,6 +873,24 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
   toggleChannel: createChannelsSlice().toggleChannel,
   updateChannel: createChannelsSlice().updateChannel,
 
+  // Voice methods
+  fetchVoiceProviders: async () => {
+    const data = await createVoiceSlice().fetchVoiceProviders();
+    set(data);
+  },
+  fetchConfiguredVoiceProviders: async () => {
+    const data = await createVoiceSlice().fetchConfiguredVoiceProviders();
+    set(data);
+  },
+  saveVoiceProviderKey: async (providerId: string, apiKey: string) => {
+    await apiClient(`/api/voice/providers/${providerId}/key`, {
+      method: "POST",
+      body: { apiKey },
+    });
+    const data = await createVoiceSlice().fetchConfiguredVoiceProviders();
+    set(data);
+  },
+
 }));
 
 /**
