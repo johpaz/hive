@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
     Dialog,
     DialogContent,
@@ -20,7 +21,10 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { apiClient } from "@/lib/api";
+import { useVoice } from "@/stores/useGlobalConfigStore";
 import type { ConnectedChannel } from "@/types";
+import { Settings, AlertCircle } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const STT_MODELS = [
     { id: "whisper-large-v3-turbo", name: "Whisper Large V3 Turbo (Groq)", provider: "groq" },
@@ -73,17 +77,16 @@ export function ChannelConfigDialog({
     onClose,
     onSave,
 }: ChannelConfigDialogProps) {
+    const navigate = useNavigate();
+    const { configuredVoiceProviders, fetchConfiguredVoiceProviders } = useVoice();
     const [formData, setFormData] = useState<Partial<ConnectedChannel>>({});
     const [isSaving, setIsSaving] = useState(false);
     const [voices, setVoices] = useState<Array<{ id: string; name: string }>>([]);
     const [loadingVoices, setLoadingVoices] = useState(false);
-    const [configuredProviders, setConfiguredProviders] = useState<Record<string, boolean>>({});
 
     useEffect(() => {
-        apiClient<Record<string, boolean>>("/api/voice/configured-providers", { showError: false })
-            .then(setConfiguredProviders)
-            .catch(() => setConfiguredProviders({}));
-    }, []);
+        fetchConfiguredVoiceProviders();
+    }, [fetchConfiguredVoiceProviders]);
 
     useEffect(() => {
         if (channel) {
@@ -185,22 +188,45 @@ export function ChannelConfigDialog({
                     </div>
 
                     {formData.voice_enabled && (
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label className="text-right">Modelo STT</Label>
-                            <Select
-                                value={formData.stt_provider || ""}
-                                onValueChange={(v) => setFormData(prev => ({ ...prev, stt_provider: v }))}
-                            >
-                                <SelectTrigger className="col-span-3">
-                                    <SelectValue placeholder="Selecciona modelo STT" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {STT_MODELS.filter(m => configuredProviders[m.provider]).map(m => (
-                                        <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
+                        <>
+                            <div className="grid grid-cols-4 items-center gap-4">
+                                <Label className="text-right">Modelo STT</Label>
+                                <Select
+                                    value={formData.stt_provider || ""}
+                                    onValueChange={(v) => setFormData(prev => ({ ...prev, stt_provider: v }))}
+                                >
+                                    <SelectTrigger className="col-span-3">
+                                        <SelectValue placeholder="Selecciona modelo STT" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {STT_MODELS.filter(m => configuredVoiceProviders[m.provider]).map(m => (
+                                            <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            {!configuredVoiceProviders.groq && !configuredVoiceProviders.openai && (
+                                <div className="col-span-4">
+                                    <Alert variant="destructive" className="bg-yellow-500/10 border-yellow-500/30 text-yellow-200">
+                                        <AlertCircle className="h-4 w-4" />
+                                        <AlertTitle>Provider STT no configurado</AlertTitle>
+                                        <AlertDescription className="text-yellow-200/80">
+                                            Necesitas configurar Groq o OpenAI para usar STT.{" "}
+                                            <Button
+                                                variant="link"
+                                                className="p-0 h-auto text-yellow-200 underline"
+                                                onClick={() => {
+                                                    onClose();
+                                                    navigate("/settings/voz");
+                                                }}
+                                            >
+                                                Ir a Configuración de Voz
+                                            </Button>
+                                        </AlertDescription>
+                                    </Alert>
+                                </div>
+                            )}
+                        </>
                     )}
 
                     {formData.tts_enabled && (
@@ -215,7 +241,7 @@ export function ChannelConfigDialog({
                                         <SelectValue placeholder="Selecciona modelo TTS" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {TTS_MODELS.filter(g => configuredProviders[g.provider]).map(group => (
+                                        {TTS_MODELS.filter(g => configuredVoiceProviders[g.provider]).map(group => (
                                             <SelectGroup key={group.group}>
                                                 <SelectLabel>{group.group}</SelectLabel>
                                                 {group.models.map(m => (
@@ -226,6 +252,27 @@ export function ChannelConfigDialog({
                                     </SelectContent>
                                 </Select>
                             </div>
+                            {!configuredVoiceProviders.elevenlabs && !configuredVoiceProviders.openai && !configuredVoiceProviders.gemini && !configuredVoiceProviders.qwen && (
+                                <div className="col-span-4">
+                                    <Alert variant="destructive" className="bg-yellow-500/10 border-yellow-500/30 text-yellow-200">
+                                        <AlertCircle className="h-4 w-4" />
+                                        <AlertTitle>Provider TTS no configurado</AlertTitle>
+                                        <AlertDescription className="text-yellow-200/80">
+                                            Necesitas configurar ElevenLabs, OpenAI, Gemini o Qwen para usar TTS.{" "}
+                                            <Button
+                                                variant="link"
+                                                className="p-0 h-auto text-yellow-200 underline"
+                                                onClick={() => {
+                                                    onClose();
+                                                    navigate("/settings/voz");
+                                                }}
+                                            >
+                                                Ir a Configuración de Voz
+                                            </Button>
+                                        </AlertDescription>
+                                    </Alert>
+                                </div>
+                            )}
                             {formData.tts_provider && (
                                 <div className="grid grid-cols-4 items-center gap-4">
                                     <Label className="text-right">Voz</Label>

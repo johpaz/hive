@@ -139,7 +139,7 @@ export async function handleUpdateChannelVoice(
 
   if (updates.length > 0) {
     params.push(channelId)
-    db.query(`UPDATE user_channels SET ${updates.join(", ")} WHERE channel = ?`).run(...params as any[])
+    db.query(`UPDATE channels SET ${updates.join(", ")} WHERE id = ?`).run(...params as any[])
   }
 
   return addCorsHeaders(Response.json({ success: true }), req)
