@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-skills",
-  "version": "1.7.5",
+  "version": "1.7.6",
   "private": true,
   "description": "Hive Skills — Official bundled skills for Hive",
   "main": "./src/index.ts",
