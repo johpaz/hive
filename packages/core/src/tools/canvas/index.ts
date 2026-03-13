@@ -116,6 +116,7 @@ export const canvasShowCardTool: Tool = {
     type: "object",
     properties: {
       title: { type: "string", description: "Card title" },
+      content: { type: "string", description: "Card content (Markdown supported)" },
       items: {
         type: "array",
         description: "List of key-value items",
@@ -128,11 +129,12 @@ export const canvasShowCardTool: Tool = {
         },
       },
     },
-    required: ["title", "items"],
+    required: ["title"],
   },
   execute: async (params: Record<string, unknown>) => {
     const title = params.title as string;
-    const items = params.items as Array<{ label: string; value: string }>;
+    const content = params.content as string | undefined;
+    const items = (params.items as Array<{ label: string; value: string }>) || [];
 
     try {
       const id = `card_${Date.now()}`;
@@ -142,7 +144,7 @@ export const canvasShowCardTool: Tool = {
           type: "card",
           props: {
             title,
-            children: items.map((item) => `**${item.label}:** ${item.value}`).join("\n"),
+            children: content ?? (items.length > 0 ? items.map((item) => `**${item.label}:** ${item.value}`).join("\n") : ""),
             // Pass items as table rows for richer rendering
             items,
           },
