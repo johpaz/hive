@@ -2,8 +2,10 @@ import { create } from "zustand";
 import type { BridgeProcess, BridgeLog } from "@/types";
 
 const CODE_BRIDGE_URL = "ws://localhost:18791/ws";
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:18790";
-const GATEWAY_WS_URL = API_URL.replace(/^http/, "ws");
+const API_URL = import.meta.env.VITE_API_URL || "";
+const GATEWAY_WS_URL = API_URL
+    ? API_URL.replace(/^http/, "ws")
+    : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`;
 const GATEWAY_BRIDGE_URL = `${GATEWAY_WS_URL}/bridge-events`;
 
 function generateId(): string {

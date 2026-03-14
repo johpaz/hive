@@ -17,7 +17,7 @@ import { update } from "./commands/update";
 import { message } from "./commands/message";
 import { agent } from "./commands/agent-run";
 
-const VERSION = "1.7.9";
+const VERSION = "1.7.10";
 
 const HELP = `
 🐝 Hive — Personal Swarm AI Gateway v${VERSION}

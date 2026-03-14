@@ -35,7 +35,9 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
         ws: null,
         status: "disconnected",
         url: import.meta.env.VITE_WS_URL ||
-            (import.meta.env.VITE_API_URL || "http://localhost:18790").replace(/^http/, "ws") + "/ws",
+            (import.meta.env.VITE_API_URL
+                ? import.meta.env.VITE_API_URL.replace(/^http/, "ws") + "/ws"
+                : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`),
         lastPing: null,
         retryCount: 0,
         handlers: new Map(),
