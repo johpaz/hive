@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-cli",
-  "version": "1.7.7",
+  "version": "1.7.8",
   "private": true,
   "description": "Hive CLI — Command line interface for the Hive AI Gateway",
   "bin": {
@@ -17,8 +17,8 @@
   },
   "dependencies": {
     "@clack/prompts": "1.1.0",
-    "@johpaz/hive-core": "^1.7.7",
-    "@johpaz/hive-code-bridge": "^1.7.7",
+    "@johpaz/hive-core": "^1.7.8",
+    "@johpaz/hive-code-bridge": "^1.7.8",
     "toon-format-parser": "1.1.3"
   },
   "devDependencies": {
