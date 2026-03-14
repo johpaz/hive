@@ -1,6 +1,33 @@
 #!/bin/sh
 # Levanta Hive en Docker y abre el navegador cuando esté listo
 
+# Crear .env si no existe para configurar acceso a archivos del host
+if [ ! -f ".env" ]; then
+  cat > .env << 'EOF'
+# Hive home directory - acceso a archivos del host
+# El agente podrá acceder a este directorio configurando workspace en la UI
+# Más información: https://github.com/johpaz/hive#acceso-a-archivos-del-sistema-desde-docker
+EOF
+  
+  case "$(uname -s)" in
+    Darwin)
+      echo "HIVE_HOME_PATH=/Users/\$USER" >> .env
+      ;;
+    Linux)
+      echo "HIVE_HOME_PATH=/home/\$USER" >> .env
+      ;;
+    MINGW*|CYGWIN*|MSYS*)
+      echo "HIVE_HOME_PATH=C:/Users/\$env:USERNAME" >> .env
+      ;;
+    *)
+      echo "# HIVE_HOME_PATH=./workspace" >> .env
+      ;;
+  esac
+  
+  echo "📝 Creado .env con HIVE_HOME_PATH para tu sistema"
+  echo "   El agente podrá acceder a tus archivos configurando workspace en la UI"
+fi
+
 PORT=${HIVE_PORT:-18790}
 URL="http://localhost:$PORT"
 MAX_WAIT=60

@@ -143,6 +143,68 @@ docker compose logs -f hive
 
 ---
 
+#### Acceso a archivos del sistema desde Docker
+
+Por defecto, el contenedor solo puede acceder al directorio `./workspace`. Para que el agente pueda leer, editar y eliminar archivos de tu sistema:
+
+**Paso 1 — El script crea `.env` automáticamente**
+
+Al ejecutar `./hive-docker.sh`, el script detecta tu sistema operativo y crea un archivo `.env` con el path correcto:
+
+| Sistema | Path montado | Path dentro del contenedor |
+|---------|--------------|---------------------------|
+| **Linux** | `/home/tu_usuario` | `/host/home` |
+| **macOS** | `/Users/tu_usuario` | `/host/home` |
+| **Windows** | `C:/Users/tu_usuario` | `/host/home` |
+
+**Paso 2 — Configurar el workspace en la UI**
+
+1. Abre la UI: `http://localhost:18790`
+2. Ve a **Configuración del Agente** (o crea tu agente si es la primera vez)
+3. En el campo **Workspace**, configura: `/host/home`
+
+También puedes usar subdirectorios:
+- `/host/home/Documentos` — solo carpeta Documentos
+- `/host/home/Proyectos` — solo carpeta Proyectos
+- `/host/home` — todo tu home
+
+**Paso 3 — El agente guarda la configuración**
+
+El path se guarda en la base de datos SQLite (`agents.workspace`). A partir de ese momento, todas las operaciones de filesystem del agente están restringidas a ese directorio por seguridad.
+
+**Ejemplo de uso:**
+
+```
+Usuario: "Crea un archivo README.md en mi carpeta Proyectos"
+Agente:  → Escribe en: /host/home/Proyectos/README.md
+         → Que se traduce a: /home/johnpaez/Proyectos/README.md (en tu host)
+```
+
+**Personalizar el path montado:**
+
+Si quieres montar un directorio diferente, edita el archivo `.env`:
+
+```bash
+# Linux — montar solo Documentos
+HIVE_HOME_PATH=/home/$USER/Documentos
+
+# macOS — montar un directorio personalizado
+HIVE_HOME_PATH=/Users/$USER/Desarrollo
+
+# Windows — montar otro drive
+HIVE_HOME_PATH=D:/Proyectos
+```
+
+Luego reinicia el contenedor:
+```bash
+docker compose down
+docker compose up -d
+```
+
+> **Nota de seguridad:** El agente solo puede acceder al path que configures como workspace. Si configuras `/host/home/Documentos`, no podrá leer `/host/home/Proyectos`.
+
+---
+
 #### Docker portable — USB o disco externo
 
 Docker también puede viajar en una USB. La clave es exportar la imagen como archivo `.tar` y montar el volumen de datos desde la USB en vez de un volumen gestionado por Docker.
