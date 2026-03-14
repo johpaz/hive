@@ -288,7 +288,8 @@ export async function compileContext(opts: {
   const now = new Date()
   const fecha = getUserDate(userTimezone, now)
   const hora = getUserTime(userTimezone, now)
-  systemPrompt += `\n\n# ENTORNO ACTUAL\n**Fecha**: ${fecha}\n**Hora**: ${hora}\n**Zona horaria**: ${userTimezone}\n`
+  const workspaceLine = agent.workspace ? `\n**Workspace**: ${agent.workspace} (usa SIEMPRE este path como basePath en herramientas de filesystem)` : ""
+  systemPrompt += `\n\n# ENTORNO ACTUAL\n**Fecha**: ${fecha}\n**Hora**: ${hora}\n**Zona horaria**: ${userTimezone}${workspaceLine}\n`
   log.info(`[context-compiler] [STEP-10b] ✅ Injected current date/time: ${fecha} ${hora} (${userTimezone})`)
 
   // Inject scratchpad (Strategy: WRITE) — usando TOON para ahorro de tokens
