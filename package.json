@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive",
-  "version": "1.7.8",
+  "version": "1.7.9",
   "description": "Tu colmena de agentes IA. Local-first. Multi-canal. Open source. Construido desde Colombia para el mundo.",
   "private": false,
   "bin": {
