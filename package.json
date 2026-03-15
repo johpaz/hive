@@ -65,7 +65,8 @@
     "test:ci": "bun test --coverage",
     "lint": "bunx tsc --noEmit",
     "build:binaries": "bun run scripts/build-binaries.ts",
-    "bench": "bun run scripts/bench.ts"
+    "bench": "bun run scripts/bench.ts",
+    "publish:sdk": "bun run scripts/publish-sdk.ts"
   },
   "dependencies": {
     "@ag-ui/core": "^0.0.46",
