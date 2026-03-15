@@ -114,7 +114,7 @@ docker run -d \
   -v hive-data:/root/.hive \
   --name hive \
   --restart unless-stopped \
-  johpaz/hive:1.7.10
+  johpaz/hive:1.7.11
 ```
 
 **Variables de entorno disponibles:**
@@ -215,10 +215,10 @@ En el equipo donde tienes conexión a internet:
 
 ```bash
 # Descargar la imagen si no la tienes
-docker pull johpaz/hive:1.7.10
+docker pull johpaz/hive:1.7.11
 
 # Exportar a archivo tar (cabe en cualquier USB de 512 MB+)
-docker save johpaz/hive:1.7.10 -o /media/usb/hive-image.tar
+docker save johpaz/hive:1.7.11 -o /media/usb/hive-image.tar
 ```
 
 **Paso 2 — Crear la estructura en la USB**
@@ -236,7 +236,7 @@ Crea el `docker-compose.yml` en la USB con el volumen apuntando a la USB:
 ```yaml
 services:
   hive:
-    image: johpaz/hive:1.7.10
+    image: johpaz/hive:1.7.11
     ports:
       - "18790:18790"
     volumes:
@@ -315,11 +315,11 @@ Descarga manual de cualquier plataforma o versión específica.
 
 | Plataforma | Archivo | Descarga directa |
 |------------|---------|------------------|
-| Linux x64 | `hive-v1.7.10-linux-x64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.10-linux-x64) |
-| Linux ARM64 (Raspberry Pi, etc.) | `hive-v1.7.10-linux-arm64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.10-linux-arm64) |
-| macOS Apple Silicon (M1/M2/M3/M4) | `hive-v1.7.10-macos-arm64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.10-macos-arm64) |
-| macOS Intel | `hive-v1.7.10-macos-x64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.10-macos-x64) |
-| Windows x64 | `hive-v1.7.10-windows-x64.exe` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.10-windows-x64.exe) |
+| Linux x64 | `hive-v1.7.11-linux-x64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.11-linux-x64) |
+| Linux ARM64 (Raspberry Pi, etc.) | `hive-v1.7.11-linux-arm64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.11-linux-arm64) |
+| macOS Apple Silicon (M1/M2/M3/M4) | `hive-v1.7.11-macos-arm64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.11-macos-arm64) |
+| macOS Intel | `hive-v1.7.11-macos-x64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.11-macos-x64) |
+| Windows x64 | `hive-v1.7.11-windows-x64.exe` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.11-windows-x64.exe) |
 
 > Los links anteriores siempre apuntan a la última versión publicada. Si necesitas una versión específica, visita la [página de releases](https://github.com/johpaz/hive/releases).
 
@@ -329,7 +329,7 @@ Descarga manual de cualquier plataforma o versión específica.
 
 ```bash
 # 1. Descargar el binario (reemplaza "linux-x64" por "linux-arm64" si es ARM)
-curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.10-linux-x64
+curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.11-linux-x64
 
 # 2. Dar permisos de ejecución
 chmod +x hive
@@ -361,7 +361,7 @@ hive start
 
 ```bash
 # 1. Descargar
-curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.10-macos-arm64
+curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.11-macos-arm64
 
 # 2. Dar permisos de ejecución
 chmod +x hive
@@ -396,7 +396,7 @@ hive start
 Igual que Apple Silicon pero descarga `macos-x64`:
 
 ```bash
-curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.10-macos-x64
+curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.11-macos-x64
 chmod +x hive
 xattr -d com.apple.quarantine hive
 curl -L https://github.com/johpaz/hive/releases/latest/download/ui-dist.tar.gz \
@@ -411,7 +411,7 @@ mkdir -p ~/.hive/ui && cp -r ui-dist/* ~/.hive/ui/
 
 **Paso 1 — Descargar el binario**
 
-Descarga [`hive-v1.7.10-windows-x64.exe`](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.10-windows-x64.exe) desde GitHub o desde [hiveagents.io](https://www.hiveagents.io/#installation).
+Descarga [`hive-v1.7.11-windows-x64.exe`](https://github.com/johpaz/hive/releases/latest/download/hive-v1.7.11-windows-x64.exe) desde GitHub o desde [hiveagents.io](https://www.hiveagents.io/#installation).
 
 **Paso 2 — Windows SmartScreen**
 
@@ -441,7 +441,7 @@ tar -xzf ui-dist.tar.gz -C "$env:USERPROFILE\.hive\ui"
 **Paso 4 — Ejecutar**
 
 ```powershell
-.\hive-v1.7.10-windows-x64.exe start
+.\hive-v1.7.11-windows-x64.exe start
 ```
 
 El navegador se abre automáticamente en `http://localhost:18790`.
@@ -450,7 +450,7 @@ El navegador se abre automáticamente en `http://localhost:18790`.
 
 ```powershell
 # Mover a una carpeta ya en el PATH, por ejemplo:
-Move-Item .\hive-v1.7.10-windows-x64.exe C:\Windows\System32\hive.exe
+Move-Item .\hive-v1.7.11-windows-x64.exe C:\Windows\System32\hive.exe
 
 # Luego ejecutar desde cualquier lugar:
 hive start
@@ -501,7 +501,7 @@ El binario standalone es ideal para llevarlo en una USB. Tu agente viaja contigo
 **Preparar la USB:**
 
 ```bash
-cp hive-v1.7.10-linux-x64 /media/usb/hive
+cp hive-v1.7.11-linux-x64 /media/usb/hive
 chmod +x /media/usb/hive
 cp -r ui-dist/* /media/usb/ui/
 
