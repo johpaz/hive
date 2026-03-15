@@ -401,11 +401,12 @@ export class TelegramChannel extends BaseChannel {
     const backoffMs = [3000, 6000];
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
+      // Use explicit timeout for sendVoice (30 seconds)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
       try {
         const inputFile = new InputFile(audio, "voice.ogg");
-        // Use explicit timeout for sendVoice (30 seconds)
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
 
         // Use type assertion to bypass grammY type limitations - signal is supported at runtime
         // via the underlying fetch API but not exposed in grammy's type definitions
@@ -413,7 +414,6 @@ export class TelegramChannel extends BaseChannel {
           signal: controller.signal,
         } as any);
 
-        clearTimeout(timeoutId);
         this.log.info(`✅ Voice sent to ${chatId}`);
         return;
       } catch (error: unknown) {
@@ -432,6 +432,9 @@ export class TelegramChannel extends BaseChannel {
           this.log.error(`Telegram sendVoice failed after ${maxRetries} attempts: ${err.message}`);
           throw error;
         }
+      } finally {
+        // Always clear the timeout to prevent resource leaks
+        clearTimeout(timeoutId);
       }
     }
   }
