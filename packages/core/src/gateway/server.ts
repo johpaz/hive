@@ -24,16 +24,14 @@ import { subscribeBridge, unsubscribeBridge } from "../tools/bridge-events";
 import { randomUUID } from "crypto";
 import { decryptConfig } from "../storage/crypto.ts";
 import { resolveContext } from "./resolver";
-import { getUsageStats } from "../storage/usage";
 import { voiceService } from "../voice/index";
-import { Benchmark } from "../utils/benchmark";
 import { initializeGateway, type GatewayInitializationResult } from "./initializer";
 import { handleSetupStatus, handleVerifyProvider, handleCompleteSetup } from "./routes/setup";
 import { resolveUserId } from "../storage/onboarding";
 import { handleGetAgents, handleCreateAgent, handleUpdateAgent } from "./routes/agents";
 import { handleGetProviders, handleCreateProvider, handleToggleProvider, handleUpdateProvider, handleSyncProviderModels } from "./routes/providers";
 import { handleGetUsers, handleCreateUser, handleUpdateUserSettings, handleGetUserChannels, handleLinkUserChannel } from "./routes/users";
-import { handleGetSkills, handleActivateSkill, handleDeleteSkill, handleCreateSkill } from "./routes/skills";
+import { handleGetSkills, handleActivateSkill, handleUpdateSkill, handleDeleteSkill, handleCreateSkill } from "./routes/skills";
 import { handleGetEthics, handleActivateEthics, handleDeleteEthics } from "./routes/ethics";
 import { handleGetTools, handleActivateTool } from "./routes/tools";
 import { handleGetProjects, handleGetActiveProject, handleCreateProject, handleUpdateProject, handleGetProjectHistory, handleGetProjectDetail, handleGetProjectTasks } from "./routes/projects";
@@ -41,7 +39,7 @@ import { handleGetTasks, handleUpdateTask } from "./routes/tasks";
 import { setChannelSendFn } from "./channel-notify";
 import { handleGetCronJobs, handleGetCronChannels, handleUpdateCronJob } from "./routes/cron";
 import { handleGetChannels, handleGetChannelConfig, handleActivateChannel, handleDeactivateChannel, handleCreateChannel, handleGetChannelAccount, handleUpdateChannelAccount, handleDeleteChannelAccount, handleChannelAction, handleUpdateChannelSettings, handleToggleChannel } from "./routes/channels";
-import { handleGetMcpServers, handleCreateMcpServer, handleUpdateMcpServer, handleDeleteMcpServer, handleToggleMcpServer, handleGetMCPServerTools } from "./routes/mcp";
+import { handleGetMcpServers, handleGetMcpServerDetail, handleCreateMcpServer, handleUpdateMcpServer, handleDeleteMcpServer, handleToggleMcpServer, handleGetMCPServerTools } from "./routes/mcp";
 import { handleGetModels, handleCreateModel, handleToggleModel, handleGetModelsConfig, handleUpdateModelsConfig, handleDeleteModel, handleUpdateModel } from "./routes/models";
 import { handleGetVoiceProviders, handleGetConfiguredVoiceProviders, handleSaveVoiceProviderKey, handleTestVoice, handleGetChannelVoice, handleUpdateChannelVoice, handleGetVoiceProviderVoices } from "./routes/voice";
 import { handleGetActivityStats, handleGetSystemStats, handleGetUsageStats, handleSystemReload, handleApiReload } from "./routes/system";
@@ -915,6 +913,12 @@ Please execute it now.`;
           return await handleGetMcpServers(req, addCorsHeaders, mcpManager)
         }
 
+        // GET /api/mcp/servers/:id — detail with unredacted headers (for editing)
+        if (url.pathname.match(/^\/api\/mcp\/servers\/([^/]+)$/) && req.method === "GET") {
+          const serverId = url.pathname.split("/")[4];
+          return await handleGetMcpServerDetail(req, addCorsHeaders, serverId)
+        }
+
         if (url.pathname === "/api/mcp/servers" && req.method === "POST") {
           const response = await handleCreateMcpServer(req, addCorsHeaders)
 
@@ -924,11 +928,13 @@ Please execute it now.`;
           return response
         }
 
-        if (url.pathname === "/api/mcp/servers" && req.method === "PUT") {
+        // PUT /api/mcp/servers/:id — update server config
+        if (url.pathname.match(/^\/api\/mcp\/servers\/([^/]+)$/) && req.method === "PUT") {
           return await handleUpdateMcpServer(req, addCorsHeaders)
         }
 
-        if (url.pathname === "/api/mcp/servers" && req.method === "DELETE") {
+        // DELETE /api/mcp/servers/:id — remove server
+        if (url.pathname.match(/^\/api\/mcp\/servers\/([^/]+)$/) && req.method === "DELETE") {
           return await handleDeleteMcpServer(req, addCorsHeaders)
         }
 
@@ -1067,6 +1073,14 @@ Please execute it now.`;
           return await handleActivateSkill(req, addCorsHeaders)
         }
 
+        if (url.pathname.match(/^\/api\/skills\/[^/]+$/) && req.method === "PUT") {
+          return await handleUpdateSkill(req, addCorsHeaders)
+        }
+
+        if (url.pathname.match(/^\/api\/skills\/[^/]+$/) && req.method === "DELETE") {
+          return await handleDeleteSkill(req, addCorsHeaders)
+        }
+
         // ── Tools API ────────────────────────────────────────────────────────
         if (url.pathname === "/api/tools" && req.method === "GET") {
           return await handleGetTools(req, addCorsHeaders)
@@ -1116,6 +1130,12 @@ Please execute it now.`;
           return await handleGetMcpServers(req, addCorsHeaders, agent?.getMCPManager() ?? null)
         }
 
+        // GET /api/mcp/servers/:id — detail with unredacted headers (for editing)
+        if (url.pathname.match(/^\/api\/mcp\/servers\/([^/]+)$/) && req.method === "GET") {
+          const serverId = url.pathname.split("/")[4];
+          return await handleGetMcpServerDetail(req, addCorsHeaders, serverId)
+        }
+
         // GET /api/mcp/servers/:id/tools - Get tools for a specific MCP server
         // Note: Tools are loaded from MCP Manager at runtime, not from DB
         if (url.pathname.match(/^\/api\/mcp\/servers\/([^/]+)\/tools$/) && req.method === "GET") {
@@ -1143,7 +1163,7 @@ Please execute it now.`;
             log.info(`[MCP] Toggle connection for ${mcpName}, active=${active}`)
 
             // Update DB
-            getDb().query(`UPDATE mcp_servers SET active = ?, enabled = ? WHERE id = ?`).run(active ? 1 : 0, active ? 1 : 0, mcpName)
+            getDb().query(`UPDATE mcp_servers SET active = ?, enabled = ? WHERE id = ? OR name = ?`).run(active ? 1 : 0, active ? 1 : 0, mcpName, mcpName)
 
             // Connect/Disconnect MCP server in real-time (no restart needed)
             try {
@@ -1151,7 +1171,7 @@ Please execute it now.`;
               if (mcp) {
                 log.info(`[MCP] Manager found, connecting ${mcpName}...`)
                 if (active) {
-                  const server = getDb().query(`SELECT * FROM mcp_servers WHERE id = ?`).get(mcpName) as Record<string, any> | undefined;
+                  const server = getDb().query(`SELECT * FROM mcp_servers WHERE id = ? OR name = ?`).get(mcpName, mcpName) as Record<string, any> | undefined;
                   if (server) {
                     log.info(`[MCP] Server config: transport=${server.transport}, url=${server.url}`)
 
@@ -1189,13 +1209,13 @@ Please execute it now.`;
                     // Get tools after connection
                     const tools = mcp.getServerTools(mcpName) || [];
                     log.info(`[MCP] Connected! Tools: ${tools.length}`)
-                    getDb().query(`UPDATE mcp_servers SET status = ?, tools_count = ? WHERE id = ?`).run("connected", tools.length, mcpName);
+                    getDb().query(`UPDATE mcp_servers SET status = ?, tools_count = ? WHERE id = ? OR name = ?`).run("connected", tools.length, mcpName, mcpName);
                   } else {
                     log.error(`[MCP] Server not found in DB: ${mcpName}`)
                   }
                 } else {
                   await mcp.disconnectServer(mcpName);
-                  getDb().query(`UPDATE mcp_servers SET status = ? WHERE id = ?`).run("disconnected", mcpName);
+                  getDb().query(`UPDATE mcp_servers SET status = ? WHERE id = ? OR name = ?`).run("disconnected", mcpName, mcpName);
                 }
               } else {
                 log.error(`[MCP] No MCP Manager found`)
@@ -1206,6 +1226,12 @@ Please execute it now.`;
 
             return addCorsHeaders(Response.json({ success: true, active, message: active ? "Servidor MCP conectado" : "Servidor MCP desconectado" }), req)
           }
+        }
+
+        // GET /api/mcp/servers/:id — detail with unredacted headers (for editing)
+        if (url.pathname.match(/^\/api\/mcp\/servers\/([^/]+)$/) && req.method === "GET") {
+          const serverId = url.pathname.split("/")[4];
+          return await handleGetMcpServerDetail(req, addCorsHeaders, serverId)
         }
 
         // Support /api/mcp/servers/{name} with POST for connect (frontend uses this)
@@ -1223,14 +1249,14 @@ Please execute it now.`;
             }
 
             // Update DB
-            getDb().query(`UPDATE mcp_servers SET active = ?, enabled = ? WHERE id = ?`).run(active ? 1 : 0, active ? 1 : 0, mcpName)
+            getDb().query(`UPDATE mcp_servers SET active = ?, enabled = ? WHERE id = ? OR name = ?`).run(active ? 1 : 0, active ? 1 : 0, mcpName, mcpName)
 
             // Connect/Disconnect MCP server in real-time (no restart needed)
             try {
               const mcp = agent?.getMCPManager() ?? null;
               if (mcp) {
                 if (active) {
-                  const server = getDb().query(`SELECT * FROM mcp_servers WHERE id = ?`).get(mcpName) as Record<string, any> | undefined;
+                  const server = getDb().query(`SELECT * FROM mcp_servers WHERE id = ? OR name = ?`).get(mcpName, mcpName) as Record<string, any> | undefined;
                   if (server) {
                     log.info(`[MCP] Server config: transport=${server.transport}, url=${server.url}`)
 
@@ -1270,13 +1296,13 @@ Please execute it now.`;
                     log.info(`[MCP] Connected! Tools: ${tools.length}`)
 
                     // Update DB with status and tools
-                    getDb().query(`UPDATE mcp_servers SET status = ?, tools_count = ? WHERE id = ?`).run("connected", tools.length, mcpName);
+                    getDb().query(`UPDATE mcp_servers SET status = ?, tools_count = ? WHERE id = ? OR name = ?`).run("connected", tools.length, mcpName, mcpName);
                   } else {
                     log.error(`[MCP] Server not found in DB: ${mcpName}`)
                   }
                 } else {
                   await mcp.disconnectServer(mcpName);
-                  getDb().query(`UPDATE mcp_servers SET status = ? WHERE id = ?`).run("disconnected", mcpName);
+                  getDb().query(`UPDATE mcp_servers SET status = ? WHERE id = ? OR name = ?`).run("disconnected", mcpName, mcpName);
                 }
               }
             } catch (error) {

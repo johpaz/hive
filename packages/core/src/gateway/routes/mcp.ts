@@ -63,6 +63,7 @@ export async function handleGetMcpServers(
     }
 
     return {
+      id: s.id,
       name: s.name,
       enabled: isEnabled,
       status: mcpServer?.status || (isEnabled ? "disconnected" : "disconnected"),
@@ -133,9 +134,46 @@ export async function handleDeleteMcpServer(req: Request, addCorsHeaders: (r: Re
     return addCorsHeaders(Response.json({ success: false, error: "server name required" }), req)
   }
 
-  getDb().query(`DELETE FROM mcp_servers WHERE id = ?`).run(serverName)
+  getDb().query(`DELETE FROM mcp_servers WHERE id = ? OR name = ?`).run(serverName, serverName)
 
   return addCorsHeaders(Response.json({ success: true }), req)
+}
+
+export async function handleGetMcpServerDetail(
+  req: Request,
+  addCorsHeaders: (r: Response, req: Request) => Response,
+  serverId: string
+): Promise<Response> {
+  const db = getDb()
+  const server = db.query(`SELECT * FROM mcp_servers WHERE id = ? OR name = ?`).get(serverId, serverId) as Record<string, unknown> | undefined
+
+  if (!server) {
+    return addCorsHeaders(new Response("Server not found", { status: 404 }), req)
+  }
+
+  // Decrypt headers — unredacted, for editing
+  let headers: Record<string, string> | undefined
+  if (server.headers_encrypted && server.headers_iv) {
+    try {
+      headers = decryptConfig(server.headers_encrypted as string, server.headers_iv as string)
+    } catch (e) {
+      mcpLog.error(`Failed to decrypt headers for ${server.name}: ${(e as Error).message}`)
+    }
+  }
+
+  return addCorsHeaders(Response.json({
+    id: server.id,
+    name: server.name,
+    transport: server.transport,
+    command: server.command ?? null,
+    args: server.args ? JSON.parse(server.args as string) : [],
+    url: server.url ?? null,
+    headers,
+    enabled: server.enabled === 1,
+    builtin: server.builtin === 1,
+    status: server.status,
+    tools_count: server.tools_count ?? 0,
+  }), req)
 }
 
 export async function handleUpdateMcpServer(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
@@ -155,6 +193,10 @@ export async function handleUpdateMcpServer(req: Request, addCorsHeaders: (r: Re
   const updates: string[] = []
   const params: unknown[] = []
 
+  if (body.transport !== undefined) {
+    updates.push("transport = ?")
+    params.push(body.transport)
+  }
   if (body.name !== undefined) {
     updates.push("name = ?")
     params.push(body.name)
@@ -185,7 +227,8 @@ export async function handleUpdateMcpServer(req: Request, addCorsHeaders: (r: Re
 
   if (updates.length > 0) {
     params.push(serverName)
-    db.query(`UPDATE mcp_servers SET ${updates.join(", ")} WHERE id = ?`).run(...params as any[])
+    params.push(serverName)
+    db.query(`UPDATE mcp_servers SET ${updates.join(", ")} WHERE id = ? OR name = ?`).run(...params as any[])
   }
 
   return addCorsHeaders(Response.json({ success: true }), req)
@@ -216,24 +259,6 @@ export async function handleGetMcpServerTools(
 
   const tools = mcpManager.getServerTools(serverName)
   return addCorsHeaders(Response.json(tools), req)
-}
-
-export async function handleGetMcpServerDetail(
-  req: Request,
-  addCorsHeaders: (r: Response, req: Request) => Response,
-  serverName: string,
-  mcpManager?: any
-): Promise<Response> {
-  if (!mcpManager) {
-    return addCorsHeaders(new Response("MCP is disabled", { status: 404 }), req)
-  }
-
-  const details = mcpManager.getServerDetails(serverName)
-  if (!details) {
-    return new Response("Server not found", { status: 404 })
-  }
-
-  return addCorsHeaders(Response.json(details), req)
 }
 
 export async function handleToggleMcpServer(

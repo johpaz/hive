@@ -450,6 +450,7 @@ interface MCPServerConfig {
   command?: string;
   args?: string[];
   url?: string;
+  headers?: Record<string, string>;
 }
 
 interface MCPServersState {
@@ -473,7 +474,7 @@ const createMCPServersSlice = () => ({
       const servers = response.map(s => {
         const config = s.config || {};
         return {
-          id: s.name, // Use name as ID if backend doesn't provide it
+          id: s.id || s.name,
           name: s.name,
           status: s.status,
           enabled: s.enabled,
@@ -525,7 +526,7 @@ const createMCPServersSlice = () => ({
     try {
       await apiClient(`/api/mcp/servers/${id}`, {
         method: "PUT",
-        body: { config },
+        body: config,
         showLoader: "Guardando configuración...",
         showError: true,
         showSuccess: "Configuración guardada"

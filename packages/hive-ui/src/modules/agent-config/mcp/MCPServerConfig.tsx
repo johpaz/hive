@@ -24,7 +24,7 @@ import {
   Code,
   Lock
 } from "lucide-react";
-import { Toast, swal } from "@/lib/swal";
+import { Toast } from "@/lib/swal";
 import { loader } from "@/stores/useLoaderStore";
 import { apiClient } from "@/lib/api";
 import { MCPToolExplorer } from "./MCPToolExplorer";
@@ -70,18 +70,41 @@ export function MCPServerConfig({ server, onClose }: MCPServerConfigProps) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
+  const [isFetching, setIsFetching] = useState(true);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [activeTab, setActiveTab] = useState<"config" | "tools">("config");
+  const [liveStatus, setLiveStatus] = useState(server.status);
+  const [liveActive, setLiveActive] = useState(server.active);
 
-  const isConnected = server.status === "connected" || server.active === 1 || server.active === true;
+  const isConnected = liveStatus === "connected" || liveActive === 1 || liveActive === true;
 
+  // Fetch fresh data from DB when dialog opens (headers are unredacted)
   useEffect(() => {
-    if (server.args && Array.isArray(server.args)) {
-      setArgs(server.args.join(" "));
-    }
-    const auth = getAuthFromHeaders(server.headers);
-    setAuthType(auth.authType);
-    setAuthToken(auth.authToken);
-  }, [server]);
+    let cancelled = false;
+    const fetchDetail = async () => {
+      setIsFetching(true);
+      try {
+        const data = await apiClient<any>(`/api/mcp/servers/${server.id}`);
+        if (cancelled) return;
+        setTransport(data.transport || "stdio");
+        setCommand(data.command || "");
+        setArgs(Array.isArray(data.args) ? data.args.join(" ") : "");
+        setUrl(data.url || "");
+        const auth = getAuthFromHeaders(data.headers);
+        setAuthType(auth.authType);
+        setAuthToken(auth.authToken);
+        setHeaders(data.headers ? JSON.stringify(data.headers, null, 2) : "");
+        setLiveStatus(data.status || server.status);
+        setLiveActive(data.enabled ? 1 : 0);
+      } catch {
+        // fallback to store data — already set in initial state
+      } finally {
+        if (!cancelled) setIsFetching(false);
+      }
+    };
+    fetchDetail();
+    return () => { cancelled = true; };
+  }, [server.id]);
 
   const handleUpdate = async () => {
     setIsUpdating(true);
@@ -151,10 +174,12 @@ export function MCPServerConfig({ server, onClose }: MCPServerConfigProps) {
     loader.show(isConnected ? "Desconectando servidor..." : "Conectando servidor...");
     try {
       await toggleMCPServer(server.id, !isConnected);
+      const newActive = !isConnected ? 1 : 0;
+      setLiveActive(newActive);
+      setLiveStatus(!isConnected ? "connected" : "disconnected");
       Toast.fire({ icon: "success", title: isConnected ? "Servidor desconectado" : "Servidor conectado" });
-      // Forzamos refresh para ver estado final si la API es lenta
       setTimeout(fetchMCPServers, 1500);
-    } catch (error) {
+    } catch {
       Toast.fire({ icon: "error", title: "Error al cambiar estado de conexión" });
     } finally {
       setIsToggling(false);
@@ -163,18 +188,6 @@ export function MCPServerConfig({ server, onClose }: MCPServerConfigProps) {
   };
 
   const handleDelete = async () => {
-    const result = await swal.fire({
-      title: "¿Eliminar Servidor?",
-      text: `¿Estás seguro de que deseas eliminar el servidor "${server.name}"? Esta acción no se puede deshacer.`,
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonText: "Sí, eliminar",
-      cancelButtonText: "Cancelar",
-      reverseButtons: true
-    });
-
-    if (!result.isConfirmed) return;
-
     setIsDeleting(true);
     try {
       await apiClient(`/api/mcp/servers/${server.id}`, {
@@ -182,11 +195,13 @@ export function MCPServerConfig({ server, onClose }: MCPServerConfigProps) {
         showLoader: "Eliminando servidor...",
         showError: true
       });
+      await fetchMCPServers();
       onClose();
-    } catch (error) {
+    } catch {
       // Error handled by apiClient
     } finally {
       setIsDeleting(false);
+      setConfirmingDelete(false);
     }
   };
 
@@ -215,12 +230,12 @@ export function MCPServerConfig({ server, onClose }: MCPServerConfigProps) {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={handleDelete}
-                disabled={isDeleting}
+                onClick={() => setConfirmingDelete(true)}
+                disabled={isDeleting || confirmingDelete}
                 className="text-zinc-600 hover:text-red-400 hover:bg-red-400/10 h-8 w-8 transition-colors"
                 title="Eliminar Servidor"
               >
-                {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                <Trash2 className="h-4 w-4" />
               </Button>
             )}
           </div>
@@ -245,9 +260,42 @@ export function MCPServerConfig({ server, onClose }: MCPServerConfigProps) {
           </div>
         </DialogHeader>
 
+        {confirmingDelete && (
+          <div className="mx-6 mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 animate-in fade-in slide-in-from-top-2 duration-200">
+            <p className="text-xs text-red-400 font-medium mb-3">
+              ¿Eliminar <span className="font-bold">{server.name}</span>? Esta acción no se puede deshacer.
+            </p>
+            <div className="flex items-center gap-2 justify-end">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setConfirmingDelete(false)}
+                disabled={isDeleting}
+                className="h-7 px-3 text-[10px] font-bold uppercase tracking-wider text-zinc-400 hover:text-white"
+              >
+                Cancelar
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="h-7 px-3 text-[10px] font-bold uppercase tracking-wider bg-red-600 hover:bg-red-500 text-white"
+              >
+                {isDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : "Sí, eliminar"}
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="p-6">
           {activeTab === "config" ? (
             <div className="space-y-4 animate-in fade-in duration-300">
+              {isFetching && (
+                <div className="flex items-center gap-2 text-[10px] text-zinc-500">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <span>Cargando configuración...</span>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Transporte</Label>
                 <Select value={transport} onValueChange={setTransport}>

@@ -1,5 +1,6 @@
 import { getDb } from "../../storage/sqlite"
 import { emitCanvas } from "../../canvas/emitter"
+import { syncSkillsToFTS } from "../../agent/skill-selector"
 
 export async function handleGetSkills(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const skills = getDb().query(`
@@ -23,8 +24,12 @@ export async function handleGetSkills(req: Request, addCorsHeaders: (r: Response
 }
 
 export async function handleActivateSkill(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
+  const url = new URL(req.url)
+  const parts = url.pathname.split("/").filter(Boolean)
+  // /api/skills/:id/toggle → parts[2] = id
+  const skillId = parts[2]
   const body = await req.json().catch(() => ({}))
-  const { skillId, active } = body
+  const { active } = body
 
   if (!skillId) {
     return addCorsHeaders(Response.json({ success: false, error: "skillId required" }), req)
@@ -32,7 +37,40 @@ export async function handleActivateSkill(req: Request, addCorsHeaders: (r: Resp
 
   getDb().query(`UPDATE skills SET active = ? WHERE id = ?`).run(active ? 1 : 0, skillId)
 
+  // Re-sync FTS5 index so semantic matching respects the new active state immediately
+  syncSkillsToFTS().catch(() => {})
+
   return addCorsHeaders(Response.json({ success: true, skillId, active }), req)
+}
+
+export async function handleUpdateSkill(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
+  const url = new URL(req.url)
+  const parts = url.pathname.split("/").filter(Boolean)
+  const skillId = parts[2]
+  const body = await req.json().catch(() => ({}))
+
+  if (!skillId) {
+    return addCorsHeaders(Response.json({ success: false, error: "skillId required" }), req)
+  }
+
+  const updates: string[] = []
+  const params: unknown[] = []
+
+  if (body.name !== undefined)     { updates.push("name = ?");     params.push(body.name) }
+  if (body.category !== undefined) { updates.push("category = ?"); params.push(body.category) }
+  if (body.tools !== undefined)    { updates.push("tools = ?");    params.push(body.tools) }
+  if (body.triggers !== undefined) { updates.push("triggers = ?"); params.push(body.triggers) }
+  if (body.body !== undefined)     { updates.push("body = ?");     params.push(body.body) }
+  if (body.version !== undefined)  { updates.push("version = ?");  params.push(body.version) }
+  if (body.active !== undefined)   { updates.push("active = ?");   params.push(body.active ? 1 : 0) }
+
+  if (updates.length > 0) {
+    updates.push("updated_at = datetime('now')")
+    params.push(skillId)
+    getDb().query(`UPDATE skills SET ${updates.join(", ")} WHERE id = ?`).run(...params as any[])
+  }
+
+  return addCorsHeaders(Response.json({ success: true }), req)
 }
 
 export async function handleDeleteSkill(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {

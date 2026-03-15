@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Wand2, Loader2, Save, Info, Sparkles, Cpu } from "lucide-react";
+import { Wand2, Loader2, Info, Sparkles, Cpu, Trash2 } from "lucide-react";
 import { useSkills } from "@/hooks/useProviders";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Toast } from "@/lib/swal";
 import { loader } from "@/stores/useLoaderStore";
+import { apiClient } from "@/lib/api";
 import { SkillCard } from "./SkillCard";
 import type { Skill } from "@/types";
 
@@ -26,6 +27,8 @@ export function SkillsTab() {
   });
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const adjustHeight = () => {
@@ -50,6 +53,7 @@ export function SkillsTab() {
     setTogglingId(id);
     try {
       await toggleSkill(id, active);
+      await fetchSkills();
       Toast.fire({ icon: "success", title: active ? "Skill habilitado" : "Skill deshabilitado" });
     } catch {
       Toast.fire({ icon: "error", title: "Error al cambiar estado del skill" });
@@ -58,7 +62,24 @@ export function SkillsTab() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!editingSkill) return;
+    setIsDeleting(true);
+    try {
+      await apiClient(`/api/skills/${editingSkill.id}`, { method: "DELETE", showError: true });
+      Toast.fire({ icon: "success", title: "Skill eliminado" });
+      fetchSkills();
+      setEditingSkill(null);
+    } catch {
+      Toast.fire({ icon: "error", title: "Error al eliminar skill" });
+    } finally {
+      setIsDeleting(false);
+      setConfirmingDelete(false);
+    }
+  };
+
   const handleOpenEdit = (skill: any) => {
+    setConfirmingDelete(false);
     setEditingSkill(skill);
     setEditForm({
       name: skill.name,
@@ -163,19 +184,58 @@ export function SkillsTab() {
         </div>
       )}
 
-      <Dialog open={!!editingSkill} onOpenChange={open => !open && setEditingSkill(null)}>
+      <Dialog open={!!editingSkill} onOpenChange={open => { if (!open) { setEditingSkill(null); setConfirmingDelete(false); } }}>
         <DialogContent className="max-w-3xl bg-zinc-950 border-white/10 text-white p-0 overflow-hidden shadow-2xl">
           <div className="p-6 border-b border-white/5 bg-white/5">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
-                <Cpu className="h-5 w-5 text-blue-400" />
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+                  <Cpu className="h-5 w-5 text-blue-400" />
+                </div>
+                <div>
+                  <DialogTitle className="text-lg font-bold text-white uppercase tracking-tight">Propiedades del Nodo de Habilidad</DialogTitle>
+                  <DialogDescription className="text-xs text-white/40">Editor granular de capacidades cognitivas y herramientas vinculadas.</DialogDescription>
+                </div>
               </div>
-              <div>
-                <DialogTitle className="text-lg font-bold text-white uppercase tracking-tight">Propiedades del Nodo de Habilidad</DialogTitle>
-                <DialogDescription className="text-xs text-white/40">Editor granular de capacidades cognitivas y herramientas vinculadas.</DialogDescription>
-              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setConfirmingDelete(true)}
+                disabled={isDeleting || confirmingDelete}
+                className="text-zinc-600 hover:text-red-400 hover:bg-red-400/10 h-8 w-8 transition-colors shrink-0"
+                title="Eliminar Skill"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
             </div>
           </div>
+
+          {confirmingDelete && (
+            <div className="mx-6 mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 animate-in fade-in slide-in-from-top-2 duration-200">
+              <p className="text-xs text-red-400 font-medium mb-3">
+                ¿Eliminar <span className="font-bold">{editingSkill?.name}</span>? Esta acción no se puede deshacer.
+              </p>
+              <div className="flex items-center gap-2 justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setConfirmingDelete(false)}
+                  disabled={isDeleting}
+                  className="h-7 px-3 text-[10px] font-bold uppercase tracking-wider text-zinc-400 hover:text-white"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="h-7 px-3 text-[10px] font-bold uppercase tracking-wider bg-red-600 hover:bg-red-500 text-white"
+                >
+                  {isDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : "Sí, eliminar"}
+                </Button>
+              </div>
+            </div>
+          )}
 
           <div className="p-8 space-y-8 max-h-[70vh] overflow-y-auto custom-scrollbar">
             {/* Sección General */}
