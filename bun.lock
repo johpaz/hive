@@ -38,7 +38,7 @@
     },
     "packages/cli": {
       "name": "@johpaz/hive-cli",
-      "version": "1.7.1",
+      "version": "1.7.11",
       "bin": {
         "hive": "dist/hive-binary",
       },
@@ -55,23 +55,23 @@
     },
     "packages/code-bridge": {
       "name": "@johpaz/hive-code-bridge",
-      "version": "1.7.1",
+      "version": "1.7.11",
       "dependencies": {
-        "@johpaz/hive-mcp": "^1.7.1",
+        "@johpaz/hive-mcp": "^1.7.11",
         "zod": "^4.3.6",
       },
       "peerDependencies": {
-        "@johpaz/hive-core": "^1.7.1",
+        "@johpaz/hive-core": "^1.7.11",
       },
     },
     "packages/core": {
       "name": "@johpaz/hive-core",
-      "version": "1.7.1",
+      "version": "1.7.11",
       "dependencies": {
         "@ag-ui/core": "^0.0.46",
-        "@johpaz/hive-code-bridge": "^1.7.1",
-        "@johpaz/hive-mcp": "^1.7.1",
-        "@johpaz/hive-skills": "^1.7.1",
+        "@johpaz/hive-code-bridge": "^1.7.11",
+        "@johpaz/hive-mcp": "^1.7.11",
+        "@johpaz/hive-skills": "^1.7.11",
         "@modelcontextprotocol/sdk": "latest",
         "@sapphire/snowflake": "latest",
         "@slack/bolt": "latest",
@@ -91,7 +91,7 @@
     },
     "packages/hive-ui": {
       "name": "@johpaz/hive-ui",
-      "version": "1.7.1",
+      "version": "1.7.11",
       "dependencies": {
         "@hookform/resolvers": "^3.10.0",
         "@radix-ui/react-accordion": "^1.2.11",
@@ -170,7 +170,7 @@
     },
     "packages/mcp": {
       "name": "@johpaz/hive-mcp",
-      "version": "1.7.1",
+      "version": "1.7.11",
       "dependencies": {
         "@modelcontextprotocol/sdk": "latest",
         "zod": "latest",
@@ -180,9 +180,26 @@
         "typescript": "latest",
       },
     },
+    "packages/sdk": {
+      "name": "@johpaz/hive-sdk",
+      "version": "1.0.0",
+      "dependencies": {
+        "@johpaz/hive-core": "workspace:*",
+        "@johpaz/hive-mcp": "workspace:*",
+        "@johpaz/hive-skills": "workspace:*",
+        "zod": "latest",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "latest",
+      },
+      "peerDependencies": {
+        "typescript": ">=5.0.0",
+      },
+    },
     "packages/skills": {
       "name": "@johpaz/hive-skills",
-      "version": "1.7.1",
+      "version": "1.7.11",
       "dependencies": {
         "js-yaml": "latest",
       },
@@ -425,6 +442,8 @@
     "@johpaz/hive-core": ["@johpaz/hive-core@workspace:packages/core"],
 
     "@johpaz/hive-mcp": ["@johpaz/hive-mcp@workspace:packages/mcp"],
+
+    "@johpaz/hive-sdk": ["@johpaz/hive-sdk@workspace:packages/sdk"],
 
     "@johpaz/hive-skills": ["@johpaz/hive-skills@workspace:packages/skills"],
 

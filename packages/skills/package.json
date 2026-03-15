@@ -17,5 +17,9 @@
   "devDependencies": {
     "typescript": "latest",
     "@types/bun": "latest"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./loader": "./src/loader.ts"
   }
 }

@@ -406,17 +406,19 @@ export class TelegramChannel extends BaseChannel {
         // Use explicit timeout for sendVoice (30 seconds)
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000);
-        
+
+        // Use type assertion to bypass grammY type limitations - signal is supported at runtime
+        // via the underlying fetch API but not exposed in grammy's type definitions
         await this.bot!.api.sendVoice(chatId, inputFile, {
           signal: controller.signal,
-        });
-        
+        } as any);
+
         clearTimeout(timeoutId);
         this.log.info(`✅ Voice sent to ${chatId}`);
         return;
       } catch (error: unknown) {
         const err = error as Error & { error_code?: number };
-        
+
         // Don't retry on client errors (4xx)
         if (err.error_code === 400) {
           this.log.error(`Bad Request: ${err.message}`);

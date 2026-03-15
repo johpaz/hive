@@ -20,7 +20,9 @@
     "./skills": "./packages/skills/src/index.ts",
     "./skills/*": "./packages/skills/src/*",
     "./code-bridge": "./packages/code-bridge/src/index.ts",
-    "./cli": "./packages/cli/src/index.ts"
+    "./cli": "./packages/cli/src/index.ts",
+    "./sdk": "./packages/sdk/src/index.ts",
+    "./sdk/*": "./packages/sdk/src/*"
   },
   "files": [
     "dist/hive.js",

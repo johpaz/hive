@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@johpaz/hive-core": ["../core/src/index.ts"],
+      "@johpaz/hive-core/*": ["../core/src/*"],
+      "@johpaz/hive-mcp": ["../mcp/src/index.ts"],
+      "@johpaz/hive-mcp/*": ["../mcp/src/*"],
+      "@johpaz/hive-skills": ["../skills/src/index.ts"],
+      "@johpaz/hive-skills/*": ["../skills/src/*"]
+    }
+  },
+  "include": ["src/**/*"]
+}

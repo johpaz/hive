@@ -21,6 +21,9 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./manager": "./src/manager.ts",
+    "./config": "./src/config.ts",
+    "./logger": "./src/logger.ts",
     "./transports": "./src/transports/index.ts"
   }
 }
