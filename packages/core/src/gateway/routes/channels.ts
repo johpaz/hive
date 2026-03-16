@@ -126,9 +126,6 @@ export async function handleCreateChannel(
     return addCorsHeaders(new Response("Missing type", { status: 400 }), req);
   }
 
-  const { randomUUID } = await import("crypto");
-  const id = randomUUID();
-
   let encryptedData: string | null = null;
   let configIv: string | null = null;
   if (channelConfig && Object.keys(channelConfig).length > 0) {
@@ -137,10 +134,26 @@ export async function handleCreateChannel(
     configIv = iv;
   }
 
-  getDb().query(`
-    INSERT INTO channels(id, type, config_encrypted, config_iv, enabled, active, status)
-    VALUES(?, ?, ?, ?, 1, 1, 'connecting')
-  `).run(id, type, encryptedData, configIv);
+  // Reuse the existing seeded channel record (e.g. id="whatsapp") if it exists
+  // and has not been configured yet — avoids creating duplicate UUID entries.
+  const seeded = getDb().query(
+    `SELECT id FROM channels WHERE type = ? AND config_encrypted IS NULL LIMIT 1`
+  ).get(type) as { id: string } | null;
+
+  let id: string;
+  if (seeded) {
+    id = seeded.id;
+    getDb().query(
+      `UPDATE channels SET config_encrypted = ?, config_iv = ?, enabled = 1, active = 1, status = 'connecting' WHERE id = ?`
+    ).run(encryptedData, configIv, id);
+  } else {
+    const { randomUUID } = await import("crypto");
+    id = randomUUID();
+    getDb().query(`
+      INSERT INTO channels(id, type, config_encrypted, config_iv, enabled, active, status)
+      VALUES(?, ?, ?, ?, 1, 1, 'connecting')
+    `).run(id, type, encryptedData, configIv);
+  }
 
   if (channelManager) {
     channelManager.addChannel(type, id, channelConfig || {}).catch((err: Error) => {
@@ -191,11 +204,16 @@ export async function handleReconnectChannel(
       } catch { /* keep empty */ }
     }
 
-    // Remove old instance and start fresh
-    channelManager.removeChannel(row.type, channelId).catch(() => {});
-    channelManager.addChannel(row.type, channelId, config).catch((err: Error) => {
-      console.error(`[channels] Failed to reconnect ${row.type}:${channelId}:`, err.message);
-    });
+    // Remove old instance then start fresh — must be sequential to avoid race
+    // where removeChannel deletes the key AFTER addChannel already set it
+    ;(async () => {
+      try { await channelManager.removeChannel(row.type, channelId); } catch { /* ignore */ }
+      try {
+        await channelManager.addChannel(row.type, channelId, config);
+      } catch (err: unknown) {
+        console.error(`[channels] Failed to reconnect ${row.type}:${channelId}:`, (err as Error).message);
+      }
+    })();
   }
 
   return addCorsHeaders(Response.json({ success: true, status: "connecting" }), req);

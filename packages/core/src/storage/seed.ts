@@ -516,6 +516,10 @@ export function seedAllData(): void {
     }
     log.info(`[seed] ✅ ${channelCount} channels procesados`);
 
+    // WebChat siempre activo — no requiere credenciales
+    db.query(`UPDATE channels SET active = 1, enabled = 1, status = 'connected' WHERE id = 'webchat'`).run();
+    log.info("[seed] ✅ webchat activado por defecto");
+
     // 8️⃣ Code Bridge
     let cbCount = 0;
     for (const cb of SEED_DATA.codeBridge) {

@@ -1,6 +1,7 @@
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
+  fetchLatestBaileysVersion,
   type WASocket,
   type ConnectionState,
 } from "@whiskeysockets/baileys";
@@ -9,6 +10,8 @@ import { BaseChannel } from "./base.ts";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import * as path from "node:path";
 import { logger } from "../utils/logger.ts";
+// @ts-ignore — no type definitions for qrcode-terminal
+import qrcodeTerminal from "qrcode-terminal";
 
 export interface WhatsAppConfig extends ChannelConfig {
   accountId: string;
@@ -93,8 +96,11 @@ export class WhatsAppChannel extends BaseChannel {
 
     try {
       const { state, saveCreds } = await useMultiFileAuthState(this.authPath);
+      const { version } = await fetchLatestBaileysVersion();
+      this.log.info(`Using WhatsApp Web v${version.join(".")}`);
 
       this.socket = makeWASocket({
+        version,
         auth: state,
         printQRInTerminal: false,
         getMessage: async () => ({ conversation: "" }),
@@ -109,6 +115,11 @@ export class WhatsAppChannel extends BaseChannel {
       });
 
       this.socket.ev.on("creds.update", saveCreds);
+
+      // Baileys v7: handle LID ↔ phone-number mapping updates
+      this.socket.ev.on("lid-mapping.update" as any, () => {
+        // LID mappings are persisted automatically via useMultiFileAuthState
+      });
 
     } catch (error) {
       this.connectionState.status = "error";
@@ -138,8 +149,13 @@ export class WhatsAppChannel extends BaseChannel {
       this.connectionState.status = "disconnected";
       this.log.warn(`WhatsApp disconnected: ${statusCode}`);
 
-      if (statusCode === DisconnectReason.loggedOut) {
-        this.log.error("WhatsApp logged out - session invalidated. Need to re-scan QR.");
+      const needsSessionClear =
+        statusCode === DisconnectReason.loggedOut ||
+        statusCode === DisconnectReason.badSession ||
+        statusCode === 515; // restartRequired
+
+      if (needsSessionClear) {
+        this.log.info("Clearing WhatsApp session files for fresh QR scan.");
         rmSync(this.authPath, { recursive: true, force: true });
         mkdirSync(this.authPath, { recursive: true });
       }
@@ -168,8 +184,7 @@ export class WhatsAppChannel extends BaseChannel {
     this.log.info("  WHATSAPP QR CODE - Scan with your phone");
     this.log.info("=".repeat(50) + "\n");
 
-    const qrcode = require("qrcode-terminal");
-    qrcode.generate(qr, { small: false }, (qrString: string) => {
+    qrcodeTerminal.generate(qr, { small: false }, (qrString: string) => {
       this.log.info(qrString);
     });
 
