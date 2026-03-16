@@ -196,7 +196,7 @@ export async function start(flags: string[]): Promise<void> {
  ║   ██║  ██║██║ ╚████╔╝ ███████╗             ║
  ║   ╚═╝  ╚═╝╚═╝  ╚═══╝  ╚══════╝             ║
  ║                                            ║
- ║   Personal Swarm AI Gateway — v1.7.11       ║
+ ║   Personal Swarm AI Gateway — v1.7.12       ║
  ╚════════════════════════════════════════════╝
 `);
   }
