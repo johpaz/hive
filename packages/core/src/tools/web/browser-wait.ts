@@ -88,51 +88,58 @@ export const browserWaitTool: Tool = {
 
       const startTime = Date.now();
 
+      let found = false;
+
       if (selector) {
-        // Wait for CSS selector
         const isXPath = selector.startsWith("xpath:");
         const actualSelector = isXPath ? selector.slice(6) : selector;
 
-        if (isXPath) {
-          // XPath support via waitForFunction
-          await page.waitForFunction(
-            (xpath: string) => {
-              const result = document.evaluate(
-                xpath,
-                document,
-                null,
-                XPathResult.FIRST_ORDERED_NODE_TYPE,
-                null
-              );
-              return result.singleNodeValue !== null;
-            },
-            { timeout },
-            actualSelector
-          );
-        } else {
-          await page.waitForSelector(actualSelector, { timeout });
+        try {
+          if (isXPath) {
+            await page.waitForFunction(
+              (xpath: string) => {
+                const result = document.evaluate(
+                  xpath, document, null,
+                  XPathResult.FIRST_ORDERED_NODE_TYPE, null
+                );
+                return result.singleNodeValue !== null;
+              },
+              { timeout },
+              actualSelector
+            );
+          } else {
+            await page.waitForSelector(actualSelector, { timeout });
+          }
+          found = true;
+        } catch {
+          log.warn(`Selector "${actualSelector}" not found within ${timeout}ms`);
         }
       }
 
       if (condition) {
-        // Wait for custom condition
-        await page.waitForFunction(
-          (conditionCode: string) => {
-            // eslint-disable-next-line no-eval
-            return eval(conditionCode);
-          },
-          { timeout },
-          condition
-        );
+        try {
+          await page.waitForFunction(
+            (conditionCode: string) => {
+              // eslint-disable-next-line no-eval
+              return eval(conditionCode);
+            },
+            { timeout },
+            condition
+          );
+          found = true;
+        } catch {
+          log.warn(`Condition not met within ${timeout}ms`);
+        }
       }
 
       const elapsed = Date.now() - startTime;
       const currentUrl = page.url();
 
-      log.info(`Wait completed in ${elapsed}ms on ${currentUrl}`);
+      log.info(`Wait completed in ${elapsed}ms on ${currentUrl} (found=${found})`);
 
       return {
         ok: true,
+        found,
         url: currentUrl,
         selector,
         condition,

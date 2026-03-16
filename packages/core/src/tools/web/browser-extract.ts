@@ -81,25 +81,26 @@ export const browserExtractTool: Tool = {
       const isXPath = selector.startsWith("xpath:");
       const actualSelector = isXPath ? selector.slice(6) : selector;
 
-      // Wait for element(s) to exist
-      if (isXPath) {
-        // XPath support via waitForFunction
-        await page.waitForFunction(
-          (xpath: string) => {
-            const result = document.evaluate(
-              xpath,
-              document,
-              null,
-              XPathResult.FIRST_ORDERED_NODE_TYPE,
-              null
-            );
-            return result.singleNodeValue !== null;
-          },
-          { timeout },
-          actualSelector
-        );
-      } else {
-        await page.waitForSelector(actualSelector, { timeout });
+      // Intentar esperar el elemento — si no aparece, continuar igual
+      // (puede estar en el DOM pero no "visible", o el sitio usa CSS dinámico)
+      try {
+        if (isXPath) {
+          await page.waitForFunction(
+            (xpath: string) => {
+              const result = document.evaluate(
+                xpath, document, null,
+                XPathResult.FIRST_ORDERED_NODE_TYPE, null
+              );
+              return result.singleNodeValue !== null;
+            },
+            { timeout: Math.min(timeout, 10000) },
+            actualSelector
+          );
+        } else {
+          await page.waitForSelector(actualSelector, { timeout: Math.min(timeout, 10000) });
+        }
+      } catch {
+        log.warn(`Selector "${actualSelector}" not found within timeout — attempting extraction anyway`);
       }
 
       // Extract data
