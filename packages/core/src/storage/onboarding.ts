@@ -514,7 +514,7 @@ export function activateTools(userId: string, toolIds: string[]): void {
 }
 
 /**
- * Activate all browser tools when Lightpanda is available
+ * Activate all browser tools when Chromium is available
  * Called from gateway initializer when browser service connects successfully
  */
 export function activateBrowserTools(): void {
@@ -533,7 +533,7 @@ export function activateBrowserTools(): void {
     for (const toolId of browserToolIds) {
       db.query(`UPDATE tools SET active = 1, enabled = 1 WHERE id = ?`).run(toolId);
     }
-    log.info("✅ Browser tools activated (Lightpanda available)");
+    log.info("✅ Browser tools activated (Chromium available)");
   } catch (e) {
     log.error("⚠️ Error activating browser tools:", { error: (e as Error).message });
   }

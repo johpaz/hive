@@ -62,24 +62,18 @@ export const browserExtractTool: Tool = {
 
     log.info(`Extracting: ${selector}${url ? ` from ${url}` : ""}`);
 
-    let browser: import("puppeteer-core").Browser | null = null;
-    let page: import("puppeteer-core").Page | null = null;
-
     try {
-      browser = await browserService.getConnection();
-      if (!browser) {
-        throw new Error("Failed to get browser connection");
+      const page = await browserService.getPage();
+      if (!page) {
+        throw new Error("Failed to get browser page");
       }
-
-      const pages = await browser.pages();
-      page = pages[0] || await browser.newPage();
 
       page.setDefaultTimeout(timeout);
 
       // Navigate to URL if provided
       if (url) {
         await page.goto(url, {
-          waitUntil: "networkidle2",
+          waitUntil: "domcontentloaded",
           timeout,
         });
       }

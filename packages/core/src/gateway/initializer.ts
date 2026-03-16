@@ -248,12 +248,12 @@ export async function initializeGateway(
     const agent = createAgentService();
     await agent.initialize();
 
-    // 5b. Initialize Browser Service (Lightpanda via @lightpanda/browser)
-    // Lightpanda se inicia automáticamente como proceso interno
+    // 5b. Initialize Browser Service (Chromium via puppeteer)
+    // Puppeteer gestiona su propio Chromium automáticamente
     let browserAvailable = false;
     
     try {
-      log.info("Initializing Lightpanda browser...");
+      log.info("Initializing Chromium browser (puppeteer)...");
       
       const browserService = initializeBrowserService(config);
       
@@ -261,12 +261,12 @@ export async function initializeGateway(
       browserAvailable = await browserService.start();
 
       if (browserAvailable) {
-        log.info("✅ Lightpanda connected - browser tools enabled");
+        log.info("✅ Chromium connected - browser tools enabled");
         // Activate browser tools in database
         activateBrowserTools();
       } else {
-        log.warn("⚠️  Lightpanda no pudo iniciarse - browser tools desactivadas");
-        log.warn("   Verifica que @lightpanda/browser esté instalado: bun install");
+        log.warn("⚠️  Chromium no pudo iniciarse - browser tools desactivadas");
+        log.warn("   Verifica que puppeteer esté instalado: bun add puppeteer");
       }
     } catch (error) {
       log.warn(`Browser Service initialization skipped: ${(error as Error).message}`);
