@@ -147,14 +147,14 @@ export function ToolManager() {
                       ? 'hive-icon-wrap--internal-active'
                       : 'hive-icon-wrap--internal-disabled'
                       }`}>
-                      {tool.type === 'filesystem' && <Globe2 className="h-6 w-6" />}
-                      {tool.type === 'web' && <Globe2 className="h-6 w-6" />}
-                      {tool.type === 'cron' && <Search className="h-6 w-6" />}
-                      {tool.type === 'cli' && <Terminal className="h-6 w-6" />}
-                      {tool.type === 'agents' && <Settings2 className="h-6 w-6" />}
-                      {tool.type === 'projects' && <Terminal className="h-6 w-6" />}
-                      {tool.type === 'canvas' && <Terminal className="h-6 w-6" />}
-                      {tool.type === 'voice' && <Settings2 className="h-6 w-6" />}
+                      {tool.category === 'filesystem' && <Globe2 className="h-6 w-6" />}
+                      {tool.category === 'web' && <Globe2 className="h-6 w-6" />}
+                      {tool.category === 'cron' && <Search className="h-6 w-6" />}
+                      {tool.category === 'cli' && <Terminal className="h-6 w-6" />}
+                      {tool.category === 'agents' && <Settings2 className="h-6 w-6" />}
+                      {tool.category === 'projects' && <Terminal className="h-6 w-6" />}
+                      {tool.category === 'canvas' && <Terminal className="h-6 w-6" />}
+                      {tool.category === 'voice' && <Settings2 className="h-6 w-6" />}
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -183,7 +183,7 @@ export function ToolManager() {
                     <div className="pt-4 border-t border-white/5 flex items-center gap-4">
                       <div className="hive-stat">
                         <span className="hive-stat__label">TIPO</span>
-                        <span className="hive-stat__value truncate max-w-[80px]">{tool.type}</span>
+                        <span className="hive-stat__value truncate max-w-[80px]">{tool.category}</span>
                       </div>
                       <div className="hive-stat">
                         <span className="hive-stat__label">ESTADO</span>

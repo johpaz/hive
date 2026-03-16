@@ -141,17 +141,25 @@ export async function handleUpdateAgent(req: Request, addCorsHeaders: (r: Respon
   const updates: string[] = []
   const params: unknown[] = []
 
-  const possibleFields = [
-    "name", "description", "provider_id", "model_id", "status",
-    "enabled", "tone", "workspace"
-  ]
+  // Map: snake_case DB field → camelCase body key
+  const fieldMap: Record<string, string> = {
+    name:            "name",
+    description:     "description",
+    provider_id:     "providerId",
+    model_id:        "modelId",
+    system_prompt:   "systemPrompt",
+    status:          "status",
+    enabled:         "enabled",
+    tone:            "tone",
+    workspace:       "workspace",
+    role:            "role",
+    max_iterations:  "maxIterations",
+  }
 
-  for (const field of possibleFields) {
-    const bodyKey = field.replace(/_([a-z])/g, (_g) => field[1]?.toUpperCase() ?? "")
-    let val = body[field] !== undefined ? body[field] : body[bodyKey]
-
+  for (const [dbField, camelKey] of Object.entries(fieldMap)) {
+    const val = body[dbField] !== undefined ? body[dbField] : body[camelKey]
     if (val !== undefined) {
-      updates.push(`${field} = ?`)
+      updates.push(`${dbField} = ?`)
       params.push(typeof val === 'object' ? JSON.stringify(val) : val)
     }
   }
@@ -174,14 +182,27 @@ export async function handleUpdateAgent(req: Request, addCorsHeaders: (r: Respon
   }
 
   if (updates.length > 0) {
+    updates.push("updated_at = unixepoch()")
     params.push(agentId)
     getDb().query(`UPDATE agents SET ${updates.join(", ")} WHERE id = ?`).run(...params as any[])
 
-    emitCanvas("canvas:node_update", {
-      id: agentId,
-      updates: body
-    })
+    emitCanvas("canvas:node_update", { id: agentId, updates: body })
   }
+
+  return addCorsHeaders(Response.json({ ok: true }), req)
+}
+
+export async function handleDeleteAgent(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
+  const url = new URL(req.url)
+  const agentId = url.pathname.split("/").pop()
+
+  if (!agentId) {
+    return addCorsHeaders(new Response("Missing ID", { status: 400 }), req)
+  }
+
+  getDb().query(`DELETE FROM agents WHERE id = ?`).run(agentId)
+
+  emitCanvas("canvas:node_remove", { id: agentId })
 
   return addCorsHeaders(Response.json({ ok: true }), req)
 }

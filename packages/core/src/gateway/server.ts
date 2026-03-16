@@ -28,12 +28,12 @@ import { voiceService } from "../voice/index";
 import { initializeGateway, type GatewayInitializationResult } from "./initializer";
 import { handleSetupStatus, handleVerifyProvider, handleCompleteSetup } from "./routes/setup";
 import { resolveUserId } from "../storage/onboarding";
-import { handleGetAgents, handleCreateAgent, handleUpdateAgent } from "./routes/agents";
+import { handleGetAgents, handleCreateAgent, handleUpdateAgent, handleDeleteAgent } from "./routes/agents";
 import { handleGetProviders, handleCreateProvider, handleToggleProvider, handleUpdateProvider, handleSyncProviderModels } from "./routes/providers";
 import { handleGetUsers, handleCreateUser, handleUpdateUserSettings, handleGetUserChannels, handleLinkUserChannel } from "./routes/users";
 import { handleGetSkills, handleActivateSkill, handleUpdateSkill, handleDeleteSkill, handleCreateSkill } from "./routes/skills";
 import { handleGetEthics, handleActivateEthics, handleDeleteEthics } from "./routes/ethics";
-import { handleGetTools, handleActivateTool } from "./routes/tools";
+import { handleGetTools, handleActivateTool, handleUpdateTool } from "./routes/tools";
 import { handleGetProjects, handleGetActiveProject, handleCreateProject, handleUpdateProject, handleGetProjectHistory, handleGetProjectDetail, handleGetProjectTasks } from "./routes/projects";
 import { handleGetTasks, handleUpdateTask } from "./routes/tasks";
 import { setChannelSendFn } from "./channel-notify";
@@ -1005,6 +1005,10 @@ Please execute it now.`;
           return await handleUpdateAgent(req, addCorsHeaders)
         }
 
+        if (url.pathname.match(/^\/api\/agents\/[^/]+$/) && req.method === "DELETE") {
+          return await handleDeleteAgent(req, addCorsHeaders)
+        }
+
         // ── Providers API ───────────────────────────────────────────────────
         if (url.pathname === "/api/providers" && req.method === "GET") {
           return await handleGetProviders(req, addCorsHeaders)
@@ -1088,6 +1092,10 @@ Please execute it now.`;
 
         if (url.pathname.match(/^\/api\/tools\/[^/]+\/toggle$/) && req.method === "POST") {
           return await handleActivateTool(req, addCorsHeaders)
+        }
+
+        if (url.pathname.match(/^\/api\/tools\/[^/]+$/) && req.method === "PUT") {
+          return await handleUpdateTool(req, addCorsHeaders)
         }
 
         // ── Ethics API ──────────────────────────────────────────────────────

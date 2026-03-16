@@ -33,3 +33,27 @@ export async function handleActivateTool(req: Request, addCorsHeaders: (r: Respo
 
   return addCorsHeaders(Response.json({ success: true, toolId, active }), req)
 }
+
+export async function handleUpdateTool(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
+  const url = new URL(req.url)
+  const toolId = url.pathname.split("/")[3]
+  const body = await req.json().catch(() => ({}))
+
+  if (!toolId) {
+    return addCorsHeaders(Response.json({ success: false, error: "toolId required" }), req)
+  }
+
+  const updates: string[] = []
+  const params: unknown[] = []
+
+  if (body.name !== undefined)        { updates.push("name = ?");        params.push(body.name) }
+  if (body.description !== undefined) { updates.push("description = ?"); params.push(body.description) }
+  if (body.category !== undefined)    { updates.push("category = ?");    params.push(body.category) }
+
+  if (updates.length > 0) {
+    params.push(toolId)
+    getDb().query(`UPDATE tools SET ${updates.join(", ")} WHERE id = ?`).run(...params as any[])
+  }
+
+  return addCorsHeaders(Response.json({ success: true }), req)
+}
