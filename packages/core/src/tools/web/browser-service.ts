@@ -1,10 +1,14 @@
 /**
  * BrowserService - Gestiona Lightpanda via @lightpanda/browser
- * 
+ *
  * Lightpanda se inicia automáticamente como proceso interno.
  * Hive se conecta via CDP usando puppeteer-core.
- * 
- * @see https://lightpanda.io
+ *
+ * IMPORTANTE: Lightpanda solo soporta UNA conexión activa por proceso y UNA
+ * página activa a la vez. El servicio mantiene una página persistente y
+ * la reutiliza en todos los tools (no se crea/cierra por cada llamada).
+ *
+ * @see https://github.com/lightpanda-io/browser
  */
 
 import { logger } from "../../utils/logger.ts";
@@ -26,6 +30,10 @@ export class BrowserService {
   private available: boolean = false;
   private config: Config["tools"]["browser"];
 
+  // Persistent connection — Lightpanda supports only ONE active connection
+  private browser: import("puppeteer-core").Browser | null = null;
+  private page: import("puppeteer-core").Page | null = null;
+
   private constructor(config: Config) {
     this.config = config.tools?.browser ?? {};
   }
@@ -44,10 +52,8 @@ export class BrowserService {
     try {
       log.info("Starting Lightpanda browser...");
 
-      // Importar @lightpanda/browser dinámicamente
       const { lightpanda } = await import("@lightpanda/browser");
 
-      // Iniciar Lightpanda como proceso separado
       const proc = await lightpanda.serve({
         host: CDP_HOST,
         port: CDP_PORT,
@@ -60,15 +66,16 @@ export class BrowserService {
         startedAt: Date.now(),
       };
 
-      // Esperar un momento para que esté listo
+      // Esperar a que esté listo
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Verificar que está disponible
       const isRunning = await this.checkConnection();
-      
+
       if (isRunning) {
         this.available = true;
         log.info("✅ Lightpanda ready for CDP connections");
+        // Establecer conexión y página persistente desde el inicio
+        await this.ensurePage();
         return true;
       } else {
         log.warn("⚠️  Lightpanda started but CDP not responding");
@@ -95,45 +102,92 @@ export class BrowserService {
   }
 
   /**
-   * Obtiene conexión CDP para puppeteer-core
+   * Retorna la página persistente, reconectando si es necesario.
+   * Todos los browser tools deben usar este método en vez de getConnection().
+   *
+   * Lightpanda: una conexión, un contexto, una página activa.
    */
-  async getConnection(): Promise<import("puppeteer-core").Browser | null> {
-    if (!this.available) {
-      return null;
-    }
+  async getPage(): Promise<import("puppeteer-core").Page | null> {
+    if (!this.available) return null;
 
     try {
-      const puppeteer = await import("puppeteer-core");
-
-      const browser = await puppeteer.connect({
-        browserWSEndpoint: `ws://${CDP_HOST}:${CDP_PORT}`,
-        defaultViewport: { width: 1920, height: 1080 },
-      });
-
-      return browser;
+      // Si la página existe y no está cerrada, reutilizarla
+      if (this.page && !this.page.isClosed()) {
+        return this.page;
+      }
+      // Si el browser existe pero la página murió, intentar recuperarla
+      if (this.browser && this.browser.connected) {
+        const pages = await this.browser.pages().catch(() => []);
+        if (pages.length > 0) {
+          this.page = pages[0];
+          return this.page;
+        }
+        this.page = await this.browser.newPage();
+        return this.page;
+      }
+      // Reconectar todo
+      await this.ensurePage();
+      return this.page;
     } catch (error) {
-      log.error(`Failed to connect via CDP: ${(error as Error).message}`);
-      return null;
+      log.warn(`getPage: reconnecting after error — ${(error as Error).message}`);
+      try {
+        await this.ensurePage();
+        return this.page;
+      } catch (reconnectError) {
+        log.error(`getPage: reconnect failed — ${(reconnectError as Error).message}`);
+        return null;
+      }
     }
   }
 
   /**
-   * Retorna si Lightpanda está disponible
+   * Establece (o restablece) la conexión persistente y la página.
    */
+  private async ensurePage(): Promise<void> {
+    // Desconectar conexión anterior si existe
+    if (this.browser) {
+      try { this.browser.disconnect(); } catch { /* ignore */ }
+      this.browser = null;
+      this.page = null;
+    }
+
+    const puppeteer = await import("puppeteer-core");
+
+    this.browser = await puppeteer.connect({
+      browserWSEndpoint: `ws://${CDP_HOST}:${CDP_PORT}`,
+      defaultViewport: { width: 1920, height: 1080 },
+    });
+
+    const pages = await this.browser.pages().catch(() => [] as import("puppeteer-core").Page[]);
+    this.page = pages[0] ?? await this.browser.newPage();
+
+    log.info("Browser page established (persistent)");
+  }
+
+  /**
+   * @deprecated Usar getPage() — mantiene la conexión persistente.
+   */
+  async getConnection(): Promise<import("puppeteer-core").Browser | null> {
+    if (!this.available) return null;
+    try {
+      if (!this.browser || !this.browser.connected) {
+        await this.ensurePage();
+      }
+      return this.browser;
+    } catch (error) {
+      log.error(`getConnection failed: ${(error as Error).message}`);
+      return null;
+    }
+  }
+
   isAvailable(): boolean {
     return this.available;
   }
 
-  /**
-   * Retorna si el proceso está corriendo
-   */
   isRunning(): boolean {
     return this.lightpandaProcess !== null;
   }
 
-  /**
-   * Obtiene información del proceso
-   */
   getInfo(): { running: boolean; port: number; host: string; startedAt?: number } {
     return {
       running: this.isRunning(),
@@ -143,22 +197,20 @@ export class BrowserService {
     };
   }
 
-  /**
-   * Detiene Lightpanda
-   */
   async stop(): Promise<void> {
+    this.page = null;
+    if (this.browser) {
+      try { this.browser.disconnect(); } catch { /* ignore */ }
+      this.browser = null;
+    }
     if (this.lightpandaProcess) {
       try {
         log.info("Stopping Lightpanda...");
-        
-        // Limpiar proceso
         this.lightpandaProcess.proc.stdout?.destroy();
         this.lightpandaProcess.proc.stderr?.destroy();
         this.lightpandaProcess.proc.kill();
-        
         this.lightpandaProcess = null;
         this.available = false;
-        
         log.info("✅ Lightpanda stopped");
       } catch (error) {
         log.error(`Error stopping Lightpanda: ${(error as Error).message}`);
@@ -166,9 +218,6 @@ export class BrowserService {
     }
   }
 
-  /**
-   * Limpia recursos al cerrar Gateway
-   */
   async dispose(): Promise<void> {
     await this.stop();
     BrowserService.instance = null;
@@ -176,9 +225,6 @@ export class BrowserService {
   }
 }
 
-/**
- * Singleton instance
- */
 let browserServiceInstance: BrowserService | null = null;
 
 export function initializeBrowserService(config: Config): BrowserService {

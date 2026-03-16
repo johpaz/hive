@@ -4,7 +4,7 @@ import type { IChannel, IncomingMessage, MessageHandler } from "./base.ts";
 import { createTelegramChannel, type TelegramConfig } from "./telegram.ts";
 import { createDiscordChannel, type DiscordConfig } from "./discord.ts";
 import { createWebChatChannel, type WebChatConfig } from "./webchat.ts";
-import { createWhatsAppChannel, type WhatsAppConfig } from "./whatsapp.ts";
+import { createWhatsAppChannel, WhatsAppChannel, type WhatsAppConfig } from "./whatsapp.ts";
 import { createSlackChannel, type SlackConfig } from "./slack.ts";
 import { getDb } from "../storage/sqlite.ts";
 import { decryptConfig } from "../storage/crypto.ts";
@@ -186,6 +186,14 @@ export class ChannelManager {
         this.log.info(`Channel ${key} is already running, skipping`);
         continue;
       }
+
+      // WhatsApp: skip auto-start if no credentials exist.
+      // QR generation should only happen when the user explicitly requests connection.
+      if (channel instanceof WhatsAppChannel && !channel.hasCredentials()) {
+        this.log.info(`${key}: no credentials found, skipping auto-start — connect via UI to generate QR`);
+        continue;
+      }
+
       promises.push(
         channel.start().catch((error) => {
           this.log.error(`Failed to start channel ${key}: ${error.message}`);

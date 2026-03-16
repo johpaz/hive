@@ -66,7 +66,8 @@
     "lint": "bunx tsc --noEmit",
     "build:binaries": "bun run scripts/build-binaries.ts",
     "bench": "bun run scripts/bench.ts",
-    "publish:sdk": "bun run scripts/publish-sdk.ts"
+    "publish:sdk": "bun run scripts/publish-sdk.ts",
+    "reload-tools": "bun run scripts/reload-tools.ts"
   },
   "dependencies": {
     "@ag-ui/core": "^0.0.46",

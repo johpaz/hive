@@ -1,6 +1,6 @@
 /**
  * browser_navigate - Navigate to URL and get rendered content
- * 
+ *
  * Uses Puppeteer Core to connect to Lightpanda via CDP.
  * Supports full JavaScript rendering.
  *
@@ -52,65 +52,47 @@ export const browserNavigateTool: Tool = {
 
     log.info(`Navigating: ${url}${waitFor ? ` (waiting for: ${waitFor})` : ""}`);
 
-    let browser: import("puppeteer-core").Browser | null = null;
-    let page: import("puppeteer-core").Page | null = null;
-
     try {
-      browser = await browserService.getConnection();
-      if (!browser) {
-        throw new Error("Failed to get browser connection");
+      const page = await browserService.getPage();
+      if (!page) {
+        throw new Error("Failed to get browser page");
       }
 
-      // Crear página nueva para aislamiento
-      page = await browser.newPage();
-
-      // Set timeout
       page.setDefaultTimeout(timeout);
       page.setDefaultNavigationTimeout(timeout);
 
-      // Navigate to URL con waitUntil más robusto
+      // Lightpanda soporta "domcontentloaded" y "networkidle0".
+      // No soporta "networkidle2" ni arrays de waitUntil.
       const response = await page.goto(url, {
-        waitUntil: ["domcontentloaded", "networkidle2"],
+        waitUntil: "domcontentloaded",
         timeout,
       });
 
-      if (!response) {
-        throw new Error("Navigation failed - no response");
-      }
+      // Lightpanda puede retornar null en redirects — no es un error fatal
+      const statusCode = response?.status() ?? 0;
 
-      // Esperar un momento para que JS termine de ejecutar
+      // Esperar a que JS termine de ejecutar
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Wait for specific selector if provided
+      // Esperar selector específico si se proporcionó
       if (waitFor) {
         try {
-          await page.waitForSelector(waitFor, { 
-            timeout,
-          });
-        } catch (e) {
+          await page.waitForSelector(waitFor, { timeout });
+        } catch {
           log.warn(`Selector "${waitFor}" not found within timeout`);
         }
       }
 
-      // Get final URL (after redirects)
       const finalUrl = page.url();
 
-      // Extract content - remove scripts and styles, keep text
+      // Extraer texto limpio del DOM
       const content = await page.evaluate(() => {
         try {
-          // Remove script and style elements
           document.querySelectorAll("script, style, noscript, meta, link, iframe").forEach(el => el.remove());
-          
-          // Get text content
-          let text = document.body.innerText || document.documentElement.innerText || "";
-          
-          // Clean up whitespace
+          let text = document.body?.innerText || document.documentElement?.innerText || "";
           text = text.replace(/\s+/g, " ").trim();
-          
-          // Limit to 50000 characters
           return text.slice(0, 50000);
         } catch (e) {
-          // Fallback si el DOM no está disponible
           return "Error extracting content: " + (e as Error).message;
         }
       });
@@ -123,42 +105,18 @@ export const browserNavigateTool: Tool = {
         finalUrl,
         content,
         length: content.length,
-        statusCode: response.status(),
+        statusCode,
       };
     } catch (error) {
-      const errorMessage = (error as Error).message;
-      
-      // Manejar errores específicos
-      if (errorMessage.includes("detached")) {
-        log.error("Navigation failed: page was detached (likely navigated away or closed)");
-        return {
-          ok: false,
-          error: "La página se cerró durante la navegación. Intenta nuevamente.",
-        };
-      }
-      
-      if (errorMessage.includes("timeout")) {
+      const msg = (error as Error).message;
+
+      if (msg.includes("timeout")) {
         log.error(`Navigation timeout: ${url}`);
-        return {
-          ok: false,
-          error: `Tiempo de espera agotado (${timeout}ms). La página puede ser lenta o el URL incorrecto.`,
-        };
+        return { ok: false, error: `Timeout (${timeout}ms): la página tardó demasiado.` };
       }
-      
-      log.error(`Navigation failed: ${errorMessage}`);
-      return {
-        ok: false,
-        error: `Failed to navigate: ${errorMessage}`,
-      };
-    } finally {
-      // Cerrar página para limpiar recursos
-      if (page && !page.isClosed()) {
-        try {
-          await page.close();
-        } catch {
-          // Ignorar errores al cerrar
-        }
-      }
+
+      log.error(`Navigation failed: ${msg}`);
+      return { ok: false, error: `Failed to navigate: ${msg}` };
     }
   },
 };

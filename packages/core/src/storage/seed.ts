@@ -18,7 +18,7 @@ export interface SeedData {
   codeBridgeConfig: Array<{ id: string; key: string; value: string }>
 }
 
-const SEED_DATA: SeedData = {
+export const SEED_DATA: SeedData = {
   tools: [
 
     // ─────────────────────────────────────────
@@ -37,14 +37,13 @@ const SEED_DATA: SeedData = {
     // ─────────────────────────────────────────
     { id: "web_search", name: "web_search", category: "web", description: "Search the web for current information and research. Spanish: buscar en internet, búsqueda web, noticias, información" },
     { id: "web_fetch", name: "web_fetch", category: "web", description: "Fetch plain content from a URL (lightweight, no JS). Spanish: obtener página, descargar contenido, extraer texto de url" },
-    // Browser tools - desactivadas por defecto, se activan si Lightpanda está disponible
-    { id: "browser_navigate", name: "browser_navigate", category: "web", description: "Navigate browser to URL, get rendered page content (supports JS). Spanish: navegar a url, abrir página, sitio web", enabled: false },
-    { id: "browser_screenshot", name: "browser_screenshot", category: "web", description: "Take screenshot of current browser page. Spanish: captura de pantalla, screenshot, imagen de página", enabled: false },
-    { id: "browser_click", name: "browser_click", category: "web", description: "Click on a web page element. Spanish: hacer clic, botón, enlace, interactuar", enabled: false },
-    { id: "browser_type", name: "browser_type", category: "web", description: "Type text into a form field in the browser. Spanish: escribir formulario, tipear, campo de texto, input", enabled: false },
-    { id: "browser_extract", name: "browser_extract", category: "web", description: "Extract text, links, or structured data from page using CSS selectors or XPath. Spanish: extraer datos, obtener información, scraping, selectores", enabled: false },
-    { id: "browser_script", name: "browser_script", category: "web", description: "Execute arbitrary JavaScript in the browser page context and get the result. Spanish: ejecutar javascript, script, código, función, evaluar", enabled: false },
-    { id: "browser_wait", name: "browser_wait", category: "web", description: "Wait for an element to appear or condition to be met on the page. Spanish: esperar, wait, condición, elemento, selector", enabled: false },
+    { id: "browser_navigate", name: "browser_navigate", category: "web", description: "Navigate browser to URL, get rendered page content (supports JS). Spanish: navegar a url, abrir página, sitio web" },
+    { id: "browser_screenshot", name: "browser_screenshot", category: "web", description: "Take screenshot of current browser page. Spanish: captura de pantalla, screenshot, imagen de página" },
+    { id: "browser_click", name: "browser_click", category: "web", description: "Click on a web page element. Spanish: hacer clic, botón, enlace, interactuar" },
+    { id: "browser_type", name: "browser_type", category: "web", description: "Type text into a form field in the browser. Spanish: escribir formulario, tipear, campo de texto, input" },
+    { id: "browser_extract", name: "browser_extract", category: "web", description: "Extract text, links, or structured data from page using CSS selectors or XPath. Spanish: extraer datos, obtener información, scraping, selectores" },
+    { id: "browser_script", name: "browser_script", category: "web", description: "Execute arbitrary JavaScript in the browser page context and get the result. Spanish: ejecutar javascript, script, código, función, evaluar" },
+    { id: "browser_wait", name: "browser_wait", category: "web", description: "Wait for an element to appear or condition to be met on the page. Spanish: esperar, wait, condición, elemento, selector" },
 
     // ─────────────────────────────────────────
     // 3. PROJECTS — Proyectos y tareas en BD

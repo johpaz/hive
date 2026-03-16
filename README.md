@@ -830,6 +830,8 @@ Lightpanda es un browser headless diseñado para ser **9x más liviano en RAM** 
 | `browser_script` | Ejecutar JavaScript arbitrario en el contexto de la página |
 | `browser_wait` | Esperar por elemento o condición antes de continuar |
 
+Todas las tools de browser están **activadas por defecto**. Si Lightpanda no está disponible, las tools fallan gracefully sin afectar el resto de Hive.
+
 ### Instalación de Lightpanda
 
 #### Docker (Recomendado)
@@ -910,10 +912,10 @@ sudo systemctl start lightpanda
 
 ### Configuración
 
-**No requiere configuración.** Hive intenta conectar automáticamente a Lightpanda en `ws://127.0.0.1:9222` al arrancar.
+**No requiere configuración.** Las browser tools están activadas por defecto. Al arrancar, Hive intenta conectar automáticamente a Lightpanda en `ws://127.0.0.1:9222`.
 
-- ✅ **Si Lightpanda está disponible**: Las 7 browser tools se activan automáticamente
-- ⚠️ **Si Lightpanda no está corriendo**: Las tools se desactivan sin afectar el resto de Hive
+- ✅ **Si Lightpanda está disponible**: Las 7 browser tools funcionan normalmente
+- ⚠️ **Si Lightpanda no está corriendo**: Las tools fallan gracefully sin afectar el resto de Hive
 
 **Opcional:** Si necesitas cambiar el puerto o URL, usa variables de entorno (solo usuarios avanzados):
 
@@ -921,8 +923,8 @@ sudo systemctl start lightpanda
 
 Al arrancar, Hive:
 1. Intenta conectar a `ws://127.0.0.1:9222` automáticamente
-2. Si responde: activa las 7 browser tools
-3. Si no responde: las tools permanecen desactivadas (sin crashear)
+2. Si responde: las 7 browser tools están operativas
+3. Si no responde: las tools fallan gracefully (sin crashear)
 
 **No requiere configuración del usuario.**
 

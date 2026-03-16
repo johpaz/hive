@@ -255,7 +255,7 @@ Las 52 herramientas nativas se cargan dinámicamente desde la base de datos.
 | Categoría | Tools | Ejemplos clave |
 |-----------|-------|----------------|
 | 📁 FILESYSTEM | 7 | fs_read, fs_write, fs_edit, fs_delete, fs_list, fs_glob, fs_exists |
-| 🌐 WEB | 6 | web_search, web_fetch, browser_navigate, browser_screenshot, browser_click, browser_type |
+| 🌐 WEB | 9 | web_search, web_fetch, browser_navigate, browser_screenshot, browser_click, browser_type, browser_extract, browser_script, browser_wait |
 | 📋 PROJECTS | 8 | project_create, project_list, task_create, task_update, project_done |
 | ⏰ CRON | 4 | cron_add, cron_list, cron_edit, cron_remove |
 | 💻 CLI | 1 | cli_exec |

@@ -52,24 +52,18 @@ export const browserClickTool: Tool = {
 
     log.info(`Clicking: ${selector}${url ? ` on ${url}` : ""}`);
 
-    let browser: import("puppeteer-core").Browser | null = null;
-    let page: import("puppeteer-core").Page | null = null;
-
     try {
-      browser = await browserService.getConnection();
-      if (!browser) {
-        throw new Error("Failed to get browser connection");
+      const page = await browserService.getPage();
+      if (!page) {
+        throw new Error("Failed to get browser page");
       }
-
-      const pages = await browser.pages();
-      page = pages[0] || await browser.newPage();
 
       page.setDefaultTimeout(timeout);
 
       // Navigate to URL if provided
       if (url) {
         await page.goto(url, {
-          waitUntil: "networkidle2",
+          waitUntil: "domcontentloaded",
           timeout,
         });
       }
@@ -94,10 +88,7 @@ export const browserClickTool: Tool = {
       };
     } catch (error) {
       log.error(`Click failed: ${(error as Error).message}`);
-      return {
-        ok: false,
-        error: `Failed to click: ${(error as Error).message}`,
-      };
+      return { ok: false, error: `Failed to click: ${(error as Error).message}` };
     }
   },
 };

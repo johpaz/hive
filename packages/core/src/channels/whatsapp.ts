@@ -175,6 +175,11 @@ export class WhatsAppChannel extends BaseChannel {
     }
   }
 
+  hasCredentials(): boolean {
+    const credsFile = path.join(this.authPath, "creds.json");
+    return existsSync(credsFile);
+  }
+
   getConnectionState(): WhatsAppConnectionState {
     return { ...this.connectionState };
   }
