@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { AgentList } from "@/modules/agents/AgentList";
 import { AgentCreateForm } from "@/modules/agents/AgentCreateForm";
 import { Plus, RefreshCw, type LucideProps, X, Bot } from "lucide-react";
-import { useAgents } from "@/stores/useGlobalConfigStore";
+import { useAgents, useProviders, useModels } from "@/stores/useGlobalConfigStore";
 import type { Agent } from "@/types";
 
 // Wrapper to fix React 19 + Lucide type compatibility
@@ -12,12 +12,16 @@ function Icon({ icon: IconComponent, ...props }: { icon: React.ComponentType<Luc
 
 export function AgentsPage() {
   const { agents, isLoading, error, fetchAgents } = useAgents();
+  const { fetchProviders } = useProviders();
+  const { fetchModels } = useModels();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | undefined>(undefined);
 
   useEffect(() => {
     fetchAgents();
-  }, [fetchAgents]);
+    fetchProviders();
+    fetchModels();
+  }, [fetchAgents, fetchProviders, fetchModels]);
 
   const handleEdit = (agent: Agent) => {
     setEditingAgent(agent);

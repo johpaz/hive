@@ -1,8 +1,10 @@
 import { getDb } from "../../storage/sqlite"
+import { encryptConfig, decryptConfig } from "../../storage/crypto"
 
 export async function handleGetChannels(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const channels = getDb().query(`
-    SELECT id, type, id as account_id, enabled, active, status, last_active, voice_enabled, tts_enabled, stt_provider, tts_provider, tts_voice_id, step_delivery_mode
+    SELECT id, type, id as account_id, enabled, active, status, last_active, voice_enabled, tts_enabled, stt_provider, tts_provider, tts_voice_id, step_delivery_mode,
+           (config_encrypted IS NOT NULL) as is_configured
     FROM channels
   `).all() as Array<{
     id: string;
@@ -18,6 +20,7 @@ export async function handleGetChannels(req: Request, addCorsHeaders: (r: Respon
     tts_provider: string | null;
     tts_voice_id: string | null;
     step_delivery_mode: string | null;
+    is_configured: number;
   }>
 
   // Convert to format expected by UI (ConnectedChannel[])
@@ -35,6 +38,7 @@ export async function handleGetChannels(req: Request, addCorsHeaders: (r: Respon
     tts_provider: c.tts_provider ?? undefined,
     tts_voice_id: c.tts_voice_id ?? undefined,
     step_delivery_mode: c.step_delivery_mode ?? undefined,
+    isConfigured: c.is_configured === 1,
   }))
 
   return addCorsHeaders(Response.json({ channels: formattedChannels }), req)
@@ -54,6 +58,7 @@ type ConnectedChannel = {
   tts_provider?: string;
   tts_voice_id?: string;
   step_delivery_mode?: string;
+  isConfigured?: boolean;
 }
 
 export async function handleGetChannelConfig(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
@@ -115,20 +120,106 @@ export async function handleCreateChannel(
   channelManager?: any
 ): Promise<Response> {
   const body = await req.json().catch(() => ({}));
-  const { name, accountId, config: channelConfigData } = body;
+  const { type, config: channelConfig } = body;
 
-  if (!name || !accountId || !channelConfigData) {
-    return addCorsHeaders(new Response("Missing name, accountId or config", { status: 400 }), req);
+  if (!type) {
+    return addCorsHeaders(new Response("Missing type", { status: 400 }), req);
   }
 
-  // Note: Channel config persistence should be handled by the caller
-  // The channelManager is passed to start the channel after config is saved
+  const { randomUUID } = await import("crypto");
+  const id = randomUUID();
+
+  let encryptedData: string | null = null;
+  let configIv: string | null = null;
+  if (channelConfig && Object.keys(channelConfig).length > 0) {
+    const { encrypted, iv } = encryptConfig(channelConfig);
+    encryptedData = encrypted;
+    configIv = iv;
+  }
+
+  getDb().query(`
+    INSERT INTO channels(id, type, config_encrypted, config_iv, enabled, active, status)
+    VALUES(?, ?, ?, ?, 1, 1, 'connecting')
+  `).run(id, type, encryptedData, configIv);
+
   if (channelManager) {
-    await channelManager.removeChannel(name, accountId);
-    await channelManager.startChannel(name, accountId);
+    channelManager.addChannel(type, id, channelConfig || {}).catch((err: Error) => {
+      console.error(`[channels] Failed to start ${type}:${id}:`, err.message);
+    });
   }
 
-  return addCorsHeaders(Response.json({ success: true }), req);
+  return addCorsHeaders(Response.json({ success: true, id, status: "connecting" }), req);
+}
+
+export async function handleReconnectChannel(
+  req: Request,
+  addCorsHeaders: (r: Response, req: Request) => Response,
+  channelId: string,
+  channelManager?: any
+): Promise<Response> {
+  const body = await req.json().catch(() => ({}));
+  const { config: newConfig } = body;
+
+  const row = getDb().query(`SELECT type, config_encrypted, config_iv FROM channels WHERE id = ?`).get(channelId) as {
+    type: string;
+    config_encrypted: string | null;
+    config_iv: string | null;
+  } | undefined;
+
+  if (!row) {
+    return addCorsHeaders(Response.json({ success: false, error: "Channel not found" }, { status: 404 }), req);
+  }
+
+  // Update credentials if new config provided
+  if (newConfig && Object.keys(newConfig).length > 0) {
+    const { encrypted, iv } = encryptConfig(newConfig);
+    getDb().query(`UPDATE channels SET config_encrypted = ?, config_iv = ?, active = 1, status = 'connecting' WHERE id = ?`)
+      .run(encrypted, iv, channelId);
+  } else {
+    getDb().query(`UPDATE channels SET active = 1, status = 'connecting' WHERE id = ?`)
+      .run(channelId);
+  }
+
+  if (channelManager) {
+    // Resolve config: use new or existing encrypted config
+    let config: Record<string, unknown> = {};
+    if (newConfig && Object.keys(newConfig).length > 0) {
+      config = newConfig;
+    } else if (row.config_encrypted && row.config_iv) {
+      try {
+        config = decryptConfig(row.config_encrypted, row.config_iv);
+      } catch { /* keep empty */ }
+    }
+
+    // Remove old instance and start fresh
+    channelManager.removeChannel(row.type, channelId).catch(() => {});
+    channelManager.addChannel(row.type, channelId, config).catch((err: Error) => {
+      console.error(`[channels] Failed to reconnect ${row.type}:${channelId}:`, err.message);
+    });
+  }
+
+  return addCorsHeaders(Response.json({ success: true, status: "connecting" }), req);
+}
+
+export async function handleGetChannelStatus(
+  req: Request,
+  addCorsHeaders: (r: Response, req: Request) => Response,
+  channelManager?: any
+): Promise<Response> {
+  const url = new URL(req.url);
+  const match = url.pathname.match(/^\/api\/channels\/([^/]+)\/([^/]+)\/status$/);
+  if (!match) {
+    return addCorsHeaders(Response.json({ error: "Invalid path" }, { status: 400 }), req);
+  }
+
+  const [, type, id] = match;
+
+  if (!channelManager) {
+    return addCorsHeaders(Response.json({ status: "unknown" }), req);
+  }
+
+  const statusData = channelManager.getChannelStatus(type, id);
+  return addCorsHeaders(Response.json(statusData), req);
 }
 
 export async function handleGetChannelAccount(

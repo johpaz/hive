@@ -63,8 +63,8 @@ export function AgentDetailsEditor({ agentId }: AgentDetailsEditorProps) {
             setFormData({
                 name: agent.name || "",
                 description: agent.description || "",
-                provider_id: agent.provider_id || "",
-                model_id: agent.model_id || "",
+                provider_id: agent.provider_id || agent.providerId || "",
+                model_id: agent.model_id || agent.modelId || "",
                 tone: agent.tone || "",
                 role: agent.role || "coordinator",
                 enabled: !!agent.enabled,

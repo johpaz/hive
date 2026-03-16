@@ -281,12 +281,33 @@ export class ChannelManager {
     this.log.info(`Started channel: ${key}`);
   }
 
+  async addChannel(type: string, accountId: string, config: Record<string, unknown>): Promise<void> {
+    await this.createChannel(type, accountId, config);
+    const channel = this.channels.get(`${type}:${accountId}`);
+    if (channel && !channel.isRunning()) {
+      await channel.start();
+    }
+  }
+
+  getChannelStatus(type: string, accountId: string): { status: string; qrCode?: string } {
+    const key = `${type}:${accountId}`;
+    const channel = this.channels.get(key);
+    if (!channel) return { status: "not_found" };
+
+    if (type === "whatsapp" && "getConnectionState" in channel) {
+      const state = (channel as any).getConnectionState();
+      return { status: state.status, qrCode: state.qrCode };
+    }
+
+    return { status: channel.isRunning() ? "connected" : "disconnected" };
+  }
+
   async stopChannel(channelName: string, accountId: string): Promise<void> {
     const key = `${channelName}:${accountId}`;
     const channel = this.channels.get(key);
 
     if (!channel) {
-      this.log.warn(`Channel ${key} not found or not instantiated`);
+      this.log.debug(`Channel ${key} not instantiated, skipping stop`);
       return;
     }
 

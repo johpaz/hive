@@ -37,7 +37,7 @@ export class WhatsAppChannel extends BaseChannel {
   };
   private authPath: string;
   private reconnectTimeout: Timer | null = null;
-  private log = logger.child("whatsapp");
+  private log: ReturnType<typeof logger.child>;
   private jidCache: Map<string, string> = new Map();
 
   constructor(config: WhatsAppConfig) {
@@ -45,6 +45,7 @@ export class WhatsAppChannel extends BaseChannel {
     this.config = config;
     this.accountId = config.accountId;
     this.authPath = this.getAuthPath(config.agentId, config.accountId);
+    this.log = logger.child("whatsapp");
   }
 
   private getAuthPath(agentId: string, accountId: string): string {
@@ -96,7 +97,6 @@ export class WhatsAppChannel extends BaseChannel {
       this.socket = makeWASocket({
         auth: state,
         printQRInTerminal: false,
-        logger: this.createBaileysLogger(),
         getMessage: async () => ({ conversation: "" }),
       });
 
@@ -116,10 +116,6 @@ export class WhatsAppChannel extends BaseChannel {
       this.log.error(`WhatsApp connection error: ${(error as Error).message}`);
       this.scheduleReconnect();
     }
-  }
-
-  private createBaileysLogger(): undefined {
-    return undefined;
   }
 
   private async handleConnectionUpdate(
@@ -161,6 +157,10 @@ export class WhatsAppChannel extends BaseChannel {
       void saveCreds();
       this.log.info("WhatsApp connected successfully");
     }
+  }
+
+  getConnectionState(): WhatsAppConnectionState {
+    return { ...this.connectionState };
   }
 
   private printQR(qr: string): void {

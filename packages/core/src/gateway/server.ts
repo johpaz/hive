@@ -38,7 +38,7 @@ import { handleGetProjects, handleGetActiveProject, handleCreateProject, handleU
 import { handleGetTasks, handleUpdateTask } from "./routes/tasks";
 import { setChannelSendFn } from "./channel-notify";
 import { handleGetCronJobs, handleGetCronChannels, handleUpdateCronJob } from "./routes/cron";
-import { handleGetChannels, handleGetChannelConfig, handleActivateChannel, handleDeactivateChannel, handleCreateChannel, handleGetChannelAccount, handleUpdateChannelAccount, handleDeleteChannelAccount, handleChannelAction, handleUpdateChannelSettings, handleToggleChannel } from "./routes/channels";
+import { handleGetChannels, handleGetChannelConfig, handleActivateChannel, handleDeactivateChannel, handleCreateChannel, handleGetChannelAccount, handleUpdateChannelAccount, handleDeleteChannelAccount, handleChannelAction, handleUpdateChannelSettings, handleToggleChannel, handleGetChannelStatus, handleReconnectChannel } from "./routes/channels";
 import { handleGetMcpServers, handleGetMcpServerDetail, handleCreateMcpServer, handleUpdateMcpServer, handleDeleteMcpServer, handleToggleMcpServer, handleGetMCPServerTools } from "./routes/mcp";
 import { handleGetModels, handleCreateModel, handleToggleModel, handleGetModelsConfig, handleUpdateModelsConfig, handleDeleteModel, handleUpdateModel } from "./routes/models";
 import { handleGetVoiceProviders, handleGetConfiguredVoiceProviders, handleSaveVoiceProviderKey, handleTestVoice, handleGetChannelVoice, handleUpdateChannelVoice, handleGetVoiceProviderVoices } from "./routes/voice";
@@ -833,17 +833,6 @@ Please execute it now.`;
 
         // ── Channels API ─────────────────────────────────────────────────────
         if ((url.pathname === "/api/channels" || url.pathname === "/api/channels/") && req.method === "POST") {
-          const body = await req.json().catch(() => ({}));
-          const { name, accountId, config: channelConfigData } = body;
-          if (!name || !accountId || !channelConfigData) {
-            return addCorsHeaders(new Response("Missing name, accountId or config", { status: 400 }), req);
-          }
-
-          config.channels = config.channels || {};
-          config.channels[name] = config.channels[name] || { enabled: true, accounts: {} };
-          const channelEntry = config.channels[name] as any;
-          channelEntry.accounts = channelEntry.accounts || {};
-          channelEntry.accounts[accountId] = channelConfigData;
           return await handleCreateChannel(req, addCorsHeaders, channelManager);
         }
 
@@ -1338,6 +1327,17 @@ Please execute it now.`;
           if (req.method === "POST") {
             return await handleToggleChannel(req, addCorsHeaders, channelId);
           }
+        }
+
+        // GET /api/channels/:type/:id/status — connection state + QR for WhatsApp
+        if (url.pathname.match(/^\/api\/channels\/[^/]+\/[^/]+\/status$/) && req.method === "GET") {
+          return await handleGetChannelStatus(req, addCorsHeaders, channelManager);
+        }
+
+        // POST /api/channels/:id/reconnect — restart channel (with optional new credentials)
+        if (url.pathname.match(/^\/api\/channels\/[^/]+\/reconnect$/) && req.method === "POST") {
+          const channelId = url.pathname.split("/")[3];
+          return await handleReconnectChannel(req, addCorsHeaders, channelId, channelManager);
         }
 
         // ── Voice API ───────────────────────────────────────────────────────

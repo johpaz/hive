@@ -14,20 +14,25 @@ interface ChannelCardProps {
 
 export function ChannelCard({ channel, onEdit, onToggle }: ChannelCardProps) {
     const isConnected = channel.status === "connected";
+    const isUnconfigured = channel.isConfigured === false;
 
     return (
         <div
             onClick={() => onEdit(channel)}
             className={`hive-card group transition-all duration-500 cursor-pointer ${isConnected
                     ? 'hive-card--active border-emerald-500/20'
-                    : 'opacity-60 grayscale-[0.8] hover:opacity-100 hover:grayscale-0'
+                    : isUnconfigured
+                        ? 'opacity-50 border-dashed hover:opacity-80 hover:border-blue-500/30'
+                        : 'opacity-60 grayscale-[0.8] hover:opacity-100 hover:grayscale-0'
                 }`}
         >
             <div className="hive-card-body relative overflow-hidden">
                 <div className="flex items-start justify-between mb-8">
                     <div className={`h-12 w-12 rounded-xl flex items-center justify-center border transition-all duration-500 ${isConnected
                             ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
-                            : 'bg-white/5 border-white/10 text-white/30'
+                            : isUnconfigured
+                                ? 'bg-blue-500/5 border-blue-500/20 text-blue-400/40'
+                                : 'bg-white/5 border-white/10 text-white/30'
                         }`}>
                         <MessageSquare className="h-6 w-6" />
                     </div>
@@ -38,12 +43,18 @@ export function ChannelCard({ channel, onEdit, onToggle }: ChannelCardProps) {
                                 CONECTADO
                             </span>
                         )}
-                        <Switch
-                            checked={channel.active}
-                            onCheckedChange={(checked) => onToggle(channel.id, checked)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="data-[state=checked]:bg-emerald-500 scale-75 origin-right"
-                        />
+                        {isUnconfigured ? (
+                            <span className="text-[9px] font-black tracking-widest text-blue-400/60 uppercase">
+                                DISPONIBLE
+                            </span>
+                        ) : (
+                            <Switch
+                                checked={channel.active}
+                                onCheckedChange={(checked) => onToggle(channel.id, checked)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="data-[state=checked]:bg-emerald-500 scale-75 origin-right"
+                            />
+                        )}
                     </div>
                 </div>
 
@@ -53,7 +64,7 @@ export function ChannelCard({ channel, onEdit, onToggle }: ChannelCardProps) {
                             {channel.type}
                         </h3>
                         <p className="text-[10px] text-white/20 font-black tracking-[0.2em] mb-4">
-                            ID: {channel.id.substring(0, 12).toUpperCase()}
+                            {isUnconfigured ? "CLICK PARA CONFIGURAR" : `ID: ${channel.id.substring(0, 12).toUpperCase()}`}
                         </p>
                     </div>
 
@@ -78,7 +89,7 @@ export function ChannelCard({ channel, onEdit, onToggle }: ChannelCardProps) {
                 )}
             </div>
 
-            <div className={`hive-strip--bottom ${isConnected ? 'bg-emerald-500' : 'bg-white/10'}`} />
+            <div className={`hive-strip--bottom ${isConnected ? 'bg-emerald-500' : isUnconfigured ? 'bg-blue-500/30' : 'bg-white/10'}`} />
         </div>
     );
 }

@@ -566,6 +566,8 @@ interface ChannelsState {
   channels: ConnectedChannel[];
   activeChannels: ConnectedChannel[];
   fetchChannels: () => Promise<void>;
+  createChannel: (type: string, config?: Record<string, unknown>) => Promise<{ id: string; status: string }>;
+  reconnectChannel: (id: string, config?: Record<string, unknown>) => Promise<void>;
   toggleChannel: (id: string, active: boolean) => Promise<void>;
   updateChannel: (id: string, data: Partial<ConnectedChannel>) => Promise<void>;
 }
@@ -586,6 +588,21 @@ const createChannelsSlice = () => ({
       console.error("Failed to fetch channels:", error);
       return { channels: [], activeChannels: [] };
     }
+  },
+
+  createChannel: async (type: string, config?: Record<string, unknown>) => {
+    const response = await apiClient<{ success: boolean; id: string; status: string }>("/api/channels", {
+      method: "POST",
+      body: { type, config: config || {} },
+    });
+    return { id: response.id, status: response.status };
+  },
+
+  reconnectChannel: async (id: string, config?: Record<string, unknown>) => {
+    await apiClient(`/api/channels/${id}/reconnect`, {
+      method: "POST",
+      body: { config: config || {} },
+    });
   },
 
   toggleChannel: async (id: string, active: boolean) => {
@@ -871,6 +888,8 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
     const data = await createChannelsSlice().fetchChannels();
     set(data);
   },
+  createChannel: createChannelsSlice().createChannel,
+  reconnectChannel: createChannelsSlice().reconnectChannel,
   toggleChannel: createChannelsSlice().toggleChannel,
   updateChannel: createChannelsSlice().updateChannel,
 
@@ -1057,6 +1076,8 @@ export function useChannels() {
   const activeChannels = useGlobalConfigStore((state) => state.activeChannels);
   const isLoading = useGlobalConfigStore((state) => state.isLoading);
   const fetchChannels = useGlobalConfigStore((state) => state.fetchChannels);
+  const createChannel = useGlobalConfigStore((state) => state.createChannel);
+  const reconnectChannel = useGlobalConfigStore((state) => state.reconnectChannel);
   const toggleChannel = useGlobalConfigStore((state) => state.toggleChannel);
   const error = useGlobalConfigStore((state) => state.error);
 
@@ -1066,6 +1087,8 @@ export function useChannels() {
     isLoading,
     error,
     fetchChannels,
+    createChannel,
+    reconnectChannel,
     toggleChannel,
     updateChannel: useGlobalConfigStore((state) => state.updateChannel),
   };

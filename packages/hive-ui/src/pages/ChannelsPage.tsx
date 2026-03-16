@@ -45,12 +45,7 @@ export function ChannelsPage() {
   };
 
   const handleSave = async (id: string, data: Partial<ConnectedChannel>) => {
-    if (id === "new") {
-      // Logic for adding new channel would go here (API POST)
-      console.log("Add new channel", data);
-    } else {
-      await updateChannel(id, data);
-    }
+    await updateChannel(id, data);
   };
 
   return (
@@ -114,8 +109,8 @@ export function ChannelsPage() {
       <div className="flex items-center gap-1.5 p-1 bg-white/5 rounded-2xl w-fit border border-white/5 mb-8">
         {[
           { id: "all", label: `TODOS (${channels.length})` },
-          { id: "active", label: "ACTIVOS" },
-          { id: "inactive", label: "INACTIVOS" }
+          { id: "active", label: `ACTIVOS (${channels.filter(c => c.active).length})` },
+          { id: "inactive", label: `INACTIVOS (${channels.filter(c => !c.active).length})` }
         ].map(tab => (
           <button
             key={tab.id}

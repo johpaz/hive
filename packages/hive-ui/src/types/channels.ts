@@ -89,6 +89,7 @@ export interface ConnectedChannel {
   tts_provider?: string;
   tts_voice_id?: string;
   step_delivery_mode?: string;
+  isConfigured?: boolean;
 }
 
 export interface ChannelStats {
