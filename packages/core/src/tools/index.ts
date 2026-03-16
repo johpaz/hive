@@ -17,10 +17,7 @@ import * as web from "./web/index.ts";
 // Projects (8)
 import * as projects from "./projects/index.ts";
 
-// Cron (4)
-import * as cron from "./cron/index.ts";
-
-// Schedule (7) - New Croner-based scheduler tools
+// Schedule (7) - Croner-based scheduler tools
 import * as schedule from "./schedule.ts";
 
 // CLI (1)
@@ -54,9 +51,6 @@ export function createAllTools(config: Config): Tool[] {
 
     // PROJECTS (8)
     ...projects.createTools(),
-
-    // CRON (4)
-    ...cron.createTools(),
 
     // SCHEDULE (7)
     ...schedule.createTools(),
@@ -92,8 +86,8 @@ export function createToolsByCategory(category: string, config: Config): Tool[] 
       return web.createTools();
     case "projects":
       return projects.createTools();
-    case "cron":
-      return cron.createTools();
+    case "schedule":
+      return schedule.createTools();
     case "cli":
       return cli.createTools();
     case "agents":
@@ -148,15 +142,6 @@ export {
   taskUpdateTool,
   taskEvaluateTool,
 } from "./projects/index.ts";
-
-export {
-  cronAddTool,
-  cronListTool,
-  cronEditTool,
-  cronRemoveTool,
-  initCronScheduler,
-  resolveBestChannel,
-} from "./cron/index.ts";
 
 export {
   scheduleCreateTool,

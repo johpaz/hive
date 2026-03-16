@@ -621,6 +621,8 @@ cp ~/.hive/data/hive.db ~/backup-hive-$(date +%Y%m%d).db
 
 Hive usa un **Native Agent Loop** propio — sin dependencias de LangGraph ni LangChain. Todo corre sobre Bun + SQLite con cero abstracciones intermedias.
 
+![Arquitectura Hive](public/arquitectura.png)
+
 ### Loop principal
 
 ```

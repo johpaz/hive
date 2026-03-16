@@ -104,10 +104,10 @@ export class BrowserService {
 
     try {
       const puppeteer = await import("puppeteer-core");
-      
+
       const browser = await puppeteer.connect({
         browserWSEndpoint: `ws://${CDP_HOST}:${CDP_PORT}`,
-        defaultViewport: null,
+        defaultViewport: { width: 1920, height: 1080 },
       });
 
       return browser;

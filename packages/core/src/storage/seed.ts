@@ -59,12 +59,15 @@ const SEED_DATA: SeedData = {
     { id: "task_evaluate", name: "task_evaluate", category: "projects", description: "Evaluate task result against acceptance criteria. Spanish: evaluar tarea, validar resultado, criterios de aceptación" },
 
     // ─────────────────────────────────────────
-    // 4. CRON — Tareas programadas (≠ tareas de proyecto)
+    // 4. SCHEDULE — Tareas programadas (Croner-based, ≠ tareas de proyecto)
     // ─────────────────────────────────────────
-    { id: "cron_add", name: "cron_add", category: "cron", description: "Schedule a recurring or one-time job using a cron expression. NOTE: for project tasks use task_create instead. Spanish: programar tarea, recordatorio, alarma, automatizar horario" },
-    { id: "cron_list", name: "cron_list", category: "cron", description: "List all scheduled cron jobs and next execution times. Spanish: ver tareas programadas, cronograma, próximos eventos" },
-    { id: "cron_edit", name: "cron_edit", category: "cron", description: "Edit an existing cron job expression or config. Spanish: modificar horario, cambiar programación, editar cron" },
-    { id: "cron_remove", name: "cron_remove", category: "cron", description: "Remove a scheduled cron job. NOTE: to remove project tasks use task_update. Spanish: eliminar cron, cancelar recordatorio, borrar programación" },
+    { id: "hive.schedule.create", name: "hive.schedule.create", category: "schedule", description: "Create new scheduled task: recurring (cron expression) or one-shot (fire_at). Spanish: programar tarea, crear recordatorio, agendar, automatizar horario, tarea recurrente, una vez" },
+    { id: "hive.schedule.list", name: "hive.schedule.list", category: "schedule", description: "List all scheduled tasks with next execution times and status. Spanish: ver tareas programadas, listar cronograma, próximas ejecuciones" },
+    { id: "hive.schedule.pause", name: "hive.schedule.pause", category: "schedule", description: "Pause a scheduled task temporarily without deleting it. Spanish: pausar tarea programada, detener temporalmente, suspender recordatorio" },
+    { id: "hive.schedule.resume", name: "hive.schedule.resume", category: "schedule", description: "Resume a previously paused scheduled task. Spanish: reanudar tarea, continuar tarea pausada, activar recordatorio" },
+    { id: "hive.schedule.delete", name: "hive.schedule.delete", category: "schedule", description: "Delete a scheduled task permanently. Spanish: eliminar tarea programada, borrar recordatorio, cancelar tarea" },
+    { id: "hive.schedule.trigger", name: "hive.schedule.trigger", category: "schedule", description: "Manually trigger immediate execution of a scheduled task. Spanish: ejecutar tarea ahora, forzar ejecución, disparar manualmente" },
+    { id: "hive.schedule.history", name: "hive.schedule.history", category: "schedule", description: "Get execution history and run logs for a scheduled task. Spanish: historial ejecuciones, logs tarea, registro ejecuciones" },
 
     // ─────────────────────────────────────────
     // 5. CLI — Ejecución de comandos

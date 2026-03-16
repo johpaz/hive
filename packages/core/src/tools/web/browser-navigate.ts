@@ -46,7 +46,7 @@ export const browserNavigateTool: Tool = {
       log.warn("Browser not available - Lightpanda not connected");
       return {
         ok: false,
-        error: "Browser automation not available. Lightpanda must be running. See: https://github.com/lightpanda-org/lightpanda",
+        error: "Browser automation not available. Lightpanda must be running.",
       };
     }
 
@@ -61,16 +61,16 @@ export const browserNavigateTool: Tool = {
         throw new Error("Failed to get browser connection");
       }
 
-      const pages = await browser.pages();
-      page = pages[0] || await browser.newPage();
+      // Crear página nueva para aislamiento
+      page = await browser.newPage();
 
       // Set timeout
       page.setDefaultTimeout(timeout);
       page.setDefaultNavigationTimeout(timeout);
 
-      // Navigate to URL
+      // Navigate to URL con waitUntil más robusto
       const response = await page.goto(url, {
-        waitUntil: "networkidle2",
+        waitUntil: ["domcontentloaded", "networkidle2"],
         timeout,
       });
 
@@ -78,10 +78,15 @@ export const browserNavigateTool: Tool = {
         throw new Error("Navigation failed - no response");
       }
 
+      // Esperar un momento para que JS termine de ejecutar
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       // Wait for specific selector if provided
       if (waitFor) {
         try {
-          await page.waitForSelector(waitFor, { timeout });
+          await page.waitForSelector(waitFor, { 
+            timeout,
+          });
         } catch (e) {
           log.warn(`Selector "${waitFor}" not found within timeout`);
         }
@@ -92,17 +97,22 @@ export const browserNavigateTool: Tool = {
 
       // Extract content - remove scripts and styles, keep text
       const content = await page.evaluate(() => {
-        // Remove script and style elements
-        document.querySelectorAll("script, style, noscript, meta, link, iframe").forEach(el => el.remove());
-        
-        // Get text content
-        let text = document.body.innerText || document.documentElement.innerText || "";
-        
-        // Clean up whitespace
-        text = text.replace(/\s+/g, " ").trim();
-        
-        // Limit to 50000 characters
-        return text.slice(0, 50000);
+        try {
+          // Remove script and style elements
+          document.querySelectorAll("script, style, noscript, meta, link, iframe").forEach(el => el.remove());
+          
+          // Get text content
+          let text = document.body.innerText || document.documentElement.innerText || "";
+          
+          // Clean up whitespace
+          text = text.replace(/\s+/g, " ").trim();
+          
+          // Limit to 50000 characters
+          return text.slice(0, 50000);
+        } catch (e) {
+          // Fallback si el DOM no está disponible
+          return "Error extracting content: " + (e as Error).message;
+        }
       });
 
       log.info(`Navigation successful: ${finalUrl} (${content.length} chars)`);
@@ -116,14 +126,39 @@ export const browserNavigateTool: Tool = {
         statusCode: response.status(),
       };
     } catch (error) {
-      log.error(`Navigation failed: ${(error as Error).message}`);
+      const errorMessage = (error as Error).message;
+      
+      // Manejar errores específicos
+      if (errorMessage.includes("detached")) {
+        log.error("Navigation failed: page was detached (likely navigated away or closed)");
+        return {
+          ok: false,
+          error: "La página se cerró durante la navegación. Intenta nuevamente.",
+        };
+      }
+      
+      if (errorMessage.includes("timeout")) {
+        log.error(`Navigation timeout: ${url}`);
+        return {
+          ok: false,
+          error: `Tiempo de espera agotado (${timeout}ms). La página puede ser lenta o el URL incorrecto.`,
+        };
+      }
+      
+      log.error(`Navigation failed: ${errorMessage}`);
       return {
         ok: false,
-        error: `Failed to navigate: ${(error as Error).message}`,
+        error: `Failed to navigate: ${errorMessage}`,
       };
     } finally {
-      // Note: We don't close the page/browser as Lightpanda manages the session
-      // The connection is pooled and reused
+      // Cerrar página para limpiar recursos
+      if (page && !page.isClosed()) {
+        try {
+          await page.close();
+        } catch {
+          // Ignorar errores al cerrar
+        }
+      }
     }
   },
 };
