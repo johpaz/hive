@@ -513,6 +513,32 @@ export function activateTools(userId: string, toolIds: string[]): void {
   }
 }
 
+/**
+ * Activate all browser tools when Lightpanda is available
+ * Called from gateway initializer when browser service connects successfully
+ */
+export function activateBrowserTools(): void {
+  try {
+    const db = getDb();
+    const browserToolIds = [
+      "browser_navigate",
+      "browser_screenshot",
+      "browser_click",
+      "browser_type",
+      "browser_extract",
+      "browser_script",
+      "browser_wait",
+    ];
+    
+    for (const toolId of browserToolIds) {
+      db.query(`UPDATE tools SET active = 1, enabled = 1 WHERE id = ?`).run(toolId);
+    }
+    log.info("✅ Browser tools activated (Lightpanda available)");
+  } catch (e) {
+    log.error("⚠️ Error activating browser tools:", { error: (e as Error).message });
+  }
+}
+
 export async function saveProviderConfig(data: {
   userId: string;
   provider: string;

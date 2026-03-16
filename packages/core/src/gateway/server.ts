@@ -34,6 +34,7 @@ import { handleGetUsers, handleCreateUser, handleUpdateUserSettings, handleGetUs
 import { handleGetSkills, handleActivateSkill, handleUpdateSkill, handleDeleteSkill, handleCreateSkill } from "./routes/skills";
 import { handleGetEthics, handleActivateEthics, handleDeleteEthics } from "./routes/ethics";
 import { handleGetTools, handleActivateTool, handleUpdateTool } from "./routes/tools";
+import { handleGetBrowserStatus, handleStartBrowser, handleStopBrowser } from "./routes/browser";
 import { handleGetProjects, handleGetActiveProject, handleCreateProject, handleUpdateProject, handleGetProjectHistory, handleGetProjectDetail, handleGetProjectTasks } from "./routes/projects";
 import { handleGetTasks, handleUpdateTask } from "./routes/tasks";
 import { setChannelSendFn } from "./channel-notify";
@@ -48,7 +49,22 @@ import { handleChat as handlePostChat } from "./routes/chat";
 import { handleGetConfig } from "./routes/config";
 import { handleGetWorkspace, handleUpdateWorkspace, handleValidateWorkspace, handleCreateWorkspace, handleOpenWorkspace } from "./routes/workspace";
 import { getNarration, expandPath, addCorsHeaders, redactConfig, CORS_ORIGINS } from "./helpers";
-import { initCronScheduler, resolveBestChannel } from "../tools/cron";
+import { CronScheduler } from "../scheduler/CronScheduler";
+import { createTaskHandler } from "../scheduler/integration";
+import { setSchedulerInstance as setScheduleToolsInstance } from "../tools/schedule.ts";
+import { setSchedulerInstance as setScheduledTasksRoutesInstance } from "./routes/scheduled-tasks";
+import {
+  handleGetScheduledTasks,
+  handleGetScheduledTask,
+  handleCreateScheduledTask,
+  handleUpdateScheduledTask,
+  handleDeleteScheduledTask,
+  handlePauseScheduledTask,
+  handleResumeScheduledTask,
+  handleTriggerScheduledTask,
+  handleGetTaskHistory,
+  handleGetSchedulerStatus,
+} from "./routes/scheduled-tasks";
 
 const logSubscribers = new Set<string>();
 
@@ -142,10 +158,32 @@ export async function startGateway(config: Config): Promise<void> {
       log.info("🎉 Setup mode: gateway running — open http://localhost:" + port + "/setup to configure");
     } else {
       log.info("✅ Gateway initialization completed successfully");
-      // ── Initialize Cron Scheduler ──────────────────────────────────────────
-      initCronScheduler((sessionId, task, jobId, context) => {
-        agent.emit("cron", sessionId, task, jobId, context);
-      });
+
+      // ── Initialize New Cron Scheduler (Croner-based) ───────────────────────
+      try {
+        const db = getDb();
+
+        // Repair orphaned task_runs (status='running' from previous crash)
+        db.query(`
+          UPDATE task_runs 
+          SET status = 'timeout', finished_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+          WHERE status = 'running'
+        `).run();
+
+        // Create and boot scheduler
+        const handler = createTaskHandler();
+        const scheduler = new CronScheduler(db, handler);
+        scheduler.boot();
+
+        // Register scheduler globally for tools and routes
+        setScheduleToolsInstance(scheduler);
+        setScheduledTasksRoutesInstance(scheduler);
+
+        log.info(`📅 CronScheduler initialized with ${scheduler.getStatus().length} task(s)`);
+      } catch (err) {
+        log.error(`❌ CronScheduler initialization failed: ${(err as Error).message}`);
+      }
+
     }
   } catch (error) {
     log.error(`❌ Gateway initialization failed: ${(error as Error).message}`);
@@ -199,8 +237,7 @@ export async function startGateway(config: Config): Promise<void> {
             }
           }
 
-          // Apply priority chain: explicit job channel → registered identity → webchat
-          notifyChannel = resolveBestChannel(cronJob.user_id, cronJob.notify_channel_id);
+
 
           if (notifyChannel !== "webchat") {
             // External channel: need the channel-specific session ID from user_identities
@@ -1087,6 +1124,19 @@ Please execute it now.`;
           return await handleUpdateTool(req, addCorsHeaders)
         }
 
+        // ── Browser API ──────────────────────────────────────────────────────
+        if (url.pathname === "/api/browser/status" && req.method === "GET") {
+          return await handleGetBrowserStatus(req, addCorsHeaders)
+        }
+
+        if (url.pathname === "/api/browser/start" && req.method === "POST") {
+          return await handleStartBrowser(req, addCorsHeaders)
+        }
+
+        if (url.pathname === "/api/browser/stop" && req.method === "POST") {
+          return await handleStopBrowser(req, addCorsHeaders)
+        }
+
         // ── Ethics API ──────────────────────────────────────────────────────
         if (url.pathname === "/api/ethics" && req.method === "GET") {
           return await handleGetEthics(req, addCorsHeaders)
@@ -1396,7 +1446,7 @@ Please execute it now.`;
           return await handleGetNotes(req, addCorsHeaders)
         }
 
-        // ── Cron Jobs API ───────────────────────────────────────────────────
+        // ── Cron Jobs API (legacy) ───────────────────────────────────────────
         if (url.pathname === "/api/cron-jobs" && req.method === "GET") {
           return await handleGetCronJobs(req, addCorsHeaders)
         }
@@ -1407,6 +1457,53 @@ Please execute it now.`;
 
         if (url.pathname.match(/^\/api\/cron-jobs\/[^/]+\/toggle$/) && req.method === "PATCH") {
           return await handleUpdateCronJob(req, addCorsHeaders)
+        }
+
+        // ── Scheduled Tasks API (new Croner-based) ──────────────────────────
+        const scheduledTasksMatch = url.pathname.match(/^\/api\/scheduled-tasks(\/[^/]+)?(\/[^/]+)?$/);
+        if (scheduledTasksMatch && req.method === "GET" && !scheduledTasksMatch[2]) {
+          if (scheduledTasksMatch[1] === "/status") {
+            return await handleGetSchedulerStatus(req, addCorsHeaders);
+          }
+          if (scheduledTasksMatch[1]) {
+            const taskId = scheduledTasksMatch[1].slice(1);
+            return await handleGetScheduledTask(req, addCorsHeaders, taskId);
+          }
+          return await handleGetScheduledTasks(req, addCorsHeaders);
+        }
+
+        if (scheduledTasksMatch && req.method === "POST" && !scheduledTasksMatch[2]) {
+          return await handleCreateScheduledTask(req, addCorsHeaders);
+        }
+
+        if (scheduledTasksMatch && req.method === "GET" && scheduledTasksMatch[2] === "/history") {
+          const taskId = scheduledTasksMatch[1]?.slice(1);
+          return await handleGetTaskHistory(req, addCorsHeaders, taskId || "");
+        }
+
+        if (scheduledTasksMatch && req.method === "POST" && scheduledTasksMatch[2] === "/pause") {
+          const taskId = scheduledTasksMatch[1]?.slice(1);
+          return await handlePauseScheduledTask(req, addCorsHeaders, taskId || "");
+        }
+
+        if (scheduledTasksMatch && req.method === "POST" && scheduledTasksMatch[2] === "/resume") {
+          const taskId = scheduledTasksMatch[1]?.slice(1);
+          return await handleResumeScheduledTask(req, addCorsHeaders, taskId || "");
+        }
+
+        if (scheduledTasksMatch && req.method === "POST" && scheduledTasksMatch[2] === "/trigger") {
+          const taskId = scheduledTasksMatch[1]?.slice(1);
+          return await handleTriggerScheduledTask(req, addCorsHeaders, taskId || "");
+        }
+
+        if (scheduledTasksMatch && req.method === "PATCH" && scheduledTasksMatch[1] && !scheduledTasksMatch[2]) {
+          const taskId = scheduledTasksMatch[1].slice(1);
+          return await handleUpdateScheduledTask(req, addCorsHeaders, taskId);
+        }
+
+        if (scheduledTasksMatch && req.method === "DELETE" && scheduledTasksMatch[1] && !scheduledTasksMatch[2]) {
+          const taskId = scheduledTasksMatch[1].slice(1);
+          return await handleDeleteScheduledTask(req, addCorsHeaders, taskId);
         }
 
         return addCorsHeaders(new Response("Not Found", { status: 404 }), req)

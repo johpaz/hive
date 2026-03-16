@@ -806,6 +806,162 @@ Al completar el onboarding, el campo `agents.system_prompt` se genera automátic
 
 ---
 
+## Browser Automation con Lightpanda
+
+Hive incluye 7 tools de browser automation para navegar, extraer datos, interactuar y automatizar sitios web con JavaScript rendering.
+
+### ¿Por qué Lightpanda?
+
+Lightpanda es un browser headless diseñado para ser **9x más liviano en RAM** y **11x más rápido** que Chrome. Es crítico para el principio local-first de Hive y para correr en hardware de bajo consumo como el NanoPi Neo3 Plus.
+
+**Principio fundamental:** Lightpanda corre como proceso externo independiente. Hive no embebe ni compila Lightpanda — lo invoca via WebSocket CDP exactamente igual que Puppeteer se conecta a Chrome. Esto mantiene a Lightpanda como dependencia opcional de runtime, no como código derivado.
+
+### Tools disponibles
+
+| Tool | Descripción |
+|------|-------------|
+| `browser_navigate` | Navegar a URL y obtener contenido renderizado (soporta JS) |
+| `browser_screenshot` | Capturar screenshot de la página (base64 PNG) |
+| `browser_click` | Hacer click en elemento (CSS selector) |
+| `browser_type` | Escribir texto en campos de formulario |
+| `browser_extract` | Extraer datos con selectores CSS o XPath |
+| `browser_script` | Ejecutar JavaScript arbitrario en el contexto de la página |
+| `browser_wait` | Esperar por elemento o condición antes de continuar |
+
+### Instalación de Lightpanda
+
+#### Docker (Recomendado)
+
+El `docker-compose.yml` de Hive incluye Lightpanda como servicio opcional comentado. Para activar:
+
+```yaml
+# 1. Descomenta el servicio lightpanda en docker-compose.yml
+lightpanda:
+  image: lightpanda/browser:nightly
+  ports:
+    - "9222:9222"
+
+# 2. Descomenta BROWSER_CDP_URL en el servicio hive
+hive:
+  environment:
+    BROWSER_CDP_URL: ws://lightpanda:9222
+```
+
+```bash
+docker compose up -d
+```
+
+#### Linux (binario nativo)
+
+```bash
+# x86_64
+curl -L https://github.com/lightpanda-org/lightpanda/releases/latest/download/lightpanda-linux-amd64 \
+  -o /usr/local/bin/lightpanda
+chmod +x /usr/local/bin/lightpanda
+
+# ARM64 (Raspberry Pi, NanoPi)
+curl -L https://github.com/lightpanda-org/lightpanda/releases/latest/download/lightpanda-linux-arm64 \
+  -o /usr/local/bin/lightpanda
+chmod +x /usr/local/bin/lightpanda
+```
+
+#### macOS
+
+```bash
+# Apple Silicon (M1/M2/M3/M4)
+curl -L https://github.com/lightpanda-org/lightpanda/releases/latest/download/lightpanda-darwin-arm64 \
+  -o /usr/local/bin/lightpanda
+chmod +x /usr/local/bin/lightpanda
+
+# Intel
+curl -L https://github.com/lightpanda-org/lightpanda/releases/latest/download/lightpanda-darwin-amd64 \
+  -o /usr/local/bin/lightpanda
+chmod +x /usr/local/bin/lightpanda
+```
+
+### Iniciar Lightpanda como servicio
+
+#### Systemd (Linux)
+
+Crea `/etc/systemd/system/lightpanda.service`:
+
+```ini
+[Unit]
+Description=Lightpanda Browser
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/lightpanda --port=9222
+Restart=always
+User=hive
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable lightpanda
+sudo systemctl start lightpanda
+```
+
+### Configuración
+
+**No requiere configuración.** Hive intenta conectar automáticamente a Lightpanda en `ws://127.0.0.1:9222` al arrancar.
+
+- ✅ **Si Lightpanda está disponible**: Las 7 browser tools se activan automáticamente
+- ⚠️ **Si Lightpanda no está corriendo**: Las tools se desactivan sin afectar el resto de Hive
+
+**Opcional:** Si necesitas cambiar el puerto o URL, usa variables de entorno (solo usuarios avanzados):
+
+### Detección Automática
+
+Al arrancar, Hive:
+1. Intenta conectar a `ws://127.0.0.1:9222` automáticamente
+2. Si responde: activa las 7 browser tools
+3. Si no responde: las tools permanecen desactivadas (sin crashear)
+
+**No requiere configuración del usuario.**
+
+### Ejemplo de uso
+
+```typescript
+// Navegar a una página con JavaScript rendering
+const result = await browser_navigate({
+  url: "https://example.com",
+  waitFor: ".content-loaded",
+  timeout: 30000,
+});
+
+// Extraer datos con selector CSS
+const links = await browser_extract({
+  url: "https://example.com",
+  selector: "a[href]",
+  attribute: "href",
+  all: true,
+});
+
+// Tomar screenshot
+const screenshot = await browser_screenshot({
+  url: "https://example.com",
+  fullPage: true,
+});
+
+// Ejecutar JavaScript
+const data = await browser_script({
+  script: `document.querySelector('.price').textContent`,
+});
+```
+
+### Recursos
+
+- [Lightpanda GitHub](https://github.com/lightpanda-org/lightpanda)
+- [Lightpanda Documentation](https://lightpanda.dev)
+- [Docker Image](https://hub.docker.com/r/lightpanda/browser)
+
+---
+
 ## Desarrollo
 
 ```bash

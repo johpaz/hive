@@ -1,5 +1,5 @@
 /**
- * Tools Registry - Exports all 52 tools
+ * Tools Registry - Exports all 66 tools
  * 
  * Import this to get all tools:
  * import { createAllTools } from "./tools";
@@ -11,7 +11,7 @@ import type { Config } from "../config/loader.ts";
 // Filesystem (7)
 import * as filesystem from "./filesystem/index.ts";
 
-// Web (6)
+// Web (9)
 import * as web from "./web/index.ts";
 
 // Projects (8)
@@ -19,6 +19,9 @@ import * as projects from "./projects/index.ts";
 
 // Cron (4)
 import * as cron from "./cron/index.ts";
+
+// Schedule (7) - New Croner-based scheduler tools
+import * as schedule from "./schedule.ts";
 
 // CLI (1)
 import * as cli from "./cli/index.ts";
@@ -39,37 +42,40 @@ import * as voice from "./voice/index.ts";
 import * as core from "./core/index.ts";
 
 /**
- * Creates all 52 tools with proper configuration
+ * Creates all 66 tools with proper configuration
  */
 export function createAllTools(config: Config): Tool[] {
   return [
     // FILESYSTEM (7)
     ...filesystem.createTools(),
-    
-    // WEB (6)
+
+    // WEB (9)
     ...web.createTools(),
-    
+
     // PROJECTS (8)
     ...projects.createTools(),
-    
+
     // CRON (4)
     ...cron.createTools(),
-    
+
+    // SCHEDULE (7)
+    ...schedule.createTools(),
+
     // CLI (1)
     ...cli.createTools(),
-    
+
     // AGENTS (14)
     ...agents.createTools(),
-    
+
     // CANVAS (7)
     ...canvas.createTools(),
-    
+
     // CODEBRIDGE (3)
     ...codebridge.createTools(),
-    
+
     // VOICE (2)
     ...voice.createTools(),
-    
+
     // CORE (4)
     ...core.createTools(),
   ];
@@ -127,6 +133,9 @@ export {
   browserScreenshotTool,
   browserClickTool,
   browserTypeTool,
+  browserExtractTool,
+  browserScriptTool,
+  browserWaitTool,
 } from "./web/index.ts";
 
 export {
@@ -148,6 +157,17 @@ export {
   initCronScheduler,
   resolveBestChannel,
 } from "./cron/index.ts";
+
+export {
+  scheduleCreateTool,
+  scheduleListTool,
+  schedulePauseTool,
+  scheduleResumeTool,
+  scheduleDeleteTool,
+  scheduleTriggerTool,
+  scheduleHistoryTool,
+  setSchedulerInstance,
+} from "./schedule.ts";
 
 export { cliExecTool } from "./cli/index.ts";
 

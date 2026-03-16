@@ -293,6 +293,76 @@ export const SCHEMA = `
     created_at      INTEGER NOT NULL DEFAULT (unixepoch())
   );
 
+  -- SCHEDULER: New Croner-based scheduled tasks (replaces cron_jobs)
+  -- task_type: 'recurring' (uses cron_expression) or 'one_shot' (uses fire_at)
+  -- cron_expression: stored in user's local time, not UTC
+  -- fire_at: ISO 8601 format in user's local time (e.g., "2026-04-01T09:00:00")
+  -- timezone: IANA timezone string (e.g., "America/Bogota") inherited from users.timezone
+  -- protect: overrun protection (1 = enabled, 0 = disabled)
+  -- payload: JSON string with at least { prompt: string } or { message: string }
+  -- CHECK constraint: recurring requires cron_expression, one_shot requires fire_at
+  CREATE TABLE IF NOT EXISTS scheduled_tasks (
+    id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+    name            TEXT NOT NULL,
+    description     TEXT DEFAULT '',
+    task_type       TEXT NOT NULL CHECK(task_type IN ('recurring', 'one_shot')),
+    cron_expression TEXT,
+    fire_at         TEXT,
+    timezone        TEXT NOT NULL DEFAULT 'UTC',
+    max_runs        INTEGER,
+    protect         INTEGER NOT NULL DEFAULT 1,
+    interval_sec    INTEGER,
+    agent_id        TEXT,
+    channel         TEXT DEFAULT 'system',
+    payload         TEXT DEFAULT '{}',
+    tool_name       TEXT,
+    status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'paused', 'completed', 'failed', 'cancelled')),
+    run_count       INTEGER NOT NULL DEFAULT 0,
+    error_count     INTEGER NOT NULL DEFAULT 0,
+    last_error      TEXT,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    last_run_at     TEXT,
+    next_run_at     TEXT,
+    completed_at    TEXT,
+    CHECK(
+      (task_type = 'recurring' AND cron_expression IS NOT NULL) OR
+      (task_type = 'one_shot' AND fire_at IS NOT NULL)
+    )
+  );
+
+  -- SCHEDULER: Task execution history
+  -- Stores results of each task execution for debugging and auditing
+  CREATE TABLE IF NOT EXISTS task_runs (
+    id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+    task_id         TEXT NOT NULL REFERENCES scheduled_tasks(id) ON DELETE CASCADE,
+    status          TEXT NOT NULL CHECK(status IN ('running', 'success', 'failed', 'timeout')),
+    started_at      TEXT NOT NULL,
+    finished_at     TEXT,
+    duration_ms     INTEGER,
+    error_message   TEXT,
+    payload_snapshot TEXT,
+    agent_response  TEXT
+  );
+
+  -- INDICES for scheduled_tasks
+  CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_status ON scheduled_tasks(status);
+  CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_type ON scheduled_tasks(task_type);
+  CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run ON scheduled_tasks(next_run_at);
+  CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_agent ON scheduled_tasks(agent_id);
+
+  -- INDICES for task_runs
+  CREATE INDEX IF NOT EXISTS idx_task_runs_task ON task_runs(task_id);
+  CREATE INDEX IF NOT EXISTS idx_task_runs_started ON task_runs(started_at);
+  CREATE INDEX IF NOT EXISTS idx_task_runs_status ON task_runs(status);
+
+  -- TRIGGER: Update updated_at on scheduled_tasks UPDATE
+  CREATE TRIGGER IF NOT EXISTS update_scheduled_tasks_updated_at
+    AFTER UPDATE ON scheduled_tasks
+    BEGIN
+      UPDATE scheduled_tasks SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = NEW.id;
+    END;
+
   -- INDICES
 
   CREATE INDEX IF NOT EXISTS idx_models_provider ON models(provider_id);

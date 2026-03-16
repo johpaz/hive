@@ -168,6 +168,9 @@ export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
     { name: "browser_screenshot", description: "Take webpage screenshot, capture visual snapshot of web page. Spanish keywords: captura de pantalla, screenshot, fotografiar página, imagen de página", category: "browser", abstractionLevel: "atomic" },
     { name: "browser_click", description: "Click element on page, interact with buttons and links in browser. Spanish keywords: hacer clic, presionar botón, clickear, pulsar, botón", category: "browser", abstractionLevel: "atomic" },
     { name: "browser_type", description: "Type into input field, fill forms and text inputs in browser. Spanish keywords: escribir en página, llenar formulario, introducir texto, completar formulario", category: "browser", abstractionLevel: "atomic" },
+    { name: "browser_extract", description: "Extract text, links, or structured data from page using CSS selectors or XPath. Spanish keywords: extraer datos, obtener información, scraping, selectores, xpath", category: "browser", abstractionLevel: "atomic" },
+    { name: "browser_script", description: "Execute arbitrary JavaScript in the browser page context and get the result. Spanish keywords: ejecutar javascript, script, código, función, evaluar, js en página", category: "browser", abstractionLevel: "atomic" },
+    { name: "browser_wait", description: "Wait for an element to appear or condition to be met on the page. Spanish keywords: esperar, wait, condición, elemento, selector, aguardar carga", category: "browser", abstractionLevel: "atomic" },
 
     // Canvas/UI rendering tools
     { name: "canvas_render", description: "Render component on canvas, display UI components and data visualizations. Spanish keywords: renderizar, mostrar en canvas, visualizar, mostrar componente, dibujar", category: "canvas", abstractionLevel: "atomic" },

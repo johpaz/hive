@@ -12,6 +12,8 @@ import { resolveAgentId } from "../storage/onboarding";
 import { createMCPManager, type MCPClientManager } from "@johpaz/hive-mcp";
 import { setMCPManager } from "../mcp/singleton";
 import { startMCPHotReload } from "../mcp/hot-reload";
+import { initializeBrowserService } from "../tools/web/browser-service";
+import { activateBrowserTools } from "../storage/onboarding";
 
 const log = logger.child("gateway:init");
 
@@ -245,6 +247,30 @@ export async function initializeGateway(
     // 5. Crear AgentService (reemplaza la clase Agent legacy)
     const agent = createAgentService();
     await agent.initialize();
+
+    // 5b. Initialize Browser Service (Lightpanda via @lightpanda/browser)
+    // Lightpanda se inicia automáticamente como proceso interno
+    let browserAvailable = false;
+    
+    try {
+      log.info("Initializing Lightpanda browser...");
+      
+      const browserService = initializeBrowserService(config);
+      
+      // Iniciar Lightpanda automáticamente
+      browserAvailable = await browserService.start();
+
+      if (browserAvailable) {
+        log.info("✅ Lightpanda connected - browser tools enabled");
+        // Activate browser tools in database
+        activateBrowserTools();
+      } else {
+        log.warn("⚠️  Lightpanda no pudo iniciarse - browser tools desactivadas");
+        log.warn("   Verifica que @lightpanda/browser esté instalado: bun install");
+      }
+    } catch (error) {
+      log.warn(`Browser Service initialization skipped: ${(error as Error).message}`);
+    }
 
     // 6. Inicializar MCP Manager y agent loop
     // MCP se inicializa con los servidores de la config + DB

@@ -114,9 +114,9 @@ const WebConfigSchema = z.object({
 
 const BrowserConfigSchema = z.object({
   enabled: z.boolean().optional(),
-  browserPath: z.string().optional(),
+  cdpUrl: z.string().optional(),
   headless: z.boolean().optional(),
-  timeoutSeconds: z.number().optional(),
+  timeoutMs: z.number().optional(),
 });
 
 const CanvasConfigSchema = z.object({
@@ -422,8 +422,9 @@ function buildDefaultConfig(): Config {
       },
       browser: {
         enabled: true,
+        cdpUrl: "ws://127.0.0.1:9222",
         headless: true,
-        timeoutSeconds: 30,
+        timeoutMs: 30000,
       },
       canvas: {
         enabled: true,
