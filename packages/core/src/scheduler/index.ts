@@ -6,7 +6,7 @@
  */
 
 export { CronScheduler } from "./CronScheduler";
-export { executeScheduledTask, createTaskHandler, notifyTaskCompletion } from "./integration";
+export { executeScheduledTask, createTaskHandler, notifyTaskCompletion, setSchedulerForCleanup } from "./integration";
 export type {
   ScheduledTask,
   TaskRun,

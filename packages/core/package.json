@@ -23,6 +23,7 @@
     "@sapphire/snowflake": "latest",
     "@slack/bolt": "latest",
     "@whiskeysockets/baileys": "latest",
+    "@lightpanda/browser": "1.2.0",
     "croner": "^10.0.1",
     "discord.js": "latest",
     "grammy": "latest",

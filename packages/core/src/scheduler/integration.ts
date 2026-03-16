@@ -52,8 +52,12 @@ export async function executeScheduledTask(task: ScheduledTask): Promise<TaskExe
 
     // Handle internal cleanup task
     if (payload._internal === true && (payload as any).action === "cleanup") {
-      // The cleanup is handled by the scheduler itself via runCleanup()
-      log.info("[execute] Cleanup task acknowledged");
+      if (_scheduler) {
+        _scheduler.runCleanup();
+      } else {
+        log.warn("[execute] Cleanup task fired but scheduler instance not available");
+      }
+      log.info("[execute] Cleanup task executed");
       return { success: true, response: "Cleanup completed" };
     }
 

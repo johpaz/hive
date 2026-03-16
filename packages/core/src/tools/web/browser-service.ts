@@ -97,7 +97,7 @@ export class BrowserService {
   /**
    * Obtiene conexión CDP para puppeteer-core
    */
-  async getCDPConnection(): Promise<import("puppeteer-core").Browser | null> {
+  async getConnection(): Promise<import("puppeteer-core").Browser | null> {
     if (!this.available) {
       return null;
     }

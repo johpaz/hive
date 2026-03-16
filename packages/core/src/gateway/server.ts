@@ -34,7 +34,6 @@ import { handleGetUsers, handleCreateUser, handleUpdateUserSettings, handleGetUs
 import { handleGetSkills, handleActivateSkill, handleUpdateSkill, handleDeleteSkill, handleCreateSkill } from "./routes/skills";
 import { handleGetEthics, handleActivateEthics, handleDeleteEthics } from "./routes/ethics";
 import { handleGetTools, handleActivateTool, handleUpdateTool } from "./routes/tools";
-import { handleGetBrowserStatus, handleStartBrowser, handleStopBrowser } from "./routes/browser";
 import { handleGetProjects, handleGetActiveProject, handleCreateProject, handleUpdateProject, handleGetProjectHistory, handleGetProjectDetail, handleGetProjectTasks } from "./routes/projects";
 import { handleGetTasks, handleUpdateTask } from "./routes/tasks";
 import { setChannelSendFn } from "./channel-notify";
@@ -50,7 +49,7 @@ import { handleGetConfig } from "./routes/config";
 import { handleGetWorkspace, handleUpdateWorkspace, handleValidateWorkspace, handleCreateWorkspace, handleOpenWorkspace } from "./routes/workspace";
 import { getNarration, expandPath, addCorsHeaders, redactConfig, CORS_ORIGINS } from "./helpers";
 import { CronScheduler } from "../scheduler/CronScheduler";
-import { createTaskHandler } from "../scheduler/integration";
+import { createTaskHandler, setSchedulerForCleanup } from "../scheduler/integration";
 import { setSchedulerInstance as setScheduleToolsInstance } from "../tools/schedule.ts";
 import { setSchedulerInstance as setScheduledTasksRoutesInstance } from "./routes/scheduled-tasks";
 import {
@@ -175,9 +174,10 @@ export async function startGateway(config: Config): Promise<void> {
         const scheduler = new CronScheduler(db, handler);
         scheduler.boot();
 
-        // Register scheduler globally for tools and routes
+        // Register scheduler globally for tools, routes, and internal cleanup
         setScheduleToolsInstance(scheduler);
         setScheduledTasksRoutesInstance(scheduler);
+        setSchedulerForCleanup(scheduler);
 
         log.info(`📅 CronScheduler initialized with ${scheduler.getStatus().length} task(s)`);
       } catch (err) {
@@ -1122,19 +1122,6 @@ Please execute it now.`;
 
         if (url.pathname.match(/^\/api\/tools\/[^/]+$/) && req.method === "PUT") {
           return await handleUpdateTool(req, addCorsHeaders)
-        }
-
-        // ── Browser API ──────────────────────────────────────────────────────
-        if (url.pathname === "/api/browser/status" && req.method === "GET") {
-          return await handleGetBrowserStatus(req, addCorsHeaders)
-        }
-
-        if (url.pathname === "/api/browser/start" && req.method === "POST") {
-          return await handleStartBrowser(req, addCorsHeaders)
-        }
-
-        if (url.pathname === "/api/browser/stop" && req.method === "POST") {
-          return await handleStopBrowser(req, addCorsHeaders)
         }
 
         // ── Ethics API ──────────────────────────────────────────────────────

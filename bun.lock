@@ -74,6 +74,7 @@
         "@johpaz/hive-code-bridge": "^1.7.11",
         "@johpaz/hive-mcp": "^1.7.11",
         "@johpaz/hive-skills": "^1.7.11",
+        "@lightpanda/browser": "latest",
         "@modelcontextprotocol/sdk": "latest",
         "@sapphire/snowflake": "latest",
         "@slack/bolt": "latest",

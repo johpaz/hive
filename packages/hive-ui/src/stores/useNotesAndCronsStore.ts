@@ -1,36 +1,51 @@
 import { create } from 'zustand';
 import { apiClient } from '../lib/api';
-import type { ScratchpadNote, CronJob, CronChannel } from '../types/notes-crons';
-
-interface CronChannelsResponse {
-    channels: CronChannel[];
-    recommended: string;
-    userPreference: string;
-}
+import type { ScratchpadNote, ScheduledTask, TaskRun, CronChannel } from '../types/notes-crons';
 
 interface NotesAndCronsState {
+    // Notes
     notes: ScratchpadNote[];
-    cronJobs: CronJob[];
+
+    // Scheduled tasks (new /api/scheduled-tasks system)
+    scheduledTasks: ScheduledTask[];
+    taskHistory: Record<string, TaskRun[]>; // taskId → runs
+
+    // Channel preference (global setting)
     cronChannels: CronChannel[];
     cronRecommended: string;
     cronUserPreference: string;
+
+    // UI state
     isLoading: boolean;
     error: string | null;
+
+    // Actions — notes
     fetchNotes: () => Promise<void>;
-    fetchCronJobs: () => Promise<void>;
+
+    // Actions — scheduled tasks
+    fetchScheduledTasks: (status?: string) => Promise<void>;
+    pauseTask: (id: string) => Promise<void>;
+    resumeTask: (id: string) => Promise<void>;
+    deleteTask: (id: string) => Promise<void>;
+    triggerTask: (id: string) => Promise<void>;
+    fetchTaskHistory: (id: string, limit?: number) => Promise<void>;
+
+    // Actions — channel preference
     fetchCronChannels: () => Promise<void>;
-    toggleCronJobActive: (id: string, enabled: boolean) => Promise<void>;
     saveCronChannelPreference: (channelId: string) => Promise<void>;
 }
 
-export const useNotesAndCronsStore = create<NotesAndCronsState>((set) => ({
+export const useNotesAndCronsStore = create<NotesAndCronsState>((set, get) => ({
     notes: [],
-    cronJobs: [],
+    scheduledTasks: [],
+    taskHistory: {},
     cronChannels: [],
     cronRecommended: 'webchat',
     cronUserPreference: 'auto',
     isLoading: false,
     error: null,
+
+    // ── Notes ──────────────────────────────────────────────────────────────────
 
     fetchNotes: async () => {
         set({ isLoading: true, error: null });
@@ -42,76 +57,96 @@ export const useNotesAndCronsStore = create<NotesAndCronsState>((set) => ({
         }
     },
 
-    fetchCronJobs: async () => {
+    // ── Scheduled tasks ────────────────────────────────────────────────────────
+
+    fetchScheduledTasks: async (status?: string) => {
         set({ isLoading: true, error: null });
         try {
-            const data = await apiClient<{ cronJobs: CronJob[] } | CronJob[]>('/api/cron-jobs');
-            console.log("[CronStore] fetchCronJobs - API Response:", data);
-            let jobs: CronJob[] = [];
-            if (Array.isArray(data)) {
-                jobs = data;
-                console.log("[CronStore] Response es array directo:", jobs.length, "jobs");
-            } else if ('cronJobs' in data) {
-                jobs = (data as { cronJobs: CronJob[] }).cronJobs;
-                console.log("[CronStore] Response tiene propiedad 'cronJobs':", jobs.length, "jobs");
-            } else if ('jobs' in data) {
-                jobs = (data as any).jobs;
-                console.log("[CronStore] Response tiene propiedad 'jobs':", jobs.length, "jobs");
-            } else {
-                console.warn("[CronStore] Formato de respuesta desconocido:", data);
-            }
-            set({ cronJobs: jobs, isLoading: false });
+            const path = status
+                ? `/api/scheduled-tasks?status=${status}`
+                : '/api/scheduled-tasks';
+            const data = await apiClient<{ tasks: ScheduledTask[]; count: number }>(path);
+            set({ scheduledTasks: data.tasks ?? [], isLoading: false });
         } catch (err) {
-            console.error("[CronStore] Error en fetchCronJobs:", err);
-            set({ error: (err as Error).message, isLoading: false, cronJobs: [] });
+            set({ error: (err as Error).message, isLoading: false, scheduledTasks: [] });
         }
     },
+
+    pauseTask: async (id: string) => {
+        try {
+            await apiClient(`/api/scheduled-tasks/${id}/pause`, { method: 'POST' });
+            set((state) => ({
+                scheduledTasks: state.scheduledTasks.map((t) =>
+                    t.id === id ? { ...t, status: 'paused' as const } : t
+                ),
+            }));
+        } catch (err) {
+            set({ error: (err as Error).message });
+        }
+    },
+
+    resumeTask: async (id: string) => {
+        try {
+            await apiClient(`/api/scheduled-tasks/${id}/resume`, { method: 'POST' });
+            set((state) => ({
+                scheduledTasks: state.scheduledTasks.map((t) =>
+                    t.id === id ? { ...t, status: 'active' as const } : t
+                ),
+            }));
+        } catch (err) {
+            set({ error: (err as Error).message });
+        }
+    },
+
+    deleteTask: async (id: string) => {
+        try {
+            await apiClient(`/api/scheduled-tasks/${id}`, { method: 'DELETE' });
+            set((state) => ({
+                scheduledTasks: state.scheduledTasks.filter((t) => t.id !== id),
+            }));
+        } catch (err) {
+            set({ error: (err as Error).message });
+        }
+    },
+
+    triggerTask: async (id: string) => {
+        try {
+            await apiClient(`/api/scheduled-tasks/${id}/trigger`, { method: 'POST' });
+        } catch (err) {
+            set({ error: (err as Error).message });
+        }
+    },
+
+    fetchTaskHistory: async (id: string, limit = 10) => {
+        try {
+            const data = await apiClient<{ history: TaskRun[]; count: number }>(
+                `/api/scheduled-tasks/${id}/history?limit=${limit}`
+            );
+            set((state) => ({
+                taskHistory: { ...state.taskHistory, [id]: data.history ?? [] },
+            }));
+        } catch (err) {
+            set({ error: (err as Error).message });
+        }
+    },
+
+    // ── Channel preference ──────────────────────────────────────────────────────
 
     fetchCronChannels: async () => {
         try {
             const data = await apiClient<{ channels: string[] | CronChannel[] }>('/api/cron-jobs/channels');
-            console.log("[CronStore] fetchCronChannels - API Response:", data);
-            
-            // El backend retorna array de strings o array de objetos CronChannel
             let channels: CronChannel[] = [];
             if (Array.isArray(data.channels)) {
-                channels = data.channels.map(ch => {
+                channels = data.channels.map((ch) => {
                     if (typeof ch === 'string') {
-                        // Convertir string a objeto CronChannel
-                        return {
-                            id: ch,
-                            type: ch,
-                            active: true,
-                            recommended: ch === 'webchat' || ch === 'telegram',
-                        } as CronChannel;
+                        return { id: ch, type: ch, active: true, recommended: ch === 'webchat' || ch === 'telegram' };
                     }
                     return ch as CronChannel;
                 });
-                console.log("[CronStore] CronChannels convertidos:", channels.length, "canales");
             }
-            
-            set({
-                cronChannels: channels,
-                cronRecommended: 'webchat',
-                cronUserPreference: 'auto',
-            });
-        } catch (err) {
-            console.error("[CronStore] Error en fetchCronChannels:", err);
-            set({ error: (err as Error).message });
-        }
-    },
-
-    toggleCronJobActive: async (id: string, enabled: boolean) => {
-        try {
-            await apiClient(`/api/cron-jobs/${id}/toggle`, {
-                method: 'PATCH',
-                body: { enabled: enabled ? 1 : 0 }
-            });
-            set((state) => ({
-                cronJobs: state.cronJobs.map((j) => (j.id === id ? { ...j, enabled: enabled ? 1 : 0 } : j)),
-            }));
-        } catch (err) {
-            set({ error: (err as Error).message });
+            set({ cronChannels: channels, cronRecommended: 'webchat', cronUserPreference: 'auto' });
+        } catch {
+            // Non-critical — ignore if endpoint is unavailable
         }
     },
 
