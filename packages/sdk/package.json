@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-sdk",
-  "version": "1.7.14",
+  "version": "1.7.15",
   "description": "Hive SDK - Build on top of Hive for enterprise and custom integrations",
   "private": false,
   "main": "./src/index.ts",
@@ -20,9 +20,9 @@
     "typescript": ">=5.0.0"
   },
   "dependencies": {
-    "@johpaz/hive-core": "^1.7.14",
-    "@johpaz/hive-mcp": "^1.7.14",
-    "@johpaz/hive-skills": "^1.7.14",
+    "@johpaz/hive-core": "^1.7.15",
+    "@johpaz/hive-mcp": "^1.7.15",
+    "@johpaz/hive-skills": "^1.7.15",
     "zod": "latest"
   },
   "devDependencies": {
