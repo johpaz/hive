@@ -130,6 +130,7 @@ export {
   browserExtractTool,
   browserScriptTool,
   browserWaitTool,
+  captchaSolveTool,
 } from "./web/index.ts";
 
 export {

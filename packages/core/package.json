@@ -29,7 +29,7 @@
     "js-yaml": "latest",
     "puppeteer": "^24.39.1",
     "qrcode-terminal": "latest",
-    "toon-format-parser": "1.1.3",
+    "toon-format-parser": "1.1.4",
     "zod": "latest"
   },
   "devDependencies": {

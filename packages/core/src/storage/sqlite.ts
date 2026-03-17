@@ -108,10 +108,6 @@ function ensureSchemaSync(): void {
     ensureColumnExists("cron_jobs", "run_count", "INTEGER NOT NULL DEFAULT 0");
     ensureColumnExists("cron_jobs", "expires_at", "INTEGER");
 
-    // Sync usage_records (TOON savings columns — added after initial schema)
-    ensureColumnExists("usage_records", "toon_saved_tokens", "INTEGER NOT NULL DEFAULT 0");
-    ensureColumnExists("usage_records", "toon_saved_cost", "REAL NOT NULL DEFAULT 0");
-
     // Context Engine tables — ensure created_at/updated_at columns exist
     ensureColumnExists("conversations", "created_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
     ensureColumnExists("conversations", "updated_at", "INTEGER NOT NULL DEFAULT (unixepoch())");

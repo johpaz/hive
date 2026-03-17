@@ -25,6 +25,10 @@ interface UsageStats {
   totalCostUsd: number;
   toonSavedTokens: number;
   toonSavedCost: number;
+  toonSavedBytes: number;
+  toonSavedBytesPercent: number;
+  toonJsonTokens: number;
+  toonToonTokens: number;
   toonSavingsPercent: number;
   byProvider: Record<string, { tokens: number; costUsd: number; inputTokens: number; outputTokens: number }>;
   byModel: Record<string, { tokens: number; costUsd: number; provider: string; inputTokens: number; outputTokens: number }>;
@@ -50,7 +54,16 @@ function formatNumber(num: number): string {
 
 function formatCurrency(usd: number): string {
   if (usd >= 1) return "$" + usd.toFixed(2);
-  return "$" + usd.toFixed(4);
+  if (usd >= 0.01) return "$" + usd.toFixed(3);
+  if (usd > 0) return "$" + usd.toFixed(5);
+  return "$0.00";
+}
+
+function formatPercent(percent: number): string {
+  if (percent >= 10) return percent.toFixed(1) + "%";
+  if (percent >= 1) return percent.toFixed(2) + "%";
+  if (percent > 0) return percent.toFixed(3) + "%";
+  return "0%";
 }
 
 export function UsageStatsPanel() {
@@ -137,26 +150,80 @@ export function UsageStatsPanel() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Zap className={`h-3 w-3 ${stats?.toonSavedTokens ? "text-emerald-400" : ""}`} />
-              <span className="font-medium">TOON Ahorro de Tokens</span>
+              <span className="font-medium">TOON Optimización de Tokens</span>
             </div>
-            {stats?.toonSavingsPercent ? (
-              <span className="text-xs font-bold text-emerald-400">{stats.toonSavingsPercent.toFixed(1)}% reducción</span>
+            {stats?.toonSavingsPercent && stats.toonSavingsPercent > 0 ? (
+              <span className="text-xs font-bold text-emerald-400">{formatPercent(stats.toonSavingsPercent)} reducción</span>
             ) : null}
           </div>
-          <div className="mt-2 flex items-end gap-4">
-            <div>
-              <div className={`text-2xl font-bold ${stats?.toonSavedTokens ? "text-emerald-400" : "text-muted-foreground"}`}>
+
+          {/* Métricas principales de TOON */}
+          <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+            {/* Tokens Ahorrados */}
+            <div className="bg-emerald-500/5 rounded-md p-2">
+              <div className="text-xs text-muted-foreground mb-1">Tokens Ahorrados</div>
+              <div className={`text-lg font-bold ${stats?.toonSavedTokens ? "text-emerald-400" : "text-muted-foreground"}`}>
                 {stats ? formatNumber(stats.toonSavedTokens) : "—"}
               </div>
-              <div className="text-xs text-muted-foreground">tokens ahorrados</div>
             </div>
-            {stats ? (
-              <div className="text-sm font-semibold text-emerald-400">{formatCurrency(stats.toonSavedCost)} USD</div>
-            ) : null}
-            {stats && !stats.toonSavedTokens && (
-              <div className="text-xs text-muted-foreground italic">Sin optimizaciones TOON aún</div>
-            )}
+
+            {/* Costo Ahorrado */}
+            <div className="bg-emerald-500/5 rounded-md p-2">
+              <div className="text-xs text-muted-foreground mb-1">Costo Ahorrado</div>
+              <div className="text-lg font-bold text-emerald-400">
+                {stats ? formatCurrency(stats.toonSavedCost) : "—"}
+              </div>
+            </div>
+
+            {/* Bytes Ahorrados */}
+            <div className="bg-emerald-500/5 rounded-md p-2">
+              <div className="text-xs text-muted-foreground mb-1">Bytes Ahorrados</div>
+              <div className="text-lg font-bold text-emerald-400">
+                {stats && stats.toonSavedBytes > 0 ? formatNumber(stats.toonSavedBytes) : "—"}
+              </div>
+            </div>
+
+            {/* Reducción Bytes % */}
+            <div className="bg-emerald-500/5 rounded-md p-2">
+              <div className="text-xs text-muted-foreground mb-1">Reducción Bytes</div>
+              <div className="text-lg font-bold text-emerald-400">
+                {stats?.toonSavedBytesPercent && stats.toonSavedBytesPercent > 0 ? formatPercent(stats.toonSavedBytesPercent) : "—"}
+              </div>
+            </div>
           </div>
+
+          {/* Detalle de tokens JSON vs TOON */}
+          {stats && (stats.toonJsonTokens > 0 || stats.toonToonTokens > 0) && (
+            <div className="mt-3 pt-3 border-t border-emerald-500/20">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-4">
+                  <span className="text-muted-foreground">
+                    <span className="text-muted-foreground">JSON:</span>{" "}
+                    <span className="font-medium">{stats.toonJsonTokens > 0 ? formatNumber(stats.toonJsonTokens) : "—"}</span>{" "}
+                    <span className="text-muted-foreground">tokens</span>
+                  </span>
+                  <span className="text-muted-foreground">→</span>
+                  <span className="text-muted-foreground">
+                    <span className="text-emerald-400">TOON:</span>{" "}
+                    <span className="font-medium text-emerald-400">{stats.toonToonTokens > 0 ? formatNumber(stats.toonToonTokens) : "—"}</span>{" "}
+                    <span className="text-muted-foreground">tokens</span>
+                  </span>
+                </div>
+                {stats?.toonSavingsPercent && stats.toonSavingsPercent > 0 ? (
+                  <span className="text-xs font-bold text-emerald-400">
+                    {formatPercent(stats.toonSavingsPercent)} menos tokens
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          )}
+
+          {/* Mensaje cuando no hay datos */}
+          {stats && !stats.toonSavedTokens && (
+            <div className="mt-2 text-xs text-muted-foreground italic">
+              Sin optimizaciones TOON registradas aún
+            </div>
+          )}
         </div>
 
         {!hasData ? (

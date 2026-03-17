@@ -12,6 +12,7 @@
 import type { Tool } from "../types.ts";
 import { logger } from "../../utils/logger.ts";
 import { getBrowserService } from "./browser-service.ts";
+import { detectCaptcha, createSolver } from "./captcha/index.ts";
 
 const log = logger.child("browser-navigate");
 
@@ -85,6 +86,38 @@ export const browserNavigateTool: Tool = {
 
       const finalUrl = page.url();
 
+      // Check for CAPTCHA and attempt to solve
+      const captchaChallenge = await detectCaptcha(page);
+      let captchaResult = null;
+      
+      if (captchaChallenge) {
+        log.info(`CAPTCHA detected: ${captchaChallenge.type}`);
+        
+        const solver = createSolver({
+          enabled: true,
+          autoSolve: true,
+          visionProvider: 'gemini',
+          visionModel: 'gemini-2.0-flash-exp',
+          maxAttempts: 3,
+          maxRounds: 5,
+          apiKey: '',
+          enabledSites: [],
+        });
+        
+        try {
+          await solver.initialize();
+          captchaResult = await solver.solve(page, captchaChallenge.type);
+          if (captchaResult.success && captchaResult.solved) {
+            log.info(`CAPTCHA solved successfully`);
+          } else {
+            log.warn(`CAPTCHA solving failed: ${captchaResult.error}`);
+          }
+        } catch (error) {
+          log.error(`CAPTCHA solving error: ${(error as Error).message}`);
+          captchaResult = { success: false, error: (error as Error).message };
+        }
+      }
+
       // Extraer texto limpio del DOM
       const content = await page.evaluate(() => {
         try {
@@ -106,6 +139,12 @@ export const browserNavigateTool: Tool = {
         content,
         length: content.length,
         statusCode,
+        captcha: captchaChallenge ? {
+          type: captchaChallenge.type,
+          detected: true,
+          solved: captchaResult?.solved || false,
+          error: captchaResult?.error,
+        } : undefined,
       };
     } catch (error) {
       const msg = (error as Error).message;

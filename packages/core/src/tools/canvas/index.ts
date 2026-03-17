@@ -18,7 +18,7 @@ export const canvasRenderTool: Tool = {
   parameters: {
     type: "object",
     properties: {
-      component: { type: "string", description: "Component type to render" },
+      component: { type: "string", description: "Component type to render. Available: alert, alert-dialog, accordion, avatar, badge, breadcrumb, button, calendar, card, carousel, chart, checkbox, collapsible, command, context-menu, dialog, drawer, dropdown-menu, form, input, input-otp, label, markdown, menubar, navigation-menu, pagination, popover, progress, radio-group, resizable, scroll-area, select, separator, sheet, skeleton, slider, switch, table, tabs, textarea, toggle, toggle-group, tooltip, aspect-ratio, hover-card, bee-loader, custom" },
       data: { type: "object", description: "Data to pass to the component" },
     },
     required: ["component", "data"],

@@ -48,6 +48,7 @@ export type CanvasComponentType =
   | "tooltip"
   | "aspect-ratio"
   | "hover-card"
+  | "bee-loader"
   | "custom";
 
 export interface CanvasComponent {

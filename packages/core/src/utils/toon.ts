@@ -1,24 +1,13 @@
 /**
- * TOON Format Utility - Encode Only con Costo
+ * TOON Format Utility - Direct lib usage with native compression analysis
  *
- * TOON (Token-Oriented Object Notation) es el formato para enviar datos al LLM.
- * Proporciona una representación más compacta que JSON, ahorrando ~40% de tokens.
- *
- * Formatos soportados:
- * - Arrays (formato tabular): field1,field2,field3\nvalue1,value2,value3
- * - Objetos simples: key: value
- * - Objetos anidados: key:\n  nested: value
- *
- * Uso en:
- * - Tool results (al enviar al LLM)
- * - Contexto del agente (scratchpad, user data)
- * - MCP responses
- * - Skill outputs
+ * TOON (Token-Oriented Object Notation) provides ~40% token savings vs JSON.
+ * Uses toon-format-parser library directly.
  */
 
-import { encode as stringifyToon } from 'toon-format-parser'
+import { encode, decode, analyzeCompression } from 'toon-format-parser'
 import { logger } from './logger'
-import { getAverageTokenCost, recordToonSavings as recordToonSavingsDB } from '../storage/usage'
+import { recordToonSavings } from '../storage/usage'
 
 const log = logger.child('toon')
 
@@ -30,30 +19,52 @@ export interface ToonStringifyResult {
   tokensSaved: number
   savingsPercent: number
   costSaved: number
+  // Complete compression metrics
+  jsonBytes: number
+  toonBytes: number
+  savedBytes: number
+  savedPercent: number
+  jsonTokens: number
+  toonTokens: number
+  savedTokensPercent: number
 }
 
 /**
- * Stringify JavaScript object to TOON format
- * Always returns TOON format (never JSON)
- * Calcula ahorro en tokens y costo USD
+ * Estimate tokens in text (standard: ~4 chars per token)
+ */
+export function estimateTokens(text: string): number {
+  if (!text) return 0
+  return Math.ceil(text.length / 4)
+}
+
+/**
+ * Average cost per token for TOON savings calculation
+ * Based on Gemini 3 Flash pricing: $0.15/1M input + $0.60/1M output = $0.375/1M average
+ * This is used as a baseline for calculating USD savings from token compression
+ */
+const TOON_AVERAGE_COST_PER_TOKEN = 0.000000375 // $0.375 per million tokens
+
+/**
+ * Stringify JavaScript object to TOON format with token savings calculation
+ * Uses native analyzeCompression from toon-format-parser
  */
 export function stringify(data: any, model?: string): ToonStringifyResult {
   const jsonContent = JSON.stringify(data)
   const originalSize = jsonContent.length
-  const originalTokens = estimateTokens(jsonContent)
 
   try {
-    const toonContent = stringifyToon(data)
+    const toonContent = encode(data)
     const toonSize = toonContent.length
-    const toonTokens = estimateTokens(toonContent)
-    const tokensSaved = Math.max(0, originalTokens - toonTokens)
-    const savingsPercent = originalTokens > 0 ? (tokensSaved / originalTokens) * 100 : 0
 
-    // Calcular costo del ahorro si se proporciona el modelo
-    const costPerToken = model ? getAverageTokenCost(model) : 0
-    const costSaved = tokensSaved * costPerToken
+    // Use native analyzeCompression for accurate metrics
+    const analysis = analyzeCompression(data)
+    const tokensSaved = Math.max(0, analysis.savedTokens)
+    const savingsPercent = Math.max(0, analysis.savedTokensPercent)
 
-    log.debug(`[TOON stringify] Converted to TOON - saved ${tokensSaved} tokens ($${costSaved.toFixed(6)}) (${savingsPercent.toFixed(1)}%)`)
+    // Calculate cost savings using average cost (Gemini 3 Flash baseline)
+    const costSaved = tokensSaved * TOON_AVERAGE_COST_PER_TOKEN
+
+    log.debug(`[TOON] Converted - saved ${tokensSaved} tokens ($${costSaved.toFixed(6)}) (${savingsPercent.toFixed(1)}%)`)
 
     return {
       content: toonContent,
@@ -63,9 +74,17 @@ export function stringify(data: any, model?: string): ToonStringifyResult {
       tokensSaved,
       savingsPercent,
       costSaved,
+      // Complete compression metrics from analyzeCompression
+      jsonBytes: analysis.jsonBytes,
+      toonBytes: analysis.toonBytes,
+      savedBytes: analysis.savedBytes,
+      savedPercent: analysis.savedPercent,
+      jsonTokens: analysis.jsonTokens,
+      toonTokens: analysis.toonTokens,
+      savedTokensPercent: analysis.savedTokensPercent,
     }
   } catch (error) {
-    log.warn(`[TOON stringify] Failed, falling back to JSON:`, error)
+    log.warn(`[TOON] Failed, falling back to JSON:`, error)
 
     return {
       content: jsonContent,
@@ -75,75 +94,108 @@ export function stringify(data: any, model?: string): ToonStringifyResult {
       tokensSaved: 0,
       savingsPercent: 0,
       costSaved: 0,
+      jsonBytes: originalSize,
+      toonBytes: originalSize,
+      savedBytes: 0,
+      savedPercent: 0,
+      jsonTokens: estimateTokens(jsonContent),
+      toonTokens: estimateTokens(jsonContent),
+      savedTokensPercent: 0,
     }
   }
 }
 
 /**
- * Force TOON format for tool results
- * Registra ahorro en DB si se proporciona el modelo
+ * Format tool result to TOON (for LLM consumption)
+ * Records savings in DB if model is provided
  */
 export function formatToolResult(data: any, model?: string): string {
   const result = stringify(data, model)
 
-  // Record savings for metrics
   if (result.tokensSaved > 0 && model) {
-    recordToonSavingsDB(result.tokensSaved, result.costSaved, 'tool_result')
+    recordToonSavings({
+      jsonBytes: result.jsonBytes,
+      toonBytes: result.toonBytes,
+      savedBytes: result.savedBytes,
+      savedPercent: result.savedPercent,
+      jsonTokens: result.jsonTokens,
+      toonTokens: result.toonTokens,
+      savedTokens: result.tokensSaved,
+      savedTokensPercent: result.savedTokensPercent,
+    }, result.costSaved, 'tool_result')
   }
 
   return result.content
 }
 
 /**
- * Force TOON format for MCP responses
+ * Format MCP response to TOON
  */
 export function formatMCPResponse(data: any, model?: string): string {
   const result = stringify(data, model)
 
   if (result.tokensSaved > 0 && model) {
-    recordToonSavingsDB(result.tokensSaved, result.costSaved, 'mcp_response')
+    recordToonSavings({
+      jsonBytes: result.jsonBytes,
+      toonBytes: result.toonBytes,
+      savedBytes: result.savedBytes,
+      savedPercent: result.savedPercent,
+      jsonTokens: result.jsonTokens,
+      toonTokens: result.toonTokens,
+      savedTokens: result.tokensSaved,
+      savedTokensPercent: result.savedTokensPercent,
+    }, result.costSaved, 'mcp_response')
   }
 
   return result.content
 }
 
 /**
- * Force TOON format for skill outputs
+ * Format skill output to TOON
  */
 export function formatSkillOutput(data: any, model?: string): string {
   const result = stringify(data, model)
 
   if (result.tokensSaved > 0 && model) {
-    recordToonSavingsDB(result.tokensSaved, result.costSaved, 'skill_output')
+    recordToonSavings({
+      jsonBytes: result.jsonBytes,
+      toonBytes: result.toonBytes,
+      savedBytes: result.savedBytes,
+      savedPercent: result.savedPercent,
+      jsonTokens: result.jsonTokens,
+      toonTokens: result.toonTokens,
+      savedTokens: result.tokensSaved,
+      savedTokensPercent: result.savedTokensPercent,
+    }, result.costSaved, 'skill_output')
   }
 
   return result.content
 }
 
 /**
- * Format context data for agent (ethics, notes, projects, user data, etc.)
+ * Format context data (ethics, notes, projects, user data) to TOON
  */
 export function formatContext(data: any, model?: string): string {
   const result = stringify(data, model)
 
   if (result.tokensSaved > 0 && model) {
-    recordToonSavingsDB(result.tokensSaved, result.costSaved, 'context')
+    recordToonSavings({
+      jsonBytes: result.jsonBytes,
+      toonBytes: result.toonBytes,
+      savedBytes: result.savedBytes,
+      savedPercent: result.savedPercent,
+      jsonTokens: result.jsonTokens,
+      toonTokens: result.toonTokens,
+      savedTokens: result.tokensSaved,
+      savedTokensPercent: result.savedTokensPercent,
+    }, result.costSaved, 'context')
   }
 
   return result.content
 }
 
 /**
- * Estimate tokens in text (simple character-based estimation)
- * Standard: ~4 chars per token
- */
-export function estimateTokens(text: string): number {
-  if (!text) return 0
-  return Math.ceil(text.length / 4)
-}
-
-/**
- * Middleware wrapper for tool execution that enforces TOON format
+ * Middleware wrapper for tool execution with TOON formatting
  */
 export async function withToonFormat<T>(
   toolName: string,
@@ -156,14 +208,12 @@ export async function withToonFormat<T>(
     const result = await fn()
     const duration = Math.round(performance.now() - t0)
 
-    // Convert to TOON
     const toonResult = formatToolResult(result, model)
 
-    log.debug(`[TOON] Tool ${toolName} executed in ${duration}ms - output converted to TOON`)
+    log.debug(`[TOON] Tool ${toolName} executed in ${duration}ms - output converted`)
 
     return toonResult
   } catch (error) {
-    // Also format errors as TOON
     const errorObj = {
       error: true,
       tool: toolName,
@@ -173,4 +223,31 @@ export async function withToonFormat<T>(
 
     return formatToolResult(errorObj, model)
   }
+}
+
+/**
+ * Print compression report to console for debugging/analysis
+ * Note: This prints directly to console, does not return a string
+ */
+export function reportCompression(data: any): void {
+  // Import dynamically to avoid issues if function doesn't exist
+  import('toon-format-parser')
+    .then(({ printCompressionReport }) => {
+      printCompressionReport(data)
+    })
+    .catch(() => {
+      // Fallback: manual report
+      const analysis = analyzeCompression(data)
+      console.log(`\nTOON Compression Report:`)
+      console.log(`  JSON: ${analysis.jsonBytes} bytes, ~${analysis.jsonTokens} tokens`)
+      console.log(`  TOON: ${analysis.toonBytes} bytes, ~${analysis.toonTokens} tokens`)
+      console.log(`  Saved: ${analysis.savedBytes} bytes, ${analysis.savedTokens} tokens (${analysis.savedPercent.toFixed(1)}%)`)
+    })
+}
+
+/**
+ * Get compression analysis as an object (for programmatic use)
+ */
+export function getCompressionAnalysis(data: any) {
+  return analyzeCompression(data)
 }

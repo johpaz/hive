@@ -107,6 +107,13 @@ export interface UsageRecord {
   latency_ms: number | null;
   toon_saved_tokens: number;
   toon_saved_cost: number;
+  toon_json_bytes: number;
+  toon_toon_bytes: number;
+  toon_saved_bytes: number;
+  toon_saved_percent: number;
+  toon_json_tokens: number;
+  toon_toon_tokens: number;
+  toon_saved_tokens_pct: number;
   created_at: number;
 }
 
@@ -117,6 +124,10 @@ export interface UsageSummary {
   totalCostUsd: number;
   toonSavedTokens: number;
   toonSavedCost: number;
+  toonSavedBytes: number;
+  toonSavedBytesPercent: number;
+  toonJsonTokens: number;
+  toonToonTokens: number;
   toonSavingsPercent: number;
   byProvider: Record<string, { tokens: number; costUsd: number; inputTokens: number; outputTokens: number }>;
   byModel: Record<string, { tokens: number; costUsd: number; provider: string; inputTokens: number; outputTokens: number }>;
@@ -164,10 +175,24 @@ export function getUsageStats(hours: number = 24): UsageSummary {
       COALESCE(SUM(output_tokens), 0) as total_output,
       COALESCE(SUM(cost_usd), 0) as total_cost,
       COALESCE(SUM(toon_saved_tokens), 0) as toon_saved_tokens,
-      COALESCE(SUM(toon_saved_cost), 0) as toon_saved_cost
+      COALESCE(SUM(toon_saved_cost), 0) as toon_saved_cost,
+      COALESCE(SUM(toon_saved_bytes), 0) as toon_saved_bytes,
+      COALESCE(SUM(toon_saved_percent), 0) as toon_saved_percent,
+      COALESCE(SUM(toon_json_tokens), 0) as toon_json_tokens,
+      COALESCE(SUM(toon_toon_tokens), 0) as toon_toon_tokens
     FROM usage_records
     WHERE created_at >= ?
-  `).get(since) as { total_input: number; total_output: number; total_cost: number; toon_saved_tokens: number; toon_saved_cost: number };
+  `).get(since) as { 
+    total_input: number; 
+    total_output: number; 
+    total_cost: number; 
+    toon_saved_tokens: number; 
+    toon_saved_cost: number;
+    toon_saved_bytes: number;
+    toon_saved_percent: number;
+    toon_json_tokens: number;
+    toon_toon_tokens: number;
+  };
 
   const byProvider = db.prepare(`
     SELECT
@@ -227,6 +252,11 @@ export function getUsageStats(hours: number = 24): UsageSummary {
     ? (totals.toon_saved_tokens / totalIncludingSaved) * 100
     : 0;
 
+  // Calculate average bytes savings percent
+  const toonSavedBytesPercent = totals.toon_json_bytes > 0
+    ? (totals.toon_saved_bytes / totals.toon_json_bytes) * 100
+    : 0;
+
   return {
     totalTokens,
     totalInputTokens: totals.total_input,
@@ -234,6 +264,10 @@ export function getUsageStats(hours: number = 24): UsageSummary {
     totalCostUsd: totals.total_cost,
     toonSavedTokens: totals.toon_saved_tokens,
     toonSavedCost: totals.toon_saved_cost,
+    toonSavedBytes: totals.toon_saved_bytes,
+    toonSavedBytesPercent,
+    toonJsonTokens: totals.toon_json_tokens,
+    toonToonTokens: totals.toon_toon_tokens,
     toonSavingsPercent,
     byProvider: providerMap,
     byModel: modelMap,
@@ -282,34 +316,57 @@ export function getAverageTokenCost(model: string): number {
 
 /**
  * Record TOON savings for metrics tracking
- * This updates the usage_records table with TOON savings
+ * This updates the usage_records table with complete TOON compression metrics
  */
-export function recordToonSavings(tokensSaved: number, costSaved: number, category: string): void {
+export function recordToonSavings(
+  analysis: {
+    jsonBytes: number;
+    toonBytes: number;
+    savedBytes: number;
+    savedPercent: number;
+    jsonTokens: number;
+    toonTokens: number;
+    savedTokens: number;
+    savedTokensPercent: number;
+  },
+  costSaved: number, 
+  category: string
+): void {
   // Fire-and-forget to avoid blocking
   Promise.resolve().then(async () => {
     try {
       const db = getDb();
 
-      // Update or insert TOON savings record
+      // Insert TOON savings record with complete metrics
       db.query(`
-        INSERT INTO usage_records (id, provider, model, input_tokens, output_tokens, cost_usd, toon_saved_tokens, toon_saved_cost, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          toon_saved_tokens = toon_saved_tokens + excluded.toon_saved_tokens,
-          toon_saved_cost = toon_saved_cost + excluded.toon_saved_cost
+        INSERT INTO usage_records (
+          id, provider, model, input_tokens, output_tokens, cost_usd,
+          toon_saved_tokens, toon_saved_cost,
+          toon_json_bytes, toon_toon_bytes, toon_saved_bytes, toon_saved_percent,
+          toon_json_tokens, toon_toon_tokens, toon_saved_tokens_pct,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        `toon_${category}_${Date.now()}`,
+        `toon_${category}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         'toon',
         category,
         0,
         0,
         0,
-        tokensSaved,
+        Math.max(0, analysis.savedTokens),
         costSaved,
+        analysis.jsonBytes,
+        analysis.toonBytes,
+        analysis.savedBytes,
+        Math.max(0, analysis.savedPercent),
+        analysis.jsonTokens,
+        analysis.toonTokens,
+        Math.max(0, analysis.savedTokensPercent),
         Math.floor(Date.now() / 1000),
       )
 
-      log.debug(`[TOON] Recorded ${tokensSaved} tokens ($${costSaved.toFixed(6)}) saved for ${category}`)
+      log.debug(`[TOON] Recorded ${analysis.savedTokens} tokens ($${costSaved.toFixed(6)}) saved for ${category}`)
     } catch (error) {
       log.warn(`[TOON] Failed to record savings:`, error)
     }

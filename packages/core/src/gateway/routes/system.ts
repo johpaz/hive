@@ -348,17 +348,39 @@ export async function handleGetUsageStats(req: Request, addCorsHeaders: (r: Resp
   const hours = parseInt(url.searchParams.get("hours") || "24", 10)
   const since = Math.floor(Date.now() / 1000) - (hours * 3600)
 
-  // Get totals from usage_records table
+  // Get totals from usage_records table (excluding TOON records)
   const totals = db.query(`
     SELECT
       COALESCE(SUM(input_tokens), 0) as inputTokens,
       COALESCE(SUM(output_tokens), 0) as outputTokens,
       COALESCE(SUM(cost_usd), 0) as costUsd
     FROM usage_records
-    WHERE created_at >= ?
+    WHERE created_at >= ? AND provider != 'toon'
   `).get(since) as { inputTokens: number; outputTokens: number; costUsd: number }
 
-  // Get by provider
+  // Get TOON savings separately
+  const toonTotals = db.query(`
+    SELECT
+      COALESCE(SUM(toon_saved_tokens), 0) as toonSavedTokens,
+      COALESCE(SUM(toon_saved_cost), 0) as toonSavedCost,
+      COALESCE(SUM(toon_saved_bytes), 0) as toonSavedBytes,
+      COALESCE(AVG(toon_saved_percent), 0) as toonSavedPercent,
+      COALESCE(SUM(toon_json_tokens), 0) as toonJsonTokens,
+      COALESCE(SUM(toon_toon_tokens), 0) as toonToonTokens,
+      COALESCE(SUM(toon_json_bytes), 0) as toonJsonBytes,
+      COALESCE(AVG(toon_saved_tokens_pct), 0) as toonSavedTokensPct
+    FROM usage_records
+    WHERE created_at >= ? AND provider = 'toon'
+  `).get(since) as {
+    toonSavedTokens: number;
+    toonSavedCost: number;
+    toonSavedBytes: number;
+    toonSavedPercent: number;
+    toonJsonTokens: number;
+    toonToonTokens: number;
+    toonJsonBytes: number;
+    toonSavedTokensPct: number;
+  }
   const byProviderRows = db.query(`
     SELECT
       provider,
@@ -366,7 +388,7 @@ export async function handleGetUsageStats(req: Request, addCorsHeaders: (r: Resp
       COALESCE(SUM(output_tokens), 0) as outputTokens,
       COALESCE(SUM(cost_usd), 0) as costUsd
     FROM usage_records
-    WHERE created_at >= ?
+    WHERE created_at >= ? AND provider != 'toon'
     GROUP BY provider
   `).all(since) as { provider: string; inputTokens: number; outputTokens: number; costUsd: number }[]
 
@@ -378,27 +400,26 @@ export async function handleGetUsageStats(req: Request, addCorsHeaders: (r: Resp
       COALESCE(SUM(output_tokens), 0) as outputTokens,
       COALESCE(SUM(cost_usd), 0) as costUsd
     FROM usage_records
-    WHERE created_at >= ?
+    WHERE created_at >= ? AND provider != 'toon'
     GROUP BY model
   `).all(since) as { model: string; inputTokens: number; outputTokens: number; costUsd: number }[]
 
   const totalTokens = (totals.inputTokens || 0) + (totals.outputTokens || 0)
   const totalCostUsd = totals.costUsd || 0
 
-  // TOON savings - get from usage_records table
-  const toonTotals = db.query(`
-    SELECT
-      COALESCE(SUM(toon_saved_tokens), 0) as toonSavedTokens,
-      COALESCE(SUM(toon_saved_cost), 0) as toonSavedCost
-    FROM usage_records
-    WHERE created_at >= ?
-  `).get(since) as { toonSavedTokens: number; toonSavedCost: number }
-
+  // Use TOON totals directly from DB - no calculations needed
   const toonSavedTokens = toonTotals?.toonSavedTokens || 0
   const toonSavedCost = toonTotals?.toonSavedCost || 0
-  const toonSavingsPercent = totalTokens > 0
-    ? (toonSavedTokens / (totalTokens + toonSavedTokens)) * 100
-    : 0
+  const toonSavedBytes = toonTotals?.toonSavedBytes || 0
+  const toonJsonBytes = toonTotals?.toonJsonBytes || 0
+  const toonJsonTokens = toonTotals?.toonJsonTokens || 0
+  const toonToonTokens = toonTotals?.toonToonTokens || 0
+  
+  // Use saved_percent directly from DB (calculated at record time by toon-format-parser)
+  const toonSavedBytesPercent = toonTotals?.toonSavedPercent || 0
+  
+  // Use saved_tokens_pct directly from DB (calculated at record time by toon-format-parser)
+  const toonSavingsPercent = toonTotals?.toonSavedTokensPct || 0
 
   const stats: UsageStats = {
     totalTokens,
@@ -407,6 +428,10 @@ export async function handleGetUsageStats(req: Request, addCorsHeaders: (r: Resp
     totalCostUsd,
     toonSavedTokens,
     toonSavedCost,
+    toonSavedBytes,
+    toonSavedBytesPercent,
+    toonJsonTokens,
+    toonToonTokens,
     toonSavingsPercent,
     byProvider: Object.fromEntries(
       byProviderRows.map(r => [r.provider, {
@@ -438,6 +463,10 @@ interface UsageStats {
   totalCostUsd: number;
   toonSavedTokens: number;
   toonSavedCost: number;
+  toonSavedBytes: number;
+  toonSavedBytesPercent: number;
+  toonJsonTokens: number;
+  toonToonTokens: number;
   toonSavingsPercent: number;
   byProvider: Record<string, { tokens: number; costUsd: number; inputTokens: number; outputTokens: number }>;
   byModel: Record<string, { tokens: number; costUsd: number; provider: string; inputTokens: number; outputTokens: number }>;

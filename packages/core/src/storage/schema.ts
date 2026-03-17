@@ -266,8 +266,20 @@ export const SCHEMA = `
     output_tokens INTEGER NOT NULL DEFAULT 0,
     cost_usd      REAL NOT NULL DEFAULT 0,
     latency_ms    INTEGER,
-    toon_saved_tokens INTEGER NOT NULL DEFAULT 0,
-    toon_saved_cost   REAL NOT NULL DEFAULT 0,
+    
+    -- TOON Savings
+    toon_saved_tokens     INTEGER NOT NULL DEFAULT 0,
+    toon_saved_cost       REAL NOT NULL DEFAULT 0,
+    
+    -- TOON Metrics (complete compression analysis)
+    toon_json_bytes       INTEGER NOT NULL DEFAULT 0,
+    toon_toon_bytes       INTEGER NOT NULL DEFAULT 0,
+    toon_saved_bytes      INTEGER NOT NULL DEFAULT 0,
+    toon_saved_percent    REAL NOT NULL DEFAULT 0,
+    toon_json_tokens      INTEGER NOT NULL DEFAULT 0,
+    toon_toon_tokens      INTEGER NOT NULL DEFAULT 0,
+    toon_saved_tokens_pct REAL NOT NULL DEFAULT 0,
+    
     created_at     INTEGER NOT NULL DEFAULT (unixepoch())
   );
 

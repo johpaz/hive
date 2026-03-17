@@ -15,6 +15,7 @@ import { browserTypeTool } from "./browser-type.ts";
 import { browserExtractTool } from "./browser-extract.ts";
 import { browserScriptTool } from "./browser-script.ts";
 import { browserWaitTool } from "./browser-wait.ts";
+import { captchaSolveTool } from "./captcha-solve.ts";
 
 export function createTools(): Tool[] {
   return [
@@ -27,6 +28,7 @@ export function createTools(): Tool[] {
     browserExtractTool,
     browserScriptTool,
     browserWaitTool,
+    captchaSolveTool,
   ];
 }
 
@@ -40,3 +42,5 @@ export * from "./browser-extract.ts";
 export * from "./browser-script.ts";
 export * from "./browser-wait.ts";
 export * from "./browser-service.ts";
+export * from "./captcha-solve.ts";
+export * from "./captcha/index.ts";
