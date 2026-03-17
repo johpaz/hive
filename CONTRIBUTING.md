@@ -39,6 +39,37 @@ bun run test       # Ejecutar tests
 bun run lint       # Verificar tipos
 ```
 
+## Instalar el binario en macOS
+
+Los binarios de Hive (`hive-v*.x-macos`) son ejecutables de terminal, no aplicaciones `.app`. No se pueden abrir con doble clic.
+
+### Pasos
+
+```bash
+# 1. Dale permisos de ejecución
+chmod +x hive-v*-macos
+
+# 2. Quita la cuarentena de Gatekeeper (necesario la primera vez)
+xattr -d com.apple.quarantine hive-v*-macos
+
+# 3. Ejecútalo
+./hive-v*-macos
+```
+
+### Si macOS sigue bloqueando el binario
+
+Ve a **Ajustes del Sistema → Privacidad y Seguridad** y busca el mensaje sobre el binario bloqueado. Haz clic en **"Abrir de todas formas"**.
+
+### Agregar al PATH (opcional)
+
+Para ejecutarlo desde cualquier lugar sin `./`:
+
+```bash
+mv hive-v*-macos /usr/local/bin/hive
+# Desde cualquier carpeta:
+hive
+```
+
 ---
 
 ¿Dudas? Únete a nuestro [Discord](https://discord.gg/hive) o abre un issue.
