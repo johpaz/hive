@@ -1,12 +1,297 @@
 import { getDb } from "../../storage/sqlite.ts"
 import { loadConfig } from "../../config/loader.ts"
 import { cpus } from "node:os"
+import { readFile } from "node:fs/promises"
+import { join } from "node:path"
+
+const CURRENT_VERSION = "1.7.15"
+
+export interface VersionInfo {
+  current: string
+  latest?: string
+  status: "up-to-date" | "update-available" | "checking" | "error"
+  error?: string
+  installationType?: "docker" | "binary" | "npm" | "bun"
+}
+
+/**
+ * Detecta el tipo de instalación de Hive
+ */
+function detectInstallationType(): "docker" | "binary" | "npm" | "bun" {
+  // Docker: existe el archivo .dockerenv o el path contiene /.docker
+  if (process.env.HIVE_DOCKER === "true" || process.env.RUNNING_IN_DOCKER === "true") {
+    return "docker"
+  }
+  
+  // Verificar si hay archivo .dockerenv (solo Linux)
+  try {
+    if (require("fs").existsSync("/.dockerenv")) {
+      return "docker"
+    }
+  } catch {
+    // Ignorar error en sistemas que no soportan require
+  }
+  
+  // Bun: process.execPath contiene "bun"
+  if (process.execPath?.includes("bun")) {
+    return "bun"
+  }
+  
+  // npm: las variables de entorno de npm
+  if (process.env.npm_config_global_prefix) {
+    return "npm"
+  }
+  
+  // Por defecto, asumir binario standalone
+  return "binary"
+}
+
+/**
+ * Obtiene la versión más reciente desde npm registry
+ */
+async function getLatestVersionFromNpm(): Promise<string | null> {
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 5000)
+    
+    const response = await fetch("https://registry.npmjs.org/@johpaz/hive/latest", {
+      signal: controller.signal,
+      headers: { "Accept": "application/json" }
+    })
+    
+    clearTimeout(timeout)
+    
+    if (!response.ok) {
+      return null
+    }
+    
+    const data = await response.json()
+    return data.version
+  } catch (error) {
+    console.error("[Version] Error fetching from npm:", (error as Error).message)
+    return null
+  }
+}
+
+/**
+ * Obtiene la versión más reciente desde GitHub Releases
+ */
+async function getLatestVersionFromGitHub(): Promise<string | null> {
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 5000)
+    
+    const response = await fetch("https://api.github.com/repos/johpaz/hive/releases/latest", {
+      signal: controller.signal,
+      headers: { 
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "Hive-Version-Checker"
+      }
+    })
+    
+    clearTimeout(timeout)
+    
+    if (!response.ok) {
+      return null
+    }
+    
+    const data = await response.json()
+    // Remover prefijo "v" si existe (ej: "v1.7.15" -> "1.7.15")
+    return data.tag_name?.replace(/^v/, "") || null
+  } catch (error) {
+    console.error("[Version] Error fetching from GitHub:", (error as Error).message)
+    return null
+  }
+}
+
+/**
+ * Compara dos versiones semánticas
+ * Retorna: 1 si v1 > v2, -1 si v1 < v2, 0 si son iguales
+ */
+function compareVersions(v1: string, v2: string): number {
+  const parts1 = v1.split(".").map(Number)
+  const parts2 = v2.split(".").map(Number)
+  
+  for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+    const n1 = parts1[i] || 0
+    const n2 = parts2[i] || 0
+    
+    if (n1 > n2) return 1
+    if (n1 < n2) return -1
+  }
+  
+  return 0
+}
+
+/**
+ * Handler para obtener información de versión
+ */
+export async function handleGetVersion(
+  req: Request,
+  addCorsHeaders: (r: Response, req: Request) => Response
+): Promise<Response> {
+  const installationType = detectInstallationType()
+  
+  // Responder inmediatamente con la versión actual y estado "checking"
+  let versionInfo: VersionInfo = {
+    current: CURRENT_VERSION,
+    status: "checking",
+    installationType
+  }
+  
+  // Obtener última versión en background (sin await inicial)
+  const latestPromise = installationType === "docker" 
+    ? getLatestVersionFromGitHub() 
+    : getLatestVersionFromNpm()
+  
+  latestPromise.then(latest => {
+    if (latest) {
+      const isUpdateAvailable = compareVersions(latest, CURRENT_VERSION) > 0
+      versionInfo = {
+        current: CURRENT_VERSION,
+        latest,
+        status: isUpdateAvailable ? "update-available" : "up-to-date",
+        installationType
+      }
+    } else {
+      versionInfo = {
+        current: CURRENT_VERSION,
+        status: "error",
+        error: "No se pudo verificar la última versión",
+        installationType
+      }
+    }
+  }).catch(err => {
+    versionInfo = {
+      current: CURRENT_VERSION,
+      status: "error",
+      error: (err as Error).message,
+      installationType
+    }
+  })
+  
+  // Esperar a que se resuelva la promesa
+  const latest = await latestPromise
+  
+  if (latest) {
+    const isUpdateAvailable = compareVersions(latest, CURRENT_VERSION) > 0
+    versionInfo = {
+      current: CURRENT_VERSION,
+      latest,
+      status: isUpdateAvailable ? "update-available" : "up-to-date",
+      installationType
+    }
+  } else {
+    versionInfo = {
+      current: CURRENT_VERSION,
+      status: "error",
+      error: "No se pudo verificar la última versión. Verifica tu conexión a internet.",
+      installationType
+    }
+  }
+  
+  return addCorsHeaders(Response.json(versionInfo), req)
+}
+
+/**
+ * Handler para triggerar una actualización
+ */
+export async function handleTriggerUpdate(
+  req: Request,
+  addCorsHeaders: (r: Response, req: Request) => Response
+): Promise<Response> {
+  const installationType = detectInstallationType()
+  
+  try {
+    let command: string[]
+    let message: string
+    
+    switch (installationType) {
+      case "docker":
+        // Docker: el usuario debe ejecutar docker compose pull && docker compose up -d
+        return addCorsHeaders(Response.json({
+          success: false,
+          error: "En Docker, ejecuta manualmente: docker compose pull && docker compose up -d",
+          instructions: [
+            "1. Abre una terminal en el directorio de Hive",
+            "2. Ejecuta: docker compose pull",
+            "3. Luego ejecuta: docker compose up -d",
+            "4. Recarga esta página para ver la nueva versión"
+          ]
+        }), req)
+        
+      case "bun":
+        command = ["bun", "install", "-g", "@johpaz/hive@latest"]
+        message = "Actualizando Hive desde npm..."
+        break
+        
+      case "npm":
+        command = ["npm", "install", "-g", "@johpaz/hive@latest"]
+        message = "Actualizando Hive desde npm..."
+        break
+        
+      case "binary":
+        return addCorsHeaders(Response.json({
+          success: false,
+          error: "Para actualizar el binario, descarga la última versión desde https://github.com/johpaz/hive/releases/latest",
+          instructions: [
+            "1. Visita https://github.com/johpaz/hive/releases/latest",
+            "2. Descarga el binario para tu sistema operativo",
+            "3. Reemplaza el archivo existente",
+            "4. Ejecuta: hive start"
+          ]
+        }), req)
+        
+      default:
+        return addCorsHeaders(Response.json({
+          success: false,
+          error: "Tipo de instalación no reconocido"
+        }), req)
+    }
+    
+    // Ejecutar comando de actualización
+    const proc = Bun.spawn(command, {
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited
+    ])
+    
+    if (exitCode === 0) {
+      return addCorsHeaders(Response.json({
+        success: true,
+        message: "Hive actualizado correctamente. Reinicia el gateway para aplicar los cambios.",
+        output: stdout || stderr,
+        instructions: [
+          "1. Ejecuta: hive stop",
+          "2. Luego ejecuta: hive start",
+          "3. Recarga esta página para ver la nueva versión"
+        ]
+      }), req)
+    } else {
+      return addCorsHeaders(Response.json({
+        success: false,
+        error: "Error durante la actualización",
+        output: stderr || stdout
+      }), req)
+    }
+  } catch (error) {
+    return addCorsHeaders(Response.json({
+      success: false,
+      error: (error as Error).message
+    }), req)
+  }
+}
 
 export function getSystemStats(startTime: number) {
   const mem = process.memoryUsage()
   const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000)
   const uptimeStr = new Date(uptimeSeconds * 1000).toISOString().substr(11, 8)
-  
+
   return {
     cpu: 0, // Placeholder - Node.js doesn't provide per-process CPU
     memory: {
@@ -27,13 +312,13 @@ export async function handleGetActivityStats(req: Request, addCorsHeaders: (r: R
   const db = getDb()
   const url = new URL(req.url)
   const hours = parseInt(url.searchParams.get("hours") || "12", 10)
-  
+
   // Get message counts per hour from conversations table
   const now = Date.now()
   const startTime = now - (hours * 60 * 60 * 1000)
-  
+
   const rows = db.query(`
-    SELECT 
+    SELECT
       strftime('%Y-%m-%d %H:00', datetime(created_at, 'unixepoch')) as hour,
       COUNT(*) as count
     FROM conversations
@@ -41,13 +326,13 @@ export async function handleGetActivityStats(req: Request, addCorsHeaders: (r: R
     GROUP BY hour
     ORDER BY hour
   `).all(startTime / 1000) as { hour: string; count: number }[]
-  
+
   // Format as array expected by frontend
   const activityData = rows.map(r => ({
     time: r.hour,
     count: r.count,
   }))
-  
+
   return addCorsHeaders(Response.json(activityData), req)
 }
 

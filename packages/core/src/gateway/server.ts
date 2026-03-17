@@ -42,7 +42,7 @@ import { handleGetChannels, handleGetChannelConfig, handleActivateChannel, handl
 import { handleGetMcpServers, handleGetMcpServerDetail, handleCreateMcpServer, handleUpdateMcpServer, handleDeleteMcpServer, handleToggleMcpServer, handleGetMCPServerTools } from "./routes/mcp";
 import { handleGetModels, handleCreateModel, handleToggleModel, handleGetModelsConfig, handleUpdateModelsConfig, handleDeleteModel, handleUpdateModel } from "./routes/models";
 import { handleGetVoiceProviders, handleGetConfiguredVoiceProviders, handleSaveVoiceProviderKey, handleTestVoice, handleGetChannelVoice, handleUpdateChannelVoice, handleGetVoiceProviderVoices } from "./routes/voice";
-import { handleGetActivityStats, handleGetSystemStats, handleGetUsageStats, handleSystemReload, handleApiReload } from "./routes/system";
+import { handleGetActivityStats, handleGetSystemStats, handleGetUsageStats, handleSystemReload, handleApiReload, handleGetVersion, handleTriggerUpdate } from "./routes/system";
 import { handleGetChatHistory, handleGetCanvas, handleGetNotes, handleUpdateNote } from "./routes/chat";
 import { handleChat as handlePostChat } from "./routes/chat";
 import { handleGetConfig } from "./routes/config";
@@ -651,6 +651,18 @@ export async function startGateway(config: Config): Promise<void> {
         // ── System Stats ───────────────────────────────────────────────────
         if (url.pathname === "/api/system-stats" || url.pathname === "/api/system-stats/") {
           return await handleGetSystemStats(req, addCorsHeaders, startTime)
+        }
+
+        // ── Version Check ──────────────────────────────────────────────────
+        if (url.pathname === "/api/version" || url.pathname === "/api/version/") {
+          return await handleGetVersion(req, addCorsHeaders)
+        }
+
+        // ── Trigger Update ─────────────────────────────────────────────────
+        if (url.pathname === "/api/update" || url.pathname === "/api/update/") {
+          if (req.method === "POST") {
+            return await handleTriggerUpdate(req, addCorsHeaders)
+          }
         }
 
         // ── Usage Stats ─────────────────────────────────────────────────────

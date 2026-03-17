@@ -25,6 +25,7 @@ import { useWebSocket } from "@/hooks/useWebSocket";
 import { useAgents } from "@/hooks/useAgents";
 import { SystemMonitor } from "@/components/SystemMonitor";
 import { UsageStatsPanel } from "@/components/UsageStatsPanel";
+import { UpdateChecker } from "@/components/UpdateChecker";
 import { useLoaderStore } from "@/stores/useLoaderStore";
 import { swal, Toast } from "@/lib/swal";
 import { apiClient } from "@/lib/api";
@@ -120,10 +121,7 @@ export function DashboardPage() {
             </div>
           </div>
           <div className="h-10 w-px bg-white/10 hidden sm:block" />
-          <div className="flex flex-col items-end">
-            <span className="hive-label mb-1">Salud Global</span>
-            <span className="text-xl font-black text-blue-400 tracking-tighter">{systemHealth}%</span>
-          </div>
+          <UpdateChecker />
         </div>
       </div>
 
