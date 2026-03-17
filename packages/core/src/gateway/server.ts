@@ -102,8 +102,6 @@ export async function startGateway(config: Config): Promise<void> {
   let dbProvider: string;
   let dbModel: string;
   const agentList = config.agents?.list ?? [];
-  const defaultAgent = agentList.find((a) => a.default) ?? agentList[0];
-  const workspacePath = expandPath(defaultAgent?.workspace ?? "~/.hive/workspace");
 
   // ── Bind port immediately so parent health-check doesn't timeout ──────────
   // The full handler is loaded via server.reload() once initialization finishes
@@ -840,8 +838,14 @@ export async function startGateway(config: Config): Promise<void> {
         // Get/Update workspace files (soul, user, ethics)
         for (const wsType of ["soul", "user", "ethics"] as const) {
           if (url.pathname === `/api/workspace/${wsType}`) {
+            const coordinatorRow = getDb().query<{ workspace: string | null }, []>(
+              "SELECT workspace FROM agents WHERE role = 'coordinator' LIMIT 1"
+            ).get();
+            const liveWorkspacePath = coordinatorRow?.workspace
+              ? expandPath(coordinatorRow.workspace)
+              : expandPath("~/.hive/workspace");
             if (req.method === "GET") {
-              return await handleGetWorkspace(req, addCorsHeaders, workspacePath, wsType);
+              return await handleGetWorkspace(req, addCorsHeaders, liveWorkspacePath, wsType);
             }
             if (req.method === "POST") {
               const reloadFn = async (type: string) => {
@@ -849,7 +853,7 @@ export async function startGateway(config: Config): Promise<void> {
                 if (type === "user") agent.reloadUser();
                 if (type === "ethics") await agent.reloadEthics();
               };
-              return await handleUpdateWorkspace(req, addCorsHeaders, workspacePath, wsType, reloadFn);
+              return await handleUpdateWorkspace(req, addCorsHeaders, liveWorkspacePath, wsType, reloadFn);
             }
           }
         }

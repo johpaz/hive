@@ -6,8 +6,7 @@ services:
       - "18790:18790"
     volumes:
       - hive-data:/root/.hive
-      - ${HIVE_WORKSPACE:-./workspace}:/workspace
-      - ${HIVE_HOME_PATH:-./workspace}:/host/home
+      - ${HOME}:/host/home
     environment:
       HIVE_HOST: 0.0.0.0
       HIVE_PORT: 18790
