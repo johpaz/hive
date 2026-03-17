@@ -221,11 +221,13 @@ export async function notifyTaskCompletion(
     return;
   }
 
-  // Get user's preferred notification channel
-  const userId = resolveAgentId(null);
+  // Get real user ID from users table
+  const userRow = db.query("SELECT id FROM users LIMIT 1").get() as { id: string } | undefined;
+  const userId = userRow?.id || "";
+
   const identities = db.query(
     "SELECT channel FROM user_identities WHERE user_id = ? ORDER BY channel"
-  ).all(userId || "") as { channel: string }[];
+  ).all(userId) as { channel: string }[];
 
   // Determine best channel
   let notifyChannel = task.channel;
@@ -247,10 +249,6 @@ export async function notifyTaskCompletion(
     : `${status} Scheduled task "${taskName}" failed\n${error || ""}`;
 
   log.info(`[notify] Sending notification to ${notifyChannel}: "${message.slice(0, 50)}..."`);
-
-  const db2 = getDb();
-  const userRow = db2.query("SELECT id FROM users LIMIT 1").get() as { id: string } | undefined;
-  const userId = userRow?.id || "";
 
   await sendToUserChannel(notifyChannel, userId, message);
   log.info(`[notify] Notification sent to ${notifyChannel}`);
