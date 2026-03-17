@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-core",
-  "version": "1.7.17",
+  "version": "1.7.18",
   "private": true,
   "description": "Hive Gateway — Personal AI agent runtime",
   "main": "./src/index.ts",
@@ -16,9 +16,9 @@
   },
   "dependencies": {
     "@ag-ui/core": "^0.0.46",
-    "@johpaz/hive-code-bridge": "^1.7.17",
-    "@johpaz/hive-mcp": "^1.7.17",
-    "@johpaz/hive-skills": "^1.7.17",
+    "@johpaz/hive-code-bridge": "^1.7.18",
+    "@johpaz/hive-mcp": "^1.7.18",
+    "@johpaz/hive-skills": "^1.7.18",
     "@modelcontextprotocol/sdk": "latest",
     "@sapphire/snowflake": "latest",
     "@slack/bolt": "latest",

@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-mcp",
-  "version": "1.7.17",
+  "version": "1.7.18",
   "private": true,
   "description": "Hive MCP Client — Model Context Protocol client layer",
   "main": "./src/index.ts",
