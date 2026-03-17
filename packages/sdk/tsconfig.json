@@ -3,12 +3,16 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@johpaz/hive-core": ["../core/src/index.ts"],
-      "@johpaz/hive-core/*": ["../core/src/*"],
-      "@johpaz/hive-mcp": ["../mcp/src/index.ts"],
-      "@johpaz/hive-mcp/*": ["../mcp/src/*"],
-      "@johpaz/hive-skills": ["../skills/src/index.ts"],
-      "@johpaz/hive-skills/*": ["../skills/src/*"]
+      "@johpaz/hive": ["../core/src/index.ts"],
+      "@johpaz/hive/agent/*": ["../core/src/agent/*"],
+      "@johpaz/hive/channels/*": ["../core/src/channels/*"],
+      "@johpaz/hive/storage/*": ["../core/src/storage/*"],
+      "@johpaz/hive/tools/*": ["../core/src/tools/*"],
+      "@johpaz/hive/config/*": ["../core/src/config/*"],
+      "@johpaz/hive/utils/*": ["../core/src/utils/*"],
+      "@johpaz/hive/gateway/*": ["../core/src/gateway/*"],
+      "@johpaz/hive/mcp/*": ["../mcp/src/*"],
+      "@johpaz/hive/skills/*": ["../skills/src/*"]
     }
   },
   "include": ["src/**/*"]
