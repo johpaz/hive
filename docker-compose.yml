@@ -10,38 +10,14 @@ services:
     environment:
       HIVE_HOST: 0.0.0.0
       HIVE_PORT: 18790
-      # Optional overrides:
-      # HIVE_LOG_LEVEL: info
-      # HIVE_AUTH_TOKEN: your-token-here
+
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:18790/health"]
+      test: [ "CMD", "wget", "-qO-", "http://localhost:18790/health" ]
       interval: 5s
       timeout: 3s
       retries: 12
       start_period: 5s
-    # Uncomment depends_on if using Lightpanda service below
-    # depends_on:
-    #   - lightpanda
-
-  # ─────────────────────────────────────────────────────────────────────────────
-  # Lightpanda - Browser Automation (Optional)
-  # ─────────────────────────────────────────────────────────────────────────────
-  # Lightpanda es un browser headless 9x más liviano en RAM y 11x más rápido
-  # que Chrome. Se usa para browser automation via protocolo CDP.
-  #
-  # Para activar las browser tools de Hive:
-  # 1. Descomenta este servicio lightpanda
-  # 2. Descomenta `depends_on` en el servicio hive arriba
-  # 3. Reinicia: docker compose up -d
-  #
-  # Más info: https://github.com/lightpanda-org/lightpanda
-  #
-  # lightpanda:
-  #   image: lightpanda/browser:nightly
-  #   ports:
-  #     - "9222:9222"
-  #   restart: unless-stopped
 
 volumes:
   hive-data:

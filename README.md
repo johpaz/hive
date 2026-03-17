@@ -355,6 +355,11 @@ mkdir -p ~/.hive/ui && cp -r ui-dist/* ~/.hive/ui/
 >
 > Alternativa: en Finder, haz clic derecho sobre el archivo → **Abrir** → **Abrir** de nuevo en el diálogo. Esto también lo desbloquea.
 
+> **Error "there is no application set to open this document"**
+> El binario es un ejecutable de terminal — **no se puede abrir con doble clic desde Finder**. Siempre se ejecuta desde Terminal con `./hive start`. Si aparece ese mensaje al hacer doble clic, ignóralo y usa Terminal.
+>
+> Si después del `xattr` el error persiste, ve a **Ajustes del Sistema → Privacidad y Seguridad** y haz clic en **"Abrir de todas formas"**.
+
 **Agregar al PATH:**
 
 ```bash
