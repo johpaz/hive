@@ -5,8 +5,8 @@
  * Includes both legacy cron tools and new Croner-based schedule tools.
  *
  * @example
- * import { 
- *   scheduleCreateTool, 
+ * import {
+ *   scheduleCreateTool,
  *   scheduleListTool,
  *   initCronScheduler,
  * } from "@johpaz/hive-sdk/cron";
@@ -23,7 +23,7 @@ export {
   scheduleHistoryTool,
   createTools as createScheduleTools,
   setSchedulerInstance,
-} from "@johpaz/hive-core/tools/schedule";
+} from "@johpaz/hive/tools/schedule";
 
 // Legacy cron tools (cron_jobs table) - re-export for backward compatibility
 export {
@@ -34,4 +34,4 @@ export {
   createTools as createCronTools,
   initCronScheduler,
   resolveBestChannel,
-} from "@johpaz/hive-core/tools/cron";
+} from "@johpaz/hive/tools/cron";

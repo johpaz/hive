@@ -253,8 +253,8 @@ export function getUsageStats(hours: number = 24): UsageSummary {
     : 0;
 
   // Calculate average bytes savings percent
-  const toonSavedBytesPercent = totals.toon_json_bytes > 0
-    ? (totals.toon_saved_bytes / totals.toon_json_bytes) * 100
+  const toonSavedBytesPercent = totals.toon_toon_tokens > 0
+    ? (totals.toon_saved_bytes / totals.toon_toon_tokens) * 100
     : 0;
 
   return {

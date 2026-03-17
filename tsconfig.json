@@ -4,6 +4,36 @@
     "baseUrl": ".",
     "jsx": "react-jsx",
     "paths": {
+      "@johpaz/hive": [
+        "./packages/core/src/index.ts"
+      ],
+      "@johpaz/hive/agent/*": [
+        "./packages/core/src/agent/*"
+      ],
+      "@johpaz/hive/channels/*": [
+        "./packages/core/src/channels/*"
+      ],
+      "@johpaz/hive/storage/*": [
+        "./packages/core/src/storage/*"
+      ],
+      "@johpaz/hive/tools/*": [
+        "./packages/core/src/tools/*"
+      ],
+      "@johpaz/hive/config/*": [
+        "./packages/core/src/config/*"
+      ],
+      "@johpaz/hive/utils/*": [
+        "./packages/core/src/utils/*"
+      ],
+      "@johpaz/hive/gateway/*": [
+        "./packages/core/src/gateway/*"
+      ],
+      "@johpaz/hive/mcp/*": [
+        "./packages/mcp/src/*"
+      ],
+      "@johpaz/hive/skills/*": [
+        "./packages/skills/src/*"
+      ],
       "@johpaz/hive-core": [
         "./packages/core/src/index.ts"
       ],

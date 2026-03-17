@@ -8,6 +8,7 @@
 import { Cron } from "croner";
 import type { Database } from "bun:sqlite";
 import { logger } from "../utils/logger";
+import { notifyTaskCompletion } from "./integration";
 import type {
   ScheduledTask,
   TaskRun,
@@ -186,10 +187,12 @@ export class CronScheduler {
           }
         }
 
+        await notifyTaskCompletion(task.id, task.name, true, result.response);
+
         // Handle one_shot completion
         if (task.task_type === "one_shot") {
           this.db.query(`
-            UPDATE scheduled_tasks 
+            UPDATE scheduled_tasks
             SET status = 'completed', completed_at = ?
             WHERE id = ?
           `).run(finishedAt, task.id);
@@ -222,6 +225,7 @@ export class CronScheduler {
       `).run(errorMessage, task.id);
 
       log.error(`[execute] Task "${task.name}" (${task.id}) failed: ${errorMessage}`);
+      await notifyTaskCompletion(task.id, task.name, false, undefined, errorMessage);
     }
   }
 

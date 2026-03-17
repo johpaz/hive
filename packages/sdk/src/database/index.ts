@@ -1,25 +1,25 @@
 /**
  * Hive SDK - Database Module
- * 
+ *
  * Exposes database access, schema, and crypto utilities.
- * 
+ *
  * @example
  * import { getDb, initDatabase, SCHEMA } from "@johpaz/hive-sdk/database";
- * 
+ *
  * // Initialize database
  * initDatabase();
- * 
+ *
  * // Get database instance
  * const db = getDb();
  */
 
-export { getDb, initializeDatabase, getDbPathLazy, dbService } from "@johpaz/hive-core/storage/sqlite";
+export { getDb, initializeDatabase, getDbPathLazy, dbService } from "@johpaz/hive/storage/sqlite";
 
-export { SCHEMA, PROJECTS_SCHEMA, CONTEXT_ENGINE_SCHEMA } from "@johpaz/hive-core/storage/schema";
+export { SCHEMA, PROJECTS_SCHEMA, CONTEXT_ENGINE_SCHEMA } from "@johpaz/hive/storage/schema";
 
-export { seedAllData, seedToolsAndSkills, getAllElements, getActiveElements } from "@johpaz/hive-core/storage/seed";
+export { seedAllData, seedToolsAndSkills, getAllElements, getActiveElements } from "@johpaz/hive/storage/seed";
 
-export { encrypt, decrypt, encryptApiKey, decryptApiKey, encryptConfig, decryptConfig, hashPassword, verifyPassword, maskApiKey } from "@johpaz/hive-core/storage/crypto";
+export { encrypt, decrypt, encryptApiKey, decryptApiKey, encryptConfig, decryptConfig, hashPassword, verifyPassword, maskApiKey } from "@johpaz/hive/storage/crypto";
 
 export {
   getAllProviders,
@@ -38,4 +38,4 @@ export {
   getCoordinatorAgentId,
   getDefaultAgentId,
   getAgentConfig,
-} from "@johpaz/hive-core/storage/onboarding";
+} from "@johpaz/hive/storage/onboarding";

@@ -10,6 +10,7 @@ import { logger } from "../utils/logger";
 import { getDb } from "../storage/sqlite";
 import { buildAgentLoop } from "../agent/agent-loop";
 import { resolveAgentId } from "../storage/onboarding";
+import { sendToUserChannel } from "../gateway/channel-notify";
 
 const log = logger.child("SchedulerIntegration");
 
@@ -82,8 +83,9 @@ export async function executeScheduledTask(task: ScheduledTask): Promise<TaskExe
 
     // Get user timezone for context
     const db = getDb();
-    const user = db.query("SELECT timezone, language FROM users LIMIT 1").get() as { 
-      timezone: string; 
+    const user = db.query("SELECT id, timezone, language FROM users LIMIT 1").get() as {
+      id: string;
+      timezone: string;
       language: string | null;
     } | undefined;
 
@@ -134,6 +136,7 @@ ${prompt || `Execute tool: ${task.tool_name}`}`;
           thread_id: sessionId,
           agent_id: targetAgentId || undefined,
           channel: task.channel,
+          user_id: user?.id || "",
           system_prompt: undefined,
           raw_user_message: contextPrompt,
         },
@@ -245,9 +248,12 @@ export async function notifyTaskCompletion(
 
   log.info(`[notify] Sending notification to ${notifyChannel}: "${message.slice(0, 50)}..."`);
 
-  // TODO: Integrate with channel manager to send actual notification
-  // This requires access to the ChannelManager instance which is created at gateway level
-  // For now, we log the notification
+  const db2 = getDb();
+  const userRow = db2.query("SELECT id FROM users LIMIT 1").get() as { id: string } | undefined;
+  const userId = userRow?.id || "";
+
+  await sendToUserChannel(notifyChannel, userId, message);
+  log.info(`[notify] Notification sent to ${notifyChannel}`);
 }
 
 /**

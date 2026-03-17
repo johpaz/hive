@@ -1,14 +1,14 @@
 /**
  * Hive SDK - Tools Module
- * 
+ *
  * Exposes the tool registry, all seed tools, and tool creation utilities.
- * 
+ *
  * @example
  * import { createAllTools, ToolRegistry } from "@johpaz/hive-sdk/tools";
- * 
+ *
  * // Create all 52 tools
  * const tools = createAllTools(config);
- * 
+ *
  * // Or by category
  * const fsTools = createToolsByCategory("filesystem", config);
  */
@@ -18,7 +18,7 @@ export {
   createToolsByCategory,
   type Tool,
   type ToolResult,
-} from "@johpaz/hive-core/tools/index";
+} from "@johpaz/hive/tools/index";
 
 export {
   fsEditTool,
@@ -28,7 +28,7 @@ export {
   fsListTool,
   fsGlobTool,
   fsExistsTool,
-} from "@johpaz/hive-core/tools/filesystem/index";
+} from "@johpaz/hive/tools/filesystem/index";
 
 export {
   webSearchTool,
@@ -37,7 +37,7 @@ export {
   browserScreenshotTool,
   browserClickTool,
   browserTypeTool,
-} from "@johpaz/hive-core/tools/web/index";
+} from "@johpaz/hive/tools/web/index";
 
 export {
   projectCreateTool,
@@ -48,7 +48,7 @@ export {
   taskCreateTool,
   taskUpdateTool,
   taskEvaluateTool,
-} from "@johpaz/hive-core/tools/projects/index";
+} from "@johpaz/hive/tools/projects/index";
 
 export {
   cronAddTool,
@@ -57,9 +57,9 @@ export {
   cronRemoveTool,
   initCronScheduler,
   resolveBestChannel,
-} from "@johpaz/hive-core/tools/cron/index";
+} from "@johpaz/hive/tools/cron/index";
 
-export { cliExecTool } from "@johpaz/hive-core/tools/cli/index";
+export { cliExecTool } from "@johpaz/hive/tools/cli/index";
 
 export {
   memoryWriteTool,
@@ -76,7 +76,7 @@ export {
   busPublishTool,
   busReadTool,
   projectUpdatesTool,
-} from "@johpaz/hive-core/tools/agents/index";
+} from "@johpaz/hive/tools/agents/index";
 
 export {
   canvasRenderTool,
@@ -86,22 +86,22 @@ export {
   canvasShowProgressTool,
   canvasShowListTool,
   canvasClearTool,
-} from "@johpaz/hive-core/tools/canvas/index";
+} from "@johpaz/hive/tools/canvas/index";
 
 export {
   codebridgeLaunchTool,
   codebridgeStatusTool,
   codebridgeCancelTool,
-} from "@johpaz/hive-core/tools/codebridge/index";
+} from "@johpaz/hive/tools/codebridge/index";
 
 export {
   voiceTranscribeTool,
   voiceSpeakTool,
-} from "@johpaz/hive-core/tools/voice/index";
+} from "@johpaz/hive/tools/voice/index";
 
 export {
   searchKnowledgeTool,
   notifyTool,
   saveNoteTool,
   reportProgressTool,
-} from "@johpaz/hive-core/tools/core/index";
+} from "@johpaz/hive/tools/core/index";
