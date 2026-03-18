@@ -1,7 +1,6 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
       "@johpaz/hive": ["../core/src/index.ts"],
       "@johpaz/hive/agent/*": ["../core/src/agent/*"],

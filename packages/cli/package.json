@@ -22,7 +22,7 @@
     "toon-format-parser": "1.1.3"
   },
   "devDependencies": {
-    "typescript": "latest",
+    "typescript": "6.0.1-rc",
     "@types/bun": "latest"
   }
 }
