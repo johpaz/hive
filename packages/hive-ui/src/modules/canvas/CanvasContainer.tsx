@@ -8,9 +8,11 @@ import { ComponentRenderer } from "./ComponentRenderer";
 import { useUserStore } from "@/stores/userStore";
 import { useCanvasStore, type GraphNode, type GraphEdge } from "@/stores/canvasStore";
 
-// Use environment variable for gateway URL
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:18790";
-const GATEWAY_WS_URL = API_URL.replace(/^http/, "ws");
+// Use environment variable for gateway URL, fall back to current host (production)
+const API_URL = import.meta.env.VITE_API_URL;
+const GATEWAY_WS_URL = API_URL
+  ? API_URL.replace(/^http/, "ws")
+  : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`;
 
 interface CanvasContainerProps {
   sessionId?: string;

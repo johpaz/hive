@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { BridgeProcess, BridgeLog } from "@/types";
 
-const CODE_BRIDGE_URL = "ws://localhost:18791/ws";
+const CODE_BRIDGE_URL = `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.hostname}:18791/ws`;
 const API_URL = import.meta.env.VITE_API_URL || "";
 const GATEWAY_WS_URL = API_URL
     ? API_URL.replace(/^http/, "ws")

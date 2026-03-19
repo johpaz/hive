@@ -3,8 +3,9 @@ import { loadConfig } from "../../config/loader.ts"
 import { cpus } from "node:os"
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
+import pkg from "../../../package.json"
 
-const CURRENT_VERSION = "1.7.15"
+const CURRENT_VERSION = pkg.version
 
 export interface VersionInfo {
   current: string
