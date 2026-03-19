@@ -1147,7 +1147,7 @@ export function getAllSkills(): Array<{
   }
 }
 
-export function getAllTools(): Array<{
+export function getAllDbTools(): Array<{
   id: string;
   name: string;
   description: string | null;
@@ -1430,11 +1430,6 @@ export function getUserAgents(userId: string): Array<{
     log.error("⚠️ Error getting agents:", { error: (e as Error).message });
     return [];
   }
-}
-
-export function maskApiKey(apiKey: string): string {
-  if (!apiKey || apiKey.length < 8) return "••••••••";
-  return apiKey.slice(0, 4) + "••••••••" + apiKey.slice(-4);
 }
 
 // ─── Identity Resolution Helpers ──────────────────────────────────────────────

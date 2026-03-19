@@ -519,7 +519,8 @@ export async function startGateway(config: Config): Promise<void> {
 
         // ── Health (must be before UI routing so it works in dev mode too) ───
         if (url.pathname === "/health" || url.pathname === "/health/") {
-          return addCorsHeaders(Response.json({ status: "ok", pid: process.pid }), req);
+          const uptime = Math.floor((Date.now() - startTime) / 1000);
+          return addCorsHeaders(Response.json({ status: "ok", version: "1.7.18", uptime }), req);
         }
 
         // ── Dashboard / UI ────────────────────────────────────────────────────

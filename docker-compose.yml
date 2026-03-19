@@ -1,19 +1,18 @@
 services:
   hive:
-    image: johpaz/hive:latest
+    image: johpaz/hive:7.1.19
     # build: .   # uncomment to build locally instead of pulling
     ports:
       - "18790:18790"
     volumes:
       - hive-data:/root/.hive
-      - ${HOME}:/host/home
     environment:
       HIVE_HOST: 0.0.0.0
       HIVE_PORT: 18790
 
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "wget", "-qO-", "http://localhost:18790/health" ]
+      test: [ "CMD", "bun", "-e", "fetch('http://localhost:18790/health').then(r => { if (!r.ok) process.exit(1) })" ]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -21,4 +20,3 @@ services:
 
 volumes:
   hive-data:
-    driver: local

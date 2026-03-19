@@ -125,51 +125,7 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Sección de Pruebas */}
-      {/* <div className="hive-card border-blue-500/20 bg-blue-500/5 mb-8">
-        <div className="hive-card-body flex flex-col sm:flex-row items-center justify-between gap-6">
-          <div>
-            <h3 className="hive-title-section mb-1">🐝 Terminal de Pruebas (Hive UI)</h3>
-            <p className="text-xs text-white/40">Verifica la integración visual y reactiva del núcleo.</p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <button
-              className="hive-btn hive-btn--ghost text-xs"
-              onClick={() => {
-                const { showLoader, hideLoader } = useLoaderStore.getState();
-                showLoader("Sincronizando con el enjambre...");
-                setTimeout(hideLoader, 3000);
-              }}
-            >
-              Simular Carga
-            </button>
-            <button
-              className="hive-btn hive-btn--primary text-xs"
-              onClick={() => {
-                swal.fire({
-                  title: "¡Bienvenido a la Colmena!",
-                  text: "El sistema de alertas SweetAlert2 está configurado con éxito.",
-                  icon: "success",
-                  confirmButtonText: "¡Excelente!",
-                });
-              }}
-            >
-              Lanzar Alerta
-            </button>
-            <button
-              className="hive-btn hive-btn--ghost text-xs border-purple-500/20 text-purple-400"
-              onClick={() => {
-                Toast.fire({
-                  icon: "info",
-                  title: "Miel recolectada con éxito"
-                });
-              }}
-            >
-              Notificación Toast
-            </button>
-          </div>
-        </div>
-      </div> */}
+
 
       {/* Grilla de Estadísticas */}
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4 mb-8">

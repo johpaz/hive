@@ -11,12 +11,12 @@ import { useTools } from "@/hooks/useProviders";
 import { Toast } from "@/lib/swal";
 import { loader } from "@/stores/useLoaderStore";
 
-const CATEGORIES = ["filesystem", "web", "cron", "cli", "agents", "canvas", "voice"] as const;
+const CATEGORIES = ["filesystem", "web", "schedule", "cli", "agents", "canvas", "voice"] as const;
 
 const CATEGORY_LABELS: Record<string, string> = {
   filesystem: "Sistema de archivos",
   web: "Web",
-  cron: "Cron",
+  schedule: "Cron",
   projects: "Proyectos",
   cli: "CLI",
   agents: "Agentes",
@@ -105,7 +105,7 @@ export function ToolManager() {
 
       {/* ── Tabs/Categorías ────────────────────────────────────────────────── */}
       <div className="flex items-center gap-1.5 p-1 bg-white/5 rounded-2xl w-fit border border-white/5">
-        {(["all", "filesystem", "web", "cron", "cli", "agents", "canvas", "voice"] as const).map(cat => (
+        {(["all", "filesystem", "web", "schedule", "cli", "agents", "canvas", "voice"] as const).map(cat => (
           <button
             key={cat}
             onClick={() => setActiveTab(cat)}
@@ -149,7 +149,7 @@ export function ToolManager() {
                       }`}>
                       {tool.category === 'filesystem' && <Globe2 className="h-6 w-6" />}
                       {tool.category === 'web' && <Globe2 className="h-6 w-6" />}
-                      {tool.category === 'cron' && <Search className="h-6 w-6" />}
+                      {tool.category === 'schedule' && <Search className="h-6 w-6" />}
                       {tool.category === 'cli' && <Terminal className="h-6 w-6" />}
                       {tool.category === 'agents' && <Settings2 className="h-6 w-6" />}
                       {tool.category === 'projects' && <Terminal className="h-6 w-6" />}

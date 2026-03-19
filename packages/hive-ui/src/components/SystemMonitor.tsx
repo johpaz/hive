@@ -169,51 +169,7 @@ export function SystemMonitor() {
         </CardContent>
       </Card>
 
-      {/* Benchmark history */}
-      <Card className="border-primary/10">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <History className="h-4 w-4 text-primary" />
-            Historial de Benchmarks
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {benchHistory.length > 0 ? benchHistory.map((b, i) => (
-              <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between p-2 rounded-lg bg-muted/30 border border-border/50 gap-2">
-                <div className="flex items-center gap-3">
-                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Zap className="h-4 w-4 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold">{b.metrics.name}</p>
-                    <p className="text-[10px] text-muted-foreground">{new Date(b.timestamp).toLocaleTimeString()}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4 text-xs font-mono">
-                  <div className="flex flex-col items-end">
-                    <span className="text-[10px] text-muted-foreground">RSS</span>
-                    <span className="text-primary font-bold">{b.metrics.rss}</span>
-                  </div>
-                  <div className="flex flex-col items-end">
-                    <span className="text-[10px] text-muted-foreground">Heap</span>
-                    <span>{b.metrics.heapUsed}</span>
-                  </div>
-                  <div className="flex flex-col items-end">
-                    <span className="text-[10px] text-muted-foreground">Duración</span>
-                    <span className="text-green-500">{b.metrics.duration}</span>
-                  </div>
-                </div>
-              </div>
-            )) : (
-              <div className="h-16 flex flex-col items-center justify-center text-muted-foreground gap-1">
-                <History className="h-6 w-6 opacity-20" />
-                <span className="text-xs italic">Sin benchmarks recientes</span>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+
     </div>
   );
 }

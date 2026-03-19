@@ -27,7 +27,7 @@ export {
   getAllEthics,
   getAllCodeBridge,
   getAllSkills,
-  getAllTools,
+  getAllDbTools,
   getAllMcpServers,
   getAllChannels,
   getActiveTools,
