@@ -1,14 +1,16 @@
-import { randomUUID } from "node:crypto"
+import { writeFileSync, mkdirSync } from "node:fs"
 import { getDb } from "../../storage/sqlite"
 import { SEED_DATA } from "../../storage/seed"
 import {
   initOnboardingDb,
   saveUserProfile,
+  saveAgentConfig,
   saveProviderConfig,
   activateChannel,
   saveVoiceConfig,
   activateEthics,
 } from "../../storage/onboarding"
+import { getHiveDir } from "../../config/loader"
 import type { Config } from "../../config/loader"
 
 export function isSetupMode(): boolean {
@@ -251,22 +253,23 @@ export async function handleCompleteSetup(
   try {
     initOnboardingDb()
 
-    const userId = `user_${randomUUID().split("-")[0]}`
-    const agentId = `agent_${randomUUID().split("-")[0]}`
-    const channelUserId = randomUUID()
-
-    saveUserProfile({
-      userId,
+    // Let DB auto-generate userId via randomblob(16) — same as CLI onboarding
+    const userId = saveUserProfile({
       userName: body.userName || "User",
       userLanguage: body.userLanguage || "es",
       userTimezone: body.userTimezone || "UTC",
       userOccupation: body.userOccupation || "",
       userNotes: body.userNotes || "",
+    })
+
+    // Let DB auto-generate agentId — same as CLI onboarding
+    const agentId = saveAgentConfig({
+      userId,
       agentName: body.agentName || "Bee",
-      agentId,
-      agentDescription: body.agentDescription || "",
-      agentTone: "friendly",
-      channelUserId,
+      description: body.agentDescription || "",
+      tone: "friendly",
+      providerId: body.provider || "",
+      modelId: body.model || "",
     })
 
     if (body.provider && body.apiKey) {
@@ -280,7 +283,6 @@ export async function handleCompleteSetup(
 
     await activateChannel(userId, {
       channelId: "webchat",
-      channelUserId,
       config: {},
     })
 
@@ -314,11 +316,21 @@ export async function handleCompleteSetup(
       activateEthics(userId, "default")
     }
 
-    const authToken = randomUUID().replace(/-/g, "")
-
+    // Use the userId as the auth token — stable, DB-generated, known only to the user.
+    // Write ~/.hive/.env so the token survives restarts (loadEnv reads it at boot).
+    const authToken = userId
+    const hiveDir = getHiveDir()
+    const envContent = [
+      "# Hive configuration — auto-generated during setup",
+      `HIVE_HOST=${process.env.HIVE_HOST || "0.0.0.0"}`,
+      `HIVE_PORT=${process.env.HIVE_PORT || "18790"}`,
+      `HIVE_LOG_LEVEL=${process.env.HIVE_LOG_LEVEL || "info"}`,
+      `HIVE_AUTH_TOKEN=${authToken}`,
+      "",
+    ].join("\n")
+    mkdirSync(hiveDir, { recursive: true })
+    writeFileSync(`${hiveDir}/.env`, envContent, { mode: 0o600 })
     process.env.HIVE_AUTH_TOKEN = authToken
-    // Note: userId and agentId are now resolved from database, not environment variables
-    // These assignments are kept for backward compatibility but are no longer used
 
     // Restart the process so the gateway re-initializes in full mode.
     // Docker (restart: unless-stopped) brings it back up automatically.

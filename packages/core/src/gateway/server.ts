@@ -13,7 +13,7 @@ import { ChannelManager } from "../channels/manager";
 import { AgentService } from "../agent/service";
 import { AgentRunner } from "../agent/providers/index";
 import type { IncomingMessage } from "../channels/base";
-import { mkdirSync, rmSync, unlinkSync, watch, existsSync } from "node:fs";
+import { mkdirSync, rmSync, unlinkSync, watch, existsSync, writeFileSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import { cpus as osCpus } from "node:os";
 import { getDb, getDbPathLazy, initializeDatabase } from "../storage/sqlite";
@@ -95,6 +95,26 @@ export async function startGateway(config: Config): Promise<void> {
   const mcpLog = logger.child("mcp:api");
 
   log.info(`Starting gateway on ${host}:${port}`);
+
+  // ── Auto-generate auth token if not provided ─────────────────────────────
+  // Priority: HIVE_AUTH_TOKEN env var > persisted token file > generate new
+  const tokenFile = path.join(getHiveDir(), ".auth_token");
+  if (!process.env.HIVE_AUTH_TOKEN) {
+    if (existsSync(tokenFile)) {
+      process.env.HIVE_AUTH_TOKEN = readFileSync(tokenFile, "utf-8").trim();
+      log.info("🔑 Auth token loaded from persistent storage");
+    } else {
+      const generated = randomUUID().replace(/-/g, "");
+      process.env.HIVE_AUTH_TOKEN = generated;
+      mkdirSync(path.dirname(tokenFile), { recursive: true });
+      writeFileSync(tokenFile, generated, { mode: 0o600 });
+      log.info("🔑 Auth token auto-generated and persisted");
+    }
+  } else {
+    // User provided token via env — persist it so it's visible in the file too
+    writeFileSync(tokenFile, process.env.HIVE_AUTH_TOKEN, { mode: 0o600 });
+    log.info("🔑 Auth token loaded from environment variable");
+  }
 
   // ── Inicialización modular con manejo de errores ──────────────────────────
   let agent: AgentService;
@@ -439,7 +459,9 @@ export async function startGateway(config: Config): Promise<void> {
     // En modo desarrollo, permitir todo
     if (isDev) return true;
 
-    // Read live from env so the token set during setup/complete takes effect immediately
+    // Setup endpoints are always public — needed before the client has a token
+    if (url.pathname.startsWith("/api/setup/")) return true;
+
     const activeToken = process.env.HIVE_AUTH_TOKEN;
     if (!activeToken) return true;
     const authHeader = req.headers.get("authorization");
@@ -485,11 +507,18 @@ export async function startGateway(config: Config): Promise<void> {
 
         // ── WebSocket upgrade ────────────────────────────────────────────────
         if (url.pathname === "/ws" || url.pathname === "/ws/") {
-          // En modo desarrollo, no requerir autenticación para WebSocket
-          if (!isDev && !checkAuth(req, url)) {
-            return new Response("Unauthorized", { status: 401 });
-          }
           const sessionId = url.searchParams.get("session") || resolveUserId({}) || "default";
+          // Auth: validate session param is a known user_id in DB (UUID auto-generated at onboarding)
+          if (!isDev) {
+            try {
+              const userExists = getDb().query("SELECT 1 FROM users WHERE id = ? LIMIT 1").get(sessionId);
+              if (!userExists) {
+                return new Response("Unauthorized", { status: 401 });
+              }
+            } catch {
+              return new Response("Unauthorized", { status: 401 });
+            }
+          }
           if (!sessionId) {
             return new Response("Missing session or user ID", { status: 400 });
           }
@@ -614,7 +643,7 @@ export async function startGateway(config: Config): Promise<void> {
         // ── Rutas que requieren autenticación ────────────────────────────────
         if (!checkAuth(req, url)) {
           log.warn(`[AUTH] Unauthorized request to ${url.pathname} from ${req.headers.get("origin")} `);
-          return new Response("Unauthorized", { status: 401 });
+          return addCorsHeaders(new Response("Unauthorized", { status: 401 }), req);
         }
 
         // ── Setup API ────────────────────────────────────────────────────────

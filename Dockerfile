@@ -51,8 +51,10 @@ RUN bun build --compile \
 # ─── Stage 3: Minimal Alpine runtime ──────────────────────────────────────────
 FROM docker.io/alpine:3.21
 
-# ca-certificates for HTTPS calls to LLM APIs
-RUN apk add --no-cache ca-certificates tzdata libgcc libstdc++
+# ca-certificates for HTTPS, chromium for browser tools
+RUN apk add --no-cache \
+      ca-certificates tzdata libgcc libstdc++ \
+      chromium nss freetype harfbuzz ttf-freefont
 
 WORKDIR /app
 
@@ -75,5 +77,7 @@ ENV HIVE_HOST=0.0.0.0
 ENV HIVE_PORT=18790
 ENV HIVE_UI_DIR=/app/ui
 ENV NODE_ENV=production
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 CMD ["/app/hive-server", "start", "--skip-check"]

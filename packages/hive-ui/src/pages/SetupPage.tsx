@@ -58,6 +58,8 @@ interface WizardData {
   userName: string;
   userLanguage: string;
   userTimezone: string;
+  userOccupation: string;
+  userNotes: string;
   // Step 2
   agentName: string;
   agentDescription: string;
@@ -84,7 +86,9 @@ function loadWizardData(): WizardData | null {
   try {
     const stored = sessionStorage.getItem(STORAGE_KEY);
     if (stored) {
-      return JSON.parse(stored);
+      const parsed = JSON.parse(stored);
+      // Merge with defaults to handle new properties added in updates
+      return { ...getDefaultWizardData(), ...parsed };
     }
   } catch (e) {
     console.error("Failed to load wizard data:", e);
@@ -113,6 +117,8 @@ function getDefaultWizardData(): WizardData {
     userName: "",
     userLanguage: "es",
     userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    userOccupation: "",
+    userNotes: "",
     agentName: "Bee",
     agentDescription: "",
     provider: "",
@@ -154,7 +160,7 @@ export default function SetupPage() {
     fetch("/api/setup/providers")
       .then(res => res.json())
       .then(data => { if (Array.isArray(data)) setProviders(data); })
-      .catch(() => {});
+      .catch(() => { });
     fetch("/api/setup/ethics")
       .then(res => res.json())
       .then((data: { id: string; name: string; description: string | null; content: string; isDefault: boolean; active: boolean }[]) => {
@@ -169,7 +175,7 @@ export default function SetupPage() {
           });
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -283,19 +289,22 @@ export default function SetupPage() {
         }
         setSubmitSuccess(true);
         clearWizardData();
-        // Server restarts after setup — poll until it's back, then redirect
+        // Server restarts after setup — poll setup/status until configured: true
         const waitForRestart = async () => {
           await new Promise(r => setTimeout(r, 1500)); // wait for restart to begin
           showLoader(`Iniciando a ${wizardData.agentName}... esto toma unos segundos`);
-          for (let i = 0; i < 30; i++) {
+          for (let i = 0; i < 40; i++) {
             try {
-              const res = await fetch("/health");
-              if (res.ok) { hideLoader(); navigate("/"); return; }
+              const res = await fetch("/api/setup/status");
+              if (res.ok) {
+                const { configured } = await res.json();
+                if (configured) { hideLoader(); navigate("/"); return; }
+              }
             } catch { /* server still restarting */ }
             await new Promise(r => setTimeout(r, 1000));
           }
           hideLoader();
-          navigate("/"); // fallback after 30s
+          navigate("/"); // fallback after 40s
         };
         waitForRestart();
       }
@@ -388,6 +397,27 @@ export default function SetupPage() {
             <p className="text-xs text-muted-foreground">
               Detectada automáticamente: {Intl.DateTimeFormat().resolvedOptions().timeZone}
             </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="userOccupation">Ocupación <span className="text-muted-foreground font-normal">(opcional)</span></Label>
+            <Input
+              id="userOccupation"
+              value={wizardData.userOccupation}
+              onChange={(e) => updateData({ userOccupation: e.target.value })}
+              placeholder="Ej: Desarrollador de software, diseñador, estudiante..."
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="userNotes">Preferencias de comunicación <span className="text-muted-foreground font-normal">(opcional)</span></Label>
+            <textarea
+              id="userNotes"
+              className="w-full min-h-[80px] p-3 border rounded-md bg-background resize-none text-sm"
+              value={wizardData.userNotes}
+              onChange={(e) => updateData({ userNotes: e.target.value })}
+              placeholder="Ej: Prefiero respuestas cortas y directas. Usa ejemplos de código cuando expliques conceptos técnicos..."
+            />
           </div>
         </CardContent>
       </Card>

@@ -916,18 +916,18 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
 /**
  * Hook para inicializar toda la configuración global al montar la app
  */
-export function useInitializeGlobalConfig() {
+export function useInitializeGlobalConfig(enabled = true) {
   const fetchAll = useGlobalConfigStore((state) => state.fetchAll);
   const isInitialized = useGlobalConfigStore((state) => state.isInitialized);
 
   const hasRun = React.useRef(false);
 
   React.useEffect(() => {
-    if (!isInitialized && !hasRun.current) {
+    if (enabled && !isInitialized && !hasRun.current) {
       hasRun.current = true;
       fetchAll();
     }
-  }, [isInitialized, fetchAll]);
+  }, [enabled, isInitialized, fetchAll]);
 }
 
 /**

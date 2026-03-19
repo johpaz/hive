@@ -28,12 +28,14 @@ import { BeeLoader } from "@/components/ui/bee-loader";
 const queryClient = new QueryClient();
 
 const AppContent = () => {
-  useInitializeGlobalConfig();
-
   const fetchUser = useUserStore(s => s.fetchUser);
   const navigate = useNavigate();
   const location = useLocation();
   const [setupChecked, setSetupChecked] = useState(false);
+  const [isSetupMode, setIsSetupMode] = useState(false);
+
+  // Only initialize global config when NOT in setup mode
+  useInitializeGlobalConfig(!isSetupMode && setupChecked);
 
   useEffect(() => {
     // Capturar token de la URL si existe
@@ -49,6 +51,7 @@ const AppContent = () => {
     fetch("/api/setup/status")
       .then(r => r.json())
       .then(({ setupMode }) => {
+        setIsSetupMode(!!setupMode);
         if (setupMode && location.pathname !== "/setup") {
           // Primera ejecución → ir al setup
           navigate("/setup", { replace: true });
