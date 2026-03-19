@@ -507,9 +507,16 @@ export async function startGateway(config: Config): Promise<void> {
 
         // ── WebSocket upgrade ────────────────────────────────────────────────
         if (url.pathname === "/ws" || url.pathname === "/ws/") {
-          const sessionId = url.searchParams.get("session") || resolveUserId({}) || "default";
-          // Auth: validate session param is a known user_id in DB (UUID auto-generated at onboarding)
+          let sessionId = url.searchParams.get("session") || resolveUserId({}) || "default";
+          // Auth: accept ?token=<authToken> (same as REST Bearer) as alternative to ?session=<userId>
           if (!isDev) {
+            const tokenParam = url.searchParams.get("token");
+            const activeToken = process.env.HIVE_AUTH_TOKEN;
+            if (tokenParam && activeToken && tokenParam === activeToken) {
+              // Token auth — resolve the real userId from DB
+              const user = getDb().query("SELECT id FROM users LIMIT 1").get() as { id: string } | undefined;
+              if (user) sessionId = user.id;
+            }
             try {
               const userExists = getDb().query("SELECT 1 FROM users WHERE id = ? LIMIT 1").get(sessionId);
               if (!userExists) {
@@ -1501,8 +1508,14 @@ export async function startGateway(config: Config): Promise<void> {
       async message(ws, message) {
         const data = ws.data;
 
-        // Bridge events clients are read-only; ignore any messages they send
-        if (data.sessionId.startsWith("bridge:")) return;
+        // Bridge events clients are read-only; only respond to ping keepalive
+        if (data.sessionId.startsWith("bridge:")) {
+          try {
+            const m = JSON.parse(message.toString());
+            if (m?.type === "ping") ws.send(JSON.stringify({ type: "pong" }));
+          } catch { /* ignore */ }
+          return;
+        }
 
         let msg: InboundMessage;
         try {

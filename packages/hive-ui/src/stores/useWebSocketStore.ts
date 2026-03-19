@@ -30,6 +30,7 @@ interface WebSocketStore {
 
 export const useWebSocketStore = create<WebSocketStore>((set, get) => {
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
     return {
         ws: null,
@@ -57,10 +58,15 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
             }
 
             let wsUrl = state.url;
-            if (sessionId) {
+            try {
                 const urlObj = new URL(wsUrl);
-                urlObj.searchParams.set("session", sessionId);
+                // Always send the auth token — server validates it as an alternative to ?session=
+                const token = typeof localStorage !== "undefined" ? localStorage.getItem("hive-auth-token") : null;
+                if (sessionId) urlObj.searchParams.set("session", sessionId);
+                if (token) urlObj.searchParams.set("token", token);
                 wsUrl = urlObj.toString();
+            } catch {
+                // wsUrl stays as-is if URL construction fails
             }
 
             set({ status: "connecting" });
@@ -71,10 +77,19 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
                 ws.onopen = () => {
                     console.log("[WS-GLOBAL] Connected to", wsUrl);
                     set({ status: "connected", retryCount: 0, ws });
+
+                    // Heartbeat every 30s to keep the connection alive
+                    if (heartbeatInterval) clearInterval(heartbeatInterval);
+                    heartbeatInterval = setInterval(() => {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: "ping", sessionId }));
+                        }
+                    }, 30000);
                 };
 
                 ws.onclose = (event) => {
                     console.log("[WS-GLOBAL] Disconnected from", wsUrl, "Code:", event.code);
+                    if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
                     set({ status: "disconnected", ws: null });
 
                     // Auto-reconnect after 3 seconds if not intentionally closed
@@ -96,13 +111,16 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
                     try {
                         const data = JSON.parse(event.data);
                         const type = data.type;
-                        
+
+                        // Ignore pong responses — keepalive only
+                        if (type === "pong") return;
+
                         // Handle welcome message - set sessionId and show welcome dialog
                         if (type === "welcome" && data.sessionId) {
                             set({ sessionId: data.sessionId });
                             useWelcomeStore.getState().show(data as WelcomeData);
                         }
-                        
+
                         const handlers = get().handlers.get(type);
                         if (handlers) {
                             handlers.forEach(handler => handler(data));
@@ -119,10 +137,9 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
 
         disconnect: () => {
             const { ws } = get();
-            if (reconnectTimeout) {
-                clearTimeout(reconnectTimeout);
-            }
-            ws?.close();
+            if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
+            if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+            ws?.close(1000);
             set({ ws: null, status: "disconnected" });
         },
 

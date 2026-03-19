@@ -49,6 +49,8 @@ let _bridgeShouldReconnect = false;
 let _bridgeRetries = 0;
 const BRIDGE_MAX_RETRIES = 3;
 let _gatewayShouldReconnect = false;
+let _bridgeHeartbeat: ReturnType<typeof setInterval> | null = null;
+let _gatewayHeartbeat: ReturnType<typeof setInterval> | null = null;
 
 export const useBridgeStore = create<BridgeState>((set, get) => ({
   processes: [],
@@ -145,6 +147,14 @@ export const useBridgeStore = create<BridgeState>((set, get) => ({
         set({ isConnected: true, socket: ws });
         get().addLog(createLog("info", "Connected to Code Bridge"));
         get().sendCommand({ cmd: "status" });
+
+        // Heartbeat every 30s
+        if (_bridgeHeartbeat) clearInterval(_bridgeHeartbeat);
+        _bridgeHeartbeat = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ cmd: "ping" }));
+          }
+        }, 30000);
       };
 
       ws.onerror = () => {
@@ -152,6 +162,7 @@ export const useBridgeStore = create<BridgeState>((set, get) => ({
       };
 
       ws.onclose = () => {
+        if (_bridgeHeartbeat) { clearInterval(_bridgeHeartbeat); _bridgeHeartbeat = null; }
         set({ isConnected: false, socket: null });
         if (!_bridgeShouldReconnect) return;
         _bridgeRetries++;
@@ -182,6 +193,14 @@ export const useBridgeStore = create<BridgeState>((set, get) => ({
 
       ws.onopen = () => {
         get().addLog(createLog("info", "Connected to gateway bridge events"));
+
+        // Heartbeat every 30s
+        if (_gatewayHeartbeat) clearInterval(_gatewayHeartbeat);
+        _gatewayHeartbeat = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "ping" }));
+          }
+        }, 30000);
       };
 
       ws.onmessage = (event) => {
@@ -233,6 +252,7 @@ export const useBridgeStore = create<BridgeState>((set, get) => ({
       };
 
       ws.onclose = () => {
+        if (_gatewayHeartbeat) { clearInterval(_gatewayHeartbeat); _gatewayHeartbeat = null; }
         set({ gatewaySocket: null });
         if (!_gatewayShouldReconnect) return;
         setTimeout(() => {
@@ -247,9 +267,11 @@ export const useBridgeStore = create<BridgeState>((set, get) => ({
   },
 
   disconnect: () => {
-    // Cancel all reconnect loops before closing
+    // Cancel all reconnect loops and heartbeats before closing
     _bridgeShouldReconnect = false;
     _gatewayShouldReconnect = false;
+    if (_bridgeHeartbeat) { clearInterval(_bridgeHeartbeat); _bridgeHeartbeat = null; }
+    if (_gatewayHeartbeat) { clearInterval(_gatewayHeartbeat); _gatewayHeartbeat = null; }
     const { socket, gatewaySocket } = get();
     if (socket) {
       socket.close();

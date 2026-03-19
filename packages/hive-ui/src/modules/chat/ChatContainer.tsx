@@ -6,6 +6,7 @@ import { useGlobalConfigStore } from "@/stores/useGlobalConfigStore";
 import { ChatHistory } from "./ChatHistory";
 import { ChatInput } from "./ChatInput";
 import { apiClient } from "@/lib/api";
+import { generateId } from "@/lib/utils";
 import { Bot, User } from "lucide-react";
 
 interface ChatContainerProps {
@@ -111,7 +112,7 @@ export function ChatContainer({ agentId = "agent_id", sessionId = "user_id" }: C
     };
 
     const handleAudioMessage = (data: any) => {
-      const messageId = data.id || crypto.randomUUID();
+      const messageId = data.id || generateId();
       const { addMessage, setLoading, clearSteps } = useChatStore.getState();
 
       addMessage({
@@ -151,7 +152,7 @@ export function ChatContainer({ agentId = "agent_id", sessionId = "user_id" }: C
   }, [subscribe, sessionId, agentId, addMessage, setLoading]);
 
   const handleSendMessage = (content: string, audioBase64?: string) => {
-    const messageId = crypto.randomUUID();
+    const messageId = generateId();
     
     if (audioBase64) {
       addMessage({
@@ -187,7 +188,7 @@ export function ChatContainer({ agentId = "agent_id", sessionId = "user_id" }: C
         if (isLoading) {
           setLoading(false);
           addMessage({
-            id: crypto.randomUUID(),
+            id: generateId(),
             conversationId: sessionId,
             type: "error" as const,
             content: "No se pudo conectar al agente. Verifica que el gateway esté funcionando.",

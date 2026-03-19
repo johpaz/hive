@@ -129,5 +129,6 @@ export const DashboardCommand = z.discriminatedUnion("cmd", [
     }),
     z.object({ cmd: z.literal("cancel"), taskId: z.string() }),
     z.object({ cmd: z.literal("status") }),
+    z.object({ cmd: z.literal("ping") }),
 ]);
 export type DashboardCommand = z.infer<typeof DashboardCommand>;

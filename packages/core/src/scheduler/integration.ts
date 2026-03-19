@@ -11,6 +11,7 @@ import { getDb } from "../storage/sqlite";
 import { buildAgentLoop } from "../agent/agent-loop";
 import { resolveAgentId } from "../storage/onboarding";
 import { sendToUserChannel } from "../gateway/channel-notify";
+import { addMessage } from "../agent/conversation-store";
 
 const log = logger.child("SchedulerIntegration");
 
@@ -225,15 +226,22 @@ export async function notifyTaskCompletion(
   const userRow = db.query("SELECT id FROM users LIMIT 1").get() as { id: string } | undefined;
   const userId = userRow?.id || "";
 
-  const identities = db.query(
-    "SELECT channel FROM user_identities WHERE user_id = ? ORDER BY channel"
-  ).all(userId) as { channel: string }[];
+  // Get channels that have a user identity AND are currently active/connected
+  const activeChannels = db.query(`
+    SELECT ui.channel FROM user_identities ui
+    JOIN channels c ON c.id = ui.channel
+    WHERE ui.user_id = ? AND c.active = 1 AND c.status = 'connected'
+  `).all(userId) as { channel: string }[];
 
-  // Determine best channel
+  // Fallback: if no active channels found (e.g. all disconnected), use any identity
+  const identities = activeChannels.length > 0
+    ? activeChannels
+    : db.query("SELECT channel FROM user_identities WHERE user_id = ?").all(userId) as { channel: string }[];
+
+  // Determine best channel — prefer telegram first, then others, then webchat
+  const preferred = ["telegram", "discord", "slack", "whatsapp", "webchat"];
   let notifyChannel = task.channel;
   if (!identities.some((i) => i.channel === notifyChannel)) {
-    // Fall back to first available channel
-    const preferred = ["telegram", "discord", "slack", "whatsapp", "webchat"];
     for (const p of preferred) {
       if (identities.some((i) => i.channel === p)) {
         notifyChannel = p;
@@ -250,6 +258,14 @@ export async function notifyTaskCompletion(
 
   log.info(`[notify] Sending notification to ${notifyChannel}: "${message.slice(0, 50)}..."`);
 
+  // Persist to conversation history so the message is visible even if WS is disconnected
+  try {
+    addMessage(userId, "assistant", message, { channel: notifyChannel });
+  } catch (e) {
+    log.warn(`[notify] Failed to persist notification to DB: ${(e as Error).message}`);
+  }
+
+  // Also push via live channel (WS/Telegram/etc.) if connected
   await sendToUserChannel(notifyChannel, userId, message);
   log.info(`[notify] Notification sent to ${notifyChannel}`);
 }

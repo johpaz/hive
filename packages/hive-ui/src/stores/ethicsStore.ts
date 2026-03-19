@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { EthicsConfig, EthicsTemplate, EthicsConflict } from "@/types";
 import { apiClient } from "@/lib/api";
+import { generateId } from "@/lib/utils";
 
 interface EthicsState {
     isLoading: boolean;
@@ -127,7 +128,7 @@ export const useEthicsStore = create<EthicsState>((set, get) => ({
     addConfig: (config: Omit<EthicsConfig, "id" | "createdAt" | "updatedAt" | "version">) => {
         const newConfig: EthicsConfig = {
             ...config,
-            id: crypto.randomUUID(),
+            id: generateId(),
             version: 1,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),

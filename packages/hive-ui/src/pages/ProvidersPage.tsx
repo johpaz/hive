@@ -1,13 +1,10 @@
-import { Button } from "@/components/ui/button";
 import { Plus, type LucideProps } from "lucide-react";
 import { ProviderList } from "@/modules/providers";
-import { ProviderFailoverConfig } from "@/modules/providers";
-import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogHeader, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ProviderConfigForm } from "@/modules/providers/ProviderConfigForm";
 import { useProviders } from "@/hooks/useProviders";
 import { useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Provider } from "@/types";
 import type React from "react";
 
@@ -90,22 +87,7 @@ export function ProvidersPage() {
         </Dialog>
       </div>
 
-      <Tabs defaultValue="available" className="w-full">
-        <TabsList className="hive-tabs-list mb-8">
-          <TabsTrigger value="available" className="hive-tabs-trigger">
-            Proveedores Disponibles
-          </TabsTrigger>
-          <TabsTrigger value="configured" className="hive-tabs-trigger">
-            Configurados
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="available">
-          <ProviderList />
-        </TabsContent>
-        <TabsContent value="configured">
-          <ProviderFailoverConfig />
-        </TabsContent>
-      </Tabs>
+      <ProviderList />
     </div>
   );
 }

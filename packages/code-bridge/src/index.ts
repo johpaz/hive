@@ -83,6 +83,11 @@ const server = Bun.serve<{ id: string }>({
                     ws.send(JSON.stringify(manager.status()));
                     break;
                 }
+
+                case "ping": {
+                    ws.send(JSON.stringify({ type: "pong" }));
+                    break;
+                }
             }
         },
 
