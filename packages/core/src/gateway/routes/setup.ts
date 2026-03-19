@@ -255,6 +255,10 @@ export async function handleCompleteSetup(
     // Note: userId and agentId are now resolved from database, not environment variables
     // These assignments are kept for backward compatibility but are no longer used
 
+    // Restart the process so the gateway re-initializes in full mode.
+    // Docker (restart: unless-stopped) brings it back up automatically.
+    setTimeout(() => process.exit(0), 800)
+
     return addCorsHeaders(Response.json({
       success: true,
       userId,

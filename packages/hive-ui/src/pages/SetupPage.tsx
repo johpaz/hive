@@ -22,7 +22,8 @@ import {
 } from "@/components/ui/accordion";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { CheckCircle2, XCircle, Loader2, Sparkles, Hexagon, Volume2, VolumeX } from "lucide-react";
+import { CheckCircle2, XCircle, Sparkles, Hexagon, Volume2, VolumeX } from "lucide-react";
+import { useLoaderStore } from "@/stores/useLoaderStore";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/api";
 import { swal } from "@/lib/swal";
@@ -161,6 +162,7 @@ export default function SetupPage() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  const { showLoader, hideLoader } = useLoaderStore();
   const [verificationStatus, setVerificationStatus] = useState<"idle" | "verifying" | "success" | "error">("idle");
 
   useEffect(() => {
@@ -271,9 +273,21 @@ export default function SetupPage() {
         }
         setSubmitSuccess(true);
         clearWizardData();
-        setTimeout(() => {
-          navigate("/");
-        }, 2000);
+        // Server restarts after setup — poll until it's back, then redirect
+        const waitForRestart = async () => {
+          await new Promise(r => setTimeout(r, 1500)); // wait for restart to begin
+          showLoader(`Iniciando a ${wizardData.agentName}... esto toma unos segundos`);
+          for (let i = 0; i < 30; i++) {
+            try {
+              const res = await fetch("/health");
+              if (res.ok) { hideLoader(); navigate("/"); return; }
+            } catch { /* server still restarting */ }
+            await new Promise(r => setTimeout(r, 1000));
+          }
+          hideLoader();
+          navigate("/"); // fallback after 30s
+        };
+        waitForRestart();
       }
     } catch (error) {
       // Error handled by apiClient
@@ -1035,7 +1049,7 @@ export default function SetupPage() {
             </div>
             <h3 className="text-xl font-bold">¡Bienvenido a Hive!</h3>
             <p className="text-muted-foreground">
-              {wizardData.agentName} está listo para ayudarte. Redirigiendo...
+              {wizardData.agentName} está listo para ayudarte.
             </p>
           </CardContent>
         </Card>

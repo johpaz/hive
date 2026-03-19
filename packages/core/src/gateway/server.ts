@@ -118,7 +118,11 @@ export async function startGateway(config: Config): Promise<void> {
         "Access-Control-Allow-Credentials": "true",
       } : {}
       if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders })
-      return Response.json({ status: "starting" }, { headers: corsHeaders })
+      const pathname = new URL(req.url).pathname
+      if (pathname === "/health" || pathname === "/health/") {
+        return Response.json({ status: "starting" }, { headers: corsHeaders })
+      }
+      return Response.json({ status: "starting" }, { status: 503, headers: corsHeaders })
     },
     websocket: { open() { }, message() { }, close() { } },
   });
