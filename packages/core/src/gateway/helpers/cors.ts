@@ -12,7 +12,7 @@ export function addCorsHeaders(response: Response, request: Request): Response {
   if (!origin) return response;
 
   // Allow any localhost origin for development
-  const isLocalhost = origin.includes("localhost") || origin.includes("127.0.0.1");
+  const isLocalhost = origin.includes("localhost") || origin.includes("127.0.0.1") || origin.includes("0.0.0.0");
   const isCorsOrigin = CORS_ORIGINS.some(o => origin.includes(o.replace("http://", "")));
 
   if (isCorsOrigin || isLocalhost) {

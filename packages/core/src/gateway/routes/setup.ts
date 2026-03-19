@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { getDb } from "../../storage/sqlite"
+import { SEED_DATA } from "../../storage/seed"
 import {
   initOnboardingDb,
   saveUserProfile,
@@ -23,22 +24,52 @@ export function handleSetupProviders(
   addCorsHeaders: (response: Response, request: Request) => Response,
   req: Request
 ): Response {
+  // Build provider+model list directly from SEED_DATA so it's always in sync
+  // with what the CLI onboarding shows, regardless of DB state.
+  const llmModelsByProvider = new Map<string, { id: string; name: string }[]>()
+
+  for (const model of SEED_DATA.models) {
+    if (model.modelType !== "llm") continue
+    if (!llmModelsByProvider.has(model.providerId)) {
+      llmModelsByProvider.set(model.providerId, [])
+    }
+    llmModelsByProvider.get(model.providerId)!.push({ id: model.id, name: model.name })
+  }
+
+  const result = SEED_DATA.providers
+    .filter(p => llmModelsByProvider.has(p.id) || p.id === "ollama")
+    .map(p => ({
+      id: p.id,
+      name: p.name,
+      models: llmModelsByProvider.get(p.id) ?? [],
+    }))
+
+  return addCorsHeaders(Response.json(result), req)
+}
+
+export function handleSetupEthics(
+  addCorsHeaders: (response: Response, request: Request) => Response,
+  req: Request
+): Response {
   try {
     const db = getDb()
-    const providers = db.query(`
-      SELECT id, name, description FROM providers WHERE enabled = 1 ORDER BY id
-    `).all() as { id: string; name: string; description: string }[]
+    const ethics = db.query(`
+      SELECT id, name, description, content, is_default, active FROM ethics ORDER BY id
+    `).all() as Array<{
+      id: string; name: string; description: string | null;
+      content: string; is_default: number; active: number;
+    }>
 
-    const result = providers.map(p => {
-      const models = db.query(`
-        SELECT id, name FROM models
-        WHERE provider_id = ? AND category = 'llm' AND active = 1
-        ORDER BY name
-      `).all(p.id) as { id: string; name: string }[]
-      return { ...p, models }
-    }).filter(p => p.models.length > 0 || p.id === "ollama")
-
-    return addCorsHeaders(Response.json(result), req)
+    return addCorsHeaders(Response.json(
+      ethics.map(e => ({
+        id: e.id,
+        name: e.name,
+        description: e.description,
+        content: e.content,
+        isDefault: e.is_default === 1,
+        active: e.active === 1,
+      }))
+    ), req)
   } catch (error) {
     return addCorsHeaders(
       Response.json({ error: (error as Error).message }, { status: 500 }),
@@ -274,8 +305,14 @@ export async function handleCompleteSetup(
       })
     }
 
-    // Activar ethics por defecto
-    activateEthics(userId, "default")
+    // Activar ethics — usar las seleccionadas por el usuario, o "default" si no viene nada
+    if (body.ethicsRules && typeof body.ethicsRules === "object") {
+      for (const [ethicsId, enabled] of Object.entries(body.ethicsRules as Record<string, boolean>)) {
+        if (enabled) activateEthics(userId, ethicsId)
+      }
+    } else {
+      activateEthics(userId, "default")
+    }
 
     const authToken = randomUUID().replace(/-/g, "")
 

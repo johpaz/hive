@@ -17,6 +17,7 @@ import { mkdirSync, rmSync, unlinkSync, watch, existsSync } from "node:fs";
 import * as path from "node:path";
 import { cpus as osCpus } from "node:os";
 import { getDb, getDbPathLazy, initializeDatabase } from "../storage/sqlite";
+import { seedAllData } from "../storage/seed";
 import { getRecentMessages } from "../agent/conversation-store";
 import { canvasManager } from "../canvas/canvas-manager.ts";
 import { subscribeCanvas, unsubscribeCanvas, emitCanvas, getCanvasSnapshot } from "../canvas/emitter";
@@ -26,7 +27,7 @@ import { decryptConfig } from "../storage/crypto.ts";
 import { resolveContext } from "./resolver";
 import { voiceService } from "../voice/index";
 import { initializeGateway, type GatewayInitializationResult } from "./initializer";
-import { handleSetupStatus, handleVerifyProvider, handleCompleteSetup, handleSetupProviders } from "./routes/setup";
+import { handleSetupStatus, handleVerifyProvider, handleCompleteSetup, handleSetupProviders, handleSetupEthics } from "./routes/setup";
 import { resolveUserId } from "../storage/onboarding";
 import { handleGetAgents, handleCreateAgent, handleUpdateAgent, handleDeleteAgent } from "./routes/agents";
 import { handleGetProviders, handleCreateProvider, handleToggleProvider, handleUpdateProvider, handleSyncProviderModels } from "./routes/providers";
@@ -110,7 +111,7 @@ export async function startGateway(config: Config): Promise<void> {
     hostname: host,
     fetch: (req) => {
       const origin = req.headers.get("Origin") ?? ""
-      const isLocalhost = origin.includes("localhost") || origin.includes("127.0.0.1")
+      const isLocalhost = origin.includes("localhost") || origin.includes("127.0.0.1") || origin.includes("0.0.0.0")
       const corsHeaders = isLocalhost ? {
         "Access-Control-Allow-Origin": origin,
         "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
@@ -129,7 +130,11 @@ export async function startGateway(config: Config): Promise<void> {
   log.info(`Port ${port} bound (initializing gateway...)`);
 
   // Inicializar DB siempre (en setup mode crea la DB vacía, los endpoints retornan [] en vez de 500)
-  try { initializeDatabase(); } catch { /* si falla, los endpoints manejarán el error */ }
+  try {
+    initializeDatabase();
+    // Seed providers/models/hive_capabilities so setup wizard has data before onboarding completes
+    seedAllData();
+  } catch { /* si falla, los endpoints manejarán el error */ }
 
   // Setup mode: no DB file OR DB existe pero tiene 0 usuarios (primera ejecución interrumpida)
   let gatewaySetupMode = false;
@@ -463,7 +468,7 @@ export async function startGateway(config: Config): Promise<void> {
         // ── CORS preflight ────────────────────────────────────────────────────
         if (req.method === "OPTIONS") {
           const origin = req.headers.get("Origin");
-          if (origin && (origin.includes("localhost") || origin.includes("127.0.0.1") || CORS_ORIGINS.some(o => origin.includes(o.replace("http://", ""))))) {
+          if (origin && (origin.includes("localhost") || origin.includes("127.0.0.1") || origin.includes("0.0.0.0") || CORS_ORIGINS.some(o => origin.includes(o.replace("http://", ""))))) {
             return new Response(null, {
               status: 204,
               headers: {
@@ -621,6 +626,11 @@ export async function startGateway(config: Config): Promise<void> {
         // GET /api/setup/providers
         if (url.pathname === "/api/setup/providers" && req.method === "GET") {
           return handleSetupProviders(addCorsHeaders, req)
+        }
+
+        // GET /api/setup/ethics
+        if (url.pathname === "/api/setup/ethics" && req.method === "GET") {
+          return handleSetupEthics(addCorsHeaders, req)
         }
 
         // POST /api/setup/verify-provider

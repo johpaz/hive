@@ -1,0 +1,21 @@
+services:
+  hive:
+    build: .
+    image: hive:local
+    ports:
+      - "18790:18790"
+    volumes:
+      - hive-data-local:/root/.hive
+    environment:
+      HIVE_HOST: 0.0.0.0
+      HIVE_PORT: 18790
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -O- http://127.0.0.1:18790/health 2>/dev/null | grep -q status" ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+volumes:
+  hive-data-local:

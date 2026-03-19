@@ -22,14 +22,22 @@ FROM docker.io/oven/bun:1 AS binary-builder
 
 WORKDIR /app
 
+# Copy manifests first so `bun install` is cached independently of source changes
 COPY package.json bun.lock bunfig.toml tsconfig.base.json tsconfig.json ./
+COPY packages/core/package.json ./packages/core/package.json
+COPY packages/cli/package.json ./packages/cli/package.json
+COPY packages/mcp/package.json ./packages/mcp/package.json
+COPY packages/skills/package.json ./packages/skills/package.json
+COPY packages/code-bridge/package.json ./packages/code-bridge/package.json
+
+RUN bun install
+
+# Copy source after install so dependency layer stays cached on code changes
 COPY packages/core ./packages/core
 COPY packages/cli ./packages/cli
 COPY packages/mcp ./packages/mcp
 COPY packages/skills ./packages/skills
 COPY packages/code-bridge ./packages/code-bridge
-
-RUN bun install
 
 # Set NODE_ENV=production so Bun inlines it correctly in the compiled binary
 ENV NODE_ENV=production
@@ -50,6 +58,10 @@ WORKDIR /app
 
 # Copy compiled binary (self-contained, includes Bun runtime)
 COPY --from=binary-builder /app/hive-server ./hive-server
+
+# Copy bundled skills (.md files read at runtime via fs — not embedded in binary)
+# Bun preserves original __dirname in compiled binary: packages/skills/src/bundled
+COPY --from=binary-builder /app/packages/skills/src/bundled ./packages/skills/src/bundled
 
 # Copy built UI
 COPY --from=ui-builder /app/packages/hive-ui/dist ./ui

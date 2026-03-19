@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/accordion";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { CheckCircle2, XCircle, Sparkles, Hexagon, Volume2, VolumeX } from "lucide-react";
+import { CheckCircle2, XCircle, Sparkles, Hexagon, Volume2, Loader2 } from "lucide-react";
 import { useLoaderStore } from "@/stores/useLoaderStore";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/api";
@@ -52,15 +52,6 @@ const CHANNELS = [
   { id: "slack", name: "Slack", description: "Bot de Slack", icon: "💼", required: false },
 ];
 
-const ETHICS_RULES = [
-  { id: "no-harm", category: "NUNCA", description: "No causar daño físico o emocional a personas" },
-  { id: "no-illegal", category: "NUNCA", description: "No facilitar actividades ilegales o peligrosas" },
-  { id: "no-deception", category: "NUNCA", description: "No engañar o manipular deliberadamente" },
-  { id: "privacy-first", category: "SIEMPRE", description: "Proteger la privacidad del usuario" },
-  { id: "transparency", category: "SIEMPRE", description: "Ser transparente sobre limitaciones" },
-  { id: "confirm-destructive", category: "CONFIRMAR", description: "Confirmar antes de acciones destructivas" },
-  { id: "confirm-expensive", category: "CONFIRMAR", description: "Confirmar antes de operaciones costosas" },
-];
 
 interface WizardData {
   // Step 1
@@ -83,7 +74,7 @@ interface WizardData {
   ttsProvider: string;
   ttsVoice: string;
   // Step 6
-  ethicsRules: Record<string, { enabled: boolean; category: string }>;
+  ethicsRules: Record<string, boolean>;
   customRules: Array<{ text: string; category: string }>;
 }
 
@@ -139,9 +130,7 @@ function getDefaultWizardData(): WizardData {
     sttProvider: "groq-whisper",
     ttsProvider: "elevenlabs",
     ttsVoice: "",
-    ethicsRules: Object.fromEntries(
-      ETHICS_RULES.map(rule => [rule.id, { enabled: true, category: rule.category }])
-    ),
+    ethicsRules: {},
     customRules: [],
   };
 }
@@ -158,12 +147,28 @@ export default function SetupPage() {
   const { showLoader, hideLoader } = useLoaderStore();
   const [verificationStatus, setVerificationStatus] = useState<"idle" | "verifying" | "success" | "error">("idle");
   const [stepError, setStepError] = useState<string | null>(null);
-  const [providers, setProviders] = useState<{ id: string; name: string; description: string; models: { id: string; name: string }[] }[]>([]);
+  const [providers, setProviders] = useState<{ id: string; name: string; models: { id: string; name: string }[] }[]>([]);
+  const [ethicsList, setEthicsList] = useState<{ id: string; name: string; description: string | null; content: string; isDefault: boolean; active: boolean }[]>([]);
 
   useEffect(() => {
     fetch("/api/setup/providers")
       .then(res => res.json())
       .then(data => { if (Array.isArray(data)) setProviders(data); })
+      .catch(() => {});
+    fetch("/api/setup/ethics")
+      .then(res => res.json())
+      .then((data: { id: string; name: string; description: string | null; content: string; isDefault: boolean; active: boolean }[]) => {
+        if (Array.isArray(data)) {
+          setEthicsList(data);
+          // Initialize ethicsRules with all enabled by default if not already set
+          setWizardData(prev => {
+            if (Object.keys(prev.ethicsRules).length === 0) {
+              return { ...prev, ethicsRules: Object.fromEntries(data.map(e => [e.id, true])) };
+            }
+            return prev;
+          });
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -244,7 +249,6 @@ export default function SetupPage() {
         body: {
           provider: wizardData.provider,
           apiKey: wizardData.apiKey,
-          model: wizardData.model || "test",
         },
         showLoader: "Verificando conexión...",
         showError: false
@@ -449,7 +453,7 @@ export default function SetupPage() {
               <span className="text-3xl">{PROVIDER_LOGOS[provider.id] ?? "🤖"}</span>
               <div className="flex-1">
                 <h3 className="font-semibold">{provider.name}</h3>
-                <p className="text-sm text-muted-foreground">{provider.description}</p>
+                <p className="text-sm text-muted-foreground">{provider.models.length} modelo{provider.models.length !== 1 ? "s" : ""} disponible{provider.models.length !== 1 ? "s" : ""}</p>
               </div>
               {wizardData.provider === provider.id && (
                 <CheckCircle2 className="w-5 h-5 text-amber-500" />
@@ -521,27 +525,29 @@ export default function SetupPage() {
                 </div>
               )}
 
-              <div className="space-y-2">
-                <Label htmlFor="model">Modelo</Label>
-                <Select
-                  value={wizardData.model}
-                  onValueChange={(value) => updateData({ model: value })}
-                >
-                  <SelectTrigger className={cn(!wizardData.model && stepError?.includes("modelo") && "border-red-500")}>
-                    <SelectValue placeholder="Selecciona un modelo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(selectedProvider?.models ?? []).map((m, i) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.name || m.id}{i === 0 ? " (Recomendado)" : ""}
-                      </SelectItem>
-                    ))}
-                    {wizardData.provider === "ollama" && (selectedProvider?.models ?? []).length === 0 && (
-                      <SelectItem value="llama3.2:3b">llama3.2:3b (Recomendado)</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
+              {(wizardData.provider === "ollama" || wizardData.apiKeyVerified) && (
+                <div className="space-y-2">
+                  <Label htmlFor="model">Modelo</Label>
+                  <Select
+                    value={wizardData.model}
+                    onValueChange={(value) => updateData({ model: value })}
+                  >
+                    <SelectTrigger className={cn(!wizardData.model && stepError?.includes("modelo") && "border-red-500")}>
+                      <SelectValue placeholder="Selecciona un modelo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(selectedProvider?.models ?? []).map((m, i) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.name || m.id}{i === 0 ? " (Recomendado)" : ""}
+                        </SelectItem>
+                      ))}
+                      {wizardData.provider === "ollama" && (selectedProvider?.models ?? []).length === 0 && (
+                        <SelectItem value="llama3.2:3b">llama3.2:3b (Recomendado)</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </CardContent>
           </Card>
         );
@@ -850,52 +856,46 @@ export default function SetupPage() {
       </Alert>
 
       <div className="space-y-3">
-        {ETHICS_RULES.map((rule) => {
-          const ruleState = wizardData.ethicsRules[rule.id];
-          const categoryColor = {
-            NUNCA: "text-red-500 bg-red-500/10",
-            SIEMPRE: "text-green-500 bg-green-500/10",
-            CONFIRMAR: "text-amber-500 bg-amber-500/10",
-          }[rule.category];
-
+        {ethicsList.map((ethics) => {
+          const enabled = wizardData.ethicsRules[ethics.id] !== false;
           return (
-            <Card key={rule.id}>
+            <Card key={ethics.id} className={cn(!enabled && "opacity-60")}>
               <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <Checkbox
-                      checked={ruleState?.enabled}
-                      onCheckedChange={(checked) => {
-                        if (rule.category === "NUNCA" && !checked) {
-                          if (!confirm("¿Estás seguro de desactivar esta regla de protección?")) {
-                            return;
-                          }
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    checked={enabled}
+                    onCheckedChange={(checked) => {
+                      if (ethics.isDefault && !checked) {
+                        if (!confirm("¿Estás seguro de desactivar los lineamientos éticos por defecto?")) {
+                          return;
                         }
-                        updateData({
-                          ethicsRules: {
-                            ...wizardData.ethicsRules,
-                            [rule.id]: { ...ruleState, enabled: checked as boolean },
-                          },
-                        });
-                      }}
-                    />
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-medium">{rule.description}</h3>
-                        <Badge className={cn("text-xs", categoryColor)}>
-                          {rule.category}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        ID: {rule.id}
-                      </p>
+                      }
+                      updateData({
+                        ethicsRules: { ...wizardData.ethicsRules, [ethics.id]: checked as boolean },
+                      });
+                    }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-medium">{ethics.name}</h3>
+                      {ethics.isDefault && <Badge className="text-xs bg-blue-500/10 text-blue-500">Por defecto</Badge>}
                     </div>
+                    {ethics.description && (
+                      <p className="text-sm text-muted-foreground mt-1">{ethics.description}</p>
+                    )}
+                    <details className="mt-2">
+                      <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">Ver contenido</summary>
+                      <pre className="text-xs mt-2 p-2 bg-muted rounded whitespace-pre-wrap font-mono">{ethics.content}</pre>
+                    </details>
                   </div>
                 </div>
               </CardContent>
             </Card>
           );
         })}
+        {ethicsList.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-4">Cargando lineamientos éticos...</p>
+        )}
       </div>
 
       <Button
@@ -1027,12 +1027,12 @@ export default function SetupPage() {
                 <Label className="text-sm text-muted-foreground">Reglas éticas activas</Label>
                 <div className="flex gap-2 flex-wrap mt-1">
                   {Object.entries(wizardData.ethicsRules)
-                    .filter(([_, data]) => data.enabled)
+                    .filter(([_, enabled]) => enabled)
                     .map(([id]) => {
-                      const rule = ETHICS_RULES.find(r => r.id === id);
+                      const ethics = ethicsList.find(e => e.id === id);
                       return (
                         <Badge key={id} variant="outline">
-                          {rule?.description.substring(0, 30)}...
+                          {ethics?.name ?? id}
                         </Badge>
                       );
                     })}

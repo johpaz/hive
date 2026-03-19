@@ -1,6 +1,6 @@
 services:
   hive:
-    image: johpaz/hive:1.7.2
+    image: johpaz/hive:1.7.3
     # build: .   # uncomment to build locally instead of pulling
     volumes:
       - hive-data:/root/.hive
@@ -9,7 +9,7 @@ services:
       HIVE_PORT: 18790
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -O- http://127.0.0.1:18790/health 2>/dev/null | grep -q status"]
+      test: [ "CMD-SHELL", "wget -O- http://127.0.0.1:18790/health 2>/dev/null | grep -q status" ]
       interval: 10s
       timeout: 5s
       retries: 12
