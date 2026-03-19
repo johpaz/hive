@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-sdk",
-  "version": "1.7.18",
+  "version": "1.7.19",
   "description": "Hive SDK - Build on top of Hive for enterprise and custom integrations",
   "private": false,
   "main": "./src/index.ts",
