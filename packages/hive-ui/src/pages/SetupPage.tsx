@@ -993,7 +993,7 @@ export default function SetupPage() {
               <div>
                 <Label className="text-sm text-muted-foreground">Proveedor</Label>
                 <p className="font-medium">
-                  {PROVIDERS.find(p => p.id === wizardData.provider)?.name || wizardData.provider} — {wizardData.model}
+                  {providers.find(p => p.id === wizardData.provider)?.name || wizardData.provider} — {wizardData.model}
                 </p>
               </div>
 
