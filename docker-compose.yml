@@ -1,7 +1,6 @@
 services:
   hive:
-    image: johpaz/hive:1.7.3
-    # build: .   # uncomment to build locally instead of pulling
+    image: johpaz/hive:2.0.2
     volumes:
       - hive-data:/root/.hive
     environment:
