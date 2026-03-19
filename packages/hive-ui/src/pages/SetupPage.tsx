@@ -28,17 +28,21 @@ import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/api";
 import { swal } from "@/lib/swal";
 
-const PROVIDERS = [
-  { id: "gemini",     name: "Google Gemini",  description: "Modelos rápidos y económicos de Google", logo: "🔵" },
-  { id: "anthropic",  name: "Anthropic",       description: "Claude — mejor equilibrio para coding", logo: "🟠" },
-  { id: "openai",     name: "OpenAI",          description: "GPT-5 — el estándar de la industria",  logo: "🟢" },
-  { id: "groq",       name: "Groq",            description: "Inferencia ultra-rápida",              logo: "🔴" },
-  { id: "ollama",     name: "Ollama",          description: "Modelos locales — sin costo",          logo: "🟣" },
-  { id: "openrouter", name: "OpenRouter",      description: "Multi-proveedor — unifica tus keys",   logo: "🟡" },
-  { id: "deepseek",   name: "DeepSeek",        description: "Modelos de alta calidad y bajo costo", logo: "🔷" },
-  { id: "mistral",    name: "Mistral AI",      description: "Modelos europeos open-weight",         logo: "🔸" },
-  { id: "kimi",       name: "Kimi (Moonshot)", description: "Contexto largo, ideal para código",    logo: "🌙" },
-];
+const PROVIDER_LOGOS: Record<string, string> = {
+  gemini: "🔵", anthropic: "🟠", openai: "🟢", groq: "🔴",
+  ollama: "🟣", openrouter: "🟡", deepseek: "🔷", mistral: "🔸", kimi: "🌙",
+};
+
+const PROVIDER_API_LINKS: Record<string, string> = {
+  gemini: "https://aistudio.google.com/app/apikey",
+  anthropic: "https://console.anthropic.com/keys",
+  openai: "https://platform.openai.com/api-keys",
+  groq: "https://console.groq.com/keys",
+  openrouter: "https://openrouter.ai/keys",
+  deepseek: "https://platform.deepseek.com/api_keys",
+  mistral: "https://console.mistral.ai/api-keys",
+  kimi: "https://platform.moonshot.cn/console/api-keys",
+};
 
 const CHANNELS = [
   { id: "webchat", name: "WebChat", description: "Chat web integrado", icon: "💬", required: true },
@@ -58,15 +62,6 @@ const ETHICS_RULES = [
   { id: "confirm-expensive", category: "CONFIRMAR", description: "Confirmar antes de operaciones costosas" },
 ];
 
-const AVATARS = [
-  { id: "amber", color: "bg-amber-500", hex: "#f59e0b" },
-  { id: "blue", color: "bg-blue-500", hex: "#3b82f6" },
-  { id: "green", color: "bg-green-500", hex: "#22c55e" },
-  { id: "purple", color: "bg-purple-500", hex: "#a855f7" },
-  { id: "red", color: "bg-red-500", hex: "#ef4444" },
-  { id: "cyan", color: "bg-cyan-500", hex: "#06b6d4" },
-];
-
 interface WizardData {
   // Step 1
   userName: string;
@@ -75,7 +70,6 @@ interface WizardData {
   // Step 2
   agentName: string;
   agentDescription: string;
-  agentAvatar: string;
   // Step 3
   provider: string;
   apiKey: string;
@@ -130,7 +124,6 @@ function getDefaultWizardData(): WizardData {
     userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
     agentName: "Bee",
     agentDescription: "",
-    agentAvatar: "amber",
     provider: "",
     apiKey: "",
     model: "",
@@ -164,6 +157,15 @@ export default function SetupPage() {
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const { showLoader, hideLoader } = useLoaderStore();
   const [verificationStatus, setVerificationStatus] = useState<"idle" | "verifying" | "success" | "error">("idle");
+  const [stepError, setStepError] = useState<string | null>(null);
+  const [providers, setProviders] = useState<{ id: string; name: string; description: string; models: { id: string; name: string }[] }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/setup/providers")
+      .then(res => res.json())
+      .then(data => { if (Array.isArray(data)) setProviders(data); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     saveWizardData(wizardData);
@@ -184,34 +186,38 @@ export default function SetupPage() {
   }, [navigate]);
 
   const updateData = (updates: Partial<WizardData>) => {
+    setStepError(null);
     setWizardData(prev => ({ ...prev, ...updates }));
   };
 
-  const canProceed = (): boolean => {
+  const getStepError = (): string | null => {
     switch (currentStep) {
       case 1:
-        return wizardData.userName.trim().length >= 2;
+        if (!wizardData.userName.trim()) return "El nombre es obligatorio.";
+        if (wizardData.userName.trim().length < 2) return "El nombre debe tener al menos 2 caracteres.";
+        return null;
       case 2:
-        return wizardData.agentName.trim().length >= 2;
+        if (!wizardData.agentName.trim()) return "El nombre del agente es obligatorio.";
+        if (wizardData.agentName.trim().length < 2) return "El nombre debe tener al menos 2 caracteres.";
+        return null;
       case 3:
-        return wizardData.provider !== "" && wizardData.apiKeyVerified;
-      case 4:
-        return true; // WebChat is always enabled
-      case 5:
-        return true; // Voice is optional
-      case 6:
-        return true; // At least one rule should be enabled (default)
-      case 7:
-        return true;
+        if (!wizardData.provider) return "Selecciona un proveedor LLM.";
+        if (wizardData.provider !== "ollama" && !wizardData.apiKey) return "Ingresa tu API key.";
+        if (wizardData.provider !== "ollama" && !wizardData.apiKeyVerified) return "Verifica tu API key antes de continuar.";
+        if (!wizardData.model) return "Selecciona un modelo.";
+        return null;
       default:
-        return false;
+        return null;
     }
   };
 
+  const canProceed = (): boolean => getStepError() === null;
+
   const handleNext = () => {
-    if (canProceed() && currentStep < 7) {
-      setCurrentStep(prev => prev + 1);
-    }
+    const error = getStepError();
+    if (error) { setStepError(error); return; }
+    setStepError(null);
+    if (currentStep < 7) setCurrentStep(prev => prev + 1);
   };
 
   const handleBack = () => {
@@ -417,26 +423,6 @@ export default function SetupPage() {
             />
           </div>
 
-          <div className="space-y-2">
-            <Label>Avatar del agente</Label>
-            <div className="flex gap-3 flex-wrap">
-              {AVATARS.map((avatar) => (
-                <button
-                  key={avatar.id}
-                  className={cn(
-                    "w-12 h-12 rounded-lg flex items-center justify-center transition-all",
-                    avatar.color,
-                    wizardData.agentAvatar === avatar.id
-                      ? "ring-2 ring-offset-2 ring-amber-500 scale-110"
-                      : "hover:scale-105"
-                  )}
-                  onClick={() => updateData({ agentAvatar: avatar.id })}
-                >
-                  <Hexagon className="w-6 h-6 text-white" fill="currentColor" />
-                </button>
-              ))}
-            </div>
-          </div>
         </CardContent>
       </Card>
     </div>
@@ -450,17 +436,17 @@ export default function SetupPage() {
       </div>
 
       <div className="grid gap-3">
-        {PROVIDERS.map((provider) => (
+        {providers.map((provider) => (
           <Card
             key={provider.id}
             className={cn(
               "cursor-pointer transition-all hover:shadow-md",
               wizardData.provider === provider.id && "border-amber-500 ring-2 ring-amber-500"
             )}
-            onClick={() => updateData({ provider: provider.id, apiKeyVerified: false })}
+            onClick={() => updateData({ provider: provider.id, model: "", apiKeyVerified: false })}
           >
             <CardContent className="flex items-center gap-4 p-4">
-              <span className="text-3xl">{provider.logo}</span>
+              <span className="text-3xl">{PROVIDER_LOGOS[provider.id] ?? "🤖"}</span>
               <div className="flex-1">
                 <h3 className="font-semibold">{provider.name}</h3>
                 <p className="text-sm text-muted-foreground">{provider.description}</p>
@@ -473,155 +459,93 @@ export default function SetupPage() {
         ))}
       </div>
 
-      {wizardData.provider && (
-        <Card className="mt-4">
-          <CardHeader>
-            <CardTitle>Configuración de {PROVIDERS.find(p => p.id === wizardData.provider)?.name}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="apiKey">API Key</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="apiKey"
-                  type="password"
-                  value={wizardData.apiKey}
-                  onChange={(e) => updateData({ apiKey: e.target.value, apiKeyVerified: false })}
-                  placeholder={wizardData.provider === "ollama" ? "No requerida" : "sk-..."}
-                  disabled={wizardData.provider === "ollama"}
-                />
-                {wizardData.provider !== "ollama" && (
-                  <Button
-                    variant="outline"
-                    onClick={verifyApiKey}
-                    disabled={!wizardData.apiKey || verificationStatus === "verifying"}
-                  >
-                    {verificationStatus === "verifying" ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : verificationStatus === "success" ? (
-                      <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    ) : verificationStatus === "error" ? (
-                      <XCircle className="w-4 h-4 text-red-500" />
-                    ) : (
-                      "Verificar"
-                    )}
-                  </Button>
-                )}
-              </div>
-              {verificationStatus === "success" && (
-                <p className="text-sm text-green-600 flex items-center gap-1">
-                  <CheckCircle2 className="w-4 h-4" /> API key verificada correctamente
-                </p>
-              )}
-              {verificationStatus === "error" && (
-                <p className="text-sm text-red-600 flex items-center gap-1">
-                  <XCircle className="w-4 h-4" /> API key inválida o error de conexión
-                </p>
-              )}
+      {wizardData.provider && (() => {
+        const selectedProvider = providers.find(p => p.id === wizardData.provider);
+        return (
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle>Configuración de {selectedProvider?.name}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
               {wizardData.provider !== "ollama" && (
-                <p className="text-xs text-muted-foreground">
-                  ¿No tienes tu API key?{" "}
-                  <a
-                    href={
-                      {
-                        gemini: "https://aistudio.google.com/app/apikey",
-                        anthropic: "https://console.anthropic.com/keys",
-                        openai: "https://platform.openai.com/api-keys",
-                        groq: "https://console.groq.com/keys",
-                        openrouter: "https://openrouter.ai/keys",
-                        deepseek: "https://platform.deepseek.com/api_keys",
-                        mistral: "https://console.mistral.ai/api-keys",
-                        kimi: "https://platform.moonshot.cn/console/api-keys",
-                      }[wizardData.provider] || "#"
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-amber-500 hover:underline"
-                  >
-                    Obtener aquí
-                  </a>
-                </p>
+                <div className="space-y-2">
+                  <Label htmlFor="apiKey">API Key</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="apiKey"
+                      type="password"
+                      value={wizardData.apiKey}
+                      onChange={(e) => updateData({ apiKey: e.target.value, apiKeyVerified: false })}
+                      placeholder="sk-..."
+                      className={cn(stepError?.includes("API key") && !wizardData.apiKey && "border-red-500")}
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={verifyApiKey}
+                      disabled={!wizardData.apiKey || verificationStatus === "verifying"}
+                    >
+                      {verificationStatus === "verifying" ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : verificationStatus === "success" ? (
+                        <CheckCircle2 className="w-4 h-4 text-green-500" />
+                      ) : verificationStatus === "error" ? (
+                        <XCircle className="w-4 h-4 text-red-500" />
+                      ) : (
+                        "Verificar"
+                      )}
+                    </Button>
+                  </div>
+                  {verificationStatus === "success" && (
+                    <p className="text-sm text-green-600 flex items-center gap-1">
+                      <CheckCircle2 className="w-4 h-4" /> API key verificada correctamente
+                    </p>
+                  )}
+                  {verificationStatus === "error" && (
+                    <p className="text-sm text-red-600 flex items-center gap-1">
+                      <XCircle className="w-4 h-4" /> API key inválida o error de conexión
+                    </p>
+                  )}
+                  {PROVIDER_API_LINKS[wizardData.provider] && (
+                    <p className="text-xs text-muted-foreground">
+                      ¿No tienes tu API key?{" "}
+                      <a
+                        href={PROVIDER_API_LINKS[wizardData.provider]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-amber-500 hover:underline"
+                      >
+                        Obtener aquí
+                      </a>
+                    </p>
+                  )}
+                </div>
               )}
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="model">Modelo</Label>
-              <Select
-                value={wizardData.model}
-                onValueChange={(value) => updateData({ model: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona un modelo" />
-                </SelectTrigger>
-                <SelectContent>
-                  {wizardData.provider === "gemini" && (
-                    <>
-                      <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash (Recomendado)</SelectItem>
-                      <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
-                      <SelectItem value="gemini-3.1-pro-preview">Gemini 3.1 Pro (Preview)</SelectItem>
-                    </>
-                  )}
-                  {wizardData.provider === "anthropic" && (
-                    <>
-                      <SelectItem value="claude-sonnet-4-6">Claude Sonnet 4.6 (Recomendado)</SelectItem>
-                      <SelectItem value="claude-opus-4-6">Claude Opus 4.6</SelectItem>
-                      <SelectItem value="claude-haiku-4-6">Claude Haiku 4.6</SelectItem>
-                    </>
-                  )}
-                  {wizardData.provider === "openai" && (
-                    <>
-                      <SelectItem value="gpt-5.2">GPT-5.2 (Recomendado)</SelectItem>
-                      <SelectItem value="gpt-5.1">GPT-5.1</SelectItem>
-                      <SelectItem value="o4-mini">o4-mini</SelectItem>
-                    </>
-                  )}
-                  {wizardData.provider === "groq" && (
-                    <>
-                      <SelectItem value="llama-3.3-70b-versatile">Llama 3.3 70B (Recomendado)</SelectItem>
-                      <SelectItem value="mixtral-8x7b-32768">Mixtral 8x7B</SelectItem>
-                    </>
-                  )}
-                  {wizardData.provider === "ollama" && (
-                    <>
-                      <SelectItem value="llama3.3:8b">Llama 3.3 8B (Recomendado)</SelectItem>
-                      <SelectItem value="qwen2.5:7b">Qwen 2.5 7B</SelectItem>
-                      <SelectItem value="mistral:7b">Mistral 7B</SelectItem>
-                    </>
-                  )}
-                  {wizardData.provider === "openrouter" && (
-                    <>
-                      <SelectItem value="meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B (Gratis)</SelectItem>
-                      <SelectItem value="google/gemini-2.0-flash-exp:free">Gemini 2.0 Flash (Gratis)</SelectItem>
-                      <SelectItem value="anthropic/claude-sonnet-4-6">Claude Sonnet 4.6</SelectItem>
-                    </>
-                  )}
-                  {wizardData.provider === "deepseek" && (
-                    <>
-                      <SelectItem value="deepseek-chat">DeepSeek Chat (Recomendado)</SelectItem>
-                      <SelectItem value="deepseek-coder">DeepSeek Coder</SelectItem>
-                      <SelectItem value="deepseek-reasoner">DeepSeek Reasoner (R1)</SelectItem>
-                    </>
-                  )}
-                  {wizardData.provider === "mistral" && (
-                    <>
-                      <SelectItem value="mistral-small-latest">Mistral Small (Recomendado)</SelectItem>
-                      <SelectItem value="mistral-large-latest">Mistral Large</SelectItem>
-                      <SelectItem value="codestral-latest">Codestral</SelectItem>
-                    </>
-                  )}
-                  {wizardData.provider === "kimi" && (
-                    <>
-                      <SelectItem value="moonshot-v1-8k">Moonshot v1 8K (Recomendado)</SelectItem>
-                      <SelectItem value="moonshot-v1-32k">Moonshot v1 32K</SelectItem>
-                      <SelectItem value="moonshot-v1-128k">Moonshot v1 128K</SelectItem>
-                    </>
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+              <div className="space-y-2">
+                <Label htmlFor="model">Modelo</Label>
+                <Select
+                  value={wizardData.model}
+                  onValueChange={(value) => updateData({ model: value })}
+                >
+                  <SelectTrigger className={cn(!wizardData.model && stepError?.includes("modelo") && "border-red-500")}>
+                    <SelectValue placeholder="Selecciona un modelo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(selectedProvider?.models ?? []).map((m, i) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.name || m.id}{i === 0 ? " (Recomendado)" : ""}
+                      </SelectItem>
+                    ))}
+                    {wizardData.provider === "ollama" && (selectedProvider?.models ?? []).length === 0 && (
+                      <SelectItem value="llama3.2:3b">llama3.2:3b (Recomendado)</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
     </div>
   );
 
@@ -1058,10 +982,7 @@ export default function SetupPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-3">
-                <div className={cn(
-                  "w-10 h-10 rounded-lg flex items-center justify-center",
-                  AVATARS.find(a => a.id === wizardData.agentAvatar)?.color
-                )}>
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-amber-500">
                   <Hexagon className="w-6 h-6 text-white" fill="currentColor" />
                 </div>
                 {wizardData.agentName}
@@ -1162,9 +1083,16 @@ export default function SetupPage() {
         {/* Step content */}
         {renderStep()}
 
+        {/* Validation error */}
+        {stepError && (
+          <Alert variant="destructive" className="mt-6">
+            <AlertDescription>{stepError}</AlertDescription>
+          </Alert>
+        )}
+
         {/* Navigation */}
         {!submitSuccess && (
-          <div className="flex justify-between mt-8 pt-8 border-t">
+          <div className="flex justify-between mt-6 pt-6 border-t">
             <Button
               variant="outline"
               onClick={handleBack}
@@ -1175,7 +1103,6 @@ export default function SetupPage() {
             {currentStep < 7 ? (
               <Button
                 onClick={handleNext}
-                disabled={!canProceed()}
                 className="bg-amber-500 hover:bg-amber-600"
               >
                 Siguiente →

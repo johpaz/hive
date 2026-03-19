@@ -26,7 +26,7 @@ import { decryptConfig } from "../storage/crypto.ts";
 import { resolveContext } from "./resolver";
 import { voiceService } from "../voice/index";
 import { initializeGateway, type GatewayInitializationResult } from "./initializer";
-import { handleSetupStatus, handleVerifyProvider, handleCompleteSetup } from "./routes/setup";
+import { handleSetupStatus, handleVerifyProvider, handleCompleteSetup, handleSetupProviders } from "./routes/setup";
 import { resolveUserId } from "../storage/onboarding";
 import { handleGetAgents, handleCreateAgent, handleUpdateAgent, handleDeleteAgent } from "./routes/agents";
 import { handleGetProviders, handleCreateProvider, handleToggleProvider, handleUpdateProvider, handleSyncProviderModels } from "./routes/providers";
@@ -616,6 +616,11 @@ export async function startGateway(config: Config): Promise<void> {
         // GET /api/setup/status
         if (url.pathname === "/api/setup/status" || url.pathname === "/api/setup/status/") {
           return addCorsHeaders(await handleSetupStatus(), req)
+        }
+
+        // GET /api/setup/providers
+        if (url.pathname === "/api/setup/providers" && req.method === "GET") {
+          return handleSetupProviders(addCorsHeaders, req)
         }
 
         // POST /api/setup/verify-provider

@@ -19,6 +19,34 @@ export function isSetupMode(): boolean {
   }
 }
 
+export function handleSetupProviders(
+  addCorsHeaders: (response: Response, request: Request) => Response,
+  req: Request
+): Response {
+  try {
+    const db = getDb()
+    const providers = db.query(`
+      SELECT id, name, description FROM providers WHERE enabled = 1 ORDER BY id
+    `).all() as { id: string; name: string; description: string }[]
+
+    const result = providers.map(p => {
+      const models = db.query(`
+        SELECT id, name FROM models
+        WHERE provider_id = ? AND category = 'llm' AND active = 1
+        ORDER BY name
+      `).all(p.id) as { id: string; name: string }[]
+      return { ...p, models }
+    }).filter(p => p.models.length > 0 || p.id === "ollama")
+
+    return addCorsHeaders(Response.json(result), req)
+  } catch (error) {
+    return addCorsHeaders(
+      Response.json({ error: (error as Error).message }, { status: 500 }),
+      req
+    )
+  }
+}
+
 export async function handleSetupStatus(): Promise<Response> {
   const setupMode = isSetupMode()
   return Response.json({
