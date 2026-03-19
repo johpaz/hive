@@ -9,10 +9,13 @@ import { useUserStore } from "@/stores/userStore";
 import { useCanvasStore, type GraphNode, type GraphEdge } from "@/stores/canvasStore";
 
 // Use environment variable for gateway URL, fall back to current host (production)
+// 0.0.0.0 is a bind address — normalize to localhost for WebSocket connections
 const API_URL = import.meta.env.VITE_API_URL;
+const _wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
+const _host = window.location.host.replace("0.0.0.0", "localhost");
 const GATEWAY_WS_URL = API_URL
   ? API_URL.replace(/^http/, "ws")
-  : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`;
+  : `${_wsProto}//${_host}`;
 
 interface CanvasContainerProps {
   sessionId?: string;

@@ -1,8 +1,10 @@
 import type { WebSocketConfig } from "@/types";
 
+const _wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
+const _host = window.location.host.replace("0.0.0.0", "localhost");
 const _wsUrl = import.meta.env.VITE_WS_URL
   || (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/^http/, "ws") : null)
-  || `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`;
+  || `${_wsProto}//${_host}`;
 
 export const defaultWebSocketConfig: WebSocketConfig = {
   url: _wsUrl,

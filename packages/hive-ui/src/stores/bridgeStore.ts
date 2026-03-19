@@ -1,11 +1,16 @@
 import { create } from "zustand";
 import type { BridgeProcess, BridgeLog } from "@/types";
 
-const CODE_BRIDGE_URL = `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.hostname}:18791/ws`;
+// 0.0.0.0 is a bind address — browsers can't connect to it; use localhost instead
+const _hostname = window.location.hostname === "0.0.0.0" ? "localhost" : window.location.hostname;
+const _host = window.location.host.replace("0.0.0.0", "localhost");
+const _wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
+
+const CODE_BRIDGE_URL = `${_wsProto}//${_hostname}:18791/ws`;
 const API_URL = import.meta.env.VITE_API_URL || "";
 const GATEWAY_WS_URL = API_URL
     ? API_URL.replace(/^http/, "ws")
-    : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`;
+    : `${_wsProto}//${_host}`;
 const GATEWAY_BRIDGE_URL = `${GATEWAY_WS_URL}/bridge-events`;
 
 function generateId(): string {
@@ -39,6 +44,12 @@ interface BridgeState {
   connectGateway: () => void;
 }
 
+// Module-level reconnect flags — not in Zustand state (no re-render needed)
+let _bridgeShouldReconnect = false;
+let _bridgeRetries = 0;
+const BRIDGE_MAX_RETRIES = 3;
+let _gatewayShouldReconnect = false;
+
 export const useBridgeStore = create<BridgeState>((set, get) => ({
   processes: [],
   logs: [],
@@ -67,14 +78,10 @@ export const useBridgeStore = create<BridgeState>((set, get) => ({
     const { socket: existingSocket, isConnected } = get();
     if (existingSocket || isConnected) return;
 
+    _bridgeShouldReconnect = true;
+
     try {
       const ws = new WebSocket(CODE_BRIDGE_URL);
-
-      ws.onopen = () => {
-        set({ isConnected: true, socket: ws });
-        get().addLog(createLog("info", "Connected to Code Bridge"));
-        get().sendCommand({ cmd: "status" });
-      };
 
       ws.onmessage = (event) => {
         try {
@@ -133,15 +140,27 @@ export const useBridgeStore = create<BridgeState>((set, get) => ({
         }
       };
 
+      ws.onopen = () => {
+        _bridgeRetries = 0;
+        set({ isConnected: true, socket: ws });
+        get().addLog(createLog("info", "Connected to Code Bridge"));
+        get().sendCommand({ cmd: "status" });
+      };
+
       ws.onerror = () => {
-        get().addLog(createLog("error", "Code Bridge WebSocket error"));
+        // Suppress error log — service may simply not be running
       };
 
       ws.onclose = () => {
         set({ isConnected: false, socket: null });
-        get().addLog(createLog("info", "Disconnected from Code Bridge"));
+        if (!_bridgeShouldReconnect) return;
+        _bridgeRetries++;
+        if (_bridgeRetries > BRIDGE_MAX_RETRIES) {
+          _bridgeShouldReconnect = false;
+          return; // Stop retrying silently — service not available
+        }
         setTimeout(() => {
-          if (!get().isConnected) get().connect();
+          if (_bridgeShouldReconnect && !get().isConnected) get().connect();
         }, 5000);
       };
 
@@ -155,6 +174,8 @@ export const useBridgeStore = create<BridgeState>((set, get) => ({
   connectGateway: () => {
     const { gatewaySocket } = get();
     if (gatewaySocket) return;
+
+    _gatewayShouldReconnect = true;
 
     try {
       const ws = new WebSocket(GATEWAY_BRIDGE_URL);
@@ -213,9 +234,9 @@ export const useBridgeStore = create<BridgeState>((set, get) => ({
 
       ws.onclose = () => {
         set({ gatewaySocket: null });
-        // Reconnect after 5 seconds
+        if (!_gatewayShouldReconnect) return;
         setTimeout(() => {
-          if (!get().gatewaySocket) get().connectGateway();
+          if (_gatewayShouldReconnect && !get().gatewaySocket) get().connectGateway();
         }, 5000);
       };
 
@@ -226,6 +247,9 @@ export const useBridgeStore = create<BridgeState>((set, get) => ({
   },
 
   disconnect: () => {
+    // Cancel all reconnect loops before closing
+    _bridgeShouldReconnect = false;
+    _gatewayShouldReconnect = false;
     const { socket, gatewaySocket } = get();
     if (socket) {
       socket.close();

@@ -124,9 +124,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     }
 
     const API_URL = import.meta.env.VITE_API_URL;
+    const _wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const _host = window.location.host.replace("0.0.0.0", "localhost");
     const GATEWAY_WS_URL = API_URL
       ? API_URL.replace(/^http/, "ws")
-      : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`;
+      : `${_wsProto}//${_host}`;
     const wsUrl = `${GATEWAY_WS_URL}/canvas?sessionId=${encodeURIComponent(sessionId)}`;
 
     console.log(`[CanvasStore] Connecting to ${wsUrl}`);

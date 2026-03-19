@@ -347,7 +347,14 @@ export async function start(flags: string[]): Promise<void> {
     return;
   }
 
-  // Production mode (not dev) - start Gateway blocking
+  // Production mode — start Code Bridge sidecar before Gateway
+  try {
+    await import("@johpaz/hive-code-bridge");
+    console.log("🌉 Code Bridge iniciado en puerto 18791");
+  } catch (error) {
+    console.warn(`⚠️  No se pudo iniciar el Code Bridge: ${(error as Error).message}`);
+  }
+
   // Open browser when gateway is ready
   if (!daemon && !isGatewayChild) {
     const port = (config.gateway as any)?.port || 18790;

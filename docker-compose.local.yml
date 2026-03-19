@@ -4,6 +4,7 @@ services:
     image: hive:local
     ports:
       - "18790:18790"
+      - "18791:18791"
     volumes:
       - hive-data-local:/root/.hive
     environment:
