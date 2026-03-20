@@ -260,7 +260,7 @@ Las 52 herramientas nativas se cargan dinámicamente desde la base de datos.
 | ⏰ CRON | 4 | cron_add, cron_list, cron_edit, cron_remove |
 | 💻 CLI | 1 | cli_exec |
 | 🧠 AGENTS | 14 | memory_*, agent_*, task_delegate, bus_*, project_updates |
-| 🎨 CANVAS | 7 | canvas_show_card, canvas_show_progress, canvas_ask, canvas_confirm |
+| 🎨 CANVAS | 7 | canvas_render(chart/table/form/button/alert-dialog/markdown/...), canvas_ask, canvas_confirm, canvas_show_card, canvas_show_progress |
 | 🌉 CODEBRIDGE | 3 | codebridge_launch, codebridge_status, codebridge_cancel |
 | 🎙️ VOICE | 2 | voice_transcribe, voice_speak |
 | 🔔 CORE | 4 | search_knowledge, notify, save_note, report_progress |

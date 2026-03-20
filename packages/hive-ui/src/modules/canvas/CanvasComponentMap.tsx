@@ -65,12 +65,15 @@ function renderAlert(props: Record<string, unknown>) {
 }
 
 function renderButton(props: Record<string, unknown>) {
+  const id = props.id as string;
+  const onInteraction = props.onInteraction as ((id: string, action: string, data?: unknown) => void) | undefined;
   return (
     <Button
       variant={props.variant as "default" | "destructive" | "outline" | "secondary" | "ghost" | "link"}
       size={props.size as "default" | "sm" | "lg" | "icon"}
       disabled={props.disabled as boolean}
       className={props.className as string}
+      onClick={() => onInteraction?.(id, "click", { label: props.label })}
     >
       {(props.label as string) || (props.children as string)}
     </Button>
@@ -635,6 +638,8 @@ function renderMarkdown(props: Record<string, unknown>) {
 
 function renderAlertDialog(props: Record<string, unknown>) {
   const [open, setOpen] = useState(true);
+  const id = props.id as string;
+  const onInteraction = props.onInteraction as ((id: string, action: string, data?: unknown) => void) | undefined;
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogContent>
@@ -645,8 +650,12 @@ function renderAlertDialog(props: Record<string, unknown>) {
           )}
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>{String(props.cancelLabel || "Cancel")}</AlertDialogCancel>
-          <AlertDialogAction>{String(props.actionLabel || "Continue")}</AlertDialogAction>
+          <AlertDialogCancel onClick={() => { setOpen(false); onInteraction?.(id, "cancel", { confirmed: false }); }}>
+            {String(props.cancelLabel || "Cancel")}
+          </AlertDialogCancel>
+          <AlertDialogAction onClick={() => { setOpen(false); onInteraction?.(id, "confirm", { confirmed: true }); }}>
+            {String(props.actionLabel || props.confirmLabel || "Continue")}
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -775,7 +784,14 @@ function renderForm(props: Record<string, unknown>) {
     placeholder?: string;
     options?: Array<{ value: string; label: string }>;
   };
+  const id = props.id as string;
+  const onInteraction = props.onInteraction as ((id: string, action: string, data?: unknown) => void) | undefined;
   const fields = (props.fields as FieldDef[]) || [];
+  const [formData, setFormData] = useState<Record<string, unknown>>({});
+
+  const updateField = (name: string, value: unknown) => {
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
 
   return (
     <Card className="bg-background/60 border-primary/20">
@@ -791,9 +807,17 @@ function renderForm(props: Record<string, unknown>) {
               <Label htmlFor={field.name}>{field.label}</Label>
             )}
             {field.type === "textarea" ? (
-              <Textarea id={field.name} placeholder={field.placeholder} />
+              <Textarea
+                id={field.name}
+                placeholder={field.placeholder}
+                value={(formData[field.name] as string) || ""}
+                onChange={(e) => updateField(field.name, e.target.value)}
+              />
             ) : field.type === "select" ? (
-              <Select>
+              <Select
+                value={(formData[field.name] as string) || ""}
+                onValueChange={(value) => updateField(field.name, value)}
+              >
                 <SelectTrigger id={field.name}>
                   <SelectValue placeholder={field.placeholder || `Select ${field.label}`} />
                 </SelectTrigger>
@@ -805,17 +829,29 @@ function renderForm(props: Record<string, unknown>) {
               </Select>
             ) : field.type === "checkbox" ? (
               <div className="flex items-center gap-2">
-                <Checkbox id={field.name} />
+                <Checkbox
+                  id={field.name}
+                  checked={(formData[field.name] as boolean) || false}
+                  onCheckedChange={(checked) => updateField(field.name, checked)}
+                />
                 <Label htmlFor={field.name}>{field.label}</Label>
               </div>
             ) : (
-              <Input id={field.name} type={field.type} placeholder={field.placeholder} />
+              <Input
+                id={field.name}
+                type={field.type}
+                placeholder={field.placeholder}
+                value={(formData[field.name] as string) || ""}
+                onChange={(e) => updateField(field.name, e.target.value)}
+              />
             )}
           </div>
         ))}
       </CardContent>
       <CardFooter>
-        <Button className="w-full">{String(props.submitLabel || "Submit")}</Button>
+        <Button className="w-full" onClick={() => onInteraction?.(id, "submit", formData)}>
+          {String(props.submitLabel || "Submit")}
+        </Button>
       </CardFooter>
     </Card>
   );

@@ -14,12 +14,12 @@ const log = logger.child("canvas");
 
 export const canvasRenderTool: Tool = {
   name: "canvas_render",
-  description: "Render a component or visualization on the canvas. Spanish: renderizar, visualizar, gráfico, diagrama",
+  description: "Render a component or visualization on the canvas. Use specific types instead of always using card+markdown. Key types: chart (bar/line/area/pie graphs), table (tabular data), markdown (rich text), form (interactive form - waits for submit), button (interactive button), alert-dialog (confirm/cancel dialog), progress (progress bars), accordion, tabs, badge, card, bee-loader. Spanish: renderizar, visualizar, gráfico, diagrama, tabla, formulario",
   parameters: {
     type: "object",
     properties: {
-      component: { type: "string", description: "Component type to render. Available: alert, alert-dialog, accordion, avatar, badge, breadcrumb, button, calendar, card, carousel, chart, checkbox, collapsible, command, context-menu, dialog, drawer, dropdown-menu, form, input, input-otp, label, markdown, menubar, navigation-menu, pagination, popover, progress, radio-group, resizable, scroll-area, select, separator, sheet, skeleton, slider, switch, table, tabs, textarea, toggle, toggle-group, tooltip, aspect-ratio, hover-card, bee-loader, custom" },
-      data: { type: "object", description: "Data to pass to the component" },
+      component: { type: "string", description: "Component type. Visualization: chart, table, markdown, card, progress, accordion, tabs, badge, separator, bee-loader. Interactive: form, button, alert-dialog. Layout: carousel, collapsible, resizable, scroll-area, tabs. Other: alert, avatar, breadcrumb, calendar, checkbox, dialog, drawer, dropdown-menu, hover-card, input, input-otp, label, menubar, navigation-menu, pagination, popover, radio-group, select, sheet, skeleton, slider, switch, textarea, toggle, toggle-group, tooltip, aspect-ratio, command, context-menu, custom" },
+      data: { type: "object", description: "Props for the component. chart: {type:'bar'|'line'|'area'|'pie', data:[{name,...}], xKey:'name', keys:['value'], title}. table: {title, columns:[{header,key}], data:[{}]}. form: {title, fields:[{name,label,type:'text'|'email'|'number'|'textarea'|'select'|'checkbox',placeholder,options:[{value,label}]}], submitLabel}. alert-dialog: {title, description, confirmLabel, cancelLabel}. button: {label, variant:'default'|'outline'|'secondary'|'destructive'}. markdown: {content}. progress: {value:0-100}." },
     },
     required: ["component", "data"],
   },

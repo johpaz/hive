@@ -362,6 +362,42 @@ export async function compileContext(opts: {
       `   "Usa las herramientas: web_search, fs_read, ... para completar esta tarea."\n` +
       `3. El worker con esa instrucción usará \`search_knowledge\` para activar las tools por nombre.\n` +
       `Ejemplo: si el worker debe investigar en internet → busca "web search herramienta internet" → obtienes "web_search" → dile al worker que use web_search.\n`
+
+    // Inject Canvas A2UI component documentation
+    systemPrompt += `\n\n# 🎨 CANVAS A2UI — Componentes disponibles para \`canvas_render\`\n` +
+      `**REGLA**: Usá \`canvas_render\` con el tipo específico en vez de siempre usar \`canvas_show_card\` + markdown.\n\n` +
+      `## Tipos de visualización:\n` +
+      `- **chart** — Gráficos. Props: \`{type:"bar"|"line"|"area"|"pie", data:[{name,...}], xKey:"name", keys:["valor"], colors:[], title}\`\n` +
+      `- **table** — Tablas de datos. Props: \`{title, columns:[{header,key}], data:[{...}]}\`\n` +
+      `- **progress** — Barras de progreso. Props: \`{bars:[{label,value:0-100}]}\`\n` +
+      `- **markdown** — Texto rich. Props: \`{content:"## título\\n..."}\`\n` +
+      `- **card** — Tarjeta con items. Props: \`{title, description, items:[{label,value}], footer}\`\n` +
+      `- **accordion** — Secciones colapsables. Props: \`{items:[{value,title,content}]}\`\n` +
+      `- **tabs** — Pestañas. Props: \`{tabs:[{value,label,content}]}\`\n` +
+      `- **badge** — Etiqueta. Props: \`{label, variant:"default"|"secondary"|"destructive"|"outline"}\`\n` +
+      `- **separator** — Línea divisora\n` +
+      `- **bee-loader** — Animación de carga. Props: \`{message}\`\n\n` +
+      `## Tipos interactivos (bloquean hasta respuesta del usuario):\n` +
+      `- **form** — Formulario. Props: \`{title, fields:[{name,label,type,placeholder,options}], submitLabel}\`\n` +
+      `  → Tipos de campo: \`text\`, \`email\`, \`number\`, \`textarea\`, \`select\`, \`checkbox\`\n` +
+      `  → Al Submit recibirás: \`{data:{campo:valor,...}}\`\n` +
+      `- **button** — Botón clickeable. Props: \`{label, variant:"default"|"outline"|"secondary"|"destructive"}\`\n` +
+      `  → Al click recibirás: \`{action:"click", data:{label}}\`\n` +
+      `- **alert-dialog** — Confirmación. Props: \`{title, description, confirmLabel, cancelLabel}\`\n` +
+      `  → Al confirmar recibirás: \`{data:{confirmed:true|false}}\`\n\n` +
+      `## Cuándo usar cada uno:\n` +
+      `- Estadísticas/datos numéricos → **chart** (bar/line/pie)\n` +
+      `- Listas de filas/columnas → **table**\n` +
+      `- Texto largo / análisis → **markdown**\n` +
+      `- Pedir datos al usuario → **canvas_ask** o **canvas_render con form**\n` +
+      `- Confirmar acción peligrosa → **canvas_confirm** o **canvas_render con alert-dialog**\n` +
+      `- Mostrar progreso de tarea → **canvas_show_progress**\n\n` +
+      `## Ejemplos:\n` +
+      `\`\`\`\n` +
+      `canvas_render(component:"chart", data:{type:"bar", data:[{mes:"Ene",ventas:1200},{mes:"Feb",ventas:1800}], xKey:"mes", keys:["ventas"], title:"Ventas por mes"})\n` +
+      `canvas_render(component:"table", data:{title:"Archivos", columns:[{header:"Nombre",key:"name"},{header:"Tamaño",key:"size"}], data:[{name:"app.ts",size:"12KB"}]})\n` +
+      `canvas_render(component:"form", data:{title:"Configuración", fields:[{name:"nombre",label:"Nombre",type:"text"},{name:"tipo",label:"Tipo",type:"select",options:[{value:"a",label:"A"},{value:"b",label:"B"}]}], submitLabel:"Guardar"})\n` +
+      `\`\`\`\n`
   }
 
   // For isolated workers, add task context + tool discovery instruction
