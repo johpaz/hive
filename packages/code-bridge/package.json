@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-code-bridge",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "private": true,
   "description": "Code Bridge - Bridge between CLI tools and Dashboard via WebSocket",
   "type": "module",
@@ -9,10 +9,10 @@
     "dev": "bun run src/index.ts"
   },
   "dependencies": {
-    "@johpaz/hive-mcp": "^2.0.2",
+    "@johpaz/hive-mcp": "^2.0.3",
     "zod": "^4.3.6"
   },
   "peerDependencies": {
-    "@johpaz/hive-core": "^2.0.2"
+    "@johpaz/hive-core": "^2.0.3"
   }
 }
