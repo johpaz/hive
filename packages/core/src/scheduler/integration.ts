@@ -222,12 +222,6 @@ export async function notifyTaskCompletion(
     return;
   }
 
-  // Skip notification for system channel
-  if (task.channel === "system") {
-    log.debug(`[notify] Skipping notification for system channel`);
-    return;
-  }
-
   // Get real user ID from users table
   const userRow = db.query("SELECT id FROM users LIMIT 1").get() as { id: string } | undefined;
   const userId = userRow?.id || "";
@@ -244,10 +238,10 @@ export async function notifyTaskCompletion(
     ? activeChannels
     : db.query("SELECT channel FROM user_identities WHERE user_id = ?").all(userId) as { channel: string }[];
 
-  // Determine best channel — prefer telegram first, then others, then webchat
+  // Determine best channel — "system" is internal-only, always resolve to a real channel
   const preferred = ["telegram", "discord", "slack", "whatsapp", "webchat"];
-  let notifyChannel = task.channel;
-  if (!identities.some((i) => i.channel === notifyChannel)) {
+  let notifyChannel = (task.channel && task.channel !== "system") ? task.channel : "";
+  if (!notifyChannel || !identities.some((i) => i.channel === notifyChannel)) {
     for (const p of preferred) {
       if (identities.some((i) => i.channel === p)) {
         notifyChannel = p;
@@ -255,6 +249,8 @@ export async function notifyTaskCompletion(
       }
     }
   }
+  // Final fallback if no identities registered at all
+  if (!notifyChannel || notifyChannel === "system") notifyChannel = "webchat";
 
   // Build notification message
   const status = success ? "✅" : "❌";

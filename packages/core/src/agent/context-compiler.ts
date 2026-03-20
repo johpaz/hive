@@ -352,12 +352,26 @@ export async function compileContext(opts: {
       `- Skills (instrucciones de tareas complejas): type="skills"\n` +
       `- Playbook (buenas prácticas): type="playbook"\n` +
       `- Herramientas nativas específicas: type="tools"\n` +
-      `Las herramientas MCP ya están disponibles - no necesitas buscarlas.\n`
+      `Las herramientas MCP ya están disponibles - no necesitas buscarlas.\n` +
+      `\n## REGLA CRÍTICA — Delegación a workers\n` +
+      `Los workers arrancan con herramientas mínimas (save_note, notify, report_progress, search_knowledge).\n` +
+      `**ANTES de crear o delegar a un worker**, SIEMPRE debes:\n` +
+      `1. Usar \`search_knowledge(type="tools", query="<tarea del worker>")\` para identificar qué herramientas necesita.\n` +
+      `2. Incluir esas herramientas en el campo \`tools\` al crear el agente con \`create_agent\`, o\n` +
+      `   en el campo \`task_description\` de \`task_delegate\` como instrucción explícita:\n` +
+      `   "Usa las herramientas: web_search, fs_read, ... para completar esta tarea."\n` +
+      `3. El worker con esa instrucción usará \`search_knowledge\` para activar las tools por nombre.\n` +
+      `Ejemplo: si el worker debe investigar en internet → busca "web search herramienta internet" → obtienes "web_search" → dile al worker que use web_search.\n`
   }
 
-  // For isolated workers, add task context
+  // For isolated workers, add task context + tool discovery instruction
   if (isWorker && opts.taskContext) {
-    systemPrompt += `\n\n# CURRENT TASK\n${opts.taskContext}\n\nFocus ONLY on this task. Do not deviate.`
+    systemPrompt += `\n\n# HERRAMIENTAS DISPONIBLES\n` +
+      `Arrancas con herramientas básicas. Si tu tarea requiere herramientas adicionales (web_search, fs_read, browser_navigate, etc.):\n` +
+      `1. Usá \`search_knowledge(type="tools", query="<herramienta o tarea>")\` para encontrarlas.\n` +
+      `2. Las herramientas que encuentres estarán disponibles para usar inmediatamente.\n` +
+      `Si el coordinador te indicó herramientas específicas, buscalas primero con search_knowledge antes de ejecutar tu tarea.\n` +
+      `\n# CURRENT TASK\n${opts.taskContext}\n\nFocus ONLY on this task. Do not deviate.`
   }
 
   log.info(
