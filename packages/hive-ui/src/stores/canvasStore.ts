@@ -209,8 +209,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
             const subData = (d.data ?? d.changes) as Record<string, unknown> ?? {};
             const updates: Partial<GraphNode> = {};
             if (subData.status) updates.status = subData.status as string;
-            // Merge existing data with new data/changes
-            updates.data = subData;
+            // Merge with existing node data to preserve fields like 'role'
+            const existingNode = get().graphNodes.find((n) => n.id === nodeId);
+            updates.data = { ...(existingNode?.data ?? {}), ...subData };
             get().updateGraphNode(nodeId, updates);
           }
         } else if (message.type === "canvas:node_remove") {

@@ -66,7 +66,7 @@ export function getCanvasSnapshot() {
   const db = getDb()
 
   const agentNodes = db
-    .query<any, []>("SELECT id, name, description, status FROM agents")
+    .query<any, []>("SELECT id, name, description, role, status FROM agents")
     .all()
     .map((a: any) => {
       const live = agentLiveState.get(a.id)
@@ -76,7 +76,7 @@ export function getCanvasSnapshot() {
         description: a.description,
         status: live?.status ?? a.status,
         type: "agent",
-        data: { currentTool: live?.currentTool ?? null },
+        data: { role: a.role, currentTool: live?.currentTool ?? null },
       }
     })
 

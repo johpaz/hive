@@ -102,49 +102,61 @@ export function AgentCard({ agent, onEdit }: AgentCardProps) {
       tabIndex={0}
       className={`group relative overflow-hidden rounded-2xl border bg-black/40 backdrop-blur-xl transition-all duration-500 cursor-pointer flex flex-col h-full
         ${agent.enabled
-          ? "border-white/10 hover:border-blue-500/50 hover:bg-white/[0.03] hover:shadow-[0_0_30px_rgba(59,130,246,0.15)]"
+          ? isCoordinator
+            ? "border-purple-500/20 hover:border-purple-500/50 hover:bg-white/[0.03] hover:shadow-[0_0_30px_rgba(168,85,247,0.15)]"
+            : "border-white/10 hover:border-blue-500/50 hover:bg-white/[0.03] hover:shadow-[0_0_30px_rgba(59,130,246,0.15)]"
           : "border-white/5 opacity-70 grayscale hover:grayscale-0"}
       `}
       onClick={handleCardClick}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(`/agents/${agent.id}`); }}
     >
-      {/* Background Gradient Effect */}
+      {/* Top accent line */}
       {agent.enabled && (
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-transparent to-purple-500/10 opacity-0 transition-opacity duration-500 group-hover:opacity-100 pointer-events-none" />
+        <div className={`absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent ${isCoordinator ? "via-purple-500/60" : "via-blue-500/50"} to-transparent`} />
       )}
 
-      {/* Top subtle glow */}
+      {/* Background Gradient Effect */}
       {agent.enabled && (
-        <div className="absolute -top-px left-10 right-10 h-px bg-gradient-to-r from-transparent via-blue-500/50 to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
+        <div className={`absolute inset-0 bg-gradient-to-br ${isCoordinator ? "from-purple-500/10 via-transparent to-blue-500/5" : "from-blue-500/10 via-transparent to-purple-500/10"} opacity-0 transition-opacity duration-500 group-hover:opacity-100 pointer-events-none`} />
       )}
 
       <div className="p-5 flex flex-col flex-1 relative z-10">
-        <div className="flex items-start justify-between gap-4">
-          {/* Name + Description */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className={`text-lg font-bold tracking-tight transition-colors truncate ${agent.enabled ? "text-white/95 group-hover:text-blue-400" : "text-white/40"}`}>
+        {/* Avatar + Role + Actions row */}
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            {/* Avatar circle */}
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 border transition-colors
+              ${isCoordinator
+                ? "bg-purple-500/10 border-purple-500/20 group-hover:border-purple-500/40"
+                : "bg-blue-500/10 border-blue-500/20 group-hover:border-blue-500/40"}`}>
+              {isCoordinator
+                ? <Shield className="h-5 w-5 text-purple-400" />
+                : <Cpu className="h-5 w-5 text-blue-400" />}
+            </div>
+            {/* Name + role */}
+            <div className="min-w-0">
+              <h3 className={`text-base font-bold tracking-tight transition-colors truncate ${agent.enabled ? "text-white/95 group-hover:text-white" : "text-white/40"}`}>
                 {agent.name}
               </h3>
-              {isCoordinator && (
-                <span title="Coordinador: Habilita gestión de sub-tareas" className="flex items-center justify-center p-1 rounded-md bg-purple-500/10 border border-purple-500/20">
-                  <Shield className="h-3.5 w-3.5 text-purple-400" />
+              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase border
+                  ${isCoordinator
+                    ? "bg-purple-500/10 text-purple-400 border-purple-500/20"
+                    : "bg-blue-500/10 text-blue-400 border-blue-500/20"}`}>
+                  {isCoordinator ? "Coordinador" : "Worker"}
                 </span>
-              )}
-              {agent.hasHeaders && (
-                <span title="Credenciales Mapeadas" className="flex items-center justify-center p-1 rounded-md bg-emerald-500/10 border border-emerald-500/20">
-                  <Lock className="h-3.5 w-3.5 text-emerald-400" />
-                </span>
-              )}
-              {agent.parentId && (
-                <span title="Sub-agente" className="flex items-center justify-center p-1 rounded-md bg-amber-500/10 border border-amber-500/20">
-                  <GitBranch className="h-3.5 w-3.5 text-amber-400" />
-                </span>
-              )}
+                {agent.hasHeaders && (
+                  <span title="Credenciales Mapeadas" className="flex items-center justify-center p-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">
+                    <Lock className="h-2.5 w-2.5 text-emerald-400" />
+                  </span>
+                )}
+                {agent.parentId && (
+                  <span title="Sub-agente" className="flex items-center justify-center p-0.5 rounded bg-amber-500/10 border border-amber-500/20">
+                    <GitBranch className="h-2.5 w-2.5 text-amber-400" />
+                  </span>
+                )}
+              </div>
             </div>
-            <p className="text-xs text-white/50 line-clamp-2 leading-relaxed h-8 font-light">
-              {agent.description || "Sin descripción"}
-            </p>
           </div>
 
           {/* Status + Actions */}
@@ -169,6 +181,11 @@ export function AgentCard({ agent, onEdit }: AgentCardProps) {
             </DropdownMenu>
           </div>
         </div>
+
+        {/* Description */}
+        <p className="text-xs text-white/50 line-clamp-2 leading-relaxed font-light mb-1">
+          {agent.description || "Sin descripción"}
+        </p>
 
         {/* Tags */}
         <div className="mt-5 flex flex-wrap gap-2">
