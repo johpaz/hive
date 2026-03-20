@@ -142,7 +142,7 @@ export async function handleSyncProviderModels(
     return addCorsHeaders(new Response("Provider not found", { status: 404 }), req)
   }
 
-  const baseUrl = ((providerRow.base_url as string) || "http://localhost:11434").replace(/\/(v1|api)\/?$/, "")
+  const baseUrl = ((providerRow.base_url as string) || process.env.OLLAMA_HOST || "http://localhost:11434").replace(/\/(v1|api)\/?$/, "")
 
   try {
     const res = await fetch(`${baseUrl}/api/tags`)

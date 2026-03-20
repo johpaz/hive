@@ -143,7 +143,7 @@ export const SEED_DATA: SeedData = {
   providers: [
     { id: "anthropic", name: "Anthropic", baseUrl: "https://api.anthropic.com" },
     { id: "openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1" },
-    { id: "gemini", name: "Google Gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta" },
+    { id: "gemini", name: "Google Gemini" },
     { id: "mistral", name: "Mistral AI", baseUrl: "https://api.mistral.ai/v1" },
     { id: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1" },
     { id: "kimi", name: "Kimi (Moonshot)", baseUrl: "https://api.moonshot.ai/v1" },
@@ -486,6 +486,12 @@ export function seedAllData(): void {
         VALUES (?, ?, ?, ?, 1, 0)
       `).run(provider.id, provider.name, provider.baseUrl || null, provider.category || 'llm')
       providerCount++;
+    }
+    // If OLLAMA_HOST is set (e.g. Docker pointing to host machine), always update Ollama's base_url
+    const ollamaHost = process.env.OLLAMA_HOST;
+    if (ollamaHost) {
+      db.query(`UPDATE providers SET base_url = ? WHERE id = 'ollama'`).run(ollamaHost);
+      log.info(`[seed] ✅ Ollama base_url set to ${ollamaHost} (from OLLAMA_HOST env)`);
     }
     log.info(`[seed] ✅ ${providerCount} providers procesados`);
 

@@ -107,18 +107,19 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
     const testMessages = [{ role: "user" as const, content: "Say 'ok' if you can read this." }]
 
     if (provider === "ollama") {
+      const ollamaUrl = process.env.OLLAMA_HOST || "http://localhost:11434"
       try {
-        const response = await fetch("http://localhost:11434/api/tags", {
+        const response = await fetch(`${ollamaUrl}/api/tags`, {
           signal: AbortSignal.timeout(5000),
         })
         return Response.json({
           success: response.ok,
-          error: response.ok ? null : "Could not connect to Ollama",
+          error: response.ok ? null : `Could not connect to Ollama at ${ollamaUrl}`,
         })
       } catch {
         return Response.json({
           success: false,
-          error: "Could not connect to Ollama at http://localhost:11434",
+          error: `Could not connect to Ollama at ${ollamaUrl}`,
         })
       }
     }

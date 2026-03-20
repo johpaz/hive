@@ -12,6 +12,7 @@ import { buildAgentLoop } from "../agent/agent-loop";
 import { resolveAgentId } from "../storage/onboarding";
 import { sendToUserChannel } from "../gateway/channel-notify";
 import { addMessage } from "../agent/conversation-store";
+import { resolveBestChannel } from "../tools/cron/index";
 
 const log = logger.child("SchedulerIntegration");
 
@@ -130,13 +131,18 @@ ${prompt || `Execute tool: ${task.tool_name}`}`;
       // Create a synthetic session ID for this scheduled task
       const sessionId = `sched_${task.id}_${Date.now()}`;
 
+      // Resolve "system" to a real channel so report_progress/notify tools work correctly
+      const agentChannel = (task.channel && task.channel !== "system")
+        ? task.channel
+        : resolveBestChannel(user?.id || "");
+
       // Execute through agent loop stream
       const messages = [{ role: "user", content: contextPrompt }];
       const stream = agentLoop.stream({ messages }, {
         configurable: {
           thread_id: sessionId,
           agent_id: targetAgentId || undefined,
-          channel: task.channel,
+          channel: agentChannel,
           user_id: user?.id || "",
           system_prompt: undefined,
           raw_user_message: contextPrompt,

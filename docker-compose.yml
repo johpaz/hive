@@ -9,6 +9,10 @@ services:
     environment:
       HIVE_HOST: 0.0.0.0
       HIVE_PORT: 18790
+      # Ollama running on the host machine — host.docker.internal resolves via extra_hosts below
+      OLLAMA_HOST: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     healthcheck:
       test: [ "CMD-SHELL", "wget -O- http://127.0.0.1:18790/health 2>/dev/null | grep -q status" ]

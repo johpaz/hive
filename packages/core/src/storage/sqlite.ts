@@ -129,6 +129,9 @@ function ensureSchemaSync(): void {
     if (_db) {
         _db.query(`UPDATE providers SET base_url = 'https://api.groq.com/openai/v1' WHERE id = 'groq' AND base_url = 'https://api.groq.com/v1'`).run();
         _db.query(`UPDATE providers SET base_url = 'https://api.openai.com/v1' WHERE id = 'openai' AND base_url = 'https://api.openai.com'`).run();
+        // Fix Gemini base_url: the @google/genai SDK already knows the correct URL internally.
+        // Passing /v1beta as baseUrl causes it to double-append the path → 404.
+        _db.query(`UPDATE providers SET base_url = NULL WHERE id = 'gemini' AND base_url = 'https://generativelanguage.googleapis.com/v1beta'`).run();
     }
 }
 

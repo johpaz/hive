@@ -9,7 +9,7 @@ export class OllamaProvider implements LLMProvider {
     const { Ollama } = await import("ollama")
 
     const modelName = options.model.replace(/^ollama\//, "")
-    const host = options.baseUrl?.trim() || "http://localhost:11434"
+    const host = options.baseUrl?.trim() || process.env.OLLAMA_HOST || "http://localhost:11434"
 
     try {
       const isCloud = host.includes("ollama.com")
