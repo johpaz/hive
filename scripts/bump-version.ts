@@ -136,6 +136,32 @@ async function main() {
   }
 
   console.log(`\n✨ Done! Version is now ${newVersion}\n`);
+
+  // ── Git: commit, tag y push solo el tag nuevo ──────────────────────────────
+  const { execSync } = await import("child_process");
+  const run = (cmd: string) => execSync(cmd, { stdio: "inherit" });
+
+  console.log("🔧 Committing changes...");
+  run("git add -A");
+
+  try {
+    run(`git commit -m "chore: release v${newVersion}"`);
+  } catch {
+    console.log("   (nothing to commit, skipping)");
+  }
+
+  console.log(`🏷️  Creating tag v${newVersion}...`);
+  try {
+    run(`git tag v${newVersion}`);
+  } catch {
+    console.log(`   ⚠️  Tag v${newVersion} already exists, skipping`);
+  }
+
+  console.log("🚀 Pushing commit and tag...");
+  run("git push origin master");
+  run(`git push origin v${newVersion}`);
+
+  console.log(`\n🎉 Released v${newVersion}\n`);
 }
 
 main().catch(console.error);
