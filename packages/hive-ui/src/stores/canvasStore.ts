@@ -124,7 +124,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       currentState.disconnect();
     }
 
-    const wsUrl = `${getWsBaseUrl()}/canvas?sessionId=${encodeURIComponent(sessionId)}`;
+    const wsUrl = `${getWsBaseUrl()}/ws?session=${encodeURIComponent(sessionId)}`;
 
     console.log(`[CanvasStore] Connecting to ${wsUrl}`);
     const socket = new WebSocket(wsUrl);
