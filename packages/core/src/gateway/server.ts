@@ -628,6 +628,14 @@ export async function startGateway(config: Config): Promise<void> {
             return new Response(uiFile);
           }
 
+          // SPA fallback: paths without a file extension are React Router routes — serve index.html
+          if (!path.extname(subPath)) {
+            const indexFile = Bun.file(path.join(uiDir, "index.html"));
+            if (await indexFile.exists()) {
+              return new Response(indexFile);
+            }
+          }
+
           // If it's a UI route and no dist, show message
           if (isUiRequest || isSetupRequest) {
             return new Response(
@@ -1988,7 +1996,7 @@ export async function startGateway(config: Config): Promise<void> {
   } else {
     // In production: Gateway serves UI from dist/
     const isSetupMode = gatewaySetupMode;
-    const baseUrl = `http://${host}:${port}`;
+    const baseUrl = process.env.HIVE_PUBLIC_URL?.replace(/\/$/, "") ?? `http://${host}:${port}`;
     const uiUrl = isSetupMode ? `${baseUrl}/setup` : `${baseUrl}/ui`;
 
     log.info(`[gateway] UI:        ${uiUrl}`);

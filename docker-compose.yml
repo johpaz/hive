@@ -1,6 +1,6 @@
 services:
   hive:
-    image: johpaz/hive:2.0.2
+    image: johpaz/hive:2.0.3
     ports:
       - "18790:18790"
       - "18791:18791"
@@ -11,6 +11,8 @@ services:
       HIVE_PORT: 18790
       # Ollama running on the host machine — host.docker.internal resolves via extra_hosts below
       OLLAMA_HOST: http://host.docker.internal:11434
+      HIVE_PUBLIC_URL: ${HIVE_PUBLIC_URL:-}
+      NO_BROWSER: "1"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -22,7 +24,7 @@ services:
       start_period: 15s
     labels:
       - traefik.enable=true
-      - traefik.http.routers.hive.rule=Host(`hive.srv991465.hstgr.cloud`)
+      - traefik.http.routers.hive.rule=Host(`${HIVE_DOMAIN:-hive.example.com}`)
       - traefik.http.routers.hive.entrypoints=web,websecure
       - traefik.http.routers.hive.tls=true
       - traefik.http.routers.hive.tls.certresolver=mytlschallenge

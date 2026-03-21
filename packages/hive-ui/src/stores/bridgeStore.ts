@@ -80,6 +80,10 @@ export const useBridgeStore = create<BridgeState>((set, get) => ({
     const { socket: existingSocket, isConnected } = get();
     if (existingSocket || isConnected) return;
 
+    // On HTTPS (e.g., VPS behind Traefik), port 18791 has no TLS — wss:// can't connect.
+    // Gateway bridge events (/bridge-events) are used instead via connectGateway().
+    if (_wsProto === "wss:") return;
+
     _bridgeShouldReconnect = true;
 
     try {
@@ -192,6 +196,7 @@ export const useBridgeStore = create<BridgeState>((set, get) => ({
       const ws = new WebSocket(GATEWAY_BRIDGE_URL);
 
       ws.onopen = () => {
+        set({ isConnected: true });
         get().addLog(createLog("info", "Connected to gateway bridge events"));
 
         // Heartbeat every 30s
@@ -253,7 +258,7 @@ export const useBridgeStore = create<BridgeState>((set, get) => ({
 
       ws.onclose = () => {
         if (_gatewayHeartbeat) { clearInterval(_gatewayHeartbeat); _gatewayHeartbeat = null; }
-        set({ gatewaySocket: null });
+        set({ gatewaySocket: null, isConnected: false });
         if (!_gatewayShouldReconnect) return;
         setTimeout(() => {
           if (_gatewayShouldReconnect && !get().gatewaySocket) get().connectGateway();
