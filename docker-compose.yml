@@ -24,7 +24,7 @@ services:
       start_period: 15s
     labels:
       - traefik.enable=true
-      - traefik.http.routers.hive.rule=Host(`${HIVE_DOMAIN:-hive.example.com}`)
+      - traefik.http.routers.hive.rule=Host(`hive.${HIVE_DOMAIN}`)
       - traefik.http.routers.hive.entrypoints=web,websecure
       - traefik.http.routers.hive.tls=true
       - traefik.http.routers.hive.tls.certresolver=mytlschallenge

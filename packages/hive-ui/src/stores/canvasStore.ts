@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { CanvasComponent } from "@/types/canvas";
+import { getWsBaseUrl } from "@/lib/gateway-url";
 
 export interface GraphNode {
   id: string;
@@ -123,16 +124,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       currentState.disconnect();
     }
 
-    const API_URL = import.meta.env.VITE_API_URL;
-    const _wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const _host = window.location.host.replace("0.0.0.0", "localhost");
-    const _onLocalhost = /localhost|127\.0\.0\.1/.test(window.location.hostname);
-    const _isLocalhostUrl = (url: string) => /localhost|127\.0\.0\.1/.test(url);
-    const _effectiveApi = (API_URL && (!_isLocalhostUrl(API_URL) || _onLocalhost)) ? API_URL : "";
-    const GATEWAY_WS_URL = _effectiveApi
-      ? _effectiveApi.replace(/^http/, "ws")
-      : `${_wsProto}//${_host}`;
-    const wsUrl = `${GATEWAY_WS_URL}/canvas?sessionId=${encodeURIComponent(sessionId)}`;
+    const wsUrl = `${getWsBaseUrl()}/canvas?sessionId=${encodeURIComponent(sessionId)}`;
 
     console.log(`[CanvasStore] Connecting to ${wsUrl}`);
     const socket = new WebSocket(wsUrl);

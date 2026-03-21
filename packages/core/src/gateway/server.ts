@@ -15,6 +15,16 @@ import { AgentRunner } from "../agent/providers/index";
 import type { IncomingMessage } from "../channels/base";
 import { mkdirSync, rmSync, unlinkSync, watch, existsSync, writeFileSync, readFileSync } from "node:fs";
 import * as path from "node:path";
+
+// Read version from package.json at module load time
+const _pkgVersion = (() => {
+  try {
+    const pkgPath = path.join(import.meta.dir, "../../../package.json");
+    return JSON.parse(readFileSync(pkgPath, "utf-8")).version as string;
+  } catch {
+    return "2.0.3";
+  }
+})();
 import { cpus as osCpus } from "node:os";
 import { getDb, getDbPathLazy, initializeDatabase } from "../storage/sqlite";
 import { seedAllData } from "../storage/seed";
@@ -459,6 +469,9 @@ export async function startGateway(config: Config): Promise<void> {
     // En modo desarrollo, permitir todo
     if (isDev) return true;
 
+    // En setup mode (sin usuarios), bypass total — el wizard no tiene token aún
+    if (gatewaySetupMode) return true;
+
     // Setup endpoints are always public — needed before the client has a token
     if (url.pathname.startsWith("/api/setup/")) return true;
 
@@ -509,7 +522,7 @@ export async function startGateway(config: Config): Promise<void> {
         if (url.pathname === "/ws" || url.pathname === "/ws/") {
           let sessionId = url.searchParams.get("session") || resolveUserId({}) || "default";
           // Auth: accept ?token=<authToken> (same as REST Bearer) as alternative to ?session=<userId>
-          if (!isDev) {
+          if (!isDev && !gatewaySetupMode) {
             const tokenParam = url.searchParams.get("token");
             const activeToken = process.env.HIVE_AUTH_TOKEN;
             if (tokenParam && activeToken && tokenParam === activeToken) {
@@ -565,7 +578,7 @@ export async function startGateway(config: Config): Promise<void> {
         // ── Health (must be before UI routing so it works in dev mode too) ───
         if (url.pathname === "/health" || url.pathname === "/health/") {
           const uptime = Math.floor((Date.now() - startTime) / 1000);
-          return addCorsHeaders(Response.json({ status: "ok", version: "1.7.18", uptime }), req);
+          return addCorsHeaders(Response.json({ status: "ok", version: _pkgVersion, uptime }), req);
         }
 
         // ── Dashboard / UI ────────────────────────────────────────────────────
@@ -601,7 +614,9 @@ export async function startGateway(config: Config): Promise<void> {
 
           // En setup mode: / y /ui redirigen a /setup
           if (gatewaySetupMode && (subPath === "/" || subPath === "/ui" || subPath === "/ui/")) {
-            return Response.redirect(`http://${host}:${port}/setup`, 302);
+            const _publicBase = process.env.HIVE_PUBLIC_URL?.replace(/\/$/, "")
+              ?? `http://${host === "0.0.0.0" ? "localhost" : host}:${port}`;
+            return Response.redirect(`${_publicBase}/setup`, 302);
           }
 
           // Normalize path for /ui routes

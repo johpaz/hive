@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { WebSocketStatus } from "@/types";
 import { useWelcomeStore, type WelcomeData } from "./useWelcomeStore";
+import { getWsBaseUrl } from "@/lib/gateway-url";
 
 interface WebSocketMessage {
     type: string;
@@ -35,17 +36,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
     return {
         ws: null,
         status: "disconnected",
-        url: (() => {
-            const _wsUrl = import.meta.env.VITE_WS_URL || "";
-            const _apiUrl = import.meta.env.VITE_API_URL || "";
-            const _proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-            const _host = window.location.host;
-            const _onLocalhost = /localhost|127\.0\.0\.1/.test(window.location.hostname);
-            const _isLocalhostUrl = (url: string) => /localhost|127\.0\.0\.1/.test(url);
-            if (_wsUrl && (!_isLocalhostUrl(_wsUrl) || _onLocalhost)) return _wsUrl;
-            if (_apiUrl && (!_isLocalhostUrl(_apiUrl) || _onLocalhost)) return _apiUrl.replace(/^http/, "ws") + "/ws";
-            return `${_proto}//${_host}/ws`;
-        })(),
+        url: getWsBaseUrl() + "/ws",
         lastPing: null,
         retryCount: 0,
         handlers: new Map(),

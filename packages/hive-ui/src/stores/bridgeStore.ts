@@ -1,19 +1,13 @@
 import { create } from "zustand";
 import type { BridgeProcess, BridgeLog } from "@/types";
+import { getWsBaseUrl } from "@/lib/gateway-url";
 
 // 0.0.0.0 is a bind address — browsers can't connect to it; use localhost instead
 const _hostname = window.location.hostname === "0.0.0.0" ? "localhost" : window.location.hostname;
-const _host = window.location.host.replace("0.0.0.0", "localhost");
 const _wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
 
 const CODE_BRIDGE_URL = `${_wsProto}//${_hostname}:18791/ws`;
-const API_URL = import.meta.env.VITE_API_URL || "";
-const _onLocalhost = /localhost|127\.0\.0\.1/.test(window.location.hostname);
-const _isLocalhostUrl = (url: string) => /localhost|127\.0\.0\.1/.test(url);
-const _effectiveApi = (API_URL && (!_isLocalhostUrl(API_URL) || _onLocalhost)) ? API_URL : "";
-const GATEWAY_WS_URL = _effectiveApi
-    ? _effectiveApi.replace(/^http/, "ws")
-    : `${_wsProto}//${_host}`;
+const GATEWAY_WS_URL = getWsBaseUrl();
 const GATEWAY_BRIDGE_URL = `${GATEWAY_WS_URL}/bridge-events`;
 
 function generateId(): string {

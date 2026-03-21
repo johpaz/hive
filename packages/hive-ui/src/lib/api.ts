@@ -1,4 +1,5 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || "";
+import { getApiBaseUrl } from "@/lib/gateway-url";
+const API_BASE_URL = getApiBaseUrl();
 import { useLoaderStore } from "@/stores/useLoaderStore";
 import { swal } from "@/lib/swal";
 
