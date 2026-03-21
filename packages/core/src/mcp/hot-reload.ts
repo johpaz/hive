@@ -10,7 +10,7 @@
 
 import { getDb } from "../storage/sqlite";
 import { logger } from "../utils/logger";
-import type { MCPClientManager } from "@johpaz/hive-mcp";
+import type { MCPClientManager } from "@johpaz/hiveAgents-mcp";
 import { decryptConfig } from "../storage/crypto";
 
 const log = logger.child("mcp:hot-reload");

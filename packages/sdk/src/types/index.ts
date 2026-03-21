@@ -5,44 +5,44 @@
  * Use this for complete type support when building on Hive.
  *
  * @example
- * import type { StoredMessage, LLMMessage } from "@johpaz/hive-sdk/types";
+ * import type { StoredMessage, LLMMessage } from "@johpaz/hiveAgents-sdk/types";
  */
 
 export type {
   AgentDBRecord,
   AgentServiceConfig,
-} from "@johpaz/hive/agent/service";
+} from "@johpaz/hiveAgents/agent/service";
 
 export type {
   AgentLoopOptions,
   StepEvent,
   StreamChunk,
-} from "@johpaz/hive/agent/agent-loop";
+} from "@johpaz/hiveAgents/agent/agent-loop";
 
 export type {
   LLMMessage,
   LLMResponse,
   LLMCallOptions,
   LLMToolCall,
-} from "@johpaz/hive/agent/llm-client";
+} from "@johpaz/hiveAgents/agent/llm-client";
 
 export type {
   OutboundMessage,
   IncomingMessage,
   ChannelConfig,
   IChannel,
-} from "@johpaz/hive/channels/base";
+} from "@johpaz/hiveAgents/channels/base";
 
 export type {
   MCPTool,
   MCPResource,
   MCPPrompt,
-} from "@johpaz/hive/mcp/manager";
+} from "@johpaz/hiveAgents/mcp/manager";
 
 export type {
   MCPConfig,
   MCPServerConfig,
-} from "@johpaz/hive/mcp/config";
+} from "@johpaz/hiveAgents/mcp/config";
 
 export type {
   Skill,
@@ -51,8 +51,8 @@ export type {
   SkillExample,
   OutputFormat,
   SkillsConfig,
-} from "@johpaz/hive/skills/loader";
+} from "@johpaz/hiveAgents/skills/loader";
 
 export type {
   StoredMessage,
-} from "@johpaz/hive/agent/conversation-store";
+} from "@johpaz/hiveAgents/agent/conversation-store";

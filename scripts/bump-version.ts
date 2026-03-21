@@ -41,7 +41,7 @@ async function getPackageVersions(): Promise<Map<string, string>> {
 
 async function main() {
   const currentVersions = await getPackageVersions();
-  const coreVersion = currentVersions.get("@johpaz/hive-core") || "1.0.0";
+  const coreVersion = currentVersions.get("@johpaz/hiveAgents-core") || "1.0.0";
 
   const newVersion = explicitVersion || bumpVersion(coreVersion, bumpType as "patch" | "minor" | "major");
 
@@ -69,7 +69,7 @@ async function main() {
 
       if (json.dependencies) {
         for (const dep of Object.keys(json.dependencies)) {
-          if (dep.startsWith("@johpaz/hive-")) {
+          if (dep.startsWith("@johpaz/hiveAgents-")) {
             json.dependencies[dep] = `^${newVersion}`;
           }
         }
@@ -77,7 +77,7 @@ async function main() {
 
       if (json.peerDependencies) {
         for (const dep of Object.keys(json.peerDependencies)) {
-          if (dep.startsWith("@johpaz/hive-")) {
+          if (dep.startsWith("@johpaz/hiveAgents-")) {
             json.peerDependencies[dep] = `^${newVersion}`;
           }
         }

@@ -4,7 +4,7 @@
  * Exposes the skill registry, base skills, and skill loader.
  *
  * @example
- * import { SkillLoader, createSkillLoader } from "@johpaz/hive-sdk/skills";
+ * import { SkillLoader, createSkillLoader } from "@johpaz/hiveAgents-sdk/skills";
  *
  * // Create a skill loader
  * const loader = createSkillLoader({ workspacePath: "/path/to/workspace" });
@@ -20,4 +20,4 @@ export {
   type SkillExample,
   type SkillMetadata,
   type Skill,
-} from "@johpaz/hive/skills/loader";
+} from "@johpaz/hiveAgents/skills/loader";

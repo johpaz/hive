@@ -13,7 +13,7 @@ import {
   getAllEthics,
   getAllCodeBridge,
   saveVoiceConfig,
-} from "@johpaz/hive-core/storage/onboarding";
+} from "@johpaz/hiveAgents-core/storage/onboarding";
 import { generateAuthToken } from "../utils/token";
 import { getHiveDir } from "../../../core/src/config/loader";
 
@@ -52,7 +52,7 @@ function reloadEnvToProcess(hiveDir: string): void {
   }
 }
 
-const VERSION = "2.0.6";
+const VERSION = "0.0.1";
 
 const DEFAULT_MODELS: Record<string, string> = {
   anthropic: "claude-sonnet-4-6",

@@ -1,4 +1,4 @@
-const PACKAGES = ["@johpaz/hive-cli"];
+const PACKAGES = ["@johpaz/hiveAgents-cli"];
 
 export async function update(): Promise<void> {
   console.log("🔄 Actualizando Hive...\n");

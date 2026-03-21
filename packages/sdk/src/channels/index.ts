@@ -4,13 +4,13 @@
  * Exposes all channel adapters and channel management.
  *
  * @example
- * import { ChannelManager, TelegramChannel, DiscordChannel } from "@johpaz/hive-sdk/channels";
+ * import { ChannelManager, TelegramChannel, DiscordChannel } from "@johpaz/hiveAgents-sdk/channels";
  *
  * // Get channel manager
  * const manager = new ChannelManager(config);
  */
 
-export { ChannelManager } from "@johpaz/hive/channels/manager";
+export { ChannelManager } from "@johpaz/hiveAgents/channels/manager";
 
 export type {
   OutboundMessage,
@@ -18,14 +18,14 @@ export type {
   ChannelConfig,
   IChannel,
   MessageHandler,
-} from "@johpaz/hive/channels/base";
+} from "@johpaz/hiveAgents/channels/base";
 
-export { TelegramChannel, type TelegramConfig } from "@johpaz/hive/channels/telegram";
+export { TelegramChannel, type TelegramConfig } from "@johpaz/hiveAgents/channels/telegram";
 
-export { DiscordChannel, type DiscordConfig } from "@johpaz/hive/channels/discord";
+export { DiscordChannel, type DiscordConfig } from "@johpaz/hiveAgents/channels/discord";
 
-export { WhatsAppChannel, type WhatsAppConfig, type WhatsAppConnectionState } from "@johpaz/hive/channels/whatsapp";
+export { WhatsAppChannel, type WhatsAppConfig, type WhatsAppConnectionState } from "@johpaz/hiveAgents/channels/whatsapp";
 
-export { SlackChannel, type SlackConfig, type SlackConnectionState } from "@johpaz/hive/channels/slack";
+export { SlackChannel, type SlackConfig, type SlackConnectionState } from "@johpaz/hiveAgents/channels/slack";
 
-export { WebChatChannel, type WebChatConfig } from "@johpaz/hive/channels/webchat";
+export { WebChatChannel, type WebChatConfig } from "@johpaz/hiveAgents/channels/webchat";

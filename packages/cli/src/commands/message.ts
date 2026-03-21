@@ -1,4 +1,4 @@
-import { loadConfig } from "@johpaz/hive-core/config/loader";
+import { loadConfig } from "@johpaz/hiveAgents-core/config/loader";
 
 interface MessageResult {
   success: boolean;
