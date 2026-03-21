@@ -30,7 +30,7 @@ const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
 
 export const cliExecTool: Tool = {
   name: "cli_exec",
-  description: "Execute shell/bash commands in the agent workspace. NOTE: do NOT use for cron scheduling, use cron_add instead. Spanish: ejecutar comando, terminal, bash, script, consola",
+  description: "Execute shell/bash commands in the agent workspace. NOTE: do NOT use for scheduling tasks, use hive.schedule.create instead. Spanish: ejecutar comando, terminal, bash, script, consola",
   parameters: {
     type: "object",
     properties: {

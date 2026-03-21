@@ -71,7 +71,7 @@ export const SEED_DATA: SeedData = {
     // ─────────────────────────────────────────
     // 5. CLI — Ejecución de comandos
     // ─────────────────────────────────────────
-    { id: "cli_exec", name: "cli_exec", category: "cli", description: "Execute shell/bash commands in the agent environment. NOTE: do NOT use for cron scheduling, use cron_add instead. Spanish: ejecutar comando, terminal, bash, script, consola" },
+    { id: "cli_exec", name: "cli_exec", category: "cli", description: "Execute shell/bash commands in the agent environment. NOTE: do NOT use for scheduling tasks, use hive.schedule.create instead. Spanish: ejecutar comando, terminal, bash, script, consola" },
 
     // ─────────────────────────────────────────
     // 6. AGENTS — Memoria, workers y delegación

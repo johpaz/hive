@@ -13,6 +13,7 @@ services:
       OLLAMA_HOST: http://host.docker.internal:11434
       HIVE_PUBLIC_URL: ${HIVE_PUBLIC_URL:-}
       NO_BROWSER: "1"
+      HIVE_UI_DIR: /app/ui
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

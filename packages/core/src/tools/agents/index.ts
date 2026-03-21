@@ -190,6 +190,7 @@ export const agentCreateTool: Tool = {
   execute: async (params: Record<string, unknown>, config?: any) => {
     const db = getDb();
     const userId = config?.configurable?.user_id;
+    const parentId = config?.configurable?.agent_id ?? null;
     const name = params.name as string;
     const description = (params.description as string) ?? "";
     const systemPrompt = (params.system_prompt as string) ?? "";
@@ -199,9 +200,9 @@ export const agentCreateTool: Tool = {
       const agentId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 
       db.query(`
-        INSERT INTO agents (id, user_id, name, description, system_prompt, tools_json, role, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'worker', 'idle', unixepoch(), unixepoch())
-      `).run(agentId, userId, name, description, systemPrompt, toolsJson);
+        INSERT INTO agents (id, user_id, name, description, system_prompt, tools_json, role, status, parent_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'worker', 'idle', ?, unixepoch(), unixepoch())
+      `).run(agentId, userId, name, description, systemPrompt, toolsJson, parentId);
 
       return { ok: true, agentId, name, message: "Agent created." };
     } catch (error) {

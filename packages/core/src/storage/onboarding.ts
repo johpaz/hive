@@ -48,7 +48,7 @@ Esta es la guía definitiva para decidir qué estrategia usar y cómo ejecutarla
 - Si la tarea es de una sola acción, debes cerrarla 
 
 **Tarea repetitiva/programada (se ejecuta en horarios específicos, pregunta al usuario cuantas veces se debe ejecutar):**
-- Usá \`cron_add\` — puede ser sin proyecto si la tarea es simple
+- Usá \`hive.schedule.create\` — puede ser sin proyecto si la tarea es simple
 - El cron puede ejecutar una acción directa O lanzar un worker
 
 **Tarea compleja (múltiples pasos, múltiples workers, coordinación):**
@@ -97,13 +97,13 @@ json
 **Opcion A: Si los agents YA existen**
 1. find_agent -> obtener IDs de agents existentes
 2. project_create -> crear proyecto con tasks[].agent_id
-3. (Opcional) cron_add -> vincular proyecto a cron
+3. (Opcional) hive.schedule.create -> vincular proyecto a schedule
 
 **Opcion B: Si los agents NO existen**
 1. project_create -> crear proyecto con tasks (agent_id: null)
 2. create_agent -> crear cada agent necesario
 3. task_update -> asignar agent_id a cada tarea (ESTO ES CRITICO)
-4. (Opcional) cron_add -> vincular proyecto a cron
+4. (Opcional) hive.schedule.create -> vincular proyecto a schedule
 
 > IMPORTANTE: Las tareas NO se ejecutan solas. Un agent debe recibir la instruccion de ejecutarlas. Para eso esta el **cron**.
 
@@ -257,7 +257,7 @@ Las 52 herramientas nativas se cargan dinámicamente desde la base de datos.
 | 📁 FILESYSTEM | 7 | fs_read, fs_write, fs_edit, fs_delete, fs_list, fs_glob, fs_exists |
 | 🌐 WEB | 9 | web_search, web_fetch, browser_navigate, browser_screenshot, browser_click, browser_type, browser_extract, browser_script, browser_wait |
 | 📋 PROJECTS | 8 | project_create, project_list, task_create, task_update, project_done |
-| ⏰ CRON | 4 | cron_add, cron_list, cron_edit, cron_remove |
+| ⏰ SCHEDULE | 7 | hive.schedule.create, hive.schedule.list, hive.schedule.pause, hive.schedule.resume, hive.schedule.delete, hive.schedule.trigger, hive.schedule.history |
 | 💻 CLI | 1 | cli_exec |
 | 🧠 AGENTS | 14 | memory_*, agent_*, task_delegate, bus_*, project_updates |
 | 🎨 CANVAS | 7 | canvas_render(chart/table/form/button/alert-dialog/markdown/...), canvas_ask, canvas_confirm, canvas_show_card, canvas_show_progress |
@@ -266,8 +266,8 @@ Las 52 herramientas nativas se cargan dinámicamente desde la base de datos.
 | 🔔 CORE | 4 | search_knowledge, notify, save_note, report_progress |
 
 **Reglas importantes:**
-- ⚠️ NUNCA uses "cli_exec" para tareas cron — usá siempre "cron_*"
-- 💡 Para proyectos programados, usá "projectId" en "cron_add"
+- ⚠️ NUNCA uses "cli_exec" para tareas programadas — usá siempre "hive.schedule.*"
+- 💡 Para proyectos programados, usá "projectId" en "hive.schedule.create"
 - 🔍 Usá "search_knowledge({ query: "archivo", type: "tools" })" para encontrar tools
 - 🔌 Las tools MCP siguen el formato: "{servidor}__{herramienta}" (ej. "github__create_pr")
 

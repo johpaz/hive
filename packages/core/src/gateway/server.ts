@@ -651,17 +651,15 @@ export async function startGateway(config: Config): Promise<void> {
             }
           }
 
-          // If it's a UI route and no dist, show message
-          if (isUiRequest || isSetupRequest) {
-            return new Response(
-              "UI not found.\n\n" +
-              "Options:\n" +
-              "  1. Place the UI in ~/.hive/ui/ (copy hive-ui/dist contents there)\n" +
-              "  2. Set HIVE_UI_DIR=/path/to/ui\n" +
-              "  3. Build from source: cd packages/hive-ui && bun run build\n",
-              { status: 404, headers: { "Content-Type": "text/plain" } }
-            );
-          }
+          // If UI is not available, show helpful message for any non-API route
+          return new Response(
+            "UI not found.\n\n" +
+            "Options:\n" +
+            "  1. Place the UI in ~/.hive/ui/ (copy hive-ui/dist contents there)\n" +
+            "  2. Set HIVE_UI_DIR=/path/to/ui\n" +
+            "  3. Build from source: cd packages/hive-ui && bun run build\n",
+            { status: 404, headers: { "Content-Type": "text/plain" } }
+          );
         }
 
         // Handle /dashboard redirect for backwards compatibility

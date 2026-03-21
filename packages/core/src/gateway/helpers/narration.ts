@@ -10,11 +10,14 @@ export const TOOL_NARRATIONS: Record<string, string> = {
   write: "Escribiendo archivo...",
   edit: "Editando archivo...",
   exec: "Ejecutando comando...",
-  // Cron
-  cron_add: "Programando tarea...",
-  cron_list: "Consultando tareas programadas...",
-  cron_remove: "Eliminando tarea programada...",
-  cron_edit: "Actualizando tarea programada...",
+  // Schedule
+  "hive.schedule.create": "Programando tarea...",
+  "hive.schedule.list": "Consultando tareas programadas...",
+  "hive.schedule.delete": "Eliminando tarea programada...",
+  "hive.schedule.pause": "Pausando tarea programada...",
+  "hive.schedule.resume": "Reanudando tarea programada...",
+  "hive.schedule.trigger": "Ejecutando tarea ahora...",
+  "hive.schedule.history": "Consultando historial...",
   // Projects
   project_create: "Creando proyecto...",
   project_update: "Actualizando proyecto...",
