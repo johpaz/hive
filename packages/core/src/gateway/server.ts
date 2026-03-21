@@ -557,24 +557,6 @@ export async function startGateway(config: Config): Promise<void> {
           return new Response("Bridge events WebSocket upgrade failed", { status: 400 });
         }
 
-        // ── Canvas WebSocket upgrade ────────────────────────────────────────────
-        if (url.pathname === "/canvas" || url.pathname === "/canvas/") {
-          // En modo desarrollo, no requerir autenticación para Canvas WebSocket
-          let sessionId = url.searchParams.get("sessionId") ?? url.searchParams.get("session");
-          const defaultUserId = resolveUserId({});
-          if (!sessionId && defaultUserId) {
-            sessionId = `canvas:${defaultUserId}`;
-          }
-          if (!sessionId) {
-            return new Response("Missing session or user ID for canvas", { status: 400 });
-          }
-          const success = server.upgrade(req, {
-            data: { sessionId: sessionId.startsWith("canvas:") ? sessionId : `canvas:${sessionId}`, authenticatedAt: Date.now() },
-          });
-          if (success) return undefined;
-          return new Response("Canvas WebSocket upgrade failed", { status: 400 });
-        }
-
         // ── Health (must be before UI routing so it works in dev mode too) ───
         if (url.pathname === "/health" || url.pathname === "/health/") {
           const uptime = Math.floor((Date.now() - startTime) / 1000);
@@ -1459,23 +1441,12 @@ export async function startGateway(config: Config): Promise<void> {
     websocket: {
       open(ws) {
         const data = ws.data;
-        const isCanvas = data.sessionId.startsWith("canvas:");
         const isBridge = data.sessionId.startsWith("bridge:");
 
         if (isBridge) {
           log.info(`Bridge events client connected: ${data.sessionId}`);
           subscribeBridge(ws as any);
           ws.send(JSON.stringify({ type: "bridge:connected", sessionId: data.sessionId }));
-          return;
-        }
-
-        if (isCanvas) {
-          log.info(`Canvas session connected: ${data.sessionId} `);
-          canvasManager.registerSession(data.sessionId, ws as any);
-          subscribeCanvas(ws as any);
-          ws.send(JSON.stringify({ type: "canvas:connected", sessionId: data.sessionId }));
-          // Send initial snapshot so canvas shows current state
-          ws.send(JSON.stringify({ type: "canvas:snapshot", data: getCanvasSnapshot() }));
           return;
         }
 
@@ -1575,11 +1546,6 @@ export async function startGateway(config: Config): Promise<void> {
         }
 
         // Canvas session - handle interactions
-        if (data.sessionId.startsWith("canvas:")) {
-          canvasManager.handleMessage(data.sessionId, message);
-          return;
-        }
-
         if (msg.type === "command" || (msg.content && isSlashCommand(msg.content))) {
           const result = await executeSlashCommand(msg.sessionId, msg.content ?? `/${msg.command}`, ws);
           if (result) {
@@ -1943,17 +1909,10 @@ export async function startGateway(config: Config): Promise<void> {
 
       close(ws) {
         const data = ws.data;
-        const isCanvas = data.sessionId.startsWith("canvas:");
         const isBridge = data.sessionId.startsWith("bridge:");
 
         if (isBridge) {
           unsubscribeBridge(ws as any);
-          return;
-        }
-
-        if (isCanvas) {
-          canvasManager.unregisterSession(data.sessionId);
-          unsubscribeCanvas(ws as any);
           return;
         }
 
