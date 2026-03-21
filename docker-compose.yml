@@ -23,21 +23,22 @@ services:
       timeout: 5s
       retries: 12
       start_period: 15s
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.hive.rule=Host(`${HIVE_DOMAIN}`)
-      - traefik.http.routers.hive.entrypoints=web,websecure
-      - traefik.http.routers.hive.tls=true
-      - traefik.http.routers.hive.tls.certresolver=mytlschallenge
-      - traefik.http.routers.hive.middlewares=hive-headers@docker
-      - traefik.http.middlewares.hive-headers.headers.SSLRedirect=true
-      - traefik.http.middlewares.hive-headers.headers.STSSeconds=315360000
-      - traefik.http.services.hive.loadbalancer.server.port=18790
-    networks:
-      - n8n_evoapi
+    # Para insalar en hostinguer  
+    # labels:
+    #   - traefik.enable=true
+    #   - traefik.http.routers.hive.rule=Host(`${HIVE_DOMAIN}`)
+    #   - traefik.http.routers.hive.entrypoints=web,websecure
+    #   - traefik.http.routers.hive.tls=true
+    #   - traefik.http.routers.hive.tls.certresolver=mytlschallenge
+    #   - traefik.http.routers.hive.middlewares=hive-headers@docker
+    #   - traefik.http.middlewares.hive-headers.headers.SSLRedirect=true
+    #   - traefik.http.middlewares.hive-headers.headers.STSSeconds=315360000
+    #   - traefik.http.services.hive.loadbalancer.server.port=18790
+    # networks:
+    #   - n8n_evoapi
 
-networks:
-  n8n_evoapi:
-    external: true
+    # networks:
+    #   n8n_evoapi:
+    #     external: true
 volumes:
   hive-data:

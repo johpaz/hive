@@ -1,5 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
-import type { CanvasComponent } from "@/types";
+import { useEffect, useState, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
@@ -8,22 +7,8 @@ import { ComponentRenderer } from "./ComponentRenderer";
 import { useUserStore } from "@/stores/userStore";
 import { useCanvasStore, type GraphNode, type GraphEdge } from "@/stores/canvasStore";
 
-
 interface CanvasContainerProps {
   sessionId?: string;
-}
-
-interface GatewayMessage {
-  type: string;
-  sessionId?: string;
-  component?: CanvasComponent;
-  componentId?: string;
-  data?: {
-    nodes?: GraphNode[];
-    edges?: GraphEdge[];
-    id?: string;
-    [key: string]: unknown;
-  };
 }
 
 // --- Graph Node Renderers ---
@@ -319,36 +304,27 @@ function GraphView({ nodes, edges }: { nodes: GraphNode[]; edges: GraphEdge[] })
 export function CanvasContainer({ sessionId: propSessionId }: CanvasContainerProps) {
   const user = useUserStore((s) => s.currentUser);
   const isConnected = useCanvasStore((s) => s.isConnected);
-  const isReconnecting = useCanvasStore((s) => s.isReconnecting);
   const components = useCanvasStore((s) => s.components);
   const graphNodes = useCanvasStore((s) => s.graphNodes);
   const graphEdges = useCanvasStore((s) => s.graphEdges);
-  const connect = useCanvasStore((s) => s.connect);
+  const init = useCanvasStore((s) => s.init);
   const sendMessage = useCanvasStore((s) => s.sendMessage);
 
-  // Get the effective session ID: use prop, or user.id, or default
+  // Get the effective session ID for display
   const effectiveSessionId = propSessionId || user?.id || "default";
-  const canvasSessionId = effectiveSessionId.startsWith("canvas:")
-    ? effectiveSessionId
-    : `canvas:${effectiveSessionId}`;
 
   useEffect(() => {
-    // Conectar usando el store global (mantiene la conexión si ya existe)
-    connect(canvasSessionId, user?.id);
-
-    // NOTAR: No cerramos la conexión aquí para mantener el KeepAlive
-    // Solo se cerrará si el usuario lo solicita explícitamente o al cerrar la app
-  }, [canvasSessionId, user?.id, connect]);
+    return init();
+  }, [init]);
 
   const handleInteraction = useCallback((componentId: string, action: string, data?: unknown) => {
     sendMessage({
       type: "canvas:interact",
-      sessionId: canvasSessionId,
       componentId,
       action,
       data,
     });
-  }, [sendMessage, canvasSessionId]);
+  }, [sendMessage]);
 
   return (
     <div className="hive-card flex h-full flex-col shadow-2xl">
@@ -372,8 +348,6 @@ export function CanvasContainer({ sessionId: propSessionId }: CanvasContainerPro
           className={`flex items-center gap-1.5 px-3 py-1 transition-all duration-500 border ${
             isConnected
               ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/20"
-              : isReconnecting
-              ? "bg-yellow-500/15 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20"
               : "bg-red-500/15 text-red-500 border-red-500/20 hover:bg-red-500/20"
           }`}
         >
@@ -381,11 +355,6 @@ export function CanvasContainer({ sessionId: propSessionId }: CanvasContainerPro
             <>
               <Wifi className="h-3.5 w-3.5 animate-pulse" />
               <span className="font-semibold uppercase tracking-wider text-[10px]">Live</span>
-            </>
-          ) : isReconnecting ? (
-            <>
-              <Wifi className="h-3.5 w-3.5 animate-pulse" />
-              <span className="font-semibold uppercase tracking-wider text-[10px]">Reconectando</span>
             </>
           ) : (
             <>

@@ -76,6 +76,9 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
                     console.log("[WS-GLOBAL] Connected to", wsUrl);
                     set({ status: "connected", retryCount: 0, ws });
 
+                    // Subscribe to canvas events on this session
+                    ws.send(JSON.stringify({ type: "canvas_subscribe" }));
+
                     // Heartbeat every 30s to keep the connection alive
                     if (heartbeatInterval) clearInterval(heartbeatInterval);
                     heartbeatInterval = setInterval(() => {

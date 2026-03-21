@@ -521,9 +521,8 @@ export async function startGateway(config: Config): Promise<void> {
         // ── WebSocket upgrade ────────────────────────────────────────────────
         if (url.pathname === "/ws" || url.pathname === "/ws/") {
           let sessionId = url.searchParams.get("session") || resolveUserId({}) || "default";
-          const isCanvasWs = sessionId.startsWith("canvas:");
           // Auth: accept ?token=<authToken> (same as REST Bearer) as alternative to ?session=<userId>
-          if (!isDev && !gatewaySetupMode && !isCanvasWs) {
+          if (!isDev && !gatewaySetupMode) {
             const tokenParam = url.searchParams.get("token");
             const activeToken = process.env.HIVE_AUTH_TOKEN;
             if (tokenParam && activeToken && tokenParam === activeToken) {
