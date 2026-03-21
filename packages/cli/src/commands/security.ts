@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
-import { loadConfig, getHiveDir } from "@johpaz/hiveAgents-core/config/loader";
+import { loadConfig, getHiveDir } from "@johpaz/hive-agents-core/config/loader";
 
 const getHiveDirConst = () => getHiveDir();
 const getWorkspace = () => path.join(getHiveDirConst(), "workspace");

@@ -2,16 +2,16 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "paths": {
-      "@johpaz/hiveAgents": ["../core/src/index.ts"],
-      "@johpaz/hiveAgents/agent/*": ["../core/src/agent/*"],
-      "@johpaz/hiveAgents/channels/*": ["../core/src/channels/*"],
-      "@johpaz/hiveAgents/storage/*": ["../core/src/storage/*"],
-      "@johpaz/hiveAgents/tools/*": ["../core/src/tools/*"],
-      "@johpaz/hiveAgents/config/*": ["../core/src/config/*"],
-      "@johpaz/hiveAgents/utils/*": ["../core/src/utils/*"],
-      "@johpaz/hiveAgents/gateway/*": ["../core/src/gateway/*"],
-      "@johpaz/hiveAgents/mcp/*": ["../mcp/src/*"],
-      "@johpaz/hiveAgents/skills/*": ["../skills/src/*"]
+      "@johpaz/hive-agents": ["../core/src/index.ts"],
+      "@johpaz/hive-agents/agent/*": ["../core/src/agent/*"],
+      "@johpaz/hive-agents/channels/*": ["../core/src/channels/*"],
+      "@johpaz/hive-agents/storage/*": ["../core/src/storage/*"],
+      "@johpaz/hive-agents/tools/*": ["../core/src/tools/*"],
+      "@johpaz/hive-agents/config/*": ["../core/src/config/*"],
+      "@johpaz/hive-agents/utils/*": ["../core/src/utils/*"],
+      "@johpaz/hive-agents/gateway/*": ["../core/src/gateway/*"],
+      "@johpaz/hive-agents/mcp/*": ["../mcp/src/*"],
+      "@johpaz/hive-agents/skills/*": ["../skills/src/*"]
     }
   },
   "include": ["src/**/*"]

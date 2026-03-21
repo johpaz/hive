@@ -16,7 +16,7 @@ import { getDb } from "../storage/sqlite"
 import { logger } from "../utils/logger"
 import { buildSystemPromptWithProjects } from "./prompt-builder"
 import { getAgentLoop, rebuildAgentLoop } from "./agent-loop"
-import type { MCPClientManager } from "@johpaz/hiveAgents-mcp"
+import type { MCPClientManager } from "@johpaz/hive-agents-mcp"
 import { resolveAgentId, resolveUserId } from "../storage/onboarding"
 import { getMCPManager as getSingletonMCPManager } from "../mcp/singleton"
 

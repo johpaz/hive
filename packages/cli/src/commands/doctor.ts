@@ -2,7 +2,7 @@ import * as p from "@clack/prompts";
 import * as fs from "fs";
 import * as path from "path";
 import { execSync } from "child_process";
-import { loadConfig, getHiveDir } from "@johpaz/hiveAgents-core/config/loader";
+import { loadConfig, getHiveDir } from "@johpaz/hive-agents-core/config/loader";
 
 const getHiveDirConst = () => getHiveDir();
 const getPidFile = () => {
@@ -91,7 +91,7 @@ export async function doctor(): Promise<void> {
   // Workspace — leer desde agents.workspace en la BD
   let workspacePath: string | null = null;
   try {
-    const { initializeDatabase, dbService } = await import("@johpaz/hiveAgents-core/storage/sqlite");
+    const { initializeDatabase, dbService } = await import("@johpaz/hive-agents-core/storage/sqlite");
     initializeDatabase();
     workspacePath = dbService.getActiveAgentWorkspace();
   } catch { /* BD no disponible aún */ }

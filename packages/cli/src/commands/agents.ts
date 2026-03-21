@@ -1,7 +1,7 @@
 import * as p from "@clack/prompts";
 import * as fs from "fs";
 import * as path from "path";
-import { loadConfig, getHiveDir } from "@johpaz/hiveAgents-core/config/loader";
+import { loadConfig, getHiveDir } from "@johpaz/hive-agents-core/config/loader";
 
 const getAgentsPath = () => path.join(getHiveDir(), "agents");
 

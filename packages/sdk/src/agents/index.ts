@@ -4,7 +4,7 @@
  * Exposes agent execution, context compilation, and agent loop functionality.
  *
  * @example
- * import { runAgent, AgentService, compileContext } from "@johpaz/hiveAgents-sdk/agents";
+ * import { runAgent, AgentService, compileContext } from "@johpaz/hive-agents-sdk/agents";
  *
  * // Run an agent with a message
  * const response = await runAgent({
@@ -14,33 +14,33 @@
  * });
  */
 
-export { AgentService, getAgentService, createAgentService } from "@johpaz/hiveAgents/agent/service";
+export { AgentService, getAgentService, createAgentService } from "@johpaz/hive-agents/agent/service";
 
-export type { AgentServiceConfig, AgentDBRecord } from "@johpaz/hiveAgents/agent/service";
+export type { AgentServiceConfig, AgentDBRecord } from "@johpaz/hive-agents/agent/service";
 
-export { runAgent, runAgentIsolated, rebuildAgentLoop, getAgentLoop } from "@johpaz/hiveAgents/agent/agent-loop";
+export { runAgent, runAgentIsolated, rebuildAgentLoop, getAgentLoop } from "@johpaz/hive-agents/agent/agent-loop";
 
-export type { AgentLoopOptions, StepEvent, StreamChunk } from "@johpaz/hiveAgents/agent/agent-loop";
+export type { AgentLoopOptions, StepEvent, StreamChunk } from "@johpaz/hive-agents/agent/agent-loop";
 
-export { compileContext } from "@johpaz/hiveAgents/agent/context-compiler";
+export { compileContext } from "@johpaz/hive-agents/agent/context-compiler";
 
-export { buildSystemPromptWithProjects } from "@johpaz/hiveAgents/agent/prompt-builder";
+export { buildSystemPromptWithProjects } from "@johpaz/hive-agents/agent/prompt-builder";
 
-export { addMessage, getHistory, getRecentMessages, getMessageCount, getTotalTokens, getMessagesAfter } from "@johpaz/hiveAgents/agent/conversation-store";
+export { addMessage, getHistory, getRecentMessages, getMessageCount, getTotalTokens, getMessagesAfter } from "@johpaz/hive-agents/agent/conversation-store";
 
-export type { StoredMessage } from "@johpaz/hiveAgents/agent/conversation-store";
+export type { StoredMessage } from "@johpaz/hive-agents/agent/conversation-store";
 
-export { selectTools } from "@johpaz/hiveAgents/agent/tool-selector";
+export { selectTools } from "@johpaz/hive-agents/agent/tool-selector";
 
-export { selectSkills } from "@johpaz/hiveAgents/agent/skill-selector";
+export { selectSkills } from "@johpaz/hive-agents/agent/skill-selector";
 
-export { selectPlaybookRules } from "@johpaz/hiveAgents/agent/playbook-selector";
+export { selectPlaybookRules } from "@johpaz/hive-agents/agent/playbook-selector";
 
-export { callLLM, resolveProviderConfig } from "@johpaz/hiveAgents/agent/llm-client";
+export { callLLM, resolveProviderConfig } from "@johpaz/hive-agents/agent/llm-client";
 
-export type { LLMMessage, LLMResponse, LLMCallOptions, LLMToolCall } from "@johpaz/hiveAgents/agent/llm-client";
+export type { LLMMessage, LLMResponse, LLMCallOptions, LLMToolCall } from "@johpaz/hive-agents/agent/llm-client";
 
-export { resolveAgentId, resolveUserId } from "@johpaz/hiveAgents/storage/onboarding";
+export { resolveAgentId, resolveUserId } from "@johpaz/hive-agents/storage/onboarding";
 
 export {
   memoryWriteTool,
@@ -58,4 +58,4 @@ export {
   busReadTool,
   projectUpdatesTool,
   createTools as createAgentTools,
-} from "@johpaz/hiveAgents/tools/agents/index";
+} from "@johpaz/hive-agents/tools/agents/index";

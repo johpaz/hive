@@ -1,5 +1,5 @@
 {
-  "name": "@johpaz/hiveAgents-mcp",
+  "name": "@johpaz/hive-agents-mcp",
   "version": "0.0.2",
   "private": true,
   "description": "Hive MCP Client — Model Context Protocol client layer",

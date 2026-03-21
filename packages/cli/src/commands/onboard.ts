@@ -13,7 +13,7 @@ import {
   getAllEthics,
   getAllCodeBridge,
   saveVoiceConfig,
-} from "@johpaz/hiveAgents-core/storage/onboarding";
+} from "@johpaz/hive-agents-core/storage/onboarding";
 import { generateAuthToken } from "../utils/token";
 import { getHiveDir } from "../../../core/src/config/loader";
 

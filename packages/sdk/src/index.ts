@@ -1,5 +1,5 @@
 /**
- * @johpaz/hiveAgents-sdk
+ * @johpaz/hive-agents-sdk
  * 
  * Hive SDK - Build on top of Hive for enterprise and custom integrations.
  * 
@@ -7,15 +7,15 @@
  * for developers who want to build on top of Hive, including hive-cloud Enterprise.
  * 
  * @example
- * import { runAgent, AgentService } from "@johpaz/hiveAgents-sdk/agents";
- * import { createAllTools } from "@johpaz/hiveAgents-sdk/tools";
- * import { SkillLoader } from "@johpaz/hiveAgents-sdk/skills";
- * import { MCPClientManager } from "@johpaz/hiveAgents-sdk/mcp";
- * import { ChannelManager } from "@johpaz/hiveAgents-sdk/channels";
- * import { getDb, initDatabase } from "@johpaz/hiveAgents-sdk/database";
+ * import { runAgent, AgentService } from "@johpaz/hive-agents-sdk/agents";
+ * import { createAllTools } from "@johpaz/hive-agents-sdk/tools";
+ * import { SkillLoader } from "@johpaz/hive-agents-sdk/skills";
+ * import { MCPClientManager } from "@johpaz/hive-agents-sdk/mcp";
+ * import { ChannelManager } from "@johpaz/hive-agents-sdk/channels";
+ * import { getDb, initDatabase } from "@johpaz/hive-agents-sdk/database";
  * 
  * // Or import everything
- * import * as HiveSDK from "@johpaz/hiveAgents-sdk";
+ * import * as HiveSDK from "@johpaz/hive-agents-sdk";
  */
 
 export * from "./agents/index";

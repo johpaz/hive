@@ -1,4 +1,4 @@
-import { loadConfig, startGateway, logger, expandConfigPath, expandPath, getHiveDir, initializeDatabase, getDb } from "@johpaz/hiveAgents-core";
+import { loadConfig, startGateway, logger, expandConfigPath, expandPath, getHiveDir, initializeDatabase, getDb } from "@johpaz/hive-agents-core";
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, openSync } from "node:fs";
 import * as path from "node:path";
 import { spawn, ChildProcess } from "child_process";
@@ -266,7 +266,7 @@ export async function start(flags: string[]): Promise<void> {
 
     // Start Code Bridge sidecar (parent process only)
     try {
-      await import("@johpaz/hiveAgents-code-bridge");
+      await import("@johpaz/hive-agents-code-bridge");
     } catch (error) {
       console.warn(`⚠️  No se pudo iniciar el Code Bridge: ${(error as Error).message}`);
     }
@@ -349,7 +349,7 @@ export async function start(flags: string[]): Promise<void> {
 
   // Production mode — start Code Bridge sidecar before Gateway
   try {
-    await import("@johpaz/hiveAgents-code-bridge");
+    await import("@johpaz/hive-agents-code-bridge");
     console.log("🌉 Code Bridge iniciado en puerto 18791");
   } catch (error) {
     console.warn(`⚠️  No se pudo iniciar el Code Bridge: ${(error as Error).message}`);

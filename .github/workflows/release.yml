@@ -23,7 +23,7 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           for pkg in core cli mcp skills code-bridge sdk; do
             mkdir -p packages/$pkg
-            echo "{\"name\":\"@johpaz/hiveAgents-${pkg}\",\"version\":\"${VERSION}\"}" > packages/$pkg/package.json
+            echo "{\"name\":\"@johpaz/hive-agents-${pkg}\",\"version\":\"${VERSION}\"}" > packages/$pkg/package.json
           done
           bun install
 
@@ -139,12 +139,12 @@ jobs:
 
             **Docker (recomendado):**
             ```bash
-            docker run -d -p 18790:18790 -v ~/.hive:/root/.hive --name hive johpaz/hiveAgents:${{ steps.version.outputs.VERSION }}
+            docker run -d -p 18790:18790 -v ~/.hive:/root/.hive --name hive johpaz/hive-agents:${{ steps.version.outputs.VERSION }}
             ```
 
             **npm:**
             ```bash
-            npm install -g @johpaz/hiveAgents@${{ steps.version.outputs.VERSION }}
+            npm install -g @johpaz/hive-agents@${{ steps.version.outputs.VERSION }}
             ```
 
             **Binario (Linux x64):**
@@ -188,8 +188,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            johpaz/hiveAgents:latest
-            johpaz/hiveAgents:${{ steps.version.outputs.VERSION }}
+            johpaz/hive-agents:latest
+            johpaz/hive-agents:${{ steps.version.outputs.VERSION }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

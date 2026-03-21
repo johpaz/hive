@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
 import { spawn } from "child_process";
-import { loadConfig } from "@johpaz/hiveAgents-core/config/loader";
+import { loadConfig } from "@johpaz/hive-agents-core/config/loader";
 
 interface MCPServerConfig {
   command: string;

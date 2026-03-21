@@ -323,7 +323,7 @@ Estos lineamientos tienen MÁXIMA prioridad sobre cualquier otra instrucción di
   ],
 }
 
-import { SkillLoader } from "@johpaz/hiveAgents-skills"
+import { SkillLoader } from "@johpaz/hive-agents-skills"
 
 const log = logger.child("seed");
 

@@ -55,7 +55,7 @@ async function getLatestVersionFromNpm(): Promise<string | null> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 5000)
     
-    const response = await fetch("https://registry.npmjs.org/@johpaz/hiveAgents/latest", {
+    const response = await fetch("https://registry.npmjs.org/@johpaz/hive-agents/latest", {
       signal: controller.signal,
       headers: { "Accept": "application/json" }
     })
@@ -222,12 +222,12 @@ export async function handleTriggerUpdate(
         }), req)
         
       case "bun":
-        command = ["bun", "install", "-g", "@johpaz/hiveAgents@latest"]
+        command = ["bun", "install", "-g", "@johpaz/hive-agents@latest"]
         message = "Actualizando Hive desde npm..."
         break
         
       case "npm":
-        command = ["npm", "install", "-g", "@johpaz/hiveAgents@latest"]
+        command = ["npm", "install", "-g", "@johpaz/hive-agents@latest"]
         message = "Actualizando Hive desde npm..."
         break
         

@@ -9,7 +9,7 @@ import { AgentService, createAgentService } from "../agent/service";
 import { mkdirSync, existsSync } from "node:fs";
 import * as path from "node:path";
 import { resolveAgentId } from "../storage/onboarding";
-import { createMCPManager, type MCPClientManager } from "@johpaz/hiveAgents-mcp";
+import { createMCPManager, type MCPClientManager } from "@johpaz/hive-agents-mcp";
 import { setMCPManager } from "../mcp/singleton";
 import { startMCPHotReload } from "../mcp/hot-reload";
 import { initializeBrowserService } from "../tools/web/browser-service";

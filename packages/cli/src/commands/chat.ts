@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { spawn } from "child_process";
 import * as readline from "readline";
-import { loadConfig, getHiveDir } from "@johpaz/hiveAgents-core/config/loader";
+import { loadConfig, getHiveDir } from "@johpaz/hive-agents-core/config/loader";
 
 const getHiveDirConst = () => getHiveDir();
 

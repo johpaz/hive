@@ -6,8 +6,8 @@
  */
 
 import * as p from "@clack/prompts";
-import { getHiveDir } from "@johpaz/hiveAgents-core/config/loader";
-import { getDb, initializeDatabase } from "@johpaz/hiveAgents-core/storage/sqlite";
+import { getHiveDir } from "@johpaz/hive-agents-core/config/loader";
+import { getDb, initializeDatabase } from "@johpaz/hive-agents-core/storage/sqlite";
 
 const API_BASE = "http://127.0.0.1:18790/api";
 

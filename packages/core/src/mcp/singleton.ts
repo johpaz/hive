@@ -4,7 +4,7 @@
  * Provides global access to the MCP Manager instance
  */
 
-import type { MCPClientManager } from "@johpaz/hiveAgents-mcp";
+import type { MCPClientManager } from "@johpaz/hive-agents-mcp";
 
 let _mcpManager: MCPClientManager | null = null;
 
