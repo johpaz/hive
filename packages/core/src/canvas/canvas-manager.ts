@@ -181,6 +181,13 @@ export class CanvasManager extends EventEmitter {
     if (pending) {
       clearTimeout(pending.timeoutId);
       this.pendingInteractions.delete(key);
+
+      // Remove from cache so it doesn't reappear in the next snapshot
+      const cached = this.componentCache.get(sessionId);
+      if (cached) {
+        this.componentCache.set(sessionId, cached.filter(c => c.id !== componentId));
+      }
+
       pending.resolve(data);
     }
   }

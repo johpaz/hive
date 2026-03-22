@@ -363,7 +363,18 @@ export async function start(flags: string[]): Promise<void> {
       const url = needsSetup
         ? `http://localhost:${port}/setup`
         : `http://localhost:${port}`;
-      console.log(`\n🌐 Abre Hive en: ${url}\n`);
+      if (needsSetup) {
+        console.log(`
+╔════════════════════════════════════════╗
+║  🎉  ¡Bienvenido a Hive!               ║
+╠════════════════════════════════════════╣
+║  Abriendo configuración en tu browser  ║
+║  ${url.padEnd(38)}║
+╚════════════════════════════════════════╝
+`);
+      } else {
+        console.log(`\n🌐 Hive listo en: ${url}\n`);
+      }
       openBrowser(url);
     });
   }

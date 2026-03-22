@@ -25,9 +25,8 @@ const HELP = `
 Usage: hive <command> [subcommand] [options]
 
 Commands:
-  onboard                    Wizard de configuración inicial
-  dev                        Modo desarrollo (onboard + start)
-  start [--daemon]           Arrancar el Gateway
+  start [--daemon]           Arrancar el Gateway (abre setup web si es primera vez)
+  dev                        Modo desarrollo con hot-reload
   stop                       Detener el Gateway
   reload                     Recargar config sin reiniciar
   status                     Estado del Gateway y agentes
@@ -77,8 +76,7 @@ Options:
   --version, -v              Mostrar versión
 
 Examples:
-  hive onboard               Configurar Hive por primera vez
-  hive start                 Arrancar el Gateway
+  hive start                 Arrancar Hive (el browser se abre automáticamente)
   hive chat                  Chatear con el agente en terminal
   hive message send --to 123 --content "Hola"
   hive agent run --message "Analiza README.md" --wait

@@ -309,6 +309,7 @@ export function CanvasContainer({ sessionId: propSessionId }: CanvasContainerPro
   const graphEdges = useCanvasStore((s) => s.graphEdges);
   const init = useCanvasStore((s) => s.init);
   const sendMessage = useCanvasStore((s) => s.sendMessage);
+  const removeComponent = useCanvasStore((s) => s.removeComponent);
 
   // Get the effective session ID for display
   const effectiveSessionId = propSessionId || user?.id || "default";
@@ -324,7 +325,9 @@ export function CanvasContainer({ sessionId: propSessionId }: CanvasContainerPro
       action,
       data,
     });
-  }, [sendMessage]);
+    // Remove immediately from local store so it doesn't reappear on navigation
+    removeComponent(componentId);
+  }, [sendMessage, removeComponent]);
 
   return (
     <div className="hive-card flex h-full flex-col shadow-2xl">

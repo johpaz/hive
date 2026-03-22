@@ -50,46 +50,9 @@ export async function dev(): Promise<void> {
 
   showDevBanner();
 
-  // ── Step 2: Verificar si ya hay un agente configurado ──
-  let hasCompletedAgent = false;
+  console.log("🚀 Arrancando gateway...\n");
 
-  if (fs.existsSync(dbPath)) {
-    try {
-      const { initializeDatabase, getDb } = await import("../../../core/src/storage/sqlite");
-      initializeDatabase();
-      const db = getDb();
-      const agent = db.query("SELECT id FROM agents WHERE role = 'coordinator' AND status = 'idle' LIMIT 1").get();
-      hasCompletedAgent = !!agent;
-    } catch {
-      hasCompletedAgent = false;
-    }
-  }
-
-  // ── Step 3: Si no hay agente, ejecutar onboarding (él crea dir + BD) ──
-  if (!hasCompletedAgent) {
-    console.log("🚀 Ejecutando onboarding interactivo...\n");
-    const { onboard } = await import("./onboard");
-    await onboard();
-
-    // Verificar que onboarding creó el agente
-    try {
-      const { getDb } = await import("../../../core/src/storage/sqlite");
-      const db = getDb();
-      const agent = db.query("SELECT id FROM agents WHERE role = 'coordinator' AND status = 'idle' LIMIT 1").get();
-      if (!agent) {
-        console.error("❌ Onboard no creó la configuración en BD");
-        process.exit(1);
-      }
-    } catch (e) {
-      console.error("❌ Error verificando configuración:", (e as Error).message);
-      process.exit(1);
-    }
-    console.log("\n✅ Onboarding completado. Arrancando el servidor...\n");
-  } else {
-    console.log("🚀 Arrancando gateway con configuración existente...\n");
-  }
-
-  // ── Step 4: Arrancar gateway ──
+  // El setup web maneja la configuración inicial — abre automáticamente /setup si es primera vez
   const { start } = await import("./gateway");
   await start(["--skip-check"]);
 }

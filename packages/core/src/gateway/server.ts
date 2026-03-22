@@ -1545,6 +1545,13 @@ export async function startGateway(config: Config): Promise<void> {
           return;
         }
 
+        // Canvas interactions from the main session — route to canvasManager
+        if (msg.type === "canvas:interact") {
+          const canvasSessionId = `canvas:${data.sessionId}`;
+          canvasManager.handleMessage(canvasSessionId, JSON.stringify(msg));
+          return;
+        }
+
         // Canvas session - handle interactions
         if (msg.type === "command" || (msg.content && isSlashCommand(msg.content))) {
           const result = await executeSlashCommand(msg.sessionId, msg.content ?? `/${msg.command}`, ws);
