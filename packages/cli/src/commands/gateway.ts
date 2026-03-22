@@ -202,7 +202,11 @@ export async function start(flags: string[]): Promise<void> {
   const skipCheck = flags.includes("--skip-check");
   const devInternal = flags.includes("--dev-internal");
 
-  const isDev = process.env.HIVE_DEV === "true";
+  // Dev mode only when HIVE_DEV=true AND running from the monorepo source (packages/hive-ui exists).
+  // This prevents accidentally entering dev mode on production installs where HIVE_DEV may be
+  // picked up from a .env in the working directory.
+  const isDev = process.env.HIVE_DEV === "true" &&
+    existsSync(path.join(process.cwd(), "packages/hive-ui/package.json"));
 
   // Detect the directory where dist/hive.js lives so the gateway can find dist/ui/
   const distDir = path.dirname(process.argv[1] || "");
@@ -244,7 +248,7 @@ export async function start(flags: string[]): Promise<void> {
  ║   ██║  ██║██║ ╚████╔╝ ███████╗             ║
  ║   ╚═╝  ╚═╝╚═╝  ╚═══╝  ╚══════╝             ║
  ║                                            ║
- ║   Personal Swarm AI Gateway — v0.0.5       ║
+ ║   Personal Swarm AI Gateway — v0.0.6       ║
  ╚════════════════════════════════════════════╝
 `);
   }

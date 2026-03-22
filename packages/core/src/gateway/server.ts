@@ -463,8 +463,11 @@ export async function startGateway(config: Config): Promise<void> {
   });
 
   // ── Auth helper ──────────────────────────────────────────────────────────
-  // En modo desarrollo (HIVE_DEV=true), no requerimos autenticación
-  const isDev = process.env.HIVE_DEV === "true";
+  // Dev mode only when HIVE_DEV=true AND running from the monorepo source.
+  // Prevents production installs from entering dev mode if HIVE_DEV is
+  // accidentally present in the environment (e.g. loaded from a .env in cwd).
+  const isDev = process.env.HIVE_DEV === "true" &&
+    existsSync(path.join(process.cwd(), "packages/hive-ui/package.json"));
 
   function checkAuth(req: Request, url: URL): boolean {
     // En modo desarrollo, permitir todo
