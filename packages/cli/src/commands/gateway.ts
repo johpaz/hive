@@ -244,7 +244,7 @@ export async function start(flags: string[]): Promise<void> {
  ║   ██║  ██║██║ ╚████╔╝ ███████╗             ║
  ║   ╚═╝  ╚═╝╚═╝  ╚═══╝  ╚══════╝             ║
  ║                                            ║
- ║   Personal Swarm AI Gateway — v0.0.4       ║
+ ║   Personal Swarm AI Gateway — v0.0.5       ║
  ╚════════════════════════════════════════════╝
 `);
   }
@@ -452,8 +452,15 @@ export async function start(flags: string[]): Promise<void> {
   }
 
   // Open browser when gateway is ready
-  waitForPort(port, 30000).then(() => {
-    const needsSetup = !existsSync(dbPath);
+  waitForPort(port, 30000).then(async () => {
+    let needsSetup = false;
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/setup/status`, { signal: AbortSignal.timeout(3000) });
+      const body = await res.json() as { setupMode?: boolean };
+      needsSetup = body.setupMode === true;
+    } catch {
+      needsSetup = !existsSync(dbPath); // fallback
+    }
     const url = needsSetup
       ? `http://localhost:${uiPort}/setup`
       : `http://localhost:${uiPort}`;
@@ -476,7 +483,7 @@ export async function start(flags: string[]): Promise<void> {
     const gw = spawn(process.execPath, [process.argv[1] || "", "start", "--skip-check"], {
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, HIVE_GATEWAY_CHILD: "1" },
+      env: { ...process.env, HIVE_GATEWAY_CHILD: "1", NO_BROWSER: "1" },
     });
 
     gw.stdout?.on("data", (data) => {

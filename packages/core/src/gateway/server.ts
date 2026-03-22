@@ -2056,11 +2056,10 @@ export async function startGateway(config: Config): Promise<void> {
     log.info(`[gateway] WebSocket: ws://${host}:${port}/ws`);
     log.info(`[gateway] Canvas:    ws://${host}:${port}/canvas`);
 
-    log.info(isSetupMode ? `🎉 Primer arranque — abriendo wizard de configuración...` : `🐝 Administra tu Hive aquí: ${uiUrl}`);
-
     // Always open browser on startup (setup and normal mode).
-    // Set NO_BROWSER=1 to skip in headless/server environments.
+    // Set NO_BROWSER=1 to skip in headless/server environments (e.g. CLI parent manages the browser).
     if (!process.env.NO_BROWSER) {
+      log.info(isSetupMode ? `🎉 Primer arranque — abriendo wizard de configuración...` : `🐝 Administra tu Hive aquí: ${uiUrl}`);
       try {
         const platform = process.platform;
         let shellCmd: string;

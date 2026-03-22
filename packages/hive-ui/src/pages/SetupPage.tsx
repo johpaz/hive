@@ -26,6 +26,7 @@ import { CheckCircle2, XCircle, Sparkles, Hexagon, Volume2, Loader2 } from "luci
 import { useLoaderStore } from "@/stores/useLoaderStore";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/api";
+import { getApiBaseUrl } from "@/lib/gateway-url";
 import { swal } from "@/lib/swal";
 
 const PROVIDER_LOGOS: Record<string, string> = {
@@ -157,11 +158,11 @@ export default function SetupPage() {
   const [ethicsList, setEthicsList] = useState<{ id: string; name: string; description: string | null; content: string; isDefault: boolean; active: boolean }[]>([]);
 
   useEffect(() => {
-    fetch("/api/setup/providers")
+    fetch(`${getApiBaseUrl()}/api/setup/providers`)
       .then(res => res.json())
       .then(data => { if (Array.isArray(data)) setProviders(data); })
       .catch(() => { });
-    fetch("/api/setup/ethics")
+    fetch(`${getApiBaseUrl()}/api/setup/ethics`)
       .then(res => res.json())
       .then((data: { id: string; name: string; description: string | null; content: string; isDefault: boolean; active: boolean }[]) => {
         if (Array.isArray(data)) {
@@ -184,7 +185,7 @@ export default function SetupPage() {
 
   useEffect(() => {
     // Check if already configured
-    fetch("/api/setup/status")
+    fetch(`${getApiBaseUrl()}/api/setup/status`)
       .then(res => res.json())
       .then(data => {
         if (data.configured) {
@@ -297,7 +298,7 @@ export default function SetupPage() {
           showLoader(`Iniciando a ${wizardData.agentName}... esto toma unos segundos`);
           for (let i = 0; i < 40; i++) {
             try {
-              const res = await fetch("/api/setup/status");
+              const res = await fetch(`${getApiBaseUrl()}/api/setup/status`);
               if (res.ok) {
                 const { configured } = await res.json();
                 if (configured) {
