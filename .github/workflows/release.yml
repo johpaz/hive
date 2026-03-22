@@ -43,6 +43,7 @@ jobs:
     runs-on: ${{ matrix.platform.runner }}
     needs: build-ui
     strategy:
+      fail-fast: false
       matrix:
         platform:
           - name: linux-x64
@@ -69,9 +70,7 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
-        run: |
-          # workspace:* resolves locally — bun won't fetch internal packages from npm
-          bun install --ignore-scripts
+        run: bun install
 
       - name: Get version from tag
         id: version
