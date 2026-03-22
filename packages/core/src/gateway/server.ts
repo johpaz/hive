@@ -30,8 +30,9 @@ import { getDb, getDbPathLazy, initializeDatabase } from "../storage/sqlite";
 import { seedAllData } from "../storage/seed";
 import { getRecentMessages } from "../agent/conversation-store";
 import { canvasManager } from "../canvas/canvas-manager.ts";
-import { subscribeCanvas, unsubscribeCanvas, emitCanvas, getCanvasSnapshot } from "../canvas/emitter";
+import { subscribeCanvas, unsubscribeCanvas, emitCanvas, getCanvasSnapshot, removeCanvasComponent } from "../canvas/emitter";
 import { subscribeBridge, unsubscribeBridge } from "../tools/bridge-events";
+import { resolveCanvasInteraction } from "../tools/canvas/index";
 import { randomUUID } from "crypto";
 import { decryptConfig } from "../storage/crypto.ts";
 import { resolveContext } from "./resolver";
@@ -1545,10 +1546,79 @@ export async function startGateway(config: Config): Promise<void> {
           return;
         }
 
-        // Canvas interactions from the main session — route to canvasManager
+        // Canvas interactions from the main session — route to canvasManager and local resolver
         if (msg.type === "canvas:interact") {
+          const { componentId } = msg;
+          let resolvedByPending = false;
+          if (componentId) {
+            removeCanvasComponent(componentId);
+            // Resolve local pending interactions (canvas_confirm tool)
+            resolvedByPending = resolveCanvasInteraction(componentId, msg.data);
+          }
           const canvasSessionId = `canvas:${data.sessionId}`;
           canvasManager.handleMessage(canvasSessionId, JSON.stringify(msg));
+
+          // If no tool was waiting for this interaction, forward it to the agent as a new turn
+          if (!resolvedByPending) {
+            const interactionData = msg.data as Record<string, unknown> | undefined;
+            const action = (msg as any).action as string | undefined;
+
+            // Build a human-readable message describing what the user clicked
+            let interactionMsg = `[canvas:interact] componentId=${componentId ?? "unknown"}, action=${action ?? "click"}`;
+            if (interactionData && Object.keys(interactionData).length > 0) {
+              interactionMsg += `, data=${JSON.stringify(interactionData)}`;
+            }
+
+            log.info(`Canvas interaction forwarded to agent: ${interactionMsg}`);
+
+            const sessionId = data.sessionId;
+
+            ws.send(JSON.stringify({ type: "typing", isTyping: true, sessionId } as OutboundMessage));
+
+            laneQueue.enqueue(sessionId, async (_task, signal) => {
+              if (signal.aborted) {
+                ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId } as OutboundMessage));
+                return;
+              }
+              try {
+                const { userId } = resolveContext({ channel: "webchat", channelUserId: sessionId });
+                const messages = [{ role: "user" as const, content: interactionMsg }];
+                let streamedContent = "";
+                const messageId = crypto.randomUUID();
+
+                const response = await runner.generate({
+                  provider: dbProvider as any,
+                  messages,
+                  maxTokens: 4096,
+                  tools: prepareTools(agent, sessionId),
+                  maxSteps: 15,
+                  threadId: sessionId,
+                  userId,
+                  onToken: async (token: string) => {
+                    if (signal.aborted) return;
+                    streamedContent += token;
+                    ws.send(JSON.stringify({ type: "message", id: messageId, sessionId, content: token, isChunk: true, isStep: false } as OutboundMessage));
+                  },
+                  onStep: async (step) => {
+                    if (signal.aborted) return;
+                    log.debug(`[canvas:interact TOOL] ${step.type}: ${step.toolName || ""}`);
+                  },
+                });
+
+                ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId } as OutboundMessage));
+
+                const content = streamedContent || response.content?.trim() || "";
+                if (content && streamedContent.length === 0) {
+                  ws.send(JSON.stringify({ type: "message", sessionId, content, isStep: false } as OutboundMessage));
+                }
+              } catch (error) {
+                ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId } as OutboundMessage));
+                ws.send(JSON.stringify({ type: "error", sessionId, error: (error as Error).message } as OutboundMessage));
+                log.error(`Canvas interact agent error: ${(error as Error).message}`);
+              }
+            });
+          }
+
           return;
         }
 

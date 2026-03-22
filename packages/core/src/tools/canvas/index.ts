@@ -5,10 +5,41 @@
  */
 
 import type { Tool, ToolResult } from "../types.ts";
-import { emitCanvas, type CanvasEventType } from "../../canvas/emitter";
+import { emitCanvas, removeCanvasComponent, type CanvasEventType } from "../../canvas/emitter";
 import { logger } from "../../utils/logger.ts";
 
 const log = logger.child("canvas");
+
+// ─── Pending canvas interactions ─────────────────────────────────────────────
+// Simple map indexed by componentId — no session ID required.
+// Server calls resolveCanvasInteraction() when it receives canvas:interact.
+
+interface PendingInteraction {
+  resolve: (data: unknown) => void;
+  reject: (err: Error) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}
+
+const pendingInteractions = new Map<string, PendingInteraction>();
+
+export function resolveCanvasInteraction(componentId: string, data: unknown): boolean {
+  const pending = pendingInteractions.get(componentId);
+  if (!pending) return false;
+  clearTimeout(pending.timeout);
+  pendingInteractions.delete(componentId);
+  pending.resolve(data);
+  return true;
+}
+
+function waitForCanvasInteraction(componentId: string, timeoutMs = 300000): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingInteractions.delete(componentId);
+      reject(new Error(`Interaction timeout for ${componentId}`));
+    }, timeoutMs);
+    pendingInteractions.set(componentId, { resolve, reject, timeout });
+  });
+}
 
 // ─── canvas_render ───────────────────────────────────────────────────────────
 
@@ -94,15 +125,31 @@ export const canvasConfirmTool: Tool = {
     },
     required: ["message", "action"],
   },
-  execute: async (params: Record<string, unknown>) => {
+  execute: async (params: Record<string, unknown>, config?: any) => {
     const message = params.message as string;
     const action = params.action as string;
 
+    const confirmId = `confirm-${Date.now()}`;
+
+    emitCanvas("canvas:render", {
+      component: {
+        id: confirmId,
+        type: "alert-dialog",
+        props: { title: action, description: message, confirmLabel: "Confirmar", cancelLabel: "Cancelar" },
+        position: { x: 0, y: 0 },
+        size: { width: 400, height: 200 },
+        agentId: "agent",
+      },
+    });
+
     try {
-      emitCanvas("canvas:confirm", { message, action });
-      return { ok: true, message: "Confirmation dialog displayed." };
+      const interactionData = await waitForCanvasInteraction(confirmId, 300000) as any;
+      removeCanvasComponent(confirmId);
+      const confirmed = interactionData?.confirmed === true;
+      return { ok: true, confirmed, action, message };
     } catch (error) {
-      return { ok: false, error: `Failed to display confirmation: ${(error as Error).message }` };
+      removeCanvasComponent(confirmId);
+      return { ok: false, confirmed: false, error: (error as Error).message };
     }
   },
 };

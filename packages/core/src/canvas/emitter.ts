@@ -62,6 +62,10 @@ export function emitCanvas(type: CanvasEventType, data: any) {
   }
 }
 
+export function removeCanvasComponent(id: string) {
+  canvasComponents.delete(id);
+}
+
 export function getCanvasSnapshot() {
   const db = getDb()
 
