@@ -161,7 +161,14 @@ export async function start(flags: string[]): Promise<void> {
   const skipCheck = flags.includes("--skip-check");
   const devInternal = flags.includes("--dev-internal");
 
-  const isDev = process.env.HIVE_DEV === "true" || process.env.NODE_ENV === "development";
+  const isDev = process.env.HIVE_DEV === "true";
+
+  // Detect the directory where dist/hive.js lives so the gateway can find dist/ui/
+  const distDir = path.dirname(process.argv[1] || "");
+  if (distDir && !process.env.HIVE_DIST_DIR) {
+    process.env.HIVE_DIST_DIR = distDir;
+  }
+
   const hiveDir = getHiveDir();
   const dbPath = path.join(hiveDir, "data", "hive.db")
 
@@ -207,6 +214,7 @@ export async function start(flags: string[]): Promise<void> {
     const child = spawn(process.execPath, [process.argv[1] || "", "start", "--skip-check"], {
       detached: true,
       stdio: ["ignore", openSync(logFile, "a"), openSync(logFile, "a")],
+      env: { ...process.env, HIVE_GATEWAY_CHILD: "1" },
     });
     child.unref();
     writeFileSync(await getPidFile(), child.pid?.toString() || "");
@@ -375,16 +383,24 @@ export async function start(flags: string[]): Promise<void> {
     console.warn(`⚠️  No se pudo iniciar el Code Bridge: ${(error as Error).message}`);
   }
 
+  // ── CHILD PROCESS: just run the gateway directly ──────────────────────────
+  if (isGatewayChild) {
+    await startGateway(config);
+    return;
+  }
+
+  // ── PARENT PROCESS: spawn child and respawn on clean exit (post-setup restart)
+  // Same pattern as dev mode — mirrors Docker's `restart: unless-stopped` policy.
+  const port = (config.gateway as any)?.port || 18790;
+
   // Open browser when gateway is ready
-  if (!daemon && !isGatewayChild) {
-    const port = (config.gateway as any)?.port || 18790;
-    waitForPort(port, 30000).then(() => {
-      const needsSetup = !existsSync(dbPath);
-      const url = needsSetup
-        ? `http://localhost:${port}/setup`
-        : `http://localhost:${port}`;
-      if (needsSetup) {
-        console.log(`
+  waitForPort(port, 30000).then(() => {
+    const needsSetup = !existsSync(dbPath);
+    const url = needsSetup
+      ? `http://localhost:${port}/setup`
+      : `http://localhost:${port}`;
+    if (needsSetup) {
+      console.log(`
 ╔════════════════════════════════════════╗
 ║  🎉  ¡Bienvenido a Hive!               ║
 ╠════════════════════════════════════════╣
@@ -392,14 +408,51 @@ export async function start(flags: string[]): Promise<void> {
 ║  ${url.padEnd(38)}║
 ╚════════════════════════════════════════╝
 `);
-      } else {
-        console.log(`\n🌐 Hive listo en: ${url}\n`);
-      }
-      openBrowser(url);
-    });
-  }
+    } else {
+      console.log(`\n🌐 Hive listo en: ${url}\n`);
+    }
+    openBrowser(url);
+  });
 
-  await startGateway(config);
+  const spawnGatewayProd = (): ReturnType<typeof spawn> => {
+    const gw = spawn(process.execPath, [process.argv[1] || "", "start", "--skip-check"], {
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, HIVE_GATEWAY_CHILD: "1" },
+    });
+
+    gw.stdout?.on("data", (data) => {
+      const lines = data.toString().split("\n");
+      for (const line of lines) {
+        if (line.trim()) console.log(`[Gateway] ${line}`);
+      }
+    });
+    gw.stderr?.on("data", (data) => {
+      const lines = data.toString().split("\n");
+      for (const line of lines) {
+        if (line.trim()) console.error(`[Gateway] ${line}`);
+      }
+    });
+
+    gw.on("error", (error) => {
+      console.error(`❌ Error iniciando Gateway: ${error.message}`);
+    });
+
+    gw.on("exit", (code) => {
+      if (code === 0) {
+        console.log("[Gateway] Reiniciando tras setup...");
+        const newGw = spawnGatewayProd();
+        const idx = children.indexOf(gw);
+        if (idx !== -1) children.splice(idx, 1, newGw);
+      }
+    });
+
+    children.push(gw);
+    return gw;
+  };
+
+  spawnGatewayProd();
+  await new Promise(() => {}); // Keep parent alive
 }
 
 export async function stop(): Promise<void> {

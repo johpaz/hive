@@ -464,7 +464,7 @@ export async function startGateway(config: Config): Promise<void> {
 
   // ── Auth helper ──────────────────────────────────────────────────────────
   // En modo desarrollo (HIVE_DEV=true), no requerimos autenticación
-  const isDev = process.env.HIVE_DEV === "true" || process.env.NODE_ENV === "development";
+  const isDev = process.env.HIVE_DEV === "true";
 
   function checkAuth(req: Request, url: URL): boolean {
     // En modo desarrollo, permitir todo
@@ -587,12 +587,15 @@ export async function startGateway(config: Config): Promise<void> {
           }
 
           // In production: serve from dist folder
-          // Priority: HIVE_UI_DIR env > ~/.hive/ui > process.cwd()/packages/hive-ui/dist
+          // Priority: HIVE_UI_DIR (Docker) > ~/.hive/ui > HIVE_DIST_DIR/ui (global npm) > cwd/packages/hive-ui/dist (monorepo)
           const uiDirFromEnv = process.env.HIVE_UI_DIR;
           const uiDirFromHive = path.join(getHiveDir(), "ui");
+          const uiDirFromDist = process.env.HIVE_DIST_DIR ? path.join(process.env.HIVE_DIST_DIR, "ui") : null;
           const uiDirFromCwd = path.join(process.cwd(), "packages/hive-ui/dist");
           const uiDir = uiDirFromEnv
-            || (existsSync(path.join(uiDirFromHive, "index.html")) ? uiDirFromHive : uiDirFromCwd);
+            || (existsSync(path.join(uiDirFromHive, "index.html")) ? uiDirFromHive
+            : uiDirFromDist && existsSync(path.join(uiDirFromDist, "index.html")) ? uiDirFromDist
+            : uiDirFromCwd);
           let subPath = url.pathname;
 
           // En setup mode: / y /ui redirigen a /setup
