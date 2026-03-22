@@ -284,12 +284,14 @@ export default function SetupPage() {
       });
 
       if (result.success) {
-        if (result.authToken) {
-          localStorage.setItem("hive-auth-token", result.authToken);
+        const authToken = result.authToken;
+        if (authToken) {
+          localStorage.setItem("hive-auth-token", authToken);
         }
         setSubmitSuccess(true);
         clearWizardData();
         // Server restarts after setup — poll setup/status until configured: true
+        // Navigate with ?token= so App.tsx always overwrites any stale localStorage token
         const waitForRestart = async () => {
           await new Promise(r => setTimeout(r, 1500)); // wait for restart to begin
           showLoader(`Iniciando a ${wizardData.agentName}... esto toma unos segundos`);
@@ -298,13 +300,17 @@ export default function SetupPage() {
               const res = await fetch("/api/setup/status");
               if (res.ok) {
                 const { configured } = await res.json();
-                if (configured) { hideLoader(); navigate("/"); return; }
+                if (configured) {
+                  hideLoader();
+                  navigate(authToken ? `/?token=${authToken}` : "/");
+                  return;
+                }
               }
             } catch { /* server still restarting */ }
             await new Promise(r => setTimeout(r, 1000));
           }
           hideLoader();
-          navigate("/"); // fallback after 40s
+          navigate(authToken ? `/?token=${authToken}` : "/"); // fallback after 40s
         };
         waitForRestart();
       }

@@ -1,5 +1,10 @@
-const _apiUrl = import.meta.env.VITE_API_URL || "";
-const _wsUrl  = import.meta.env.VITE_WS_URL  || "";
+declare global {
+  interface Window { __HIVE_CONFIG__?: { apiUrl: string; wsUrl: string } }
+}
+
+const _runtime = typeof window !== "undefined" ? window.__HIVE_CONFIG__ : undefined;
+const _apiUrl = _runtime?.apiUrl || import.meta.env.VITE_API_URL || "";
+const _wsUrl  = _runtime?.wsUrl  || import.meta.env.VITE_WS_URL  || "";
 const _isLocalhostUrl = (url: string) => /localhost|127\.0\.0\.1/.test(url);
 const _onLocalhost    = /localhost|127\.0\.0\.1/.test(window.location.hostname);
 

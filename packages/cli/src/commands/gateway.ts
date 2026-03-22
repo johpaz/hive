@@ -6,6 +6,47 @@ import { spawn, ChildProcess } from "child_process";
 
 const children: ChildProcess[] = [];
 
+async function findFreePort(startPort: number): Promise<number> {
+  for (let port = startPort; port < startPort + 100; port++) {
+    try {
+      const s = Bun.serve({ port, hostname: "0.0.0.0", fetch: () => new Response("") });
+      s.stop();
+      return port;
+    } catch { continue; }
+  }
+  throw new Error(`No free port found starting from ${startPort}`);
+}
+
+function startUIServer(uiDir: string, gatewayPort: number, uiPort: number): void {
+  const configScript = `<script>window.__HIVE_CONFIG__={"apiUrl":"http://localhost:${gatewayPort}","wsUrl":"ws://localhost:${gatewayPort}"}</script>`;
+
+  Bun.serve({
+    hostname: "0.0.0.0",
+    port: uiPort,
+    async fetch(req) {
+      const url = new URL(req.url);
+      let subPath = url.pathname === "/" ? "/index.html" : url.pathname;
+      // SPA fallback: rutas sin extensión → index.html
+      if (!path.extname(subPath)) subPath = "/index.html";
+      const filePath = path.join(uiDir, subPath);
+      const file = Bun.file(filePath);
+      if (!(await file.exists())) {
+        const index = Bun.file(path.join(uiDir, "index.html"));
+        if (await index.exists()) {
+          const html = (await index.text()).replace("</head>", `${configScript}</head>`);
+          return new Response(html, { headers: { "Content-Type": "text/html" } });
+        }
+        return new Response("Not found", { status: 404 });
+      }
+      if (subPath === "/index.html") {
+        const html = (await file.text()).replace("</head>", `${configScript}</head>`);
+        return new Response(html, { headers: { "Content-Type": "text/html" } });
+      }
+      return new Response(file);
+    },
+  });
+}
+
 function cleanup() {
   if (children.length === 0) return;
   console.log("\n🧹 Limpiando procesos hijos...");
@@ -393,12 +434,29 @@ export async function start(flags: string[]): Promise<void> {
   // Same pattern as dev mode — mirrors Docker's `restart: unless-stopped` policy.
   const port = (config.gateway as any)?.port || 18790;
 
+  // Resolve uiDir (same logic as server.ts)
+  const uiDirFromEnv = process.env.HIVE_UI_DIR;
+  const uiDirFromDist = process.env.HIVE_DIST_DIR
+    ? path.join(process.env.HIVE_DIST_DIR, "ui") : null;
+  const uiDirFromCwd = path.join(process.cwd(), "packages/hive-ui/dist");
+  const uiDir = uiDirFromEnv
+    || (uiDirFromDist && existsSync(path.join(uiDirFromDist, "index.html")) ? uiDirFromDist : null)
+    || (existsSync(path.join(uiDirFromCwd, "index.html")) ? uiDirFromCwd : null);
+
+  // Start UI server on separate port if UI assets are available
+  let uiPort = port; // fallback to gateway port if no UI dir
+  if (uiDir) {
+    uiPort = await findFreePort(5173);
+    startUIServer(uiDir, port, uiPort);
+    console.log(`🎨 UI server en http://localhost:${uiPort}`);
+  }
+
   // Open browser when gateway is ready
   waitForPort(port, 30000).then(() => {
     const needsSetup = !existsSync(dbPath);
     const url = needsSetup
-      ? `http://localhost:${port}/setup`
-      : `http://localhost:${port}`;
+      ? `http://localhost:${uiPort}/setup`
+      : `http://localhost:${uiPort}`;
     if (needsSetup) {
       console.log(`
 ╔════════════════════════════════════════╗

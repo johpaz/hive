@@ -1,4 +1,5 @@
 import { writeFileSync, mkdirSync } from "node:fs"
+import * as path from "node:path"
 import { getDb } from "../../storage/sqlite"
 import { SEED_DATA } from "../../storage/seed"
 import {
@@ -331,6 +332,7 @@ export async function handleCompleteSetup(
     ].join("\n")
     mkdirSync(hiveDir, { recursive: true })
     writeFileSync(`${hiveDir}/.env`, envContent, { mode: 0o600 })
+    writeFileSync(path.join(hiveDir, ".auth_token"), authToken, { mode: 0o600 })
     process.env.HIVE_AUTH_TOKEN = authToken
 
     // Restart the process so the gateway re-initializes in full mode.
