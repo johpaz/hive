@@ -271,35 +271,54 @@ export async function start(flags: string[]): Promise<void> {
       console.warn(`⚠️  No se pudo iniciar el Code Bridge: ${(error as Error).message}`);
     }
 
-    // Start Gateway in a separate process (non-blocking)
-    const gatewayProcess = spawn(process.execPath, [process.argv[1] || "", "start", "--skip-check", "--dev-internal"], {
-      detached: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, HIVE_DEV: "true", HIVE_GATEWAY_CHILD: "1" },
-    });
+    // Start Gateway in a separate process (non-blocking).
+    // On clean exit (code 0) — e.g. post-setup restart — respawn automatically,
+    // same as Docker's `restart: unless-stopped` policy.
+    const spawnGateway = (): ReturnType<typeof spawn> => {
+      const gw = spawn(process.execPath, [process.argv[1] || "", "start", "--skip-check", "--dev-internal"], {
+        detached: true,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, HIVE_DEV: "true", HIVE_GATEWAY_CHILD: "1" },
+      });
 
-    gatewayProcess.stdout?.on("data", (data) => {
-      const lines = data.toString().split("\n");
-      for (const line of lines) {
-        if (line.trim()) console.log(`[Gateway] ${line}`);
+      gw.stdout?.on("data", (data) => {
+        const lines = data.toString().split("\n");
+        for (const line of lines) {
+          if (line.trim()) console.log(`[Gateway] ${line}`);
+        }
+      });
+      gw.stderr?.on("data", (data) => {
+        const lines = data.toString().split("\n");
+        for (const line of lines) {
+          if (line.trim()) console.error(`[Gateway] ${line}`);
+        }
+      });
+
+      gw.on("error", (error) => {
+        console.error(`❌ Error iniciando Gateway: ${error.message}`);
+      });
+
+      gw.on("exit", (code) => {
+        if (code === 0) {
+          console.log("[Gateway] Reiniciando tras setup...");
+          const newGw = spawnGateway();
+          if (!daemon) {
+            const idx = children.indexOf(gw);
+            if (idx !== -1) children.splice(idx, 1, newGw);
+          }
+        }
+      });
+
+      if (!daemon) {
+        children.push(gw);
+      } else {
+        gw.unref();
       }
-    });
-    gatewayProcess.stderr?.on("data", (data) => {
-      const lines = data.toString().split("\n");
-      for (const line of lines) {
-        if (line.trim()) console.error(`[Gateway] ${line}`);
-      }
-    });
 
-    gatewayProcess.on("error", (error) => {
-      console.error(`❌ Error iniciando Gateway: ${error.message}`);
-    });
+      return gw;
+    };
 
-    if (!daemon) {
-      children.push(gatewayProcess);
-    } else {
-      gatewayProcess.unref();
-    }
+    const gatewayProcess = spawnGateway();
 
     // Wait for both Vite and Gateway to be ready
     console.log("⏳ Esperando servicios...");
@@ -320,9 +339,10 @@ export async function start(flags: string[]): Promise<void> {
 
     // Determine if we should open /setup or /ui
     const setupMode = await isSetupMode();
+    const browserPort = hasVite ? 5173 : 18790;
     const url = setupMode
-      ? "http://localhost:5173/setup"
-      : "http://localhost:5173";
+      ? `http://localhost:${browserPort}/setup`
+      : `http://localhost:${browserPort}`;
 
     console.log(`
 ╔════════════════════════════════════════╗

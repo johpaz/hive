@@ -512,7 +512,7 @@ cp ~/.hive/data/hive.db ~/backup-hive-$(date +%Y%m%d).db
 **Instalación global:**
 
 ```bash
-bun install -g @johpaz/hive
+bun install -g @johpaz/hive-agents
 ```
 
 > Si instalas con `npm install -g @johpaz/hive` también funciona, pero igualmente necesitas Bun instalado — el CLI lo usa como runtime.
