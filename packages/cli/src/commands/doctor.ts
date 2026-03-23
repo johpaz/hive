@@ -3,6 +3,12 @@ import * as fs from "fs";
 import * as path from "path";
 import { execSync } from "child_process";
 import { loadConfig, getHiveDir } from "@johpaz/hive-agents-core/config/loader";
+import {
+  detectAdapter,
+  detectAllAdapters,
+  INSTALLATION_TYPE_NAMES,
+  type InstallationAdapter,
+} from "../adapters";
 
 const getHiveDirConst = () => getHiveDir();
 const getPidFile = () => {
@@ -45,6 +51,78 @@ export async function doctor(): Promise<void> {
   console.log("\n🐝 Hive Doctor — Diagnóstico del sistema\n");
 
   const checks: Array<{ category: string; name: string; status: "ok" | "warn" | "error"; message: string; hint?: string }> = [];
+
+  // Installation Adapter Detection
+  let detectedAdapter: InstallationAdapter | null = null;
+  let adapterValidation: { errors: string[]; warnings: string[]; info: string[] } | null = null;
+  
+  try {
+    detectedAdapter = await detectAdapter({ verbose: false });
+    const validation = await detectedAdapter.validate();
+    adapterValidation = validation;
+    
+    checks.push({
+      category: "Installation",
+      name: "Tipo detectado",
+      status: "ok",
+      message: `${detectedAdapter.name} (${detectedAdapter.type})`,
+    });
+
+    // Add adapter-specific info
+    for (const infoMsg of validation.info) {
+      checks.push({
+        category: "Installation",
+        name: "Info",
+        status: "ok",
+        message: infoMsg,
+      });
+    }
+
+    // Add adapter warnings
+    for (const warnMsg of validation.warnings) {
+      checks.push({
+        category: "Installation",
+        name: "Warning",
+        status: "warn",
+        message: warnMsg,
+      });
+    }
+
+    // Add adapter errors
+    for (const errMsg of validation.errors) {
+      checks.push({
+        category: "Installation",
+        name: "Error",
+        status: "error",
+        message: errMsg,
+        hint: "Verifica la instalación o ejecuta hive update",
+      });
+    }
+  } catch (error) {
+    checks.push({
+      category: "Installation",
+      name: "Detección",
+      status: "warn",
+      message: `No se pudo detectar el adapter: ${(error as Error).message}`,
+    });
+  }
+
+  // Check for multiple installations
+  try {
+    const allAdapters = await detectAllAdapters();
+    if (allAdapters.length > 1) {
+      const installationNames = allAdapters.map((a) => a.name).join(", ");
+      checks.push({
+        category: "Installation",
+        name: "Múltiples instalaciones",
+        status: "warn",
+        message: `${allAdapters.length} métodos detectados: ${installationNames}`,
+        hint: "Esto puede causar conflictos. Considera usar solo uno.",
+      });
+    }
+  } catch {
+    // Ignore multiple detection errors
+  }
 
   // Runtime
   const bun = checkBun();
