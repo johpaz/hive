@@ -505,7 +505,7 @@ cp ~/.hive/data/hive.db ~/backup-hive-$(date +%Y%m%d).db
 
 ---
 
-### Opción 3 — bun (Para desarrolladores)
+### Opción 3 — bun / npm (Para uso en máquinas con Bun)
 
 > Requiere Bun instalado — ver prerequisito al inicio de esta sección.
 
@@ -515,7 +515,7 @@ cp ~/.hive/data/hive.db ~/backup-hive-$(date +%Y%m%d).db
 bun install -g @johpaz/hive-agents
 ```
 
-> Si instalas con `npm install -g @johpaz/hive` también funciona, pero igualmente necesitas Bun instalado — el CLI lo usa como runtime.
+> También funciona con `npm install -g @johpaz/hive`, pero igualmente necesitas Bun instalado — el CLI lo usa como runtime.
 
 **Iniciar:**
 
@@ -523,13 +523,23 @@ bun install -g @johpaz/hive-agents
 hive start
 ```
 
-El navegador se abre automáticamente en `http://localhost:18790`. Si es la primera vez, redirige a `/setup` para configurar tu agente.
+Al arrancar por primera vez, el gateway levanta en `http://localhost:18790` y la UI en un puerto libre (normalmente `5173`). **El navegador se abre automáticamente** en la pantalla de setup.
 
-**Configurar desde terminal** (sin browser):
+#### Setup inicial — asistente web
 
-```bash
-hive onboard
-```
+El wizard de configuración tiene 4 pasos:
+
+1. **Providers** — elige tu proveedor de IA (Gemini, Anthropic, OpenAI, Groq, Ollama…) e introduce tu API key.
+2. **Tu agente** — nombre, descripción y tono de personalidad.
+3. **Ética** — elige las reglas de comportamiento predefinidas.
+4. **Canales** — activa WebChat, Telegram o Discord.
+
+Al terminar, el gateway se reinicia automáticamente y el navegador redirige al dashboard.
+
+> Si prefieres configurar sin browser (VPS headless, SSH, etc.):
+> ```bash
+> hive onboard
+> ```
 
 **Comandos útiles:**
 
@@ -543,8 +553,8 @@ hive doctor          # diagnóstico del sistema
 **Actualizar a la última versión:**
 
 ```bash
-bun install -g @johpaz/hive   # instala la versión más reciente
-hive stop && hive start        # reinicia el gateway
+bun install -g @johpaz/hive-agents   # instala la versión más reciente (incluye la UI)
+hive stop && hive start
 ```
 
 **Modo desarrollo** (hot-reload + Vite, para contribuir al proyecto):
