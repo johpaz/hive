@@ -228,15 +228,14 @@ export class WhatsAppChannel extends BaseChannel {
       // Ignore group messages — this channel is for direct user↔agent communication only.
       if (from.includes("@g.us")) continue;
 
-      // Allow self-messages (user writes to themselves to talk to the agent).
-      // Block messages sent by the user to OTHER contacts (outgoing messages).
+      // Only process self-messages (user writing to themselves to talk to the agent).
       // Normalize JID: socket.user.id may include device suffix "573....:8@s.whatsapp.net"
       // while remoteJid is "573....@s.whatsapp.net" — compare only the number part.
       const rawOwnJid = this.socket?.user?.id ?? "";
       const ownNumber = rawOwnJid.split(":")[0];
       const fromNumber = from.split("@")[0];
       const isSelfMessage = typedMsg.key.fromMe && fromNumber === ownNumber;
-      if (typedMsg.key.fromMe && !isSelfMessage) continue;
+      if (!isSelfMessage) continue;
 
       const { content, audioMediaId } = this.extractMessageContent(typedMsg.message);
       if (!content && !audioMediaId) continue;

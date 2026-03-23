@@ -113,6 +113,8 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
     const [selectedType, setSelectedType] = useState<string>("telegram");
     const [botToken, setBotToken] = useState("");
     const [appId, setAppId] = useState(""); // discord only
+    const [signingSecret, setSigningSecret] = useState(""); // slack only
+    const [showSigningSecret, setShowSigningSecret] = useState(false);
     const [showToken, setShowToken] = useState(false);
     const [createdChannelId, setCreatedChannelId] = useState<string | null>(null);
     const [qrData, setQrData] = useState<string | null>(null);
@@ -143,6 +145,7 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                 setSelectedType(channel.type);
                 setBotToken("");
                 setAppId("");
+                setSigningSecret("");
                 setCreatedChannelId(channel.id);
                 setQrData(null);
                 setQrExpired(false);
@@ -156,6 +159,7 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                 setSelectedType("telegram");
                 setBotToken("");
                 setAppId("");
+                setSigningSecret("");
                 setCreatedChannelId(null);
                 setQrData(null);
                 setQrExpired(false);
@@ -252,6 +256,7 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
             const config: Record<string, unknown> = {};
             if (selectedType === "telegram") config.botToken = botToken;
             if (selectedType === "discord") { config.botToken = botToken; config.applicationId = appId; }
+            if (selectedType === "slack") { config.botToken = botToken; config.signingSecret = signingSecret; }
 
             const { id } = await createChannel(selectedType, config);
             setCreatedChannelId(id);
@@ -298,7 +303,8 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
         selectedType === "whatsapp" ||
         selectedType === "webchat" ||
         (selectedType === "telegram" && botToken.trim().length > 10) ||
-        (selectedType === "discord" && botToken.trim().length > 10 && appId.trim().length > 0);
+        (selectedType === "discord" && botToken.trim().length > 10 && appId.trim().length > 0) ||
+        (selectedType === "slack" && botToken.trim().length > 10 && signingSecret.trim().length > 10);
 
     // ─── render steps ─────────────────────────────────────────────────────
     const renderNewChannelContent = () => {
@@ -378,6 +384,7 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                             { id: "telegram", label: "Telegram", icon: "✈️" },
                             { id: "whatsapp", label: "WhatsApp", icon: "💬" },
                             { id: "discord", label: "Discord", icon: "🎮" },
+                            { id: "slack", label: "Slack", icon: "💼" },
                             { id: "webchat", label: "WebChat", icon: "🌐" },
                         ].map(t => (
                             <button
@@ -419,18 +426,20 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                         </div>
                     )}
 
-                    {(selectedType === "telegram" || selectedType === "discord") && (
+                    {(selectedType === "telegram" || selectedType === "discord" || selectedType === "slack") && (
                         <div className="space-y-3">
                             <div className="space-y-1.5">
-                                <Label className="text-xs text-white/50 uppercase tracking-widest">
-                                    {selectedType === "telegram" ? "Bot Token" : "Bot Token"}
-                                </Label>
+                                <Label className="text-xs text-white/50 uppercase tracking-widest">Bot Token</Label>
                                 <div className="relative">
                                     <Input
                                         type={showToken ? "text" : "password"}
                                         value={botToken}
                                         onChange={e => setBotToken(e.target.value)}
-                                        placeholder={selectedType === "telegram" ? "123456789:AAF..." : "MTA5NDY..."}
+                                        placeholder={
+                                            selectedType === "telegram" ? "123456789:AAF..." :
+                                            selectedType === "slack" ? "xoxb-..." :
+                                            "MTA5NDY..."
+                                        }
                                         className="bg-white/5 border-white/10 pr-10 font-mono text-sm"
                                     />
                                     <button
@@ -453,6 +462,33 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                                         className="bg-white/5 border-white/10 font-mono text-sm"
                                     />
                                 </div>
+                            )}
+
+                            {selectedType === "slack" && (
+                                <>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-xs text-white/50 uppercase tracking-widest">Signing Secret</Label>
+                                        <div className="relative">
+                                            <Input
+                                                type={showSigningSecret ? "text" : "password"}
+                                                value={signingSecret}
+                                                onChange={e => setSigningSecret(e.target.value)}
+                                                placeholder="a1b2c3d4e5f6..."
+                                                className="bg-white/5 border-white/10 pr-10 font-mono text-sm"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowSigningSecret(v => !v)}
+                                                className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70"
+                                            >
+                                                {showSigningSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200/80">
+                                        Slack requiere una URL pública para webhooks. Usa ngrok, cloudflared o Tailscale y configura la Request URL en tu Slack App: <span className="font-mono">https://tu-url/slack/events</span>
+                                    </div>
+                                </>
                             )}
                         </div>
                     )}

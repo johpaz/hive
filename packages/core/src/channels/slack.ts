@@ -4,8 +4,9 @@ import { BaseChannel } from "./base.ts";
 import { logger } from "../utils/logger.ts";
 
 export interface SlackConfig extends ChannelConfig {
+  accountId?: string;
   botToken: string;
-  appToken: string;
+  appToken?: string; // only needed for Socket Mode — not used in HTTP webhook mode
   signingSecret: string;
   port?: number;
 }
@@ -30,11 +31,13 @@ export class SlackChannel extends BaseChannel {
   constructor(config: SlackConfig) {
     super();
     this.config = config;
-    const extractedAccountId = config.botToken.split(":")[0]?.replace("xoxb-", "");
-    if (!extractedAccountId) {
-      throw new Error("Could not determine account ID from Slack token");
+    // Prefer explicit accountId from config; fall back to extracting from token
+    if (config.accountId) {
+      this.accountId = config.accountId;
+    } else {
+      const extracted = config.botToken?.split(":")[0]?.replace("xoxb-", "") ?? "";
+      this.accountId = extracted || "slack";
     }
-    this.accountId = extractedAccountId;
   }
 
   async start(): Promise<void> {
@@ -66,7 +69,6 @@ export class SlackChannel extends BaseChannel {
 
       this.app = new App({
         token: this.config.botToken,
-        appToken: this.config.appToken,
         receiver,
       });
 

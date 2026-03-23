@@ -155,8 +155,8 @@ export class ChannelManager {
         case "slack":
           channel = createSlackChannel({
             enabled: true,
+            accountId,
             botToken: config.botToken as string,
-            appToken: config.appToken as string,
             signingSecret: config.signingSecret as string,
             port: (config.port as number) ?? 3000,
             dmPolicy: (config.dmPolicy as "open" | "pairing" | "allowlist") ?? "allowlist",
@@ -311,6 +311,11 @@ export class ChannelManager {
     if (type === "whatsapp" && "getConnectionState" in channel) {
       const state = (channel as any).getConnectionState();
       return { status: state.status, qrCode: state.qrCode };
+    }
+
+    if ("getState" in channel) {
+      const state = (channel as any).getState();
+      return { status: state.status };
     }
 
     return { status: channel.isRunning() ? "connected" : "disconnected" };
