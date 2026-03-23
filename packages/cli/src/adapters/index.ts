@@ -65,7 +65,6 @@ export {
 
 // Adapters
 export { DockerAdapter } from "./docker";
-export { DockerHostinguerAdapter } from "./docker-hostinguer";
 export { BunGlobalAdapter } from "./bun-global";
 export { BinaryAdapter } from "./binary";
 

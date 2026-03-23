@@ -3,6 +3,7 @@
  * 
  * Handles Hive installation via standalone compiled binary.
  * The binary includes embedded UI and requires no external dependencies.
+ * Also handles Docker container deployments (hive-server in Alpine).
  */
 
 import { spawn, execSync } from "node:child_process";
@@ -30,16 +31,27 @@ import { PORTS } from "./types";
  */
 export class BinaryAdapter implements InstallationAdapter {
   readonly type = "binary" as const;
-  readonly name = "Standalone Binary";
-
+  
   private hiveDir: string;
   private pidFile: string;
   private binaryPath: string;
+  private isDockerContainer: boolean;
 
   constructor(options?: { hiveDir?: string; binaryPath?: string }) {
     this.hiveDir = options?.hiveDir || getHiveDir();
     this.pidFile = path.join(this.hiveDir, "gateway.pid");
     this.binaryPath = options?.binaryPath || this.findBinary();
+    // Detect if running inside Docker container
+    this.isDockerContainer = process.env.HIVE_UI_DIR === "/app/ui" || 
+                             process.env.HIVE_HOST === "0.0.0.0" ||
+                             existsSync("/.dockerenv");
+  }
+
+  /**
+   * Human-readable name for this installation method
+   */
+  get name(): string {
+    return this.isDockerContainer ? "Docker Container" : "Standalone Binary";
   }
 
   /**
@@ -140,26 +152,35 @@ export class BinaryAdapter implements InstallationAdapter {
     const env = await this.getEnvironment();
     const paths = getDefaultPaths(this.hiveDir);
 
-    // Binary uses embedded UI or UI from dist directory
-    const distDir = getDistDir();
-    if (distDir) {
-      const uiDir = path.join(distDir, "ui");
-      if (existsSync(uiDir)) {
-        paths.uiDir = uiDir;
+    // In Docker container, UI is in /app/ui (filesystem, not embedded)
+    if (this.isDockerContainer) {
+      paths.uiDir = process.env.HIVE_UI_DIR || "/app/ui";
+    }
+
+    // Binary uses embedded UI or UI from dist directory (non-Docker)
+    if (!this.isDockerContainer) {
+      const distDir = getDistDir();
+      if (distDir) {
+        const uiDir = path.join(distDir, "ui");
+        if (existsSync(uiDir)) {
+          paths.uiDir = uiDir;
+        }
       }
     }
 
-    // Check for embedded UI
+    // Check for embedded UI (non-Docker)
     let hasEmbeddedUI = false;
-    try {
-      const { embeddedUI } = await import("../ui-bundle.generated");
-      hasEmbeddedUI = embeddedUI && embeddedUI.size > 0;
-    } catch {
-      hasEmbeddedUI = false;
-    }
+    if (!this.isDockerContainer) {
+      try {
+        const { embeddedUI } = await import("../ui-bundle.generated");
+        hasEmbeddedUI = embeddedUI && embeddedUI.size > 0;
+      } catch {
+        hasEmbeddedUI = false;
+      }
 
-    if (hasEmbeddedUI) {
-      paths.uiDir = null; // Embedded, not filesystem
+      if (hasEmbeddedUI) {
+        paths.uiDir = null; // Embedded, not filesystem
+      }
     }
 
     const port = parseInt(env.HIVE_PORT || "18790", 10) || PORTS.GATEWAY;
@@ -168,18 +189,18 @@ export class BinaryAdapter implements InstallationAdapter {
     return {
       type: this.type,
       gateway: {
-        host: env.HIVE_HOST || "127.0.0.1",
+        host: env.HIVE_HOST || (this.isDockerContainer ? "0.0.0.0" : "127.0.0.1"),
         port,
         wsPort: port,
         codeBridgePort: PORTS.CODE_BRIDGE,
         publicUrl,
-        openBrowser: !env.NO_BROWSER,
+        openBrowser: !env.NO_BROWSER && !this.isDockerContainer,
         daemon: !!env.HIVE_DAEMON,
       },
       paths,
       env,
       isDev: false,
-      hasEmbeddedUI,
+      hasEmbeddedUI: this.isDockerContainer ? false : hasEmbeddedUI,
     };
   }
 

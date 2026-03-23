@@ -16,7 +16,6 @@ import { embeddedUI } from "../ui-bundle.generated";
 import {
   detectAdapter,
   DockerAdapter,
-  DockerHostinguerAdapter,
   BunGlobalAdapter,
   BinaryAdapter,
   type InstallationAdapter,
@@ -230,10 +229,10 @@ async function isRunning(): Promise<boolean> {
   // Fallback to PID file check
   const pidFile = await getPidFile();
   if (!existsSync(pidFile)) return false;
-  
+
   const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
   if (isNaN(pid)) return false;
-  
+
   try {
     process.kill(pid, 0);
     return true;
@@ -524,16 +523,18 @@ async function handleProductionMode(
 
   // Get UI directory from adapter config
   const adapterConfig = await adapter.getConfig();
-  const isDocker = adapterConfig.type === "docker" || adapterConfig.type === "docker-hostinguer";
+  // Detect Docker environment: either DockerAdapter or BinaryAdapter in Docker container
+  const isDocker = adapterConfig.type === "docker"
+    || (adapterConfig.type === "binary" && process.env.HIVE_UI_DIR === "/app/ui");
 
   // In Docker mode, UI is served by the Gateway inside the container
   // No need for separate UI server - the container already serves UI on port 18790
+  let uiPort = gatewayConfig.port;
   if (!isDocker) {
     const uiDir = adapterConfig.paths.uiDir;
     const hasEmbeddedUI = embeddedUI.size > 0;
 
     // Start UI server if UI assets are available (non-Docker modes)
-    let uiPort = gatewayConfig.port;
     if (hasEmbeddedUI || uiDir) {
       uiPort = await findFreePort(5173);
       startUIServer(uiDir, gatewayConfig.port, uiPort);
@@ -543,7 +544,31 @@ async function handleProductionMode(
 
   // Spawn Gateway child process
   const spawnGatewayProd = (): ReturnType<typeof spawn> => {
-    const gw = spawn(process.execPath, [process.argv[1] || "", "start", "--skip-check"], {
+    // For compiled binaries, determine the correct command
+    // In Docker container: /app/hive-server
+    // In host binary installation: hive (from PATH)
+    // In development/source mode: bun with script path
+    const isCompiledBinary = !process.argv[1]?.endsWith(".ts");
+    const isDockerContainer = process.env.HIVE_UI_DIR === "/app/ui";
+
+    let command: string;
+    let args: string[];
+
+    if (isDockerContainer) {
+      // Running inside Docker container
+      command = "/app/hive-server";
+      args = ["start", "--skip-check"];
+    } else if (isCompiledBinary) {
+      // Running as host binary installation
+      command = "hive";
+      args = ["start", "--skip-check"];
+    } else {
+      // Running in development/source mode
+      command = process.execPath;
+      args = [process.argv[1] || "", "start", "--skip-check"];
+    }
+
+    const gw = spawn(command, args, {
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, HIVE_GATEWAY_CHILD: "1", NO_BROWSER: "1" },
@@ -674,7 +699,7 @@ export async function status(flags: string[]): Promise<void> {
   console.log(`Installation:  ${adapter.name} (${adapterConfig.type})`);
   console.log(`Puerto:        ${adapterConfig.gateway.port}`);
   console.log(`Host:          ${adapterConfig.gateway.host}`);
-  
+
   const provider = coreConfig.models?.defaultProvider || "no configurado";
   const model = (coreConfig.models as any)?.defaults?.[provider] || (coreConfig.models as any)?.defaults?.default || "no configurado";
   console.log(`Modelo:        ${provider} / ${model}`);

@@ -7,7 +7,6 @@
 
 import type { InstallationAdapter, InstallationType, AdapterOptions } from "./types";
 import { DockerAdapter } from "./docker";
-import { DockerHostinguerAdapter } from "./docker-hostinguer";
 import { BunGlobalAdapter } from "./bun-global";
 import { BinaryAdapter } from "./binary";
 
@@ -16,7 +15,6 @@ import { BinaryAdapter } from "./binary";
  * Lower number = higher priority
  */
 const DETECTION_PRIORITY: InstallationType[] = [
-  "docker-hostinguer", // Most specific, check first
   "docker",            // Standard Docker
   "binary",            // Compiled binary
   "bun-global",        // Global npm installation
@@ -28,7 +26,6 @@ const DETECTION_PRIORITY: InstallationType[] = [
 function createAllAdapters(options?: { hiveDir?: string }): Record<InstallationType, InstallationAdapter> {
   return {
     "docker": new DockerAdapter({ hiveDir: options?.hiveDir }),
-    "docker-hostinguer": new DockerHostinguerAdapter({ hiveDir: options?.hiveDir }),
     "bun-global": new BunGlobalAdapter({ hiveDir: options?.hiveDir }),
     "binary": new BinaryAdapter({ hiveDir: options?.hiveDir }),
   };
@@ -157,7 +154,6 @@ export function getAdapterByType(
  */
 export const INSTALLATION_TYPE_NAMES: Record<InstallationType, string> = {
   "docker": "Docker Compose",
-  "docker-hostinguer": "Docker Compose (Hostinguer)",
   "bun-global": "Bun Global (npm-style)",
   "binary": "Standalone Binary",
 };
@@ -167,7 +163,6 @@ export const INSTALLATION_TYPE_NAMES: Record<InstallationType, string> = {
  */
 export const INSTALLATION_TYPE_DESCRIPTIONS: Record<InstallationType, string> = {
   "docker": "Standard Docker Compose installation with named volumes",
-  "docker-hostinguer": "Docker Compose with Traefik reverse proxy for production deployments",
   "bun-global": "Global installation via `bun install -g @johpaz/hive-agents`",
-  "binary": "Standalone compiled binary with embedded UI",
+  "binary": "Standalone compiled binary with embedded UI (or Docker container)",
 };
