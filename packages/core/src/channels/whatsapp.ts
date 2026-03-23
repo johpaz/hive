@@ -10,6 +10,7 @@ import { BaseChannel } from "./base.ts";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import * as path from "node:path";
 import { logger } from "../utils/logger.ts";
+import { getDb } from "../storage/sqlite.ts";
 // @ts-ignore — no type definitions for qrcode-terminal
 import qrcodeTerminal from "qrcode-terminal";
 
@@ -103,6 +104,7 @@ export class WhatsAppChannel extends BaseChannel {
         version,
         auth: state,
         printQRInTerminal: false,
+        syncFullHistory: false,
         getMessage: async () => ({ conversation: "" }),
       });
 

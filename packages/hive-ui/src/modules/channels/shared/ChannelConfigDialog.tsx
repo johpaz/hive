@@ -125,6 +125,9 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
     const [isSaving, setIsSaving] = useState(false);
     const [voices, setVoices] = useState<Array<{ id: string; name: string }>>([]);
     const [loadingVoices, setLoadingVoices] = useState(false);
+    const [showChangeToken, setShowChangeToken] = useState(false);
+    const [newToken, setNewToken] = useState("");
+    const [showNewToken, setShowNewToken] = useState(false);
 
     // ── helpers ───────────────────────────────────────────────────────────
     const isDisconnected = channel && channel.status !== "connected";
@@ -143,6 +146,9 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                 setQrData(null);
                 setConnectError(null);
                 setFormData(channel);
+                setShowChangeToken(false);
+                setNewToken("");
+                setShowNewToken(false);
             } else {
                 setStep("type");
                 setSelectedType("telegram");
@@ -262,6 +268,11 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
         if (!channel?.id) return;
         setIsSaving(true);
         try {
+            // If a new token was entered, reconnect with it first
+            if (newToken.trim().length > 10 && (channel.type === "telegram" || channel.type === "discord")) {
+                const config: Record<string, unknown> = { botToken: newToken.trim() };
+                await reconnectChannel(channel.id, config);
+            }
             await onSave(channel.id, formData);
             onClose();
         } catch (error) {
@@ -500,6 +511,65 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
 
     const renderSettingsContent = () => (
         <div className="grid gap-4 py-4">
+            {/* Token section for Telegram / Discord */}
+            {(channel?.type === "telegram" || channel?.type === "discord") && (
+                <div className="space-y-2 pb-2 border-b border-white/10">
+                    <div className="flex items-center justify-between">
+                        <Label className="text-xs text-white/50 uppercase tracking-widest">Bot Token</Label>
+                        {!showChangeToken && (
+                            <button
+                                type="button"
+                                onClick={() => setShowChangeToken(true)}
+                                className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors"
+                            >
+                                Cambiar token
+                            </button>
+                        )}
+                    </div>
+                    {!showChangeToken ? (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
+                            <span className="font-mono text-sm text-white/30 tracking-widest select-none">
+                                ••••••••••••••••••••••••
+                            </span>
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            <div className="relative">
+                                <Input
+                                    type={showNewToken ? "text" : "password"}
+                                    value={newToken}
+                                    onChange={e => setNewToken(e.target.value)}
+                                    placeholder={channel?.type === "telegram" ? "123456789:AAF..." : "MTA5NDY..."}
+                                    className="bg-white/5 border-white/10 pr-10 font-mono text-sm"
+                                    autoFocus
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowNewToken(v => !v)}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70"
+                                >
+                                    {showNewToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                </button>
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => { setShowChangeToken(false); setNewToken(""); setShowNewToken(false); }}
+                                    className="text-[11px] text-white/40 hover:text-white/60 transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                {newToken.trim().length > 0 && (
+                                    <span className="text-[11px] text-amber-400/70">
+                                        Se aplicará al guardar
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
             <div className="grid grid-cols-4 items-center gap-4">
                 <Label className="text-right text-xs">Voz (STT)</Label>
                 <div className="flex items-center gap-2 col-span-3">
