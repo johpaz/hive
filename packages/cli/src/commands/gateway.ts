@@ -2,6 +2,7 @@ import { loadConfig, startGateway, logger, expandConfigPath, expandPath, getHive
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, openSync } from "node:fs";
 import * as path from "node:path";
 import { spawn, ChildProcess } from "child_process";
+import { embeddedUI } from "../ui-bundle.generated";
 
 
 const children: ChildProcess[] = [];
@@ -17,8 +18,9 @@ async function findFreePort(startPort: number): Promise<number> {
   throw new Error(`No free port found starting from ${startPort}`);
 }
 
-function startUIServer(uiDir: string, gatewayPort: number, uiPort: number): void {
+function startUIServer(uiDir: string | null, gatewayPort: number, uiPort: number): void {
   const configScript = `<script>window.__HIVE_CONFIG__={"apiUrl":"http://localhost:${gatewayPort}","wsUrl":"ws://localhost:${gatewayPort}"}</script>`;
+  const useEmbedded = embeddedUI.size > 0;
 
   Bun.serve({
     hostname: "0.0.0.0",
@@ -28,10 +30,22 @@ function startUIServer(uiDir: string, gatewayPort: number, uiPort: number): void
       let subPath = url.pathname === "/" ? "/index.html" : url.pathname;
       // SPA fallback: rutas sin extensión → index.html
       if (!path.extname(subPath)) subPath = "/index.html";
-      const filePath = path.join(uiDir, subPath);
+
+      if (useEmbedded) {
+        const isIndex = subPath === "/index.html" || !embeddedUI.has(subPath);
+        const entry = embeddedUI.get(subPath) ?? embeddedUI.get("/index.html")!;
+        if (isIndex) {
+          const html = entry.data.toString("utf8").replace("</head>", `${configScript}</head>`);
+          return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+        }
+        return new Response(entry.data, { headers: { "Content-Type": entry.mime } });
+      }
+
+      // Filesystem path (npm / Docker) — unchanged
+      const filePath = path.join(uiDir!, subPath);
       const file = Bun.file(filePath);
       if (!(await file.exists())) {
-        const index = Bun.file(path.join(uiDir, "index.html"));
+        const index = Bun.file(path.join(uiDir!, "index.html"));
         if (await index.exists()) {
           const html = (await index.text()).replace("</head>", `${configScript}</head>`);
           return new Response(html, { headers: { "Content-Type": "text/html" } });
@@ -447,11 +461,12 @@ export async function start(flags: string[]): Promise<void> {
     || (uiDirFromDist && existsSync(path.join(uiDirFromDist, "index.html")) ? uiDirFromDist : null)
     || (existsSync(path.join(uiDirFromCwd, "index.html")) ? uiDirFromCwd : null);
 
-  // Start UI server on separate port if UI assets are available
-  let uiPort = port; // fallback to gateway port if no UI dir
-  if (uiDir) {
+  // Start UI server on separate port if UI assets are available (embedded or filesystem)
+  const hasEmbeddedUI = embeddedUI.size > 0;
+  let uiPort = port; // fallback to gateway port if no UI
+  if (hasEmbeddedUI || uiDir) {
     uiPort = await findFreePort(5173);
-    startUIServer(uiDir, port, uiPort);
+    startUIServer(uiDir ?? null, port, uiPort);
     console.log(`🎨 UI server en http://localhost:${uiPort}`);
   }
 

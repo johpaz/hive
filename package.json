@@ -103,7 +103,7 @@
     "dev:keep": "HIVE_HOME=$HOME/.hive-dev HIVE_DEV=true HIVE_DEV_CLEAN=false bun run packages/cli/src/index.ts dev",
     "start": "bun run packages/cli/src/index.ts start",
     "build": "bun build packages/cli/src/index.ts --bundle --outfile dist/hive.js --target bun && cd packages/hive-ui && bun run build && cd ../.. && cp -r packages/hive-ui/dist dist/ui",
-    "build:binary": "cd packages/cli && bun build src/index.ts --compile --outfile dist/hive-binary",
+    "build:binary": "cd packages/hive-ui && bun run build && cd ../cli && bun scripts/generate-ui-bundle.ts && bun build src/index.ts --compile --outfile ../../dist/hive-binary",
     "prepublishOnly": "bun run build",
     "test": "bun test",
     "test:ci": "bun test --coverage",

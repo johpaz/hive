@@ -1,6 +1,6 @@
 services:
   hive:
-    image: johpaz/hive-agents:0.0.3
+    image: johpaz/hive-agents:0.0.6
     ports:
       - "18790:18790"
       - "18791:18791"
