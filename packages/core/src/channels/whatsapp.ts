@@ -151,10 +151,16 @@ export class WhatsAppChannel extends BaseChannel {
       this.connectionState.status = "disconnected";
       this.log.warn(`WhatsApp disconnected: ${statusCode}`);
 
+      try {
+        getDb().query(`UPDATE channels SET status = ? WHERE id = ?`)
+          .run(shouldReconnect ? "connecting" : "disconnected", this.accountId);
+      } catch { /* ignore DB errors */ }
+
       const needsSessionClear =
         statusCode === DisconnectReason.loggedOut ||
-        statusCode === DisconnectReason.badSession ||
-        statusCode === 515; // restartRequired
+        statusCode === DisconnectReason.badSession;
+      // NOTE: 515 (restartRequired) is sent by WhatsApp AFTER a successful pairing
+      // to signal Baileys to reconnect with the new credentials — do NOT clear session.
 
       if (needsSessionClear) {
         this.log.info("Clearing WhatsApp session files for fresh QR scan.");
@@ -174,6 +180,11 @@ export class WhatsAppChannel extends BaseChannel {
       this.connectionState.qrCode = undefined;
       void saveCreds();
       this.log.info("WhatsApp connected successfully");
+
+      try {
+        getDb().query(`UPDATE channels SET status = 'connected', last_active = ? WHERE id = ?`)
+          .run(Date.now(), this.accountId);
+      } catch { /* ignore DB errors */ }
     }
   }
 
@@ -211,10 +222,21 @@ export class WhatsAppChannel extends BaseChannel {
         pushName?: string;
       };
 
-      if (typedMsg.key.fromMe) continue;
-
       const from = typedMsg.key.remoteJid;
       if (!from) continue;
+
+      // Ignore group messages — this channel is for direct user↔agent communication only.
+      if (from.includes("@g.us")) continue;
+
+      // Allow self-messages (user writes to themselves to talk to the agent).
+      // Block messages sent by the user to OTHER contacts (outgoing messages).
+      // Normalize JID: socket.user.id may include device suffix "573....:8@s.whatsapp.net"
+      // while remoteJid is "573....@s.whatsapp.net" — compare only the number part.
+      const rawOwnJid = this.socket?.user?.id ?? "";
+      const ownNumber = rawOwnJid.split(":")[0];
+      const fromNumber = from.split("@")[0];
+      const isSelfMessage = typedMsg.key.fromMe && fromNumber === ownNumber;
+      if (typedMsg.key.fromMe && !isSelfMessage) continue;
 
       const { content, audioMediaId } = this.extractMessageContent(typedMsg.message);
       if (!content && !audioMediaId) continue;

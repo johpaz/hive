@@ -116,6 +116,7 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
     const [showToken, setShowToken] = useState(false);
     const [createdChannelId, setCreatedChannelId] = useState<string | null>(null);
     const [qrData, setQrData] = useState<string | null>(null);
+    const [qrExpired, setQrExpired] = useState(false);
     const [connectError, setConnectError] = useState<string | null>(null);
     const [isConnecting, setIsConnecting] = useState(false);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -144,6 +145,7 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                 setAppId("");
                 setCreatedChannelId(channel.id);
                 setQrData(null);
+                setQrExpired(false);
                 setConnectError(null);
                 setFormData(channel);
                 setShowChangeToken(false);
@@ -156,6 +158,7 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                 setAppId("");
                 setCreatedChannelId(null);
                 setQrData(null);
+                setQrExpired(false);
                 setConnectError(null);
             }
         } else {
@@ -197,6 +200,7 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
 
                 if (data.status === "qr" && data.qrCode) {
                     setQrData(data.qrCode);
+                    setQrExpired(false);
                     setStep("qr");
                 } else if (data.status === "connected") {
                     stopPoll();
@@ -206,6 +210,9 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                     stopPoll();
                     setConnectError("Error de conexión. Intenta de nuevo.");
                     setStep("credentials");
+                } else if (data.status === "disconnected" || data.status === "not_found") {
+                    // QR expired — Baileys will auto-reconnect and emit a new QR
+                    setQrExpired(true);
                 }
             } catch {
                 // network error during poll — keep polling
@@ -474,18 +481,38 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
         if (step === "qr") {
             return (
                 <div className="flex flex-col items-center gap-4 py-4">
-                    {qrData ? (
-                        <QRCanvas data={qrData} />
-                    ) : (
-                        <div className="flex flex-col items-center gap-3 py-6">
-                            <QrCode className="h-16 w-16 text-white/20" />
-                            <p className="text-xs text-white/40">Generando QR...</p>
-                        </div>
-                    )}
-                    <div className="flex items-center gap-2 text-xs text-white/30">
-                        <div className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
-                        Esperando escaneo...
+                    <div className="relative">
+                        {qrData ? (
+                            <QRCanvas data={qrData} />
+                        ) : (
+                            <div className="flex flex-col items-center gap-3 py-6">
+                                <QrCode className="h-16 w-16 text-white/20" />
+                                <p className="text-xs text-white/40">Generando QR...</p>
+                            </div>
+                        )}
+                        {qrExpired && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center rounded-xl bg-zinc-950/80 backdrop-blur-sm gap-2">
+                                <Loader2 className="h-8 w-8 animate-spin text-amber-400" />
+                                <p className="text-xs text-amber-300 font-medium">QR expirado, renovando...</p>
+                            </div>
+                        )}
                     </div>
+                    <div className="flex items-center gap-2 text-xs text-white/30">
+                        {qrExpired ? (
+                            <>
+                                <div className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                Renovando código QR...
+                            </>
+                        ) : (
+                            <>
+                                <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                Esperando escaneo...
+                            </>
+                        )}
+                    </div>
+                    <p className="text-[11px] text-white/30 text-center">
+                        Abre WhatsApp → Ajustes → Dispositivos vinculados → Vincular dispositivo
+                    </p>
                 </div>
             );
         }

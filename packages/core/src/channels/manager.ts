@@ -134,17 +134,23 @@ export class ChannelManager {
           } as WebChatConfig);
           break;
 
-        case "whatsapp":
+        case "whatsapp": {
+          let coordinatorId = "main";
+          try {
+            const coordinator = getDb().query(`SELECT id FROM agents WHERE role = 'coordinator' LIMIT 1`).get() as { id: string } | null;
+            if (coordinator?.id) coordinatorId = coordinator.id;
+          } catch { /* fallback to "main" */ }
           channel = createWhatsAppChannel({
             enabled: true,
             accountId,
-            agentId: (config.agentId as string) ?? "main",
+            agentId: (config.agentId as string) ?? coordinatorId,
             dmPolicy: (config.dmPolicy as "open" | "pairing" | "allowlist") ?? "allowlist",
             allowFrom: (config.allowFrom as string[]) ?? [],
             reconnectMaxAttempts: (config.reconnectMaxAttempts as number) ?? 10,
             reconnectBaseDelayMs: (config.reconnectBaseDelayMs as number) ?? 5000,
           } as WhatsAppConfig);
           break;
+        }
 
         case "slack":
           channel = createSlackChannel({
