@@ -98,7 +98,7 @@ jobs:
           ls -la packages/cli/scripts/generate-ui-bundle.ts
           echo ""
           echo "Running generate-ui-bundle.ts..."
-          bun scripts/generate-ui-bundle.ts
+          bun packages/cli/scripts/generate-ui-bundle.ts
           echo ""
           echo "Generated bundle:"
           ls -la packages/cli/src/ui-bundle.generated.ts
