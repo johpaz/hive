@@ -83,7 +83,18 @@ jobs:
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
       - name: Generate UI bundle
-        run: bun scripts/generate-ui-bundle.ts
+        run: |
+          echo "=== Generating UI Bundle ==="
+          echo "Current directory: $(pwd)"
+          echo "UI dist contents:"
+          ls -la packages/hive-ui/dist/ || echo "❌ UI dist not found!"
+          echo ""
+          echo "Running generate-ui-bundle.ts..."
+          bun scripts/generate-ui-bundle.ts
+          echo ""
+          echo "Generated bundle:"
+          ls -la packages/cli/src/ui-bundle.generated.ts || echo "❌ Bundle not created!"
+          echo "=== UI Bundle generation complete ==="
 
       - name: Compile binary
         run: |
