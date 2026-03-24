@@ -914,7 +914,8 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
 }));
 
 /**
- * Hook para inicializar toda la configuración global al montar la app
+ * Waits until /health returns { status: "ok" } (gateway fully initialized),
+ * then calls fetchAll(). Retries every 2s while the gateway is starting.
  */
 export function useInitializeGlobalConfig(enabled = true) {
   const fetchAll = useGlobalConfigStore((state) => state.fetchAll);
@@ -925,7 +926,7 @@ export function useInitializeGlobalConfig(enabled = true) {
   React.useEffect(() => {
     if (enabled && !isInitialized && !hasRun.current) {
       hasRun.current = true;
-      fetchAll();
+      fetchAll(); // fetchAll internally waits for /health status="ok"
     }
   }, [enabled, isInitialized, fetchAll]);
 }

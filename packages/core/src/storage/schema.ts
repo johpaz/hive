@@ -15,6 +15,8 @@ export const SCHEMA = `
     occupation      TEXT,
     notes           TEXT,
     master_key_hash TEXT,
+    email           TEXT UNIQUE,
+    password_hash   TEXT,
     preferred_cron_channel TEXT NOT NULL DEFAULT 'auto',
     created_at      INTEGER NOT NULL DEFAULT (unixepoch())
   );

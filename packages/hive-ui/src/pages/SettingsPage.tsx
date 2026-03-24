@@ -8,9 +8,10 @@ import { SkillsTab } from "@/modules/agent-config/skills/SkillsTab";
 import { VoiceProvidersPanel } from "@/modules/agent-config/voice/VoiceProvidersPanel";
 import { NotesPanel } from "@/components/NotesPanel";
 import { CronJobsPanel } from "@/components/CronJobsPanel";
+import { SecurityPanel } from "@/components/SecurityPanel";
 import { useSkills, useTools, useMCPServers } from "@/hooks/useProviders";
 
-type PanelId = "etica" | "herramientas" | "mcp" | "skills" | "perfil" | "notas" | "cron-jobs" | "voz";
+type PanelId = "etica" | "herramientas" | "mcp" | "skills" | "perfil" | "notas" | "cron-jobs" | "voz" | "seguridad";
 
 function PanelContent({ panel }: { panel: PanelId }) {
   switch (panel) {
@@ -62,12 +63,18 @@ function PanelContent({ panel }: { panel: PanelId }) {
           <VoiceProvidersPanel />
         </div>
       );
+    case "seguridad":
+      return (
+        <div className="p-4">
+          <SecurityPanel />
+        </div>
+      );
     default:
       return null;
   }
 }
 
-const VALID_PANELS: PanelId[] = ["etica", "herramientas", "mcp", "skills", "perfil", "notas", "cron-jobs", "voz"];
+const VALID_PANELS: PanelId[] = ["etica", "herramientas", "mcp", "skills", "perfil", "notas", "cron-jobs", "voz", "seguridad"];
 
 export function SettingsPage({ forcePanel }: { forcePanel?: PanelId }) {
   const { panel } = useParams<{ panel: string }>();
@@ -125,6 +132,11 @@ export function SettingsPage({ forcePanel }: { forcePanel?: PanelId }) {
       eyebrow: "INTERFAZ DE VOZ",
       title: "Configuración de Voz",
       subtitle: "Configura las API keys de los providers de STT (Speech-to-Text) y TTS (Text-to-Speech) para habilitar la comunicación por voz."
+    },
+    seguridad: {
+      eyebrow: "CONTROL DE ACCESO",
+      title: "Seguridad",
+      subtitle: "Protege tu instancia con email y contraseña. Esencial si despliegas Hive en un servidor público."
     }
   };
 

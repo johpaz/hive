@@ -78,6 +78,18 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
 
 
   if (!response.ok) {
+    // 401: token inválido/expirado → limpiar y redirigir al login
+    if (response.status === 401 && typeof window !== "undefined" && !endpoint.startsWith("/api/auth/")) {
+      localStorage.removeItem("hive-auth-token");
+      window.location.href = "/login";
+      throw new Error("No autorizado");
+    }
+
+    // 503: gateway still starting up — never show a dialog, just throw silently
+    if (response.status === 503) {
+      throw new Error(`API Error: 503 Service Unavailable`);
+    }
+
     let errorMessage = `API Error: ${response.status} ${response.statusText}`;
     try {
       const errorData = await response.json();

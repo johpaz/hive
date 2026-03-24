@@ -61,6 +61,10 @@ function ensureColumnExists(tableName: string, columnName: string, columnDefinit
 function ensureSchemaSync(): void {
     if (!_db) return;
 
+    // Sync users (auth columns)
+    ensureColumnExists("users", "email", "TEXT");
+    ensureColumnExists("users", "password_hash", "TEXT");
+
     // Sync mcp_servers
     ensureColumnExists("mcp_servers", "tools_count", "INTEGER DEFAULT 0");
     ensureColumnExists("mcp_servers", "status", "TEXT NOT NULL DEFAULT 'disconnected'");

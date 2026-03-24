@@ -39,6 +39,7 @@ import { resolveContext } from "./resolver";
 import { voiceService } from "../voice/index";
 import { initializeGateway, type GatewayInitializationResult } from "./initializer";
 import { handleSetupStatus, handleVerifyProvider, handleCompleteSetup, handleSetupProviders, handleSetupEthics } from "./routes/setup";
+import { handleAuthStatus, handleLogin, handleSetupCredentials, handleChangePassword, handleRecover, handleDisableAuth, handleRecoveryKey } from "./routes/auth";
 import { resolveUserId } from "../storage/onboarding";
 import { handleGetAgents, handleCreateAgent, handleUpdateAgent, handleDeleteAgent } from "./routes/agents";
 import { handleGetProviders, handleCreateProvider, handleToggleProvider, handleUpdateProvider, handleSyncProviderModels } from "./routes/providers";
@@ -479,6 +480,11 @@ export async function startGateway(config: Config): Promise<void> {
     // Setup endpoints are always public — needed before the client has a token
     if (url.pathname.startsWith("/api/setup/")) return true;
 
+    // Auth endpoints: status, login, recover are public; others require token
+    if (url.pathname === "/api/auth/status") return true;
+    if (url.pathname === "/api/auth/login") return true;
+    if (url.pathname === "/api/auth/recover") return true;
+
     const activeToken = process.env.HIVE_AUTH_TOKEN;
     if (!activeToken) return true;
     const authHeader = req.headers.get("authorization");
@@ -687,6 +693,36 @@ export async function startGateway(config: Config): Promise<void> {
         // POST /api/setup/complete
         if (url.pathname === "/api/setup/complete" && req.method === "POST") {
           return await handleCompleteSetup(req, config, addCorsHeaders)
+        }
+
+        // ── Auth API ─────────────────────────────────────────────────────────
+        // GET /api/auth/status
+        if (url.pathname === "/api/auth/status" && req.method === "GET") {
+          return handleAuthStatus(req, addCorsHeaders);
+        }
+        // POST /api/auth/login
+        if (url.pathname === "/api/auth/login" && req.method === "POST") {
+          return handleLogin(req, addCorsHeaders);
+        }
+        // POST /api/auth/setup-credentials
+        if (url.pathname === "/api/auth/setup-credentials" && req.method === "POST") {
+          return handleSetupCredentials(req, addCorsHeaders);
+        }
+        // POST /api/auth/change-password
+        if (url.pathname === "/api/auth/change-password" && req.method === "POST") {
+          return handleChangePassword(req, addCorsHeaders);
+        }
+        // POST /api/auth/recover
+        if (url.pathname === "/api/auth/recover" && req.method === "POST") {
+          return handleRecover(req, addCorsHeaders);
+        }
+        // POST /api/auth/disable
+        if (url.pathname === "/api/auth/disable" && req.method === "POST") {
+          return handleDisableAuth(req, addCorsHeaders);
+        }
+        // GET /api/auth/recovery-key
+        if (url.pathname === "/api/auth/recovery-key" && req.method === "GET") {
+          return handleRecoveryKey(req, addCorsHeaders);
         }
 
         // ── Status ───────────────────────────────────────────────────────────
