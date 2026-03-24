@@ -1,23 +1,26 @@
 {
   "name": "@johpaz/hive-sdk",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Hive SDK - Build on top of Hive for enterprise and custom integrations",
   "private": false,
-  "main": "./src/index.ts",
-  "module": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "license": "MIT",
   "files": [
+    "dist/",
     "src/"
   ],
   "type": "module",
   "scripts": {
+    "build": "bun build src/index.ts src/agents/index.ts src/tools/index.ts src/skills/index.ts src/mcp/index.ts src/channels/index.ts src/cron/index.ts src/ethics/index.ts src/database/index.ts src/types/index.ts --outdir dist --target bun --packages external && bunx tsc -p tsconfig.build.json && cp -r dist/src/. dist/ && cp -r dist/sdk/src/. dist/ && rm -rf dist/src dist/sdk dist/core dist/mcp dist/skills dist/code-bridge",
+    "prepublishOnly": "bun run build",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@johpaz/hive-agents": "^0.0.1",
+    "@johpaz/hive-agents": ">=0.0.1",
     "typescript": ">=6.0.0"
   },
   "dependencies": {
@@ -28,16 +31,46 @@
     "typescript": "6.0.1-rc"
   },
   "exports": {
-    ".": "./src/index.ts",
-    "./agents": "./src/agents/index.ts",
-    "./tools": "./src/tools/index.ts",
-    "./skills": "./src/skills/index.ts",
-    "./mcp": "./src/mcp/index.ts",
-    "./channels": "./src/channels/index.ts",
-    "./cron": "./src/cron/index.ts",
-    "./ethics": "./src/ethics/index.ts",
-    "./database": "./src/database/index.ts",
-    "./types": "./src/types/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./agents": {
+      "types": "./dist/agents/index.d.ts",
+      "default": "./dist/agents/index.js"
+    },
+    "./tools": {
+      "types": "./dist/tools/index.d.ts",
+      "default": "./dist/tools/index.js"
+    },
+    "./skills": {
+      "types": "./dist/skills/index.d.ts",
+      "default": "./dist/skills/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/index.d.ts",
+      "default": "./dist/mcp/index.js"
+    },
+    "./channels": {
+      "types": "./dist/channels/index.d.ts",
+      "default": "./dist/channels/index.js"
+    },
+    "./cron": {
+      "types": "./dist/cron/index.d.ts",
+      "default": "./dist/cron/index.js"
+    },
+    "./ethics": {
+      "types": "./dist/ethics/index.d.ts",
+      "default": "./dist/ethics/index.js"
+    },
+    "./database": {
+      "types": "./dist/database/index.d.ts",
+      "default": "./dist/database/index.js"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/types/index.js"
+    }
   },
   "keywords": [
     "hive",

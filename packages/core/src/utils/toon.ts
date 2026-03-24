@@ -248,6 +248,6 @@ export function reportCompression(data: any): void {
 /**
  * Get compression analysis as an object (for programmatic use)
  */
-export function getCompressionAnalysis(data: any) {
+export function getCompressionAnalysis(data: any): ReturnType<typeof analyzeCompression> {
   return analyzeCompression(data)
 }
