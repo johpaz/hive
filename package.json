@@ -70,6 +70,11 @@
   "files": [
     "dist/hive.js",
     "dist/ui",
+    "packages/core/src",
+    "packages/mcp/src",
+    "packages/skills/src",
+    "packages/code-bridge/src",
+    "packages/sdk/src",
     "README.md",
     "LICENSE"
   ],

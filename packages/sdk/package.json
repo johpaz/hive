@@ -1,6 +1,6 @@
 {
-  "name": "@johpaz/hive-agents-sdk",
-  "version": "0.0.7",
+  "name": "@johpaz/hive-sdk",
+  "version": "0.0.1",
   "description": "Hive SDK - Build on top of Hive for enterprise and custom integrations",
   "private": false,
   "main": "./src/index.ts",
@@ -17,8 +17,8 @@
     "lint": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@johpaz/hive-agents-core": "^0.0.7",
-    "typescript": ">=5.0.0"
+    "@johpaz/hive-agents": ">=0.0.7",
+    "typescript": ">=6.0.0"
   },
   "dependencies": {
     "zod": "latest"
