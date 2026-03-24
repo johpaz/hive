@@ -69,14 +69,22 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Install dependencies
+        run: bun install
+
       - name: Download UI artifact
         uses: actions/download-artifact@v4
         with:
           name: hive-ui-dist
           path: packages/hive-ui/dist/
 
-      - name: Install dependencies
-        run: bun install
+      - name: Verify UI dist
+        run: |
+          echo "=== Verifying UI Dist ==="
+          echo "UI dist contents:"
+          ls -la packages/hive-ui/dist/
+          echo "File count: $(find packages/hive-ui/dist -type f | wc -l)"
+          echo "=== UI Dist verification complete ==="
 
       - name: Get version from tag
         id: version
@@ -86,14 +94,16 @@ jobs:
         run: |
           echo "=== Generating UI Bundle ==="
           echo "Current directory: $(pwd)"
-          echo "UI dist contents:"
-          ls -la packages/hive-ui/dist/ || echo "❌ UI dist not found!"
+          echo "Script location:"
+          ls -la packages/cli/scripts/generate-ui-bundle.ts
           echo ""
           echo "Running generate-ui-bundle.ts..."
           bun scripts/generate-ui-bundle.ts
           echo ""
           echo "Generated bundle:"
-          ls -la packages/cli/src/ui-bundle.generated.ts || echo "❌ Bundle not created!"
+          ls -la packages/cli/src/ui-bundle.generated.ts
+          echo "Bundle content preview:"
+          head -5 packages/cli/src/ui-bundle.generated.ts
           echo "=== UI Bundle generation complete ==="
 
       - name: Compile binary
