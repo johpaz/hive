@@ -318,7 +318,7 @@ export async function start(flags: string[]): Promise<void> {
  ║   ██║  ██║██║ ╚████╔╝ ███████╗             ║
  ║   ╚═╝  ╚═╝╚═╝  ╚═══╝  ╚══════╝             ║
  ║                                            ║
- ║   Personal Swarm AI Gateway — v0.0.6       ║
+ ║   Personal Swarm AI Gateway — v0.0.7       ║
  ╚════════════════════════════════════════════╝
 
 📦 Installation: ${adapter.name}
@@ -527,29 +527,20 @@ async function handleProductionMode(
   const isDocker = adapterConfig.type === "docker"
     || (adapterConfig.type === "binary" && process.env.HIVE_UI_DIR === "/app/ui");
 
-  // In Docker mode, UI is served by the Gateway inside the container
-  // No need for separate UI server - the container already serves UI on port 18790
-  let uiPort = gatewayConfig.port;
-  if (!isDocker) {
-    const uiDir = adapterConfig.paths.uiDir;
-    const hasEmbeddedUI = embeddedUI.size > 0;
-
-    // Start UI server if UI assets are available (non-Docker modes)
-    if (hasEmbeddedUI || uiDir) {
-      uiPort = await findFreePort(5173);
-      startUIServer(uiDir, gatewayConfig.port, uiPort);
-      console.log(`🎨 UI server en http://localhost:${uiPort}`);
-    }
-  }
+  // The gateway child process serves both the API and the UI on the same port.
+  // No separate UI server needed — always open the browser on the gateway port.
+  const uiPort = gatewayConfig.port;
 
   // Spawn Gateway child process
   const spawnGatewayProd = (): ReturnType<typeof spawn> => {
-    // For compiled binaries, determine the correct command
-    // In Docker container: /app/hive-server
-    // In host binary installation: hive (from PATH)
-    // In development/source mode: bun with script path
-    const isCompiledBinary = !process.argv[1]?.endsWith(".ts");
+    // Determine the correct command to spawn the gateway child process.
+    // Three cases:
+    //   1. Docker container (/app/hive-server)
+    //   2. Bundled JS or TS source → bun <script> start --skip-check
+    //   3. Compiled Bun binary (no .js/.ts extension) → re-exec process itself
+    const scriptPath = process.argv[1] || "";
     const isDockerContainer = process.env.HIVE_UI_DIR === "/app/ui";
+    const isBunScript = scriptPath.endsWith(".js") || scriptPath.endsWith(".ts");
 
     let command: string;
     let args: string[];
@@ -558,20 +549,20 @@ async function handleProductionMode(
       // Running inside Docker container
       command = "/app/hive-server";
       args = ["start", "--skip-check"];
-    } else if (isCompiledBinary) {
-      // Running as host binary installation
-      command = "hive";
-      args = ["start", "--skip-check"];
-    } else {
-      // Running in development/source mode
+    } else if (isBunScript) {
+      // Bundled JS (npm package) or TypeScript source: use Bun runtime
       command = process.execPath;
-      args = [process.argv[1] || "", "start", "--skip-check"];
+      args = [scriptPath, "start", "--skip-check"];
+    } else {
+      // Compiled Bun binary: process.execPath IS the binary
+      command = process.execPath;
+      args = ["start", "--skip-check"];
     }
 
     const gw = spawn(command, args, {
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, HIVE_GATEWAY_CHILD: "1", NO_BROWSER: "1" },
+      env: { ...process.env, HIVE_GATEWAY_CHILD: "1", NO_BROWSER: "1", ...(getDistDir() ? { HIVE_DIST_DIR: getDistDir()! } : {}) },
     });
 
     gw.stdout?.on("data", (data) => {

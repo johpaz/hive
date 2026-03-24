@@ -215,7 +215,14 @@ export class BinaryAdapter implements InstallationAdapter {
         args.push("--daemon");
       }
 
-      const child = spawn(this.binaryPath, args, {
+      // If the binary path is a .js/.ts script (e.g. during dev/testing with
+      // `bun dist/hive.js start`), we must invoke it through the Bun runtime
+      // rather than trying to execute the file directly as an OS binary.
+      const isBunScript = this.binaryPath.endsWith(".js") || this.binaryPath.endsWith(".ts");
+      const executable = isBunScript ? process.execPath : this.binaryPath;
+      const spawnArgs = isBunScript ? [this.binaryPath, ...args] : args;
+
+      const child = spawn(executable, spawnArgs, {
         stdio: "inherit",
         detached: false,
         env: mergeEnv(process.env, {

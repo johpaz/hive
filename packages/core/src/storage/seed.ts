@@ -251,12 +251,7 @@ export const SEED_DATA: SeedData = {
     { id: "whisper-large-v3-turbo", providerId: "groq", name: "Whisper Large V3 Turbo", modelType: "stt", contextWindow: 0, capabilities: JSON.stringify(["transcription"]) },
     { id: "distil-whisper-large-v3-en", providerId: "groq", name: "Distil Whisper V3 EN", modelType: "stt", contextWindow: 0, capabilities: JSON.stringify(["transcription", "english"]) },
 
-    // ── Ollama (modelos locales — free) ──
-    { id: "qwen3:4b", providerId: "ollama", name: "Qwen3 4B", modelType: "llm", contextWindow: 32000, capabilities: JSON.stringify(["chat", "json_mode", "streaming"]) },
-    { id: "qwen3:8b", providerId: "ollama", name: "Qwen3 8B", modelType: "llm", contextWindow: 32000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
-    { id: "qwen3:14b", providerId: "ollama", name: "Qwen3 14B", modelType: "llm", contextWindow: 32000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
-    { id: "llama3.2:3b", providerId: "ollama", name: "Llama 3.2 3B", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "json_mode", "streaming"]) },
-    { id: "gemma3:9b", providerId: "ollama", name: "Gemma 3 9B", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "json_mode", "streaming"]) },
+    // ── Ollama: models are detected at runtime via /api/setup/ollama-models and inserted dynamically ──
 
     // ── ElevenLabs (TTS) ──
     { id: "eleven_flash_v2_5", providerId: "elevenlabs", name: "Eleven Flash V2.5", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "fast"]) },

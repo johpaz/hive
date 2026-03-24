@@ -155,6 +155,8 @@ export default function SetupPage() {
   const [verificationStatus, setVerificationStatus] = useState<"idle" | "verifying" | "success" | "error">("idle");
   const [stepError, setStepError] = useState<string | null>(null);
   const [providers, setProviders] = useState<{ id: string; name: string; models: { id: string; name: string }[] }[]>([]);
+  const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string }[] | null>(null);
+  const [ollamaDetecting, setOllamaDetecting] = useState(false);
   const [ethicsList, setEthicsList] = useState<{ id: string; name: string; description: string | null; content: string; isDefault: boolean; active: boolean }[]>([]);
 
   useEffect(() => {
@@ -484,7 +486,12 @@ export default function SetupPage() {
               "cursor-pointer transition-all hover:shadow-md",
               wizardData.provider === provider.id && "border-amber-500 ring-2 ring-amber-500"
             )}
-            onClick={() => updateData({ provider: provider.id, model: "", apiKeyVerified: false })}
+            onClick={() => {
+              updateData({ provider: provider.id, model: "", apiKeyVerified: false });
+              if (provider.id === "ollama") {
+                setOllamaModels(null);
+              }
+            }}
           >
             <CardContent className="flex items-center gap-4 p-4">
               <span className="text-3xl">{PROVIDER_LOGOS[provider.id] ?? "🤖"}</span>
@@ -562,7 +569,67 @@ export default function SetupPage() {
                 </div>
               )}
 
-              {(wizardData.provider === "ollama" || wizardData.apiKeyVerified) && (
+              {wizardData.provider === "ollama" && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={ollamaDetecting}
+                      onClick={() => {
+                        setOllamaModels(null);
+                        setOllamaDetecting(true);
+                        updateData({ model: "" });
+                        fetch(`${getApiBaseUrl()}/api/setup/ollama-models`)
+                          .then(r => r.json())
+                          .then(d => { setOllamaModels(d.models ?? []); setOllamaDetecting(false); })
+                          .catch(() => { setOllamaModels([]); setOllamaDetecting(false); });
+                      }}
+                    >
+                      {ollamaDetecting
+                        ? <><Loader2 className="w-3 h-3 animate-spin mr-1" />Detectando...</>
+                        : "🔍 Detectar modelos"}
+                    </Button>
+                    {!ollamaDetecting && ollamaModels !== null && (
+                      <span className="text-xs text-muted-foreground">
+                        {ollamaModels.length > 0
+                          ? `${ollamaModels.length} modelo${ollamaModels.length !== 1 ? "s" : ""} encontrado${ollamaModels.length !== 1 ? "s" : ""}`
+                          : "Sin modelos — instala uno con ollama pull"}
+                      </span>
+                    )}
+                  </div>
+
+                  {ollamaModels && ollamaModels.length > 0 && (
+                    <div className="space-y-1">
+                      <Label htmlFor="model">Modelo</Label>
+                      <Select
+                        value={wizardData.model}
+                        onValueChange={(value) => updateData({ model: value })}
+                      >
+                        <SelectTrigger className={cn(!wizardData.model && stepError?.includes("modelo") && "border-red-500")}>
+                          <SelectValue placeholder="Selecciona un modelo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ollamaModels.map((m, i) => (
+                            <SelectItem key={m.id} value={m.id}>
+                              {m.name}{i === 0 ? " (Recomendado)" : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {!ollamaDetecting && ollamaModels !== null && ollamaModels.length === 0 && (
+                    <p className="text-xs text-amber-600">
+                      Asegúrate que Ollama esté corriendo (<code>ollama serve</code>) y tengas modelos (<code>ollama pull llama3.2</code>).
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {wizardData.provider !== "ollama" && wizardData.apiKeyVerified && (
                 <div className="space-y-2">
                   <Label htmlFor="model">Modelo</Label>
                   <Select
@@ -578,9 +645,6 @@ export default function SetupPage() {
                           {m.name || m.id}{i === 0 ? " (Recomendado)" : ""}
                         </SelectItem>
                       ))}
-                      {wizardData.provider === "ollama" && (selectedProvider?.models ?? []).length === 0 && (
-                        <SelectItem value="llama3.2:3b">llama3.2:3b (Recomendado)</SelectItem>
-                      )}
                     </SelectContent>
                   </Select>
                 </div>

@@ -45,27 +45,22 @@ export class DockerAdapter implements InstallationAdapter {
    * Find the docker-compose.yml file
    */
   private findComposeFile(): string {
-    // Check current directory
-    const localCompose = path.join(process.cwd(), "docker-compose.yml");
-    if (existsSync(localCompose)) {
-      return localCompose;
-    }
-
-    // Check common installation locations
-    const commonPaths = [
+    // Only check standard installation locations — NOT process.cwd().
+    // Searching cwd causes false positives when running from the dev/source directory.
+    const standardPaths = [
       "/opt/hive/docker-compose.yml",
       "/usr/local/share/hive/docker-compose.yml",
       path.join(process.env.HOME || "", ".hive", "docker-compose.yml"),
     ];
 
-    for (const composePath of commonPaths) {
+    for (const composePath of standardPaths) {
       if (existsSync(composePath)) {
         return composePath;
       }
     }
 
-    // Default to current directory (will fail gracefully)
-    return localCompose;
+    // Default to a path that won't exist → detect() will return false gracefully
+    return "/opt/hive/docker-compose.yml";
   }
 
   /**
@@ -84,24 +79,17 @@ export class DockerAdapter implements InstallationAdapter {
         return false;
       }
 
-      // Check if Hive container is defined
+      // Verify the compose file actually defines a "hive" service.
+      // Use "config --services" instead of "ps" so it works even when containers are stopped.
       try {
-        const output = execSync("docker compose ps --format json", {
-          encoding: "utf-8",
-          stdio: ["ignore", "pipe", "ignore"],
-        });
-        
-        // Parse JSON output to check for hive service
-        const services = JSON.parse(output.trim());
-        if (Array.isArray(services)) {
-          return services.some((s: any) => s.service === "hive");
-        }
+        const out = execSync(
+          `docker compose -f "${this.composeFile}" config --services`,
+          { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }
+        );
+        return out.trim().split("\n").map(s => s.trim()).includes("hive");
       } catch {
-        // Container may not be running, but installation exists
-        return true;
+        return false;
       }
-
-      return true;
     } catch {
       return false;
     }

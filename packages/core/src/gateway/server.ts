@@ -38,7 +38,7 @@ import { decryptConfig } from "../storage/crypto.ts";
 import { resolveContext } from "./resolver";
 import { voiceService } from "../voice/index";
 import { initializeGateway, type GatewayInitializationResult } from "./initializer";
-import { handleSetupStatus, handleVerifyProvider, handleCompleteSetup, handleSetupProviders, handleSetupEthics } from "./routes/setup";
+import { handleSetupStatus, handleVerifyProvider, handleCompleteSetup, handleSetupProviders, handleSetupEthics, handleSetupOllamaModels } from "./routes/setup";
 import { handleAuthStatus, handleLogin, handleSetupCredentials, handleChangePassword, handleRecover, handleDisableAuth, handleRecoveryKey } from "./routes/auth";
 import { resolveUserId } from "../storage/onboarding";
 import { handleGetAgents, handleCreateAgent, handleUpdateAgent, handleDeleteAgent } from "./routes/agents";
@@ -678,6 +678,11 @@ export async function startGateway(config: Config): Promise<void> {
         // GET /api/setup/providers
         if (url.pathname === "/api/setup/providers" && req.method === "GET") {
           return handleSetupProviders(addCorsHeaders, req)
+        }
+
+        // GET /api/setup/ollama-models
+        if (url.pathname === "/api/setup/ollama-models" && req.method === "GET") {
+          return handleSetupOllamaModels(addCorsHeaders, req)
         }
 
         // GET /api/setup/ethics

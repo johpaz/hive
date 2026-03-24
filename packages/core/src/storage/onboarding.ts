@@ -572,6 +572,14 @@ export async function saveProviderConfig(data: {
     log.info("✅ Provider actualizado:", { provider: data.provider });
 
     // 2️⃣ Segundo: Activar el modelo seleccionado
+    // For Ollama, models are inserted dynamically (not seeded), ensure row exists first
+    if (data.provider === "ollama" && data.model) {
+      db.query(`
+        INSERT OR IGNORE INTO models (id, name, provider_id, model_type, enabled, active)
+        VALUES (?, ?, 'ollama', 'llm', 1, 1)
+      `).run(data.model, data.model);
+    }
+
     db.query(`
       UPDATE models SET enabled = 1, active = 1
       WHERE id = ?
@@ -627,7 +635,12 @@ export function saveAgentConfig(data: {
     const db = getDb();
     let finalAgentId = data.agentId;
 
-
+    // Validate FK references — use null if the referenced row doesn't exist
+    // (e.g. custom Ollama model IDs are not in the seed models table)
+    const rawProviderId = data.providerId || null;
+    const rawModelId = data.modelId || null;
+    const safeProviderId = rawProviderId && db.query("SELECT id FROM providers WHERE id = ?").get(rawProviderId) ? rawProviderId : null;
+    const safeModelId = rawModelId && db.query("SELECT id FROM models WHERE id = ?").get(rawModelId) ? rawModelId : null;
 
     // Si no se pasa agentId, dejar que SQLite lo genere automáticamente
     if (!finalAgentId) {
@@ -642,8 +655,8 @@ export function saveAgentConfig(data: {
         data.description || null,
         data.tone,
         HIVE_SYSTEM_PROMPT,
-        data.providerId || null,
-        data.modelId || null
+        safeProviderId,
+        safeModelId
       ) as { id: string };
       finalAgentId = result.id;
       log.info("✅ Agent created with auto-generated ID", { agentId: finalAgentId });
@@ -671,8 +684,8 @@ export function saveAgentConfig(data: {
         data.description || null,
         data.tone,
         HIVE_SYSTEM_PROMPT,
-        data.providerId || null,
-        data.modelId || null
+        safeProviderId,
+        safeModelId
       );
     }
 

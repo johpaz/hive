@@ -10,58 +10,58 @@ export class OllamaProvider implements LLMProvider {
 
     const modelName = options.model.replace(/^ollama\//, "")
     const host = options.baseUrl?.trim() || process.env.OLLAMA_HOST || "http://localhost:11434"
+    const isCloud = host.includes("ollama.com")
+    const headers: Record<string, string> = {}
+    if (isCloud && options.apiKey) headers["Authorization"] = `Bearer ${options.apiKey}`
+
+    const client = new Ollama({
+      host,
+      ...(Object.keys(headers).length ? { headers } : {}),
+    })
+
+    const messages = sanitizeMessages(options.messages).map((m): any => {
+      if (m.role === "assistant" && m.tool_calls?.length) {
+        return {
+          role: "assistant",
+          content: m.content || "",
+          tool_calls: m.tool_calls.map((tc) => ({
+            function: {
+              name: tc.function.name,
+              arguments: (() => {
+                try { return JSON.parse(tc.function.arguments) } catch { return {} }
+              })(),
+            },
+          })),
+        }
+      }
+      if (m.role === "tool") return { role: "tool", content: m.content }
+      return { role: m.role, content: m.content }
+    })
+
+    const tools = options.tools?.map((t) => ({
+      type: "function" as const,
+      function: {
+        name: t.function.name,
+        description: t.function.description,
+        parameters: t.function.parameters,
+      },
+    }))
+
+    // Default num_ctx to 4096 for local models — prevents OOM on small models (2B-7B)
+    // when Ollama's default (32k+) is too large for available RAM/VRAM.
+    // Users can override via providers.num_ctx in DB.
+    const runtimeOptions: Record<string, unknown> = {
+      num_ctx: options.numCtx ?? 4096,
+    }
+    if (options.numGpu !== undefined) runtimeOptions.num_gpu = options.numGpu
+    if (options.temperature !== undefined) runtimeOptions.temperature = options.temperature
 
     try {
-      const isCloud = host.includes("ollama.com")
-      const headers: Record<string, string> = {}
-      if (isCloud && options.apiKey) {
-        headers["Authorization"] = `Bearer ${options.apiKey}`
-      }
-
-      const client = new Ollama({
-        host,
-        ...(Object.keys(headers).length ? { headers } : {}),
-      })
-
-      const messages = sanitizeMessages(options.messages).map((m): any => {
-        if (m.role === "assistant" && m.tool_calls?.length) {
-          return {
-            role: "assistant",
-            content: m.content || "",
-            tool_calls: m.tool_calls.map((tc) => ({
-              function: {
-                name: tc.function.name,
-                arguments: (() => {
-                  try { return JSON.parse(tc.function.arguments) } catch { return {} }
-                })(),
-              },
-            })),
-          }
-        }
-        if (m.role === "tool") {
-          return { role: "tool", content: m.content }
-        }
-        return { role: m.role, content: m.content }
-      })
-
-      const tools = options.tools?.map((t) => ({
-        type: "function" as const,
-        function: {
-          name: t.function.name,
-          description: t.function.description,
-          parameters: t.function.parameters,
-        },
-      }))
-
-      const runtimeOptions: Record<string, unknown> = {}
-      if (options.numCtx) runtimeOptions.num_ctx = options.numCtx
-      if (options.numGpu !== undefined) runtimeOptions.num_gpu = options.numGpu
-      if (options.temperature !== undefined) runtimeOptions.temperature = options.temperature
 
       log.info(
         `[llm-client] ollama/${modelName} @ ${isCloud ? "ollama.com" : host} stream=true` +
         ` — ${messages.length} msgs, ${tools?.length ?? 0} tools` +
-        (options.numCtx ? ` num_ctx=${options.numCtx}` : "")
+        ` num_ctx=${runtimeOptions.num_ctx}`
       )
 
       const stream = await client.chat({
@@ -116,8 +116,26 @@ export class OllamaProvider implements LLMProvider {
       if (options.numCtx) log.error(`[llm-client] Context requested: num_ctx=${options.numCtx}`)
       if (options.tools?.length) log.error(`[llm-client] Tools defined: ${options.tools.length}`)
 
-      if (error.message?.includes("model runner has unexpectedly stopped")) {
-        log.warn(`[llm-client] TIP: This usually means Ollama ran out of VRAM/RAM. Try reducing 'num_ctx' or the number of tools.`)
+      // If the model runner crashed (likely OOM) and tools were sent, retry without tools.
+      // The model can still answer conversationally — tools will be unavailable this turn.
+      if (
+        error.message?.includes("model runner has unexpectedly stopped") &&
+        tools?.length
+      ) {
+        log.warn(`[llm-client] OOM with tools — retrying without tools (num_ctx=${runtimeOptions.num_ctx})`)
+        const stream2 = await client.chat({
+          model: modelName,
+          messages,
+          tools: undefined,
+          options: runtimeOptions,
+          stream: true,
+        })
+        let content = ""
+        for await (const part of stream2) {
+          const delta = part.message?.content ?? ""
+          if (delta) { content += delta; if (options.onToken) options.onToken(delta) }
+        }
+        return { content, tool_calls: undefined, stop_reason: "stop" }
       }
 
       throw error

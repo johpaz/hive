@@ -16,8 +16,12 @@ import type { Config } from "../../config/loader"
 
 export function isSetupMode(): boolean {
   try {
-    const count = (getDb().query("SELECT COUNT(*) as count FROM users").get() as { count: number }).count
-    return count === 0
+    const db = getDb()
+    const userCount = (db.query("SELECT COUNT(*) as count FROM users").get() as { count: number }).count
+    if (userCount === 0) return true
+    // Also require a coordinator agent — setup may have failed mid-way after creating the user
+    const agentCount = (db.query("SELECT COUNT(*) as count FROM agents WHERE role = 'coordinator'").get() as { count: number }).count
+    return agentCount === 0
   } catch {
     return true
   }
@@ -78,6 +82,41 @@ export function handleSetupEthics(
       Response.json({ error: (error as Error).message }, { status: 500 }),
       req
     )
+  }
+}
+
+/** GET /api/setup/ollama-models — public
+ *  Queries the local Ollama instance for installed models.
+ *  Used during setup to auto-populate the model selector.
+ */
+export async function handleSetupOllamaModels(
+  addCorsHeaders: (response: Response, request: Request) => Response,
+  req: Request
+): Promise<Response> {
+  const base = (process.env.OLLAMA_HOST || "http://localhost:11434").replace(/\/(v1|api)\/?$/, "")
+  try {
+    const res = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(5000) })
+    if (!res.ok) {
+      return addCorsHeaders(Response.json({ models: [], error: `Ollama respondió ${res.status}` }), req)
+    }
+    const data = await res.json() as { models?: Array<{ name: string }> }
+    const detected = data.models ?? []
+
+    // Persist detected models into the DB so they can be FK-referenced by agents
+    try {
+      const db = getDb()
+      for (const m of detected) {
+        db.query(`
+          INSERT OR IGNORE INTO models (id, name, provider_id, model_type, enabled, active)
+          VALUES (?, ?, 'ollama', 'llm', 1, 0)
+        `).run(m.name, m.name)
+      }
+    } catch { /* DB may not be initialized yet during early setup — ignore */ }
+
+    const models = detected.map(m => ({ id: m.name, name: m.name }))
+    return addCorsHeaders(Response.json({ models }), req)
+  } catch {
+    return addCorsHeaders(Response.json({ models: [], error: "Ollama no disponible en localhost:11434" }), req)
   }
 }
 
@@ -253,7 +292,28 @@ export async function handleCompleteSetup(
   const body = await req.json().catch(() => ({}))
 
   try {
+    // Clean up any partial setup state (user created but setup didn't finish)
+    try {
+      const db = getDb()
+      const userCount = (db.query("SELECT COUNT(*) as count FROM users").get() as { count: number }).count
+      const agentCount = (db.query("SELECT COUNT(*) as count FROM agents WHERE role = 'coordinator'").get() as { count: number }).count
+      if (userCount > 0 && agentCount === 0) {
+        db.exec("DELETE FROM users") // ON DELETE CASCADE cleans up agents, channels, etc.
+      }
+    } catch { /* ignore cleanup errors */ }
+
     initOnboardingDb()
+
+    // For Ollama: insert the selected model now that providers are seeded
+    // (the earlier insert in handleSetupOllamaModels may have failed due to missing FK)
+    if (body.provider === "ollama" && body.model) {
+      try {
+        getDb().query(`
+          INSERT OR IGNORE INTO models (id, name, provider_id, model_type, enabled, active)
+          VALUES (?, ?, 'ollama', 'llm', 1, 1)
+        `).run(body.model, body.model)
+      } catch { /* ignore */ }
+    }
 
     // Let DB auto-generate userId via randomblob(16) — same as CLI onboarding
     const userId = saveUserProfile({
@@ -274,12 +334,12 @@ export async function handleCompleteSetup(
       modelId: body.model || "",
     })
 
-    if (body.provider && body.apiKey) {
+    if (body.provider && (body.apiKey || body.provider === "ollama")) {
       await saveProviderConfig({
         userId,
         provider: body.provider,
         model: body.model,
-        apiKey: body.apiKey,
+        apiKey: body.apiKey || undefined,
       })
     }
 
