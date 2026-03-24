@@ -69,12 +69,21 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Download UI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: hive-ui-dist
+          path: packages/hive-ui/dist/
+
       - name: Install dependencies
         run: bun install
 
       - name: Get version from tag
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Generate UI bundle
+        run: bun scripts/generate-ui-bundle.ts
 
       - name: Compile binary
         run: |
