@@ -35,45 +35,45 @@
         "@types/bun": "latest",
         "@types/js-yaml": "^4.0.9",
         "@types/react": "^18.3.23",
-        "typescript": "6.0.1-rc",
+        "typescript": "6.0.2",
       },
     },
     "packages/cli": {
       "name": "@johpaz/hive-agents-cli",
-      "version": "0.0.2",
+      "version": "0.0.8",
       "bin": {
         "hive": "./src/index.ts",
       },
       "dependencies": {
         "@clack/prompts": "1.1.0",
-        "@johpaz/hive-agents-code-bridge": "workspace:*",
-        "@johpaz/hive-agents-core": "workspace:*",
+        "@johpaz/hive-agents-code-bridge": "^0.0.8",
+        "@johpaz/hive-agents-core": "^0.0.8",
         "toon-format-parser": "1.1.3",
       },
       "devDependencies": {
         "@types/bun": "latest",
-        "typescript": "6.0.1-rc",
+        "typescript": "6.0.2",
       },
     },
     "packages/code-bridge": {
       "name": "@johpaz/hive-agents-code-bridge",
-      "version": "0.0.2",
+      "version": "0.0.8",
       "dependencies": {
-        "@johpaz/hive-agents-mcp": "workspace:*",
+        "@johpaz/hive-agents-mcp": "^0.0.8",
         "zod": "^4.3.6",
       },
       "peerDependencies": {
-        "@johpaz/hive-agents-core": "workspace:*",
+        "@johpaz/hive-agents-core": "^0.0.8",
       },
     },
     "packages/core": {
       "name": "@johpaz/hive-agents-core",
-      "version": "0.0.2",
+      "version": "0.0.8",
       "dependencies": {
         "@ag-ui/core": "^0.0.46",
-        "@johpaz/hive-agents-code-bridge": "workspace:*",
-        "@johpaz/hive-agents-mcp": "workspace:*",
-        "@johpaz/hive-agents-skills": "workspace:*",
+        "@johpaz/hive-agents-code-bridge": "^0.0.8",
+        "@johpaz/hive-agents-mcp": "^0.0.8",
+        "@johpaz/hive-agents-skills": "^0.0.8",
         "@modelcontextprotocol/sdk": "latest",
         "@sapphire/snowflake": "latest",
         "@slack/bolt": "latest",
@@ -89,12 +89,12 @@
       },
       "devDependencies": {
         "@types/bun": "latest",
-        "typescript": "6.0.1-rc",
+        "typescript": "6.0.2",
       },
     },
     "packages/hive-ui": {
       "name": "@johpaz/hive-agents-ui",
-      "version": "0.0.2",
+      "version": "0.0.8",
       "dependencies": {
         "@hookform/resolvers": "^3.10.0",
         "@radix-ui/react-accordion": "^1.2.11",
@@ -167,7 +167,7 @@
         "globals": "^15.15.0",
         "jsdom": "^20.0.3",
         "tailwindcss": "^4.2.1",
-        "typescript": "6.0.1-rc",
+        "typescript": "6.0.2",
         "typescript-eslint": "^8.38.0",
         "vite": "^7.3.1",
         "vitest": "^3.2.4",
@@ -175,40 +175,40 @@
     },
     "packages/mcp": {
       "name": "@johpaz/hive-agents-mcp",
-      "version": "0.0.2",
+      "version": "0.0.8",
       "dependencies": {
         "@modelcontextprotocol/sdk": "latest",
         "zod": "latest",
       },
       "devDependencies": {
         "@types/bun": "latest",
-        "typescript": "6.0.1-rc",
+        "typescript": "6.0.2",
       },
     },
     "packages/sdk": {
-      "name": "@johpaz/hive-agents-sdk",
-      "version": "0.0.1",
+      "name": "@johpaz/hive-sdk",
+      "version": "0.0.8",
       "dependencies": {
         "zod": "latest",
       },
       "devDependencies": {
         "@types/bun": "latest",
-        "typescript": "6.0.1-rc",
+        "typescript": "6.0.2",
       },
       "peerDependencies": {
-        "@johpaz/hive-agents-core": "workspace:*",
-        "typescript": ">=5.0.0",
+        "@johpaz/hive-agents": ">=0.0.1",
+        "typescript": ">=6.0.0",
       },
     },
     "packages/skills": {
       "name": "@johpaz/hive-agents-skills",
-      "version": "0.0.2",
+      "version": "0.0.8",
       "dependencies": {
         "js-yaml": "latest",
       },
       "devDependencies": {
         "@types/bun": "latest",
-        "typescript": "6.0.1-rc",
+        "typescript": "6.0.2",
       },
     },
   },
@@ -436,6 +436,8 @@
 
     "@img/sharp-win32-x64": ["@img/sharp-win32-x64@0.34.5", "", { "os": "win32", "cpu": "x64" }, "sha512-+29YMsqY2/9eFEiW93eqWnuLcWcufowXewwSNIT6UwZdUUCrM3oFjMWH/Z6/TMmb4hlFenmfAVbpWeup2jryCw=="],
 
+    "@johpaz/hive-agents": ["@johpaz/hive-agents@0.0.8", "", { "dependencies": { "@ag-ui/core": "^0.0.46", "@anthropic-ai/sdk": "^0.74.0", "@clack/prompts": "^0.5.0", "@google/genai": "^1.43.0", "@lightpanda/browser": "^1.0.0", "@modelcontextprotocol/sdk": "^1.26.0", "@sapphire/snowflake": "latest", "@slack/bolt": "latest", "@vitejs/plugin-react": "^5.1.4", "@whiskeysockets/baileys": "latest", "async-mutex": "^0.5.0", "cron-parser": "^5.5.0", "croner": "^10.0.1", "discord.js": "latest", "grammy": "latest", "groq-sdk": "^0.37.0", "isomorphic-git": "^1.37.2", "js-yaml": "^4.1.1", "ollama": "^0.6.3", "openai": "^6.18.0", "puppeteer-core": "^24.0.0", "qrcode-terminal": "latest", "react-markdown": "^10.1.0", "toon-format-parser": "^1.1.0", "zod": "latest" }, "bin": { "hive": "dist/hive.js" } }, "sha512-BYsWC8yt/r+4TIFouXmynZO3xKWjs/FIAIXRyGRCeTyYovPQRPBVujRB3Vs9SHELa5L4U383qvDaCc2aqfDXTw=="],
+
     "@johpaz/hive-agents-cli": ["@johpaz/hive-agents-cli@workspace:packages/cli"],
 
     "@johpaz/hive-agents-code-bridge": ["@johpaz/hive-agents-code-bridge@workspace:packages/code-bridge"],
@@ -444,11 +446,11 @@
 
     "@johpaz/hive-agents-mcp": ["@johpaz/hive-agents-mcp@workspace:packages/mcp"],
 
-    "@johpaz/hive-agents-sdk": ["@johpaz/hive-agents-sdk@workspace:packages/sdk"],
-
     "@johpaz/hive-agents-skills": ["@johpaz/hive-agents-skills@workspace:packages/skills"],
 
     "@johpaz/hive-agents-ui": ["@johpaz/hive-agents-ui@workspace:packages/hive-ui"],
+
+    "@johpaz/hive-sdk": ["@johpaz/hive-sdk@workspace:packages/sdk"],
 
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 
@@ -1424,7 +1426,7 @@
 
     "levn": ["levn@0.4.1", "", { "dependencies": { "prelude-ls": "^1.2.1", "type-check": "~0.4.0" } }, "sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ=="],
 
-    "libsignal": ["@whiskeysockets/libsignal-node@github:whiskeysockets/libsignal-node#1c30d7d", { "dependencies": { "curve25519-js": "^0.0.4", "protobufjs": "6.8.8" } }, "WhiskeySockets-libsignal-node-1c30d7d", "sha512-5q4/OuDQaMYx3RpDqMqS3WYyqjrsSMpU8ipQZtpYnm5l6DwNoLV9oIYMDK0NILKW+tyk3tVCIA11BMYQ+A1+GA=="],
+    "libsignal": ["@whiskeysockets/libsignal-node@github:whiskeysockets/libsignal-node#1c30d7d", { "dependencies": { "curve25519-js": "^0.0.4", "protobufjs": "6.8.8" } }, "WhiskeySockets-libsignal-node-1c30d7d"],
 
     "lightningcss": ["lightningcss@1.31.1", "", { "dependencies": { "detect-libc": "^2.0.3" }, "optionalDependencies": { "lightningcss-android-arm64": "1.31.1", "lightningcss-darwin-arm64": "1.31.1", "lightningcss-darwin-x64": "1.31.1", "lightningcss-freebsd-x64": "1.31.1", "lightningcss-linux-arm-gnueabihf": "1.31.1", "lightningcss-linux-arm64-gnu": "1.31.1", "lightningcss-linux-arm64-musl": "1.31.1", "lightningcss-linux-x64-gnu": "1.31.1", "lightningcss-linux-x64-musl": "1.31.1", "lightningcss-win32-arm64-msvc": "1.31.1", "lightningcss-win32-x64-msvc": "1.31.1" } }, "sha512-l51N2r93WmGUye3WuFoN5k10zyvrVs0qfKBhyC5ogUQ6Ew6JUSswh78mbSO+IU3nTWsyOArqPCcShdQSadghBQ=="],
 
@@ -1986,7 +1988,7 @@
 
     "typed-query-selector": ["typed-query-selector@2.12.1", "", {}, "sha512-uzR+FzI8qrUEIu96oaeBJmd9E7CFEiQ3goA5qCVgc4s5llSubcfGHq9yUstZx/k4s9dXHVKsE35YWoFyvEqEHA=="],
 
-    "typescript": ["typescript@6.0.1-rc", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-7XlzYb+p/7YxX6qSOzwB4mxVFRdAgWWkj1PgAZ+jzldeuFV6Z77vwFbNxHsUXAL/bhlWY2jCT8shLwDJR8337g=="],
+    "typescript": ["typescript@6.0.2", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-bGdAIrZ0wiGDo5l8c++HWtbaNCWTS4UTv7RaTH/ThVIgjkveJt83m74bBHMJkuCbslY8ixgLBVZJIOiQlQTjfQ=="],
 
     "typescript-eslint": ["typescript-eslint@8.57.1", "", { "dependencies": { "@typescript-eslint/eslint-plugin": "8.57.1", "@typescript-eslint/parser": "8.57.1", "@typescript-eslint/typescript-estree": "8.57.1", "@typescript-eslint/utils": "8.57.1" }, "peerDependencies": { "eslint": "^8.57.0 || ^9.0.0 || ^10.0.0", "typescript": ">=4.8.4 <6.0.0" } }, "sha512-fLvZWf+cAGw3tqMCYzGIU6yR8K+Y9NT2z23RwOjlNFF2HwSB3KhdEFI5lSBv8tNmFkkBShSjsCjzx1vahZfISA=="],
 

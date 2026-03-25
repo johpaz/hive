@@ -485,6 +485,21 @@ export async function startGateway(config: Config): Promise<void> {
     if (url.pathname === "/api/auth/login") return true;
     if (url.pathname === "/api/auth/recover") return true;
 
+    // Users endpoint is public when no credentials configured (matches /api/auth/status behavior)
+    // This allows the UI to load user data when login is not configured yet
+    if (url.pathname === "/api/users" && req.method === "GET") {
+      try {
+        const user = getDb().query(
+          `SELECT email, password_hash FROM users LIMIT 1`
+        ).get() as { email: string | null; password_hash: string | null } | null;
+        const hasCredentials = !!(user?.email && user?.password_hash);
+        // Allow access if no credentials configured
+        if (!hasCredentials) return true;
+      } catch {
+        // If DB query fails, fall through to token check
+      }
+    }
+
     const activeToken = process.env.HIVE_AUTH_TOKEN;
     if (!activeToken) return true;
     const authHeader = req.headers.get("authorization");
