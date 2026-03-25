@@ -8,11 +8,11 @@ COPY packages/hive-ui ./packages/hive-ui
 
 # Stub other workspace packages so bun resolves the monorepo correctly
 RUN mkdir -p packages/core packages/cli packages/mcp packages/skills packages/code-bridge && \
-    echo '{"name":"@hive/core","version":"0.0.0"}' > packages/core/package.json && \
-    echo '{"name":"@hive/cli","version":"0.0.0"}' > packages/cli/package.json && \
-    echo '{"name":"@hive/mcp","version":"0.0.0"}' > packages/mcp/package.json && \
-    echo '{"name":"@hive/skills","version":"0.0.0"}' > packages/skills/package.json && \
-    echo '{"name":"@hive/code-bridge","version":"0.0.0"}' > packages/code-bridge/package.json
+      echo '{"name":"@hive/core","version":"0.0.0"}' > packages/core/package.json && \
+      echo '{"name":"@hive/cli","version":"0.0.0"}' > packages/cli/package.json && \
+      echo '{"name":"@hive/mcp","version":"0.0.0"}' > packages/mcp/package.json && \
+      echo '{"name":"@hive/skills","version":"0.0.0"}' > packages/skills/package.json && \
+      echo '{"name":"@hive/code-bridge","version":"0.0.0"}' > packages/code-bridge/package.json
 
 RUN bun install
 RUN cd packages/hive-ui && bun run build
@@ -77,7 +77,6 @@ ENV HIVE_HOST=0.0.0.0
 ENV HIVE_PORT=18790
 ENV HIVE_UI_DIR=/app/ui
 ENV NODE_ENV=production
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
 
 CMD ["/app/hive-server", "start", "--skip-check"]
