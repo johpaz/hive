@@ -24,6 +24,16 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path,
       },
+      "/health": {
+        target: "http://127.0.0.1:18790",
+        changeOrigin: true,
+        rewrite: (path) => path,
+      },
+      "/status": {
+        target: "http://127.0.0.1:18790",
+        changeOrigin: true,
+        rewrite: (path) => path,
+      },
       "/ws": {
         target: "ws://127.0.0.1:18790",
         ws: true,
