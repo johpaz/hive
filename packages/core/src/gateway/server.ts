@@ -598,16 +598,36 @@ export async function startGateway(config: Config): Promise<void> {
         const isUiRequest = url.pathname === "/ui" || url.pathname === "/ui/" || url.pathname.startsWith("/ui/") || url.pathname.startsWith("/ui?");
         const isSetupRequest = url.pathname === "/setup" || url.pathname === "/setup/" || url.pathname.startsWith("/setup/") || url.pathname.startsWith("/setup?");
 
-        // In development mode, skip UI handling - Vite handles it directly
-        // Only serve static files from dist if they exist (production mode)
+        // In development mode, proxy to Vite dev server
+        // In production, serve static files from dist folder
         if (!isApiRequest && !isWsRequest) {
-          // In development: tell user to use Vite directly
+          // In development: proxy to Vite dev server (5173)
           if (isDev) {
-            return new Response(
-              "UI not available through Gateway in development.\n\n" +
-              "Use Vite directly: http://localhost:5173\n",
-              { status: 404, headers: { "Content-Type": "text/plain" } }
-            );
+            try {
+              const viteUrl = `http://127.0.0.1:5173${url.pathname}${url.search}`;
+              const viteResponse = await fetch(viteUrl, {
+                method: req.method,
+                headers: req.headers,
+                body: req.method !== "GET" && req.method !== "HEAD" ? await req.blob() : undefined,
+              });
+
+              // Copy Vite response headers and add CORS
+              const headers = new Headers(viteResponse.headers);
+              headers.set("Access-Control-Allow-Origin", "*");
+
+              return new Response(viteResponse.body, {
+                status: viteResponse.status,
+                statusText: viteResponse.statusText,
+                headers,
+              });
+            } catch (error) {
+              return new Response(
+                `Vite dev server not available.\n\n` +
+                `Error: ${(error as Error).message}\n\n` +
+                `Make sure Vite is running: cd packages/hive-ui && bun run dev\n`,
+                { status: 502, headers: { "Content-Type": "text/plain" } }
+              );
+            }
           }
 
           // In production: serve from dist folder
