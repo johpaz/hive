@@ -464,11 +464,9 @@ export async function startGateway(config: Config): Promise<void> {
   });
 
   // ── Auth helper ──────────────────────────────────────────────────────────
-  // Dev mode only when HIVE_DEV=true AND running from the monorepo source.
-  // Prevents production installs from entering dev mode if HIVE_DEV is
-  // accidentally present in the environment (e.g. loaded from a .env in cwd).
-  const isDev = process.env.HIVE_DEV === "true" &&
-    existsSync(path.join(process.cwd(), "packages/hive-ui/package.json"));
+  // Dev mode when HIVE_DEV is set to "true" or "1".
+  // Set HIVE_DEV=true in your development environment.
+  const isDev = process.env.HIVE_DEV === "true" || process.env.HIVE_DEV === "1";
 
   function checkAuth(req: Request, url: URL): boolean {
     // En modo desarrollo, permitir todo
@@ -598,36 +596,62 @@ export async function startGateway(config: Config): Promise<void> {
         const isUiRequest = url.pathname === "/ui" || url.pathname === "/ui/" || url.pathname.startsWith("/ui/") || url.pathname.startsWith("/ui?");
         const isSetupRequest = url.pathname === "/setup" || url.pathname === "/setup/" || url.pathname.startsWith("/setup/") || url.pathname.startsWith("/setup?");
 
-        // In development mode, proxy to Vite dev server
+        // In development mode, serve static files with HMR support
         // In production, serve static files from dist folder
         if (!isApiRequest && !isWsRequest) {
-          // In development: proxy to Vite dev server (5173)
+          // In development: serve from packages/hive-ui/dist with HMR injection
           if (isDev) {
-            try {
-              const viteUrl = `http://127.0.0.1:5173${url.pathname}${url.search}`;
-              const viteResponse = await fetch(viteUrl, {
-                method: req.method,
-                headers: req.headers,
-                body: req.method !== "GET" && req.method !== "HEAD" ? await req.blob() : undefined,
-              });
+            const uiDir = path.join(process.cwd(), "packages/hive-ui/dist");
 
-              // Copy Vite response headers and add CORS
-              const headers = new Headers(viteResponse.headers);
-              headers.set("Access-Control-Allow-Origin", "*");
-
-              return new Response(viteResponse.body, {
-                status: viteResponse.status,
-                statusText: viteResponse.statusText,
-                headers,
-              });
-            } catch (error) {
+            // Verificar si existe el build de la UI
+            const indexPath = path.join(uiDir, "index.html");
+            if (!existsSync(indexPath)) {
               return new Response(
-                `Vite dev server not available.\n\n` +
-                `Error: ${(error as Error).message}\n\n` +
-                `Make sure Vite is running: cd packages/hive-ui && bun run dev\n`,
-                { status: 502, headers: { "Content-Type": "text/plain" } }
+                "UI build not found. Please run: cd packages/hive-ui && bun run build\n\n" +
+                "Or use: bun run dev (from root) which builds automatically.",
+                { status: 503, headers: { "Content-Type": "text/plain" } }
               );
             }
+
+            let subPath = url.pathname;
+            if (subPath === "/" || subPath === "/setup" || subPath === "/ui" || subPath === "/ui/") {
+              subPath = "/index.html";
+            } else if (subPath.startsWith("/ui/")) {
+              subPath = subPath.replace(/^\/ui/, "");
+            } else if (subPath.startsWith("/setup/")) {
+              subPath = subPath.replace(/^\/setup/, "");
+            }
+
+            const filePath = path.join(uiDir, subPath);
+
+            // Para index.html, inyectar script de HMR de Vite
+            if (subPath === "/index.html") {
+              const indexFile = Bun.file(filePath);
+              if (await indexFile.exists()) {
+                let html = await indexFile.text();
+                // Inyectar script de HMR de Vite antes de </head>
+                const hmrScript = `<script type="module" src="http://localhost:5173/@vite/client"></script>`;
+                html = html.replace("</head>", `${hmrScript}</head>`);
+                return new Response(html, { headers: { "Content-Type": "text/html" } });
+              }
+            }
+
+            const uiFile = Bun.file(filePath);
+            if (await uiFile.exists()) {
+              return new Response(uiFile);
+            }
+
+            // SPA fallback: servir index.html para rutas de React Router
+            const fallbackFile = Bun.file(path.join(uiDir, "index.html"));
+            if (await fallbackFile.exists()) {
+              let html = await fallbackFile.text();
+              // Inyectar script de HMR de Vite
+              const hmrScript = `<script type="module" src="http://localhost:5173/@vite/client"></script>`;
+              html = html.replace("</head>", `${hmrScript}</head>`);
+              return new Response(html, { headers: { "Content-Type": "text/html" } });
+            }
+
+            return new Response("Not found", { status: 404 });
           }
 
           // In production: serve from dist folder
@@ -2116,13 +2140,15 @@ export async function startGateway(config: Config): Promise<void> {
 
   // Print URLs based on mode
   if (isDev) {
-    // In development: UI is served by Vite on port 5173
+    // In development: Gateway serves UI on port 18790 (same as production), Vite provides HMR on 5173
+    const devUrl = gatewaySetupMode ? `http://localhost:${port}/setup` : `http://localhost:${port}`;
+    log.info(`[gateway] UI:        ${devUrl}`);
     log.info(`[gateway] API:       http://${host}:${port}`);
     log.info(`[gateway] WebSocket: ws://${host}:${port}/ws`);
     log.info(`[gateway] Canvas:    ws://${host}:${port}/canvas`);
     log.info(`[gateway] Modo:     desarrollo`);
     if (!isGatewayChild) {
-      log.info(`🐝 Administra tu Hive aquí: http://localhost:5173`);
+      log.info(gatewaySetupMode ? `🎉 Primer arranque — abriendo setup...` : `🐝 Administra tu Hive aquí: ${devUrl}`);
     }
   } else {
     // In production: Gateway serves UI from dist/

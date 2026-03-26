@@ -39,6 +39,8 @@ export function getHiveDir(): string {
   }
 
   // Priority 2: HIVE_DEV mode defaults (Local folder)
+  // Only check process.env.HIVE_DEV directly - don't load from .env files
+  // This ensures production mode is the default unless explicitly set
   if (process.env.HIVE_DEV === "1" || process.env.HIVE_DEV === "true") {
     const localDir = path.join(process.cwd(), ".hive-dev");
     loadEnv(localDir);

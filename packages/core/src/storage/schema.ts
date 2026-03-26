@@ -183,7 +183,7 @@ export const SCHEMA = `
     description TEXT,
     category    TEXT,
     enabled     INTEGER NOT NULL DEFAULT 1,
-    active      INTEGER NOT NULL DEFAULT 0,
+    active      INTEGER NOT NULL DEFAULT 1,
     created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
   );

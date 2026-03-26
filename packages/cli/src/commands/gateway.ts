@@ -461,7 +461,7 @@ async function handleDevMode(
   console.log("⏳ Esperando servicios...");
   const [viteReady, gatewayReady] = await Promise.all([
     hasVite ? waitForVite(5173, 30000) : Promise.resolve(true),
-    waitForPort(18790, 30000),
+    waitForHttpPort(18790, "/health", 30000),
   ]);
 
   if (!viteReady && hasVite) {
@@ -472,11 +472,15 @@ async function handleDevMode(
     return;
   }
 
+  // Additional wait: ensure Gateway is fully initialized and serving UI
+  // In dev mode, Gateway needs a moment to set up HMR proxy
+  await Bun.sleep(500);
+
   console.log("✅ Servicios listos\n");
 
-  // Open browser
+  // Open browser - en desarrollo, Gateway sirve la UI igual que en producción
   const setupMode = await isSetupMode();
-  const browserPort = hasVite ? 5173 : 18790;
+  const browserPort = gatewayConfig.port; // 18790, igual que producción
   const url = setupMode ? `http://localhost:${browserPort}/setup` : `http://localhost:${browserPort}`;
 
   console.log(`
@@ -487,6 +491,7 @@ async function handleDevMode(
 ║  API:       http://127.0.0.1:18790     ║
 ║  WebSocket: ws://127.0.0.1:18790/ws    ║
 ║  Canvas:    ws://127.0.0.1:18790/canvas║
+║  Vite HMR:  http://localhost:5173      ║
 ╠════════════════════════════════════════╣
 ║  ${setupMode ? "🎉 Primer arranque — abriendo setup..." : "Administra tu Hive aquí                "}║
 ╚════════════════════════════════════════╝

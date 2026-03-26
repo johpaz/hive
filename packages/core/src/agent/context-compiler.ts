@@ -346,7 +346,20 @@ export async function compileContext(opts: {
   // Dynamic tool discovery instruction (coordinator only)
   // Note: MCP tools are already available directly, no search needed
   if (!isWorker) {
-    systemPrompt += `\n\n# CATÁLOGO DE HERRAMIENTAS\n` +
+    // Build minimal tools documentation from filtered native tools
+    const minimalToolsDocs = filteredNativeTools
+      .filter(t => MINIMAL_TOOLS.has(t.name))
+      .map(t => `- **${t.name}**: ${t.description || "Herramienta nativa"}`)
+      .join("\n")
+
+    systemPrompt += `\n\n# HERRAMIENTAS NATIVAS BÁSICAS (SIEMPRE DISPONIBLES)\n` +
+      `Estas 4 herramientas nativas están SIEMPRE disponibles en tu contexto y tienen prioridad sobre MCP:\n\n` +
+      `${minimalToolsDocs}\n\n` +
+      `**REGLAS DE USO:**\n` +
+      `1. Si necesitas una herramienta que no esté en la lista arriba → USA primero \`search_knowledge(type="tools", query="<qué necesitas>")\`\n` +
+      `2. NUNCA uses una herramienta MCP si existe una nativa equivalente en el catálogo\n` +
+      `3. Las MCP son fallback: úsalas SOLO cuando \`search_knowledge\` NO encuentre una nativa para la tarea\n\n` +
+      `# CATÁLOGO DE HERRAMIENTAS\n` +
       `Tienes herramientas nativas y MCP directamente disponibles.\n` +
       `Usá \`search_knowledge\` solo para:\n` +
       `- Skills (instrucciones de tareas complejas): type="skills"\n` +

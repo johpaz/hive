@@ -7,6 +7,7 @@
 import type { Tool, ToolResult } from "../types.ts";
 import { emitCanvas, removeCanvasComponent, type CanvasEventType } from "../../canvas/emitter";
 import { logger } from "../../utils/logger.ts";
+import { canvasManager } from "../../canvas/canvas-manager.ts";
 
 const log = logger.child("canvas");
 
@@ -100,14 +101,48 @@ export const canvasAskTool: Tool = {
     },
     required: ["questions"],
   },
-  execute: async (params: Record<string, unknown>) => {
+  execute: async (params: Record<string, unknown>, config?: any) => {
     const questions = params.questions as any[];
+    const userId = config?.configurable?.user_id;
+    const sessionId = userId ? `canvas:${userId}` : "canvas:default";
+
+    // Convert questions to form fields
+    const fields = questions.map((q, idx) => ({
+      name: `field_${idx}`,
+      label: q.question,
+      type: q.type === "select" ? "select" : q.type === "confirm" ? "text" : "text",
+      required: true,
+      options: q.options?.map((opt: string) => ({ label: opt, value: opt })),
+    }));
+
+    const formId = `form-${Date.now()}`;
 
     try {
-      emitCanvas("canvas:ask", { questions });
-      return { ok: true, message: "Form displayed. Waiting for user input..." };
+      // Render form via canvasManager
+      await canvasManager.render(sessionId, {
+        id: formId,
+        type: "form",
+        props: {
+          title: "Input Required",
+          fields,
+        },
+      });
+
+      // Wait for user interaction
+      const response = await canvasManager.waitForInteraction(sessionId, formId, 300000);
+
+      return {
+        ok: true,
+        message: "Form submitted by user",
+        data: response,
+        formId,
+      };
     } catch (error) {
-      return { ok: false, error: `Failed to display form: ${(error as Error).message }` };
+      return {
+        ok: false,
+        error: `Form interaction failed: ${(error as Error).message}`,
+        formId,
+      };
     }
   },
 };

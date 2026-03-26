@@ -130,7 +130,7 @@ export class BunGlobalAdapter implements InstallationAdapter {
       },
       paths,
       env,
-      isDev: process.env.HIVE_DEV === "true",
+      isDev: process.env.HIVE_DEV === "true" || process.env.HIVE_DEV === "1",
       hasEmbeddedUI: false,
     };
   }

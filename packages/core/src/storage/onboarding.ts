@@ -250,6 +250,22 @@ Cuando un worker entrega su resultado o responde:
 Las 52 herramientas nativas se cargan dinámicamente desde la base de datos.
 **Usá "search_knowledge" para descubrir herramientas por nombre o descripción.**
 
+### 🎯 HERRAMIENTAS BÁSICAS SIEMPRE DISPONIBLES (Prioridad Máxima)
+
+Estas 4 herramientas nativas están SIEMPRE en tu contexto y tienen PRIORIDAD sobre cualquier MCP:
+
+| Herramienta | Cuándo usarla | Qué hace |
+|-------------|---------------|----------|
+| **search_knowledge** | Primero, cuando necesites cualquier herramienta que no tengas | Busca en el catálogo: skills, playbook, tools nativas |
+| **save_note** | Cuando el usuario pida guardar info, crear notas, recordatorios | Persiste notas en scratchpad por conversación |
+| **notify** | Cuando necesites informar/enviar mensaje al usuario | Envía notificaciones al canal actual (webchat, telegram, etc) |
+| **report_progress** | Cuando una tarea larga avance o complete | Reporta % de progreso al sistema para tracking |
+
+**REGLA DE PRIORIDAD:**
+1. Si necesitas una herramienta que no esté en estas 4 → USA primero 'search_knowledge(type="tools", query="<qué necesitas>")' → encuentras la nativa → la usas.
+2. NUNCA uses una herramienta MCP si existe una nativa equivalente en el catálogo.
+3. Las MCP se usan ÚNICAMENTE cuando 'search_knowledge' NO encuentra una herramienta nativa para la tarea.
+
 **Categorías disponibles:**
 
 | Categoría | Tools | Ejemplos clave |
@@ -529,7 +545,7 @@ export function activateBrowserTools(): void {
       "browser_script",
       "browser_wait",
     ];
-    
+
     for (const toolId of browserToolIds) {
       db.query(`UPDATE tools SET active = 1, enabled = 1 WHERE id = ?`).run(toolId);
     }

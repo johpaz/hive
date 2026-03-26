@@ -3,8 +3,8 @@ import { logger } from "../utils/logger"
 
 /**
  * Seed de datos predeterminados para Hive
- * Todos los elementos se crean con enabled=1 (disponibles) pero active=0 (no activados)
- * El usuario los activa durante el onboarding o desde la UI
+ * Las tools se crean con enabled=1 (disponibles) y active=1 (activas por defecto)
+ * El usuario puede desactivarlas desde la UI si no las necesita
  */
 
 export interface SeedData {
