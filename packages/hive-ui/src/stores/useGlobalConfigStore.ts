@@ -350,21 +350,30 @@ const createToolsSlice = () => ({
   },
 
   toggleTool: async (id: string, active: boolean) => {
+    // Guardar estado anterior para posible rollback
+    const state = useGlobalConfigStore.getState();
+    const previousTools = state.tools;
+
+    // Actualización optimista
+    const updatedTools = state.tools.map(t =>
+      t.id === id ? { ...t, active } : t
+    );
+    useGlobalConfigStore.setState({
+      tools: updatedTools,
+      activeTools: updatedTools.filter(t => t.active).map(t => ({ id: t.id, name: t.name, description: t.description, category: t.category }))
+    });
+
     try {
       await apiClient(`/api/tools/${id}/toggle`, {
         method: "POST",
         body: { active },
       });
-      // Actualizar estado local inmediatamente
-      const state = useGlobalConfigStore.getState();
-      const currentTools = state.tools.map(t =>
-        t.id === id ? { ...t, active } : t
-      );
-      useGlobalConfigStore.setState({
-        tools: currentTools,
-        activeTools: currentTools.filter(t => t.active).map(t => ({ id: t.id, name: t.name, description: t.description, category: t.category }))
-      });
     } catch (error) {
+      // Revertir al estado anterior si la API falla
+      useGlobalConfigStore.setState({
+        tools: previousTools,
+        activeTools: previousTools.filter(t => t.active).map(t => ({ id: t.id, name: t.name, description: t.description, category: t.category }))
+      });
       console.error("Failed to toggle tool:", error);
       throw error;
     }
@@ -679,7 +688,7 @@ const createVoiceSlice = () => ({
       });
       // Refresh configured providers after saving
       const configuredData = await createVoiceSlice().fetchConfiguredVoiceProviders();
-      set(configuredData);
+      useGlobalConfigStore.setState(configuredData);
     } catch (error) {
       console.error("Failed to save voice provider key:", error);
       throw error;
@@ -897,10 +906,12 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
   fetchVoiceProviders: async () => {
     const data = await createVoiceSlice().fetchVoiceProviders();
     set(data);
+    return data;
   },
   fetchConfiguredVoiceProviders: async () => {
     const data = await createVoiceSlice().fetchConfiguredVoiceProviders();
     set(data);
+    return data;
   },
   saveVoiceProviderKey: async (providerId: string, apiKey: string) => {
     await apiClient(`/api/voice/providers/${providerId}/key`, {

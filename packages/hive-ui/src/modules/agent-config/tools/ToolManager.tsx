@@ -130,7 +130,7 @@ export function ToolManager() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredTools.map(tool => {
-            const isActive = tool.enabled;
+            const isActive = tool.active;
             const isCore = tool.core;
             return (
               <div
@@ -166,6 +166,7 @@ export function ToolManager() {
                       <Switch
                         checked={isActive}
                         onCheckedChange={() => handleToggle(tool.id, !isActive)}
+                        onClick={(e) => e.stopPropagation()}
                         className="data-[state=checked]:bg-blue-500 scale-75 origin-right"
                       />
                     </div>

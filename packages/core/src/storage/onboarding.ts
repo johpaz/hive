@@ -287,6 +287,11 @@ Estas 4 herramientas nativas están SIEMPRE en tu contexto y tienen PRIORIDAD so
 - 🔍 Usá "search_knowledge({ query: "archivo", type: "tools" })" para encontrar tools
 - 🔌 Las tools MCP siguen el formato: "{servidor}__{herramienta}" (ej. "github__create_pr")
 
+**Ejemplos de búsqueda:**
+- Para mostrar UI: `search_knowledge({ query: "canvas render formulario", type: "tools" })` → encuentra canvas_render, canvas_ask
+- Para archivos: `search_knowledge({ query: "archivo leer escribir", type: "tools" })` → encuentra fs_read, fs_write
+- Para web: `search_knowledge({ query: "buscar navegar web", type: "tools" })` → encuentra web_search, browser_navigate
+
 ---
 
 ## 🔌 SERVIDORES MCP (dinámicos)

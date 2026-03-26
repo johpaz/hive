@@ -14,8 +14,8 @@ export function ToolCard({ tool }: ToolCardProps) {
         <CardTitle className="flex items-center gap-2 text-sm">
           <Wrench className="h-3.5 w-3.5 text-orange-400" />
           {tool.name}
-          <Badge variant={tool.enabled ? "default" : "secondary"} className="ml-auto text-xs">
-            {tool.enabled ? "Activa" : "Inactiva"}
+          <Badge variant={tool.active ? "default" : "secondary"} className="ml-auto text-xs">
+            {tool.active ? "Activa" : "Inactiva"}
           </Badge>
         </CardTitle>
       </CardHeader>

@@ -68,6 +68,7 @@ export function ToolRegistry() {
                   checked={tool.active}
                   onCheckedChange={(checked) => handleToggle(tool.id, checked)}
                   disabled={togglingSkill === tool.id}
+                  onClick={(e) => e.stopPropagation()}
                 />
               </div>
             </CardHeader>
