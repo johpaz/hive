@@ -329,7 +329,7 @@ export async function handleCompleteSetup(
       userId,
       agentName: body.agentName || "Bee",
       description: body.agentDescription || "",
-      tone: "friendly",
+      tone: body.agentTone || "friendly",
       providerId: body.provider || "",
       modelId: body.model || "",
     })

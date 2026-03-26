@@ -1,7 +1,7 @@
 ---
 name: task_orchestrator
 description: "Orchestrate tasks across multiple workers with delegation, status tracking, and bus communication"
-version: 1.0.0
+version: 1.1.0
 author: Hive Team
 icon: "🎻"
 category: agents
@@ -9,7 +9,7 @@ permissions:
   - agent_manage
   - agent_bus
 dependencies: []
-tools: [task_delegate, task_status, agent_find, agent_create, bus_publish, bus_read]
+tools: [get_available_models, task_delegate, task_status, agent_find, agent_create, bus_publish, bus_read]
 
 # Structured skill fields
 triggers:
@@ -32,13 +32,29 @@ preferred_agents: []
 
 steps:
   - step: 1
+    action: get_available_models
+    instruction: "Query available providers and models to select optimal model for new workers if needed"
+    params:
+      capabilities: "required specialty (coding, analysis, research)"
+    output: available_models
+
+  - step: 2
     action: agent_find
     instruction: "Find suitable workers for each task"
     params:
       search: "required specialty"
     output: available_workers
 
-  - step: 2
+  - step: 3
+    action: agent_create (if needed)
+    instruction: "Create new worker if no suitable one exists, using optimal model from get_available_models"
+    params:
+      name: "specialty_worker"
+      providerId: "from get_available_models"
+      modelId: "from get_available_models"
+    output: new_worker
+
+  - step: 4
     action: task_delegate
     instruction: "Delegate tasks to workers with clear instructions. Workers execute immediately (blocking)"
     params:
@@ -48,14 +64,14 @@ steps:
       project_id: "optional project ID for progress tracking"
     output: task_result
 
-  - step: 3
+  - step: 5
     action: task_status
     instruction: "Monitor progress of delegated tasks"
     params:
       task_ids: "array of task IDs"
     output: task_statuses
 
-  - step: 4
+  - step: 6
     action: bus_publish
     instruction: "Publish coordination messages for worker-to-worker communication"
     params:
@@ -64,13 +80,14 @@ steps:
       content: "coordination message"
     output: published
 
-  - step: 5
+  - step: 7
     action: bus_read
     instruction: "Check for messages from workers requiring coordinator attention"
     output: bus_messages
 
 rules:
   - "task_delegate is BLOCKING — worker executes immediately, result returned synchronously"
+  - "ALWAYS use get_available_models BEFORE agent_create — providerId y modelId son OBLIGATORIOS"
   - "Assign tasks based on worker specialty and current load"
   - "Use bus_publish / bus_read for worker-to-worker coordination"
   - "Monitor task status continuously for multi-task orchestration"
@@ -107,6 +124,7 @@ Para coordinar múltiples workers, delegar tareas, monitorear progreso, y facili
 
 | Tool | Qué hace | Cuándo usarla |
 |------|----------|---------------|
+| `get_available_models` | Consulta providers y modelos activos | Al crear workers — seleccionar modelo óptimo |
 | `agent_find` | Busca workers disponibles | Antes de delegar |
 | `agent_create` | Crea nuevo worker | Si no hay uno adecuado |
 | `task_delegate` | Asigna y EJECUTA tarea | Delegar con ejecución inmediata |
@@ -117,10 +135,29 @@ Para coordinar múltiples workers, delegar tareas, monitorear progreso, y facili
 ## Workflow
 
 ### Delegación
-1. **Buscar worker** → `agent_find({ search })`
-2. **Si no existe** → `agent_create({ name, description, tools_json })`
-3. **Delegar** → `task_delegate({ worker_id, task_description, task_id?, project_id? })` — **BLOQUEANTE**
-4. **Resultado retornado** → Worker ejecuta inmediatamente y devuelve resultado
+1. **Consultar modelos** → `get_available_models({ capabilities })` — si necesita crear workers
+2. **Buscar worker** → `agent_find({ search })`
+3. **Si no existe** → `agent_create({...})` — con providerId y modelId OBLIGATORIOS
+4. **Delegar** → `task_delegate({ worker_id, task_description, task_id?, project_id? })` — **BLOQUEANTE**
+5. **Resultado retornado** → Worker ejecuta inmediatamente y devuelve resultado
+
+### Create Agent Config (providerId y modelId son OBLIGATORIOS)
+```javascript
+// 1. Consultar modelos disponibles
+get_available_models({ capabilities: "analysis" })
+// → [{ providerId: "anthropic", modelId: "claude-sonnet-4-6", contextWindow: 200000 }, ...]
+
+// 2. Crear worker con modelo óptimo
+agent_create({
+  name: "data_analyst",
+  description: "Especialista en análisis de datos y visualización",
+  system_prompt: "Sos analista de datos experto...",
+  tools_json: ["web_search", "web_fetch", "save_note"],
+  providerId: "anthropic",  // OBLIGATORIO
+  modelId: "claude-sonnet-4-6",  // OBLIGATORIO
+  tone: "analytical"
+})
+```
 
 ### Monitoreo
 1. **Check estado** → `task_status({ task_ids })`
@@ -144,9 +181,11 @@ bus_read() → [{ from: "writer", content: "Need research results" }]
 ## Mejores Prácticas
 
 - `task_delegate` es bloqueante — el resultado llega en el retorno de la tool
+- Consultar modelos disponibles antes de crear workers (`get_available_models`)
 - Asignar workers por especialidad (`agent_find`)
 - Usar `bus_publish` / `bus_read` para coordinación entre workers
 - Pasar `task_id` y `project_id` a `task_delegate` para auto-tracking de progreso
+- Seleccionar modelo según capacidad: coding → modelos grandes, chat → modelos rápidos
 
 ## Errores a Evitar
 
@@ -154,5 +193,6 @@ bus_read() → [{ from: "writer", content: "Need research results" }]
 - ❌ Usar `find_agent` (no existe) — usar `agent_find`
 - ❌ Usar `publish_to_bus` / `get_bus_messages` (no existen) — usar `bus_publish` / `bus_read`
 - ❌ Usar `get_task_status` (no existe) — usar `task_status`
+- ❌ No consultar modelos disponibles antes de crear workers
 - ❌ No monitorear estado de tasks
 - ❌ No coordinar workers cuando hay dependencias

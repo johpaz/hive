@@ -24,83 +24,84 @@ export const SEED_DATA: SeedData = {
     // ─────────────────────────────────────────
     // 1. FILESYSTEM — Espacio de trabajo del agente
     // ─────────────────────────────────────────
-    { id: "fs_read", name: "fs_read", category: "filesystem", description: "Read file content from agent workspace. Spanish: leer archivo, ver contenido, abrir archivo" },
-    { id: "fs_write", name: "fs_write", category: "filesystem", description: "Create or overwrite file in agent workspace. Spanish: crear archivo, guardar archivo, escribir archivo" },
-    { id: "fs_edit", name: "fs_edit", category: "filesystem", description: "Edit specific lines or sections of a file. Spanish: editar archivo, modificar líneas, actualizar contenido" },
-    { id: "fs_delete", name: "fs_delete", category: "filesystem", description: "Delete file or directory from workspace. Spanish: eliminar archivo, borrar archivo, borrar carpeta" },
-    { id: "fs_list", name: "fs_list", category: "filesystem", description: "List files and directories in workspace. Spanish: listar archivos, ver carpeta, explorar directorio" },
-    { id: "fs_glob", name: "fs_glob", category: "filesystem", description: "Find files matching wildcard patterns. Spanish: buscar archivos, patrón, encontrar archivos" },
-    { id: "fs_exists", name: "fs_exists", category: "filesystem", description: "Check if a file or directory exists. Spanish: verificar archivo, comprobar, existe archivo" },
+    { id: "fs_read", name: "fs_read", category: "filesystem", description: "Leer contenido de archivos del espacio de trabajo. Sinónimos: ver archivo, abrir archivo, leer contenido, mostrar archivo" },
+    { id: "fs_write", name: "fs_write", category: "filesystem", description: "Crear o sobrescribir archivos en el espacio de trabajo. Sinónimos: crear archivo, guardar archivo, escribir archivo, nuevo archivo" },
+    { id: "fs_edit", name: "fs_edit", category: "filesystem", description: "Editar líneas específicas o secciones de un archivo. Sinónimos: modificar archivo, editar líneas, actualizar contenido, cambiar texto" },
+    { id: "fs_delete", name: "fs_delete", category: "filesystem", description: "Eliminar archivos o directorios del espacio de trabajo. Sinónimos: borrar archivo, eliminar carpeta, quitar archivo, remover" },
+    { id: "fs_list", name: "fs_list", category: "filesystem", description: "Listar archivos y directorios en el espacio de trabajo. Sinónimos: ver carpeta, explorar directorio, listar contenido, mostrar archivos" },
+    { id: "fs_glob", name: "fs_glob", category: "filesystem", description: "Buscar archivos que coincidan con patrones wildcard. Sinónimos: buscar archivos, patrón, encontrar archivos, filtrar por nombre" },
+    { id: "fs_exists", name: "fs_exists", category: "filesystem", description: "Verificar si existe un archivo o directorio. Sinónimos: comprobar archivo, existe archivo, verificar existencia, hay archivo" },
 
     // ─────────────────────────────────────────
     // 2. WEB — Búsqueda, navegación + automatización
     // ─────────────────────────────────────────
-    { id: "web_search", name: "web_search", category: "web", description: "Search the web for current information and research. Spanish: buscar en internet, búsqueda web, noticias, información" },
-    { id: "web_fetch", name: "web_fetch", category: "web", description: "Fetch plain content from a URL (lightweight, no JS). Spanish: obtener página, descargar contenido, extraer texto de url" },
-    { id: "browser_navigate", name: "browser_navigate", category: "web", description: "Navigate browser to URL, get rendered page content (supports JS). Spanish: navegar a url, abrir página, sitio web" },
-    { id: "browser_screenshot", name: "browser_screenshot", category: "web", description: "Take screenshot of current browser page. Spanish: captura de pantalla, screenshot, imagen de página" },
-    { id: "browser_click", name: "browser_click", category: "web", description: "Click on a web page element. Spanish: hacer clic, botón, enlace, interactuar" },
-    { id: "browser_type", name: "browser_type", category: "web", description: "Type text into a form field in the browser. Spanish: escribir formulario, tipear, campo de texto, input" },
-    { id: "browser_extract", name: "browser_extract", category: "web", description: "Extract text, links, or structured data from page using CSS selectors or XPath. Spanish: extraer datos, obtener información, scraping, selectores" },
-    { id: "browser_script", name: "browser_script", category: "web", description: "Execute arbitrary JavaScript in the browser page context and get the result. Spanish: ejecutar javascript, script, código, función, evaluar" },
-    { id: "browser_wait", name: "browser_wait", category: "web", description: "Wait for an element to appear or condition to be met on the page. Spanish: esperar, wait, condición, elemento, selector" },
+    { id: "web_search", name: "web_search", category: "web", description: "Buscar en la web información actual y noticias. Sinónimos: búsqueda web, noticias, información, buscar en internet, google" },
+    { id: "web_fetch", name: "web_fetch", category: "web", description: "Obtener contenido de texto de una URL (ligero, sin JS). Sinónimos: descargar página, extraer texto, obtener contenido, leer url" },
+    { id: "browser_navigate", name: "browser_navigate", category: "web", description: "Navegar a una URL y obtener contenido renderizado (soporta JS). Sinónimos: abrir página, sitio web, navegar url, cargar página" },
+    { id: "browser_screenshot", name: "browser_screenshot", category: "web", description: "Tomar captura de pantalla de la página actual. Sinónimos: screenshot, imagen de página, capturar pantalla, foto página" },
+    { id: "browser_click", name: "browser_click", category: "web", description: "Hacer clic en un elemento de la página web. Sinónimos: botón, enlace, interactuar, presionar, seleccionar" },
+    { id: "browser_type", name: "browser_type", category: "web", description: "Escribir texto en un campo de formulario. Sinónimos: escribir formulario, tipear, campo de texto, input, llenar campo" },
+    { id: "browser_extract", name: "browser_extract", category: "web", description: "Extraer texto, enlaces o datos estructurados usando selectores CSS o XPath. Sinónimos: obtener datos, scraping, selectores, extraer información" },
+    { id: "browser_script", name: "browser_script", category: "web", description: "Ejecutar JavaScript arbitrario en el navegador y obtener resultado. Sinónimos: ejecutar javascript, script, código, función, evaluar" },
+    { id: "browser_wait", name: "browser_wait", category: "web", description: "Esperar a que aparezca un elemento o se cumpla una condición. Sinónimos: esperar, condición, elemento, selector, pausa" },
 
     // ─────────────────────────────────────────
     // 3. PROJECTS — Proyectos y tareas en BD
     // ─────────────────────────────────────────
-    { id: "project_create", name: "project_create", category: "projects", description: "Create a new project with tasks in the database. Spanish: crear proyecto, nuevo proyecto, iniciar plan" },
-    { id: "project_list", name: "project_list", category: "projects", description: "List all projects with their status. Spanish: listar proyectos, ver proyectos, historial" },
-    { id: "project_update", name: "project_update", category: "projects", description: "Update project progress or metadata. Spanish: actualizar proyecto, avance, porcentaje, estado" },
-    { id: "project_done", name: "project_done", category: "projects", description: "Mark project as completed and archive it. Spanish: proyecto terminado, cerrar proyecto, completado" },
-    { id: "project_fail", name: "project_fail", category: "projects", description: "Mark project as failed and record reason. Spanish: proyecto fallido, marcar fracaso, error" },
-    { id: "task_create", name: "task_create", category: "projects", description: "Add a task or subtask to an existing project. Spanish: crear tarea, agregar tarea, subtarea, pendiente" },
-    { id: "task_update", name: "task_update", category: "projects", description: "Update task status (pending, in_progress, done). Spanish: actualizar tarea, marcar completa, en progreso" },
-    { id: "task_evaluate", name: "task_evaluate", category: "projects", description: "Evaluate task result against acceptance criteria. Spanish: evaluar tarea, validar resultado, criterios de aceptación" },
+    { id: "project_create", name: "project_create", category: "projects", description: "Crear un nuevo proyecto con tareas en la base de datos. Sinónimos: nuevo proyecto, iniciar plan, crear proyecto" },
+    { id: "project_list", name: "project_list", category: "projects", description: "Listar todos los proyectos con su estado. Sinónimos: ver proyectos, historial, listar proyectos, mostrar proyectos" },
+    { id: "project_update", name: "project_update", category: "projects", description: "Actualizar progreso o metadatos del proyecto. Sinónimos: avance, porcentaje, estado, actualizar proyecto" },
+    { id: "project_done", name: "project_done", category: "projects", description: "Marcar proyecto como completado y archivarlo. Sinónimos: proyecto terminado, cerrar proyecto, completado, finalizar" },
+    { id: "project_fail", name: "project_fail", category: "projects", description: "Marcar proyecto como fallido y registrar razón. Sinónimos: proyecto fallido, marcar fracaso, error, falló proyecto" },
+    { id: "task_create", name: "task_create", category: "projects", description: "Agregar una tarea o subtarea a un proyecto existente. Sinónimos: crear tarea, agregar tarea, subtarea, pendiente" },
+    { id: "task_update", name: "task_update", category: "projects", description: "Actualizar estado de tarea (pendiente, en_progreso, hecho). Sinónimos: actualizar tarea, marcar completa, en progreso" },
+    { id: "task_evaluate", name: "task_evaluate", category: "projects", description: "Evaluar resultado de tarea contra criterios de aceptación. Sinónimos: validar resultado, criterios de aceptación, revisar tarea" },
 
     // ─────────────────────────────────────────
     // 4. SCHEDULE — Tareas programadas (Croner-based, ≠ tareas de proyecto)
     // ─────────────────────────────────────────
-    { id: "hive.schedule.create", name: "hive.schedule.create", category: "schedule", description: "Create new scheduled task: recurring (cron expression) or one-shot (fire_at). Spanish: programar tarea, crear recordatorio, agendar, automatizar horario, tarea recurrente, una vez" },
-    { id: "hive.schedule.list", name: "hive.schedule.list", category: "schedule", description: "List all scheduled tasks with next execution times and status. Spanish: ver tareas programadas, listar cronograma, próximas ejecuciones" },
-    { id: "hive.schedule.pause", name: "hive.schedule.pause", category: "schedule", description: "Pause a scheduled task temporarily without deleting it. Spanish: pausar tarea programada, detener temporalmente, suspender recordatorio" },
-    { id: "hive.schedule.resume", name: "hive.schedule.resume", category: "schedule", description: "Resume a previously paused scheduled task. Spanish: reanudar tarea, continuar tarea pausada, activar recordatorio" },
-    { id: "hive.schedule.delete", name: "hive.schedule.delete", category: "schedule", description: "Delete a scheduled task permanently. Spanish: eliminar tarea programada, borrar recordatorio, cancelar tarea" },
-    { id: "hive.schedule.trigger", name: "hive.schedule.trigger", category: "schedule", description: "Manually trigger immediate execution of a scheduled task. Spanish: ejecutar tarea ahora, forzar ejecución, disparar manualmente" },
-    { id: "hive.schedule.history", name: "hive.schedule.history", category: "schedule", description: "Get execution history and run logs for a scheduled task. Spanish: historial ejecuciones, logs tarea, registro ejecuciones" },
+    { id: "hive.schedule.create", name: "hive.schedule.create", category: "schedule", description: "Crear tarea programada: recurrente (expresión cron) o única (fire_at). Sinónimos: programar tarea, crear recordatorio, agendar, automatizar horario, tarea recurrente, una vez" },
+    { id: "hive.schedule.list", name: "hive.schedule.list", category: "schedule", description: "Listar todas las tareas programadas con próximos horarios de ejecución. Sinónimos: ver tareas programadas, listar cronograma, próximas ejecuciones" },
+    { id: "hive.schedule.pause", name: "hive.schedule.pause", category: "schedule", description: "Pausar temporalmente una tarea programada sin eliminarla. Sinónimos: pausar tarea programada, detener temporalmente, suspender recordatorio" },
+    { id: "hive.schedule.resume", name: "hive.schedule.resume", category: "schedule", description: "Reanudar una tarea programada previamente pausada. Sinónimos: reanudar tarea, continuar tarea pausada, activar recordatorio" },
+    { id: "hive.schedule.delete", name: "hive.schedule.delete", category: "schedule", description: "Eliminar una tarea programada permanentemente. Sinónimos: eliminar tarea programada, borrar recordatorio, cancelar tarea" },
+    { id: "hive.schedule.trigger", name: "hive.schedule.trigger", category: "schedule", description: "Ejecutar manualmente una tarea programada de forma inmediata. Sinónimos: ejecutar tarea ahora, forzar ejecución, disparar manualmente" },
+    { id: "hive.schedule.history", name: "hive.schedule.history", category: "schedule", description: "Obtener historial de ejecuciones y logs de una tarea programada. Sinónimos: historial ejecuciones, logs tarea, registro ejecuciones" },
 
     // ─────────────────────────────────────────
     // 5. CLI — Ejecución de comandos
     // ─────────────────────────────────────────
-    { id: "cli_exec", name: "cli_exec", category: "cli", description: "Execute shell/bash commands in the agent environment. NOTE: do NOT use for scheduling tasks, use hive.schedule.create instead. Spanish: ejecutar comando, terminal, bash, script, consola" },
+    { id: "cli_exec", name: "cli_exec", category: "cli", description: "Ejecutar comandos shell/bash en el entorno del agente. NOTA: NO usar para tareas programadas, usar hive.schedule.create. Sinónimos: ejecutar comando, terminal, bash, script, consola" },
 
     // ─────────────────────────────────────────
     // 6. AGENTS — Memoria, workers y delegación
     // ─────────────────────────────────────────
-    { id: "memory_write", name: "memory_write", category: "agents", description: "Store information in persistent long-term memory. Spanish: guardar memoria, recordar, guardar dato, memoria persistente" },
-    { id: "memory_read", name: "memory_read", category: "agents", description: "Retrieve a memory entry by identifier. Spanish: leer memoria, recuperar dato, obtener memoria" },
-    { id: "memory_list", name: "memory_list", category: "agents", description: "List all saved memory entries. Spanish: listar memorias, ver memorias, todas las memorias" },
-    { id: "memory_search", name: "memory_search", category: "agents", description: "Search memories by keyword. Spanish: buscar memoria, encontrar recuerdo, buscar dato guardado" },
-    { id: "memory_delete", name: "memory_delete", category: "agents", description: "Delete a specific memory entry. Spanish: borrar memoria, eliminar recuerdo, quitar dato" },
-    { id: "agent_create", name: "agent_create", category: "agents", description: "Create a new specialized worker agent. Spanish: crear agente, nuevo worker, nuevo trabajador" },
-    { id: "agent_find", name: "agent_find", category: "agents", description: "Find existing running or idle worker agents. Spanish: buscar agente, encontrar worker, localizar agente" },
-    { id: "agent_archive", name: "agent_archive", category: "agents", description: "Archive or terminate a worker agent. Spanish: archivar agente, terminar worker, desactivar agente" },
-    { id: "task_delegate", name: "task_delegate", category: "agents", description: "Delegate a general task to a specific worker agent. Spanish: delegar tarea, asignar worker, ejecutar por agente" },
-    { id: "task_delegate_code", name: "task_delegate_code", category: "agents", description: "Delegate a coding task to a CLI subagent (Qwen, Claude, etc.) via Code Bridge. Spanish: delegar código, subagente CLI, programación, Qwen" },
-    { id: "task_status", name: "task_status", category: "agents", description: "Get execution status of one or more delegated tasks. Spanish: estado tarea delegada, verificar progreso, consultar tarea" },
-    { id: "bus_publish", name: "bus_publish", category: "agents", description: "Publish a message to the Agent Bus for worker-to-worker communication. Spanish: publicar mensaje, comunicar workers, enviar bus" },
-    { id: "bus_read", name: "bus_read", category: "agents", description: "Read unread messages from the Agent Bus. Spanish: leer mensajes bus, recibir mensajes, verificar bus" },
-    { id: "project_updates", name: "project_updates", category: "agents", description: "Get recent status updates from workers in the same project. Spanish: actualizaciones proyecto, estado workers, progreso equipo" },
+    { id: "memory_write", name: "memory_write", category: "agents", description: "Guardar información en memoria persistente a largo plazo. Sinónimos: guardar memoria, recordar, guardar dato, memoria persistente" },
+    { id: "memory_read", name: "memory_read", category: "agents", description: "Recuperar una entrada de memoria por identificador. Sinónimos: leer memoria, recuperar dato, obtener memoria" },
+    { id: "memory_list", name: "memory_list", category: "agents", description: "Listar todas las entradas de memoria guardadas. Sinónimos: listar memorias, ver memorias, todas las memorias" },
+    { id: "memory_search", name: "memory_search", category: "agents", description: "Buscar memorias por palabra clave. Sinónimos: buscar memoria, encontrar recuerdo, buscar dato guardado" },
+    { id: "memory_delete", name: "memory_delete", category: "agents", description: "Eliminar una entrada de memoria específica. Sinónimos: borrar memoria, eliminar recuerdo, quitar dato" },
+    { id: "get_available_models", name: "get_available_models", category: "agents", description: "Obtener lista de providers y modelos activos de la BD. Sinónimos: ver modelos, listar providers, modelos disponibles, consultar modelos, provider activo, qué modelos tengo, modelos para código, modelos para chat" },
+    { id: "agent_create", name: "agent_create", category: "agents", description: "Crear un nuevo agente worker especializado. Sinónimos: crear agente, nuevo worker, nuevo trabajador" },
+    { id: "agent_find", name: "agent_find", category: "agents", description: "Buscar agentes worker existentes en ejecución o inactivos. Sinónimos: buscar agente, encontrar worker, localizar agente" },
+    { id: "agent_archive", name: "agent_archive", category: "agents", description: "Archivar o terminar un agente worker. Sinónimos: archivar agente, terminar worker, desactivar agente" },
+    { id: "task_delegate", name: "task_delegate", category: "agents", description: "Delegar una tarea general a un agente worker específico. Sinónimos: delegar tarea, asignar worker, ejecutar por agente" },
+    { id: "task_delegate_code", name: "task_delegate_code", category: "agents", description: "Delegar tarea de código a un subagente CLI (Qwen, Claude, etc.) vía Code Bridge. Sinónimos: delegar código, subagente CLI, programación, Qwen" },
+    { id: "task_status", name: "task_status", category: "agents", description: "Obtener estado de ejecución de tareas delegadas. Sinónimos: estado tarea delegada, verificar progreso, consultar tarea" },
+    { id: "bus_publish", name: "bus_publish", category: "agents", description: "Publicar mensaje en el Agent Bus para comunicación worker-to-worker. Sinónimos: publicar mensaje, comunicar workers, enviar bus" },
+    { id: "bus_read", name: "bus_read", category: "agents", description: "Leer mensajes no leídos del Agent Bus. Sinónimos: leer mensajes bus, recibir mensajes, verificar bus" },
+    { id: "project_updates", name: "project_updates", category: "agents", description: "Obtener actualizaciones recientes de workers en el mismo proyecto. Sinónimos: actualizaciones proyecto, estado workers, progreso equipo" },
 
     // ─────────────────────────────────────────
     // 7. CANVAS — UI interactiva
     // ─────────────────────────────────────────
-    { id: "canvas_render", name: "canvas_render", category: "canvas", description: "Render a component or visualization on the canvas. Spanish: renderizar, visualizar, gráfico, diagrama" },
-    { id: "canvas_ask", name: "canvas_ask", category: "canvas", description: "Show interactive form and wait for user input. Spanish: formulario interactivo, preguntar usuario, input" },
-    { id: "canvas_confirm", name: "canvas_confirm", category: "canvas", description: "Show a confirmation dialog before executing an action. Spanish: confirmar acción, diálogo, aprobar" },
-    { id: "canvas_show_card", name: "canvas_show_card", category: "canvas", description: "Display structured information in card format. Spanish: mostrar tarjeta, card, información estructurada" },
-    { id: "canvas_show_progress", name: "canvas_show_progress", category: "canvas", description: "Show progress bar or status indicator. Spanish: barra de progreso, indicador, progreso visual" },
-    { id: "canvas_show_list", name: "canvas_show_list", category: "canvas", description: "Display key-value list information. Spanish: lista clave-valor, mostrar lista, información en lista" },
-    { id: "canvas_clear", name: "canvas_clear", category: "canvas", description: "Clear current canvas content. Spanish: limpiar canvas, borrar visualización, resetear" },
+    { id: "canvas_render", name: "canvas_render", category: "canvas", description: "Renderizar un componente o visualización en el canvas. Sinónimos: renderizar, visualizar, gráfico, diagrama" },
+    { id: "canvas_ask", name: "canvas_ask", category: "canvas", description: "Mostrar formulario interactivo y esperar input del usuario. Sinónimos: formulario interactivo, preguntar usuario, input" },
+    { id: "canvas_confirm", name: "canvas_confirm", category: "canvas", description: "Mostrar diálogo de confirmación antes de ejecutar una acción. Sinónimos: confirmar acción, diálogo, aprobar" },
+    { id: "canvas_show_card", name: "canvas_show_card", category: "canvas", description: "Mostrar información estructurada en formato de tarjeta. Sinónimos: mostrar tarjeta, card, información estructurada" },
+    { id: "canvas_show_progress", name: "canvas_show_progress", category: "canvas", description: "Mostrar barra de progreso o indicador de estado. Sinónimos: barra de progreso, indicador, progreso visual" },
+    { id: "canvas_show_list", name: "canvas_show_list", category: "canvas", description: "Mostrar información en lista clave-valor. Sinónimos: lista clave-valor, mostrar lista, información en lista" },
+    { id: "canvas_clear", name: "canvas_clear", category: "canvas", description: "Limpiar contenido actual del canvas. Sinónimos: limpiar canvas, borrar visualización, resetear" },
 
     // ─────────────────────────────────────────
     // 8. CODEBRIDGE — Subagentes CLI de código externos
@@ -110,33 +111,33 @@ export const SEED_DATA: SeedData = {
       id: "codebridge_launch",
       name: "codebridge_launch",
       category: "codebridge",
-      description: "Launch an external coding CLI subagent (Claude Code, Qwen CLI, Gemini CLI, OpenCode CLI) to execute a coding task locally. Returns a process ID to track execution. Spanish: lanzar agente de código, iniciar Claude Code, Qwen CLI, Gemini CLI, OpenCode, subagente externo de programación"
+      description: "Lanzar un subagente externo de código (Claude Code, Qwen CLI, Gemini CLI, OpenCode) para ejecutar tarea localmente. Retorna ID de proceso para trackear. Sinónimos: lanzar agente de código, iniciar Claude Code, Qwen CLI, Gemini CLI, OpenCode, subagente externo de programación"
     },
     {
       id: "codebridge_status",
       name: "codebridge_status",
       category: "codebridge",
-      description: "Check the status and output of a running CodeBridge subagent (Claude Code, Qwen CLI, Gemini CLI, OpenCode CLI). Spanish: estado agente de código, verificar Claude Code, progreso subagente externo"
+      description: "Verificar estado y salida de un subagente CodeBridge en ejecución. Sinónimos: estado agente de código, verificar Claude Code, progreso subagente externo"
     },
     {
       id: "codebridge_cancel",
       name: "codebridge_cancel",
       category: "codebridge",
-      description: "Cancel and terminate a running CodeBridge subagent process (Claude Code, Qwen CLI, Gemini CLI, OpenCode CLI). Spanish: cancelar agente de código, detener Claude Code, terminar subagente externo"
+      description: "Cancelar y terminar un proceso de subagente CodeBridge en ejecución. Sinónimos: cancelar agente de código, detener Claude Code, terminar subagente externo"
     },
     // ─────────────────────────────────────────
     // 9. VOICE — Voz
     // ─────────────────────────────────────────
-    { id: "voice_transcribe", name: "voice_transcribe", category: "voice", description: "Transcribe audio input to text. Spanish: transcribir audio, voz a texto, reconocimiento de voz" },
-    { id: "voice_speak", name: "voice_speak", category: "voice", description: "Convert text to synthesized speech output. Spanish: texto a voz, sintetizar, hablar, leer en voz alta" },
+    { id: "voice_transcribe", name: "voice_transcribe", category: "voice", description: "Transcribir entrada de audio a texto. Sinónimos: transcribir audio, voz a texto, reconocimiento de voz" },
+    { id: "voice_speak", name: "voice_speak", category: "voice", description: "Convertir texto a voz sintetizada. Sinónimos: texto a voz, sintetizar, hablar, leer en voz alta" },
 
     // 10. SEARCH-KNOWLEDGE
-    { id: "search_knowledge", name: "search_knowledge", category: "search-knowledge", description: "Search in the knowledge base. Spanish: buscar en la base de conocimientos" },
+    { id: "search_knowledge", name: "search_knowledge", category: "search-knowledge", description: "Buscar en la base de conocimientos. Sinónimos: buscar conocimiento, buscar en la base" },
 
     // 11. CORE — Notificaciones y notas
-    { id: "notify", name: "notify", category: "core", description: "Send notification to user. Spanish: notificar, enviar notificación, alertar, aviso" },
-    { id: "save_note", name: "save_note", category: "core", description: "Save persistent note to scratchpad. Spanish: guardar nota, escribir nota, recordatorio rápido, apuntar" },
-    { id: "report_progress", name: "report_progress", category: "core", description: "Report current progress to user. Spanish: reportar progreso, informar estado, actualizar progreso, porcentaje" },
+    { id: "notify", name: "notify", category: "core", description: "Enviar notificación al usuario. Sinónimos: notificar, enviar notificación, alertar, aviso" },
+    { id: "save_note", name: "save_note", category: "core", description: "Guardar nota persistente en el scratchpad. Sinónimos: guardar nota, escribir nota, recordatorio rápido, apuntar" },
+    { id: "report_progress", name: "report_progress", category: "core", description: "Reportar progreso actual al usuario. Sinónimos: reportar progreso, informar estado, actualizar progreso, porcentaje" },
 
   ],
 
@@ -325,42 +326,42 @@ const log = logger.child("seed");
 // Initial playbook rules for ACE (Agentic Context Engineering)
 const INITIAL_PLAYBOOK_RULES = [
   {
-    rule: "When the user asks to search for recent news, use web_search with date filters rather than generic http_client",
+    rule: "Cuando el usuario pida buscar noticias recientes, usa web_search con filtros de fecha en lugar de http_client genérico",
     category: "tool_selection",
     applicable_to: JSON.stringify(["web_search", "news"]),
   },
   {
-    rule: "Always confirm with the user before executing shell commands that modify files or system state",
+    rule: "Siempre confirma con el usuario antes de ejecutar comandos shell que modifiquen archivos o el estado del sistema",
     category: "error_avoidance",
     applicable_to: JSON.stringify(["exec", "shell", "terminal"]),
   },
   {
-    rule: "For code-related queries, always include the shell skill alongside file_manager for complete development workflow",
+    rule: "Para consultas de código, siempre incluye la habilidad shell junto con file_manager para un flujo de desarrollo completo",
     category: "optimization",
     applicable_to: JSON.stringify(["code", "development"]),
   },
   {
-    rule: "When creating projects, break down tasks into atomic steps that can be executed independently",
+    rule: "Al crear proyectos, divide las tareas en pasos atómicos que puedan ejecutarse independientemente",
     category: "agent_creation",
     applicable_to: JSON.stringify(["project_management", "tasks"]),
   },
   {
-    rule: "Save important user preferences to scratchpad using save_note tool for persistence across sessions",
+    rule: "Guarda las preferencias importantes del usuario en el scratchpad usando la herramienta save_note para persistencia entre sesiones",
     category: "optimization",
     applicable_to: JSON.stringify(["user_preferences", "memory"]),
   },
   {
-    rule: "When a tool fails, retry once with modified parameters before reporting failure to user",
+    rule: "Cuando una herramienta falla, reintenta una vez con parámetros modificados antes de reportar fallo al usuario",
     category: "error_avoidance",
     applicable_to: null,
   },
   {
-    rule: "For data analysis tasks, use structured TOON format for output to reduce token usage",
+    rule: "Para tareas de análisis de datos, usa formato estructurado TOON para la salida y reducir uso de tokens",
     category: "optimization",
     applicable_to: JSON.stringify(["data", "analysis"]),
   },
   {
-    rule: "When delegating to workers, provide clear task descriptions with expected outcomes",
+    rule: "Al delegar a workers, proporciona descripciones claras de tareas con resultados esperados",
     category: "agent_creation",
     applicable_to: JSON.stringify(["delegation", "workers"]),
   },

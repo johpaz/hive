@@ -20,6 +20,20 @@ import { logger } from "../utils/logger"
 
 const log = logger.child("skill-selector")
 
+// ─── Minimal Skill Set ─────────────────────────────────────────────────────────
+
+/**
+ * Skills mínimas que SIEMPRE están disponibles (asociadas a las 4 tools iniciales)
+ * - memory_manager: usa save_note (notas persistentes)
+ * - canvas_report: usa report_progress (reportes de progreso)
+ * - task_orchestrator: usa notify (comunicación entre agentes)
+ */
+export const MINIMAL_SKILL_NAMES = new Set([
+  "memory_manager",   // Asociada a save_note
+  "canvas_report",    // Asociada a report_progress
+  "task_orchestrator", // Asociada a notify y agent coordination
+])
+
 // ─── Types ───────────────────────────────────────────────────────────────────────
 
 export interface SkillDescriptor {
@@ -276,6 +290,34 @@ export function selectSkills(userMessage: string): SkillDescriptor[] {
     }
 
     return result
+}
+
+// ─── Minimal Skills Loader ───────────────────────────────────────────────────
+
+/**
+ * Load minimal skills that are ALWAYS available (associated with MINIMAL_TOOLS)
+ * These are loaded at startup, not via FTS5 search.
+ *
+ * @returns Array of minimal skills (memory_manager, canvas_report, task_orchestrator)
+ */
+export function getMinimalSkills(): SkillDescriptor[] {
+    const db = getDb()
+
+    try {
+        const placeholders = Array.from(MINIMAL_SKILL_NAMES).map(() => "?").join(",")
+        const skills = db.query(`
+            SELECT id, name, category, tools, triggers, body, version, active
+            FROM skills
+            WHERE name IN (${placeholders})
+            AND active = 1
+        `).all(...MINIMAL_SKILL_NAMES) as SkillDescriptor[]
+
+        log.info(`[skill-selector] Loaded ${skills.length} minimal skills: ${skills.map(s => s.name).join(", ")}`)
+        return skills
+    } catch (err) {
+        log.error(`[skill-selector] Failed to load minimal skills:`, err)
+        return []
+    }
 }
 
 // ─── Sync Skills to FTS5 ───────────────────────────────────────────────────

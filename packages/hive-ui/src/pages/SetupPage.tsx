@@ -64,6 +64,7 @@ interface WizardData {
   // Step 2
   agentName: string;
   agentDescription: string;
+  agentTone: string;
   // Step 3
   provider: string;
   apiKey: string;
@@ -122,6 +123,7 @@ function getDefaultWizardData(): WizardData {
     userNotes: "",
     agentName: "Bee",
     agentDescription: "",
+    agentTone: "friendly",
     provider: "",
     apiKey: "",
     model: "",
@@ -466,6 +468,26 @@ export default function SetupPage() {
             />
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="agentTone">Tono de comunicación</Label>
+            <Select
+              value={wizardData.agentTone}
+              onValueChange={(value) => updateData({ agentTone: value })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona un tono" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="friendly">Amigable y cercano</SelectItem>
+                <SelectItem value="professional">Profesional y formal</SelectItem>
+                <SelectItem value="direct">Directo y conciso</SelectItem>
+                <SelectItem value="casual">Casual y relajado</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Define cómo se comunicará tu agente contigo
+            </p>
+          </div>
         </CardContent>
       </Card>
     </div>

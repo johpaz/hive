@@ -26,7 +26,7 @@ import { logger } from "../utils/logger"
 import type { LLMMessage, LLMToolDef } from "./llm-client"
 import type { MCPClientManager } from "@johpaz/hive-agents-mcp"
 import { syncToolCatalogToFTS, mcpToolFullName } from "./tool-selector"
-import { syncSkillsToFTS } from "./skill-selector"
+import { syncSkillsToFTS, getMinimalSkills, selectSkills, type SkillDescriptor } from "./skill-selector"
 import { syncPlaybookToFTS } from "./playbook-selector"
 import { getRecentMessages, getSummary, getScratchpad, toAPIMessages } from "./conversation-store"
 import { formatContext, estimateTokens } from "../utils/toon"
@@ -51,6 +51,14 @@ const MINIMAL_TOOLS = new Set([
   "search_knowledge",
 ])
 
+// MINIMAL SKILL SET — fixed always-available skills (associated with MINIMAL_TOOLS)
+// The agent discovers the rest via selectSkills FTS5 search
+const MINIMAL_SKILL_NAMES = [
+  "memory_manager",      // Associated with save_note
+  "canvas_report",       // Associated with report_progress
+  "task_orchestrator",   // Associated with notify and agent coordination
+]
+
 // ─── Types ─────────────────────────────────────────────────────────────────
 
 // Simple tool interface for context compilation
@@ -66,6 +74,7 @@ export interface CompiledContext {
   messages: LLMMessage[]
   tools: LLMToolDef[]
   allTools: ContextTool[]
+  skills: SkillDescriptor[]  // Skills loaded (minimal + discovered)
 }
 
 // ─── Main compiler ─────────────────────────────────────────────────────────
@@ -233,6 +242,37 @@ export async function compileContext(opts: {
   log.info(`[context-compiler] [STEP-4b] MCP tools (direct): ${mcpToolsForLLM.length} tools`)
   log.info(`[context-compiler] [STEP-8] ✅ Combined tools: ${allTools.length} total, ${toolsForLLM.length} selected`)
 
+  // [STEP-8b] STRATEGY 2: SELECT — Skill Loadout (minimal + discovered)
+  log.info(`[context-compiler] [STEP-8b] Building skill loadout...`)
+  let minimalSkills: SkillDescriptor[] = []
+  let discoveredSkills: SkillDescriptor[] = []
+
+  try {
+    // Load minimal skills (always available)
+    minimalSkills = getMinimalSkills()
+    log.info(`[context-compiler] [STEP-8b] ✅ Loaded ${minimalSkills.length} minimal skills`)
+
+    // Discover additional skills via FTS5 (coordinator only)
+    if (!isWorker) {
+      discoveredSkills = selectSkills(userMessage)
+      log.info(`[context-compiler] [STEP-8b] ✅ Discovered ${discoveredSkills.length} additional skills via FTS5`)
+    }
+  } catch (err) {
+    log.warn(`[context-compiler] [STEP-8b] ⚠️ Skill loadout failed: ${(err as Error).message}`)
+  }
+
+  // Combine skills (minimal + discovered, avoiding duplicates)
+  const skillMap = new Map<string, SkillDescriptor>()
+  for (const skill of minimalSkills) {
+    skillMap.set(skill.name, skill)
+  }
+  for (const skill of discoveredSkills) {
+    if (!skillMap.has(skill.name)) {
+      skillMap.set(skill.name, skill)
+    }
+  }
+  const allSkills = Array.from(skillMap.values())
+
   // [STEP-9] STRATEGY 3: COMPRESS — Load history with compaction
   log.info(`[context-compiler] [STEP-9] Loading conversation history...`)
   let recentMessages: ReturnType<typeof getRecentMessages> = []
@@ -376,6 +416,22 @@ export async function compileContext(opts: {
       `3. El worker con esa instrucción usará \`search_knowledge\` para activar las tools por nombre.\n` +
       `Ejemplo: si el worker debe investigar en internet → busca "web search herramienta internet" → obtienes "web_search" → dile al worker que use web_search.\n`
 
+    // Inject available skills (minimal + discovered)
+    if (allSkills.length > 0) {
+      let skillsSection = `\n\n# SKILLS DISPONIBLES (Instrucciones de Tareas)\n`
+      skillsSection += `Estas skills están activas para esta conversación. Usalas como guía cuando sea relevante:\n\n`
+
+      for (const skill of allSkills) {
+        const isMinimal = MINIMAL_SKILL_NAMES.includes(skill.name)
+        const badge = isMinimal ? "[SIEMPRE]" : "[DISCOVERED]"
+        skillsSection += `## ${skill.name} ${badge}\n`
+        skillsSection += `${skill.body.substring(0, 500)}${skill.body.length > 500 ? '...' : ''}\n\n`
+      }
+
+      systemPrompt += skillsSection
+      log.info(`[context-compiler] [STEP-10d] Injected ${allSkills.length} skills (${minimalSkills.length} minimal, ${discoveredSkills.length} discovered)`)
+    }
+
     // Inject Canvas A2UI component documentation
     systemPrompt += `\n\n# 🎨 CANVAS A2UI — Componentes disponibles para \`canvas_render\`\n` +
       `**REGLA**: Usá \`canvas_render\` con el tipo específico en vez de siempre usar \`canvas_show_card\` + markdown.\n\n` +
@@ -424,8 +480,9 @@ export async function compileContext(opts: {
   }
 
   log.info(
-    `[context-compiler] ✅ DONE: ${allTools.length} total, ` +
+    `[context-compiler] ✅ DONE: ${allTools.length} total tools, ` +
     `${toolsForLLM.length} selected tools, ${messages.length} messages, ` +
+    `${allSkills.length} skills (${minimalSkills.length} minimal, ${discoveredSkills.length} discovered), ` +
     `isolated=${isWorker}`
   )
 
@@ -434,6 +491,7 @@ export async function compileContext(opts: {
     messages,
     tools: toolsForLLM,
     allTools,
+    skills: allSkills,
   }
 }
 

@@ -176,16 +176,20 @@ export const memoryDeleteTool: Tool = {
 
 export const agentCreateTool: Tool = {
   name: "agent_create",
-  description: "Create a new specialized worker agent. Spanish: crear agente, nuevo worker, nuevo trabajador",
+  description: "Crear un nuevo agente worker especializado. Requiere consultar get_available_models primero para seleccionar provider/model óptimos. Sinónimos: crear agente, nuevo worker, nuevo trabajador",
   parameters: {
     type: "object",
     properties: {
-      name: { type: "string", description: "Name of the agent" },
-      description: { type: "string", description: "Description of the agent's role" },
-      system_prompt: { type: "string", description: "System prompt for the agent" },
-      tools_json: { type: "array", description: "List of tool IDs", items: { type: "string" } },
+      name: { type: "string", description: "Nombre del agente" },
+      description: { type: "string", description: "Descripción del rol del agente" },
+      system_prompt: { type: "string", description: "System prompt para el agente" },
+      tools_json: { type: "array", description: "Lista de IDs de herramientas", items: { type: "string" } },
+      providerId: { type: "string", description: "ID del provider (openai, anthropic, ollama, etc.) - Obtener de get_available_models" },
+      modelId: { type: "string", description: "ID del modelo (gpt-4o, claude-sonnet, etc.) - Obtener de get_available_models" },
+      tone: { type: "string", description: "Tono del agente (friendly, professional, direct, etc.)" },
+      max_iterations: { type: "number", description: "Límite de iteraciones del agente (default: 10)" },
     },
-    required: ["name"],
+    required: ["name", "providerId", "modelId"],
   },
   execute: async (params: Record<string, unknown>, config?: any) => {
     const db = getDb();
@@ -195,16 +199,73 @@ export const agentCreateTool: Tool = {
     const description = (params.description as string) ?? "";
     const systemPrompt = (params.system_prompt as string) ?? "";
     const toolsJson = params.tools_json ? JSON.stringify(params.tools_json) : null;
+    const providerId = params.providerId as string;
+    const modelId = params.modelId as string;
+    const tone = (params.tone as string) ?? "friendly";
+    const maxIterations = (params.max_iterations as number) ?? 10;
+
+    // Validar que providerId y modelId sean obligatorios
+    if (!providerId || !modelId) {
+      return { 
+        ok: false, 
+        error: "providerId y modelId son obligatorios. Usá get_available_models para consultar los modelos disponibles antes de crear el agente." 
+      };
+    }
+
+    // Validar que el provider existe y está activo
+    const provider = db.query<any, [string]>(
+      "SELECT id, name, enabled, active FROM providers WHERE id = ?"
+    ).get(providerId);
+
+    if (!provider) {
+      return { 
+        ok: false, 
+        error: `Provider '${providerId}' no existe. Usá get_available_models para ver providers disponibles.` 
+      };
+    }
+
+    if (!provider.enabled || !provider.active) {
+      return { 
+        ok: false, 
+        error: `Provider '${providerId}' no está activo. Usá get_available_models para ver providers activos.` 
+      };
+    }
+
+    // Validar que el modelo existe y está activo
+    const model = db.query<any, [string]>(
+      "SELECT id, name, enabled, active FROM models WHERE id = ?"
+    ).get(modelId);
+
+    if (!model) {
+      return { 
+        ok: false, 
+        error: `Modelo '${modelId}' no existe. Usá get_available_models para ver modelos disponibles.` 
+      };
+    }
+
+    if (!model.enabled || !model.active) {
+      return { 
+        ok: false, 
+        error: `Modelo '${modelId}' no está activo. Usá get_available_models para ver modelos activos.` 
+      };
+    }
 
     try {
       const agentId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 
       db.query(`
-        INSERT INTO agents (id, user_id, name, description, system_prompt, tools_json, role, status, parent_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'worker', 'idle', ?, unixepoch(), unixepoch())
-      `).run(agentId, userId, name, description, systemPrompt, toolsJson, parentId);
+        INSERT INTO agents (id, user_id, name, description, system_prompt, tools_json, role, status, parent_id, provider_id, model_id, tone, max_iterations, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'worker', 'idle', ?, ?, ?, ?, ?, unixepoch(), unixepoch())
+      `).run(agentId, userId, name, description, systemPrompt, toolsJson, parentId, providerId, modelId, tone, maxIterations);
 
-      return { ok: true, agentId, name, message: "Agent created." };
+      return { 
+        ok: true, 
+        agentId, 
+        name, 
+        providerId, 
+        modelId,
+        message: "Agente creado exitosamente." 
+      };
     } catch (error) {
       return { ok: false, error: `Failed to create agent: ${(error as Error).message}` };
     }
@@ -616,6 +677,7 @@ export const projectUpdatesTool: Tool = {
 };
 
 import crypto from "crypto";
+import { getAvailableModelsTool } from "./get-available-models.ts";
 
 export function createTools(): Tool[] {
   return [
@@ -624,6 +686,7 @@ export function createTools(): Tool[] {
     memoryListTool,
     memorySearchTool,
     memoryDeleteTool,
+    getAvailableModelsTool,
     agentCreateTool,
     agentFindTool,
     agentArchiveTool,
