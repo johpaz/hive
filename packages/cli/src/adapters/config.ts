@@ -8,6 +8,7 @@
 import { z } from "zod";
 import * as path from "node:path";
 import { existsSync, readFileSync } from "node:fs";
+import { execSync } from "node:child_process";
 import type { GatewayConfig, InstallationConfig, InstallationPaths } from "./types";
 import { DEFAULT_GATEWAY_CONFIG, PORTS, gatewayConfigSchema, installationConfigSchema } from "./types";
 
@@ -272,10 +273,72 @@ export function getDistDir(): string | null {
 
 /**
  * Check if running in development mode
+ *
+ * Development mode is ONLY activated when:
+ * 1. HIVE_DEV=true is explicitly set, OR
+ * 2. Running from source code (not global installation) with packages/hive-ui present
+ *
+ * This prevents false positives when running a global installation from a
+ * directory that happens to have a packages/hive-ui folder (e.g., after bun install).
  */
 export function isDevMode(): boolean {
-  return process.env.HIVE_DEV === "true" && 
-         existsSync(path.join(process.cwd(), "packages/hive-ui/package.json"));
+  // If HIVE_DEV is explicitly set, respect that
+  if (process.env.HIVE_DEV === "true") {
+    return true;
+  }
+
+  // If HIVE_DEV is explicitly set to false, respect that
+  if (process.env.HIVE_DEV === "false") {
+    return false;
+  }
+
+  // Check if running from global installation
+  // by looking for the hive binary location
+  try {
+    const output = execSync("bun which hive", {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+
+    // If hive is installed globally and we're running from that path,
+    // we're NOT in dev mode (even if packages/hive-ui exists in cwd)
+    if (output && existsSync(output)) {
+      const binaryDir = path.dirname(output);
+      const currentDir = process.cwd();
+
+      // If the current directory is NOT where the global binary is located,
+      // and we have packages/hive-ui, then we're likely in dev mode
+      const isRunningFromGlobalBinary = currentDir.startsWith(binaryDir) ||
+        output === process.argv[1] ||
+        (process.argv[1]?.includes("/bin/hive") ?? false);
+
+      if (isRunningFromGlobalBinary) {
+        return false;
+      }
+    }
+  } catch {
+    // bun which hive failed - hive not installed globally
+    // Continue to check for source development
+  }
+
+  // Check if running from source code (development)
+  // Only if NOT running from global installation
+  const hasSourceCode = existsSync(path.join(process.cwd(), "packages/hive-ui/package.json"));
+
+  // Additional check: ensure we're actually in the source repository
+  // by checking for other development files
+  const hasPackageJson = existsSync(path.join(process.cwd(), "package.json"));
+  const hasWorkspaces = hasPackageJson ? (() => {
+    try {
+      const pkg = JSON.parse(readFileSync(path.join(process.cwd(), "package.json"), "utf-8"));
+      return !!pkg.workspaces;
+    } catch {
+      return false;
+    }
+  })() : false;
+
+  // Only consider it dev mode if we have the full source workspace
+  return hasSourceCode && hasWorkspaces;
 }
 
 /**
