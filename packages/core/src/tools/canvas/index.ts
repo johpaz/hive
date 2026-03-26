@@ -104,7 +104,10 @@ export const canvasAskTool: Tool = {
   execute: async (params: Record<string, unknown>, config?: any) => {
     const questions = params.questions as any[];
     const userId = config?.configurable?.user_id;
-    const sessionId = userId ? `canvas:${userId}` : "canvas:default";
+    const threadId = config?.configurable?.thread_id;
+    // Use threadId (session) if available, then userId, then default
+    // This must match the WebSocket sessionId used by the frontend
+    const sessionId = threadId ? `canvas:${threadId}` : userId ? `canvas:${userId}` : "canvas:default";
 
     // Convert questions to form fields
     const fields = questions.map((q, idx) => ({

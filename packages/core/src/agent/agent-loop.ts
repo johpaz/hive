@@ -305,6 +305,9 @@ export async function* runAgent(
           const foundTools: Array<{ name: string }> = result?.tools ?? []
           const currentToolNames = new Set(ctx.tools.map((t: any) => t.function?.name))
 
+          // Track which tools were injected for skill lookup
+          const injectedTools: string[] = []
+
           // Inject native tools only (MCP tools already available)
           for (const found of foundTools) {
             if (!currentToolNames.has(found.name)) {
@@ -320,7 +323,59 @@ export async function* runAgent(
                 })
                 log.info(`[agent-loop] Injected discovered native tool into loadout: ${nativeTool.name}`)
                 currentToolNames.add(found.name)
+                injectedTools.push(nativeTool.name)
               }
+            }
+          }
+
+          // Inject skills associated with the injected tools
+          if (injectedTools.length > 0) {
+            try {
+              const db = getDb()
+              // Find skills that use any of the injected tools
+              const placeholders = injectedTools.map(() => "?").join(",")
+              const skillsWithTools = db.query(`
+                SELECT DISTINCT s.name, s.body, s.tools
+                FROM skills s
+                WHERE s.active = 1
+                AND (
+                  ${injectedTools.map(() => `s.tools LIKE ?`).join(" OR ")}
+                )
+              `).all(...injectedTools.map(t => `%${t}%`)) as Array<{ name: string; body: string; tools: string }>
+
+              // Filter to only skills that actually contain the tools (not partial matches)
+              const matchingSkills = skillsWithTools.filter(s => {
+                const skillTools = s.tools?.split(",").map(t => t.trim()) ?? []
+                return injectedTools.some(injected => skillTools.includes(injected))
+              })
+
+              if (matchingSkills.length > 0) {
+                const skillSection = matchingSkills
+                  .map(s => `## Skill: ${s.name}\n${s.body}`)
+                  .join("\n\n")
+
+                // Add skill instructions to system prompt (first message)
+                const systemMsg = messages.find(m => m.role === "system")
+                if (systemMsg && typeof systemMsg.content === "string") {
+                  // Check if we already added this skill
+                  const existingSkillNames = new Set(
+                    (systemMsg.content.match(/## Skill: ([^\n]+)/g) || [])
+                      .map(m => m.replace("## Skill: ", "").trim())
+                  )
+
+                  const newSkills = matchingSkills.filter(s => !existingSkillNames.has(s.name))
+                  if (newSkills.length > 0) {
+                    const newSkillSection = newSkills
+                      .map(s => `## Skill: ${s.name}\n${s.body}`)
+                      .join("\n\n")
+
+                    systemMsg.content += `\n\n--- SKILL INSTRUCTIONS (Auto-loaded) ---\n${newSkillSection}`
+                    log.info(`[agent-loop] Injected ${newSkills.length} skill(s) for tools: ${newSkills.map(s => s.name).join(", ")}`)
+                  }
+                }
+              }
+            } catch (skillErr) {
+              log.warn(`[agent-loop] Failed to inject skills for tools: ${(skillErr as Error).message}`)
             }
           }
         } catch (err) {

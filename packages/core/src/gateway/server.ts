@@ -1588,7 +1588,7 @@ export async function startGateway(config: Config): Promise<void> {
 
           ws.send(JSON.stringify({
             type: "welcome",
-            sessionId: user?.id || data.sessionId,
+            sessionId: data.sessionId,
             user: user ? { id: user.id, name: user.name, language: user.language } : null,
             agent: agent ? { id: agent.id, name: agent.name, provider: agent.provider_id, model: agent.model_id } : null,
             channels: channels.map(c => c.id),
