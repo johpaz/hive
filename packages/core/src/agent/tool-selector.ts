@@ -75,15 +75,15 @@ const MAX_TOOLS_PER_TURN = 12
 
 /**
  * Minimum bm25 score threshold. Below this = conversational, no tools needed.
- * 
+ *
  * CRITICAL: bm25() returns NEGATIVE scores where closer to 0 = more relevant.
  * - Score of -5 is MORE relevant than -20
- * - We use -25 as threshold to allow reasonable matching while filtering noise
- * 
- * Previous value: -15 (too strict, filtered out valid matches like -15.85)
- * New value: -25 (allows more relevant tools while still filtering garbage)
+ * - We use -100 as threshold to allow all reasonable matches (scores are typically -1 to -15)
+ *
+ * Previous value: -25 (too strict for some tool names)
+ * New value: -100 (allows all valid matches, filtering done by FTS5 MATCH)
  */
-const MIN_RELEVANCE_THRESHOLD = -25
+const MIN_RELEVANCE_THRESHOLD = -100  // Increased from -25 to allow more matches
 
 /** Stopwords to filter out before FTS5 query construction */
 const STOPWORDS = new Set([
@@ -262,7 +262,8 @@ function buildFTSQuery(message: string): string {
 
     if (words.length === 0) return ""
 
-    return words.join(" OR ")
+    // Use prefix matching for better recall (e.g., "gener*" matches "generar", "generando", "generación")
+    return words.map(w => `${w}*`).join(" OR ")
 }
 
 /**
@@ -321,12 +322,13 @@ export function selectTools(
     // Step 3: Execute FTS5 query with bm25 scoring
     const db = getDb()
 
-    // Use bm25() for relevance scoring - more accurate than simple MATCH
-    // bm25() returns negative scores (more negative = less relevant)
-    // We sort by rank ascending (best matches first in FTS5)
+    // Use bm25() with column weights for relevance scoring
+    // FTS5 table columns: tool_name, name, description, category
+    // Weights: tool_name=1.0, name=5.0, description=3.0, category=1.0
+    // Higher weight on name (5.0) for exact tool name matching
     // Get more initially (maxTools * 2) for filtering, then limit to maxTools
     const ftsResults = db.query(`
-      SELECT tool_name, bm25(tools_fts) as bm25_score
+      SELECT tool_name, bm25(tools_fts, 1.0, 5.0, 3.0, 1.0) as bm25_score
       FROM tools_fts
       WHERE tools_fts MATCH ?
       ORDER BY bm25_score ASC
@@ -338,10 +340,8 @@ export function selectTools(
         return []
     }
 
-    log.debug(`[tool-selector] Raw FTS results:`, ftsResults.slice(0, 5))
-
-    // Log relevance scores for debugging
-    log.debug(`[tool-selector] Relevance scores:`, ftsResults.map(r => ({ tool: r.tool_name, score: r.bm25_score })))
+    // Log raw scores for debugging
+    log.info(`[tool-selector] Raw FTS scores: ${ftsResults.slice(0, 10).map(r => `${r.tool_name}=${r.bm25_score.toFixed(2)}`).join(", ")}`)
 
     // Step 4: Apply relevance threshold filter
     // bm25() returns negative scores; threshold is -0.5 (loosened from typical -5)

@@ -1,6 +1,13 @@
 import type { ServerWebSocket } from "bun";
 import type { SubagentConfig, TelemetryEvent } from "./schemas.ts";
 import { AgentRole } from "./schemas.ts";
+import {
+    getCliConfig,
+    buildCliArgs,
+    validateCliEnv,
+    getCliTimeout,
+    requiresStdinClose,
+} from "./cli-configs.ts";
 
 /** Live record of a running subagent process */
 interface AgentRecord {
@@ -49,13 +56,43 @@ export class ProcessManager {
             throw new Error(`Task ${taskId} is already running`);
         }
 
-        const args = [config.cli, ...config.args];
+        // Get CLI-specific configuration
+        const cliConfig = getCliConfig(config.cli);
+        
+        // Validate environment variables
+        const envValidation = validateCliEnv(config.cli);
+        if (!envValidation.valid) {
+            throw new Error(
+                `Missing environment variables for ${config.cli}: ${envValidation.missing.join(", ")}`
+            );
+        }
+
+        // Build command with CLI-specific args
+        const cliArgs = buildCliArgs(config.cli, config.args);
+        const args = [config.cli, ...cliArgs];  // Add CLI command at the beginning
+        
+        // Get effective timeout
+        const timeoutSeconds = getCliTimeout(config.cli, config.timeoutSeconds);
+
+        // Check if stdin should be closed after prompt
+        const shouldCloseStdin = requiresStdinClose(config.cli);
+
         const proc = Bun.spawn(args, {
             cwd: config.cwd ?? process.cwd(),
             stdin: "pipe",
             stdout: "pipe",
             stderr: "pipe",
-            env: { ...process.env, HIVE_ROLE: config.role },
+            env: { 
+                ...process.env, 
+                HIVE_ROLE: config.role,
+                // Add CLI-specific env vars if available
+                ...(cliConfig?.envVars.reduce((acc, key) => {
+                    if (process.env[key]) {
+                        acc[key] = process.env[key]!;
+                    }
+                    return acc;
+                }, {} as Record<string, string>) ?? {}),
+            },
         });
 
         const record: AgentRecord = {
@@ -80,9 +117,14 @@ export class ProcessManager {
             taskId,
         });
 
-        // Write the prompt to stdin then close it
+        // Write the prompt to stdin
         proc.stdin.write(prompt);
-        proc.stdin.end();
+        
+        // Close stdin only if this CLI requires it (e.g., Qwen)
+        // Other CLIs may need stdin open for interactive features
+        if (shouldCloseStdin) {
+            proc.stdin.end();
+        }
 
         // Stream stdout
         this.pipeStream(record, proc.stdout, "stdout");
@@ -148,6 +190,25 @@ export class ProcessManager {
                 tokens: r.tokens,
                 model: r.model,
             })),
+        };
+    }
+
+    statusForTask(taskId: string) {
+        const record = this.agents.get(taskId);
+        if (!record) {
+            return { found: false, taskId };
+        }
+        return {
+            found: true,
+            taskId: record.taskId,
+            role: record.config.role,
+            cli: record.config.cli,
+            pid: record.pid,
+            state: record.state,
+            progress: record.progress,
+            tokens: record.tokens,
+            model: record.model,
+            startedAt: record.startedAt,
         };
     }
 

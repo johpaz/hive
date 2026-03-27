@@ -65,10 +65,16 @@ export interface SkillSelectorResult {
 // ─── Configuration ─────────────────────────────────────────────────────────
 
 /** Maximum skills to return per message */
-const MAX_SKILLS_PER_TURN = 2
+const MAX_SKILLS_PER_TURN = 4  // Increased from 2 to allow more skills
 
-/** Minimum bm25 score threshold. Below this = conversational, no skills needed. */
-const MIN_RELEVANCE_THRESHOLD = -5
+/**
+ * Minimum bm25 score threshold. Below this = conversational, no skills needed.
+ * 
+ * CRITICAL: bm25() returns NEGATIVE scores where closer to 0 = more relevant.
+ * - Score of -5 is MORE relevant than -20
+ * - We use -15 as threshold to allow reasonable matching while filtering noise
+ */
+const MIN_RELEVANCE_THRESHOLD = -15  // Increased from -5 to allow more matches
 
 /** Stopwords to filter out before FTS5 query construction */
 const STOPWORDS = new Set([
@@ -125,6 +131,10 @@ function isConversational(message: string): boolean {
 
 /**
  * Build FTS5 query from user message
+ * 
+ * Uses prefix matching for better recall:
+ * - "generar" matches "generando", "generación", "genera"
+ * - "código" matches "codigos", "codificar"
  */
 function buildFTSQuery(message: string): string {
     const words = message
@@ -136,7 +146,8 @@ function buildFTSQuery(message: string): string {
 
     if (words.length === 0) return ""
 
-    return words.join(" OR ")
+    // Use prefix matching for better recall (e.g., "gener*" matches "generar", "generando", "generación")
+    return words.map(w => `${w}*`).join(" OR ")
 }
 
 /**
@@ -216,9 +227,12 @@ export function selectSkills(userMessage: string): SkillDescriptor[] {
     log.debug(`[skill-selector] FTS query: "${ftsQuery}"`)
 
     // Step 4: Execute FTS5 query with bm25 scoring
-    // Use bm25() for relevance scoring (FTS5 table is populated in gateway/initializer.ts)
+    // Use bm25() with column weights for relevance scoring
+    // FTS5 table columns: id, name, category, tools, triggers, body
+    // Weights: id=1.0, name=3.0, category=1.0, tools=1.0, triggers=5.0, body=1.0
+    // Higher weight on triggers (5.0) and name (3.0) for better matching
     const ftsResults = db.query(`
-        SELECT id, bm25(skills_fts) as bm25_score
+        SELECT id, bm25(skills_fts, 1.0, 3.0, 1.0, 1.0, 5.0, 1.0) as bm25_score
         FROM skills_fts
         WHERE skills_fts MATCH ?
         ORDER BY bm25_score ASC
@@ -230,7 +244,8 @@ export function selectSkills(userMessage: string): SkillDescriptor[] {
         return []
     }
 
-    log.debug(`[skill-selector] Raw FTS results:`, ftsResults.slice(0, 5))
+    // Log raw scores for debugging
+    log.info(`[skill-selector] Raw FTS scores: ${ftsResults.slice(0, 10).map(r => `id=${r.id}, score=${r.bm25_score.toFixed(2)}`).join(", ")}`)
 
     // Step 5: Apply relevance threshold filter
     const relevantResults = ftsResults.filter(r => r.bm25_score >= MIN_RELEVANCE_THRESHOLD)

@@ -23,6 +23,9 @@ interface CanvasState {
   isConnected: boolean;
   graphNodes: GraphNode[];
   graphEdges: GraphEdge[];
+  zoomLevel: number;
+  panX: number;
+  panY: number;
 
   // Actions
   setComponents: (components: CanvasComponent[]) => void;
@@ -35,6 +38,11 @@ interface CanvasState {
   updateGraphNode: (id: string, updates: Partial<GraphNode>) => void;
   removeGraphNode: (id: string) => void;
   addGraphEdge: (edge: GraphEdge) => void;
+  setZoomLevel: (zoom: number) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  resetView: () => void;
+  setPan: (x: number, y: number) => void;
 
   // Init: subscribes to main WS events, returns cleanup fn
   init: () => () => void;
@@ -47,6 +55,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   isConnected: false,
   graphNodes: [],
   graphEdges: [],
+  zoomLevel: 1,
+  panX: 0,
+  panY: 0,
 
   setComponents: (components) => set({ components }),
   addComponent: (component) => set((s) => ({ components: [...s.components, component] })),
@@ -81,6 +92,16 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       if (existing) return s;
       return { graphEdges: [...s.graphEdges, edge] };
     }),
+
+  setZoomLevel: (zoom) => set({ zoomLevel: Math.max(0.25, Math.min(2, zoom)) }),
+  
+  zoomIn: () => set((s) => ({ zoomLevel: Math.max(0.25, Math.min(2, s.zoomLevel + 0.25)) })),
+  
+  zoomOut: () => set((s) => ({ zoomLevel: Math.max(0.25, Math.min(2, s.zoomLevel - 0.25)) })),
+  
+  resetView: () => set({ zoomLevel: 1, panX: 0, panY: 0 }),
+  
+  setPan: (x, y) => set({ panX: x, panY: y }),
 
   init: () => {
     const ws = useWebSocketStore.getState();

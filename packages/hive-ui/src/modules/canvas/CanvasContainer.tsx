@@ -307,9 +307,13 @@ export function CanvasContainer({ sessionId: propSessionId }: CanvasContainerPro
   const components = useCanvasStore((s) => s.components);
   const graphNodes = useCanvasStore((s) => s.graphNodes);
   const graphEdges = useCanvasStore((s) => s.graphEdges);
+  const zoomLevel = useCanvasStore((s) => s.zoomLevel);
   const init = useCanvasStore((s) => s.init);
   const sendMessage = useCanvasStore((s) => s.sendMessage);
   const removeComponent = useCanvasStore((s) => s.removeComponent);
+  const zoomIn = useCanvasStore((s) => s.zoomIn);
+  const zoomOut = useCanvasStore((s) => s.zoomOut);
+  const resetView = useCanvasStore((s) => s.resetView);
 
   // Get the effective session ID for display
   const effectiveSessionId = propSessionId || user?.id || "default";
@@ -376,8 +380,15 @@ export function CanvasContainer({ sessionId: propSessionId }: CanvasContainerPro
         }}
       >
         <ScrollArea className="flex-1 p-6">
-          {/* Graph view */}
-          <GraphView nodes={graphNodes} edges={graphEdges} />
+          {/* Graph view with zoom/pan transform */}
+          <div
+            className="origin-top-left transition-transform duration-200 ease-out"
+            style={{
+              transform: `translate(${zoomLevel === 1 ? 0 : zoomLevel * 20}px, 0) scale(${zoomLevel})`,
+            }}
+          >
+            <GraphView nodes={graphNodes} edges={graphEdges} />
+          </div>
 
           {/* Agent-rendered UI components */}
           {components.length > 0 && (
@@ -398,14 +409,26 @@ export function CanvasContainer({ sessionId: propSessionId }: CanvasContainerPro
 
         {/* Bottom toolbar */}
         <div className="absolute bottom-12 left-1/2 -translate-x-1/2 flex items-center gap-1 px-4 py-2 rounded-full border border-white/10 bg-[#1c1b1d]/70 backdrop-blur-xl shadow-[0_0_20px_rgba(59,130,246,0.08)]">
-          <button className="p-2 text-white/40 hover:text-white hover:scale-110 transition-all duration-150 active:scale-90">
+          <button
+            className="p-2 text-white/40 hover:text-white hover:scale-110 transition-all duration-150 active:scale-90"
+            onClick={zoomIn}
+            title="Acercar"
+          >
             <ZoomIn className="h-4 w-4" />
           </button>
-          <button className="p-2 text-white/40 hover:text-white hover:scale-110 transition-all duration-150 active:scale-90">
+          <button
+            className="p-2 text-white/40 hover:text-white hover:scale-110 transition-all duration-150 active:scale-90"
+            onClick={zoomOut}
+            title="Alejar"
+          >
             <ZoomOut className="h-4 w-4" />
           </button>
           <div className="w-px h-4 bg-white/10 mx-1" />
-          <button className="p-2 text-blue-400 bg-blue-500/10 rounded-full hover:bg-blue-500/20 transition-all duration-150 active:scale-90">
+          <button
+            className="p-2 text-blue-400 bg-blue-500/10 rounded-full hover:bg-blue-500/20 transition-all duration-150 active:scale-90"
+            onClick={resetView}
+            title="Centrar vista"
+          >
             <RotateCcw className="h-4 w-4" />
           </button>
         </div>

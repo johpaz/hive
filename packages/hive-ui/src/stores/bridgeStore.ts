@@ -90,6 +90,19 @@ export const useBridgeStore = create<BridgeState>((set, get) => ({
         try {
           const data = JSON.parse(event.data);
 
+          // Handle server heartbeat ping - respond with pong
+          if (data.type === "ping") {
+            ws.send(JSON.stringify({ cmd: "ping" }));
+            return;
+          }
+
+          // Handle server heartbeat pong
+          if (data.type === "pong") {
+            // Server acknowledged our heartbeat - connection is alive
+            console.log("[Bridge] ✅ Heartbeat acknowledged by server");
+            return;
+          }
+
           if (data.type === "code-bridge:status" && Array.isArray(data.agents)) {
             const processes: BridgeProcess[] = data.agents.map((agent: { taskId: string; role: string; cli: string; pid: number; state: string }) => ({
               id: agent.taskId,
@@ -149,13 +162,14 @@ export const useBridgeStore = create<BridgeState>((set, get) => ({
         get().addLog(createLog("info", "Connected to Code Bridge"));
         get().sendCommand({ cmd: "status" });
 
-        // Heartbeat every 30s
+        // Heartbeat every 15s (faster than server's 30s to ensure connection stays alive)
         if (_bridgeHeartbeat) clearInterval(_bridgeHeartbeat);
         _bridgeHeartbeat = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
+            console.log("[Bridge] 💓 Sending heartbeat...");
             ws.send(JSON.stringify({ cmd: "ping" }));
           }
-        }, 30000);
+        }, 15000);
       };
 
       ws.onerror = () => {
