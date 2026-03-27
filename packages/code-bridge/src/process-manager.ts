@@ -70,20 +70,26 @@ export class ProcessManager {
         // Build command with CLI-specific args
         const cliArgs = buildCliArgs(config.cli, config.args);
         const args = [config.cli, ...cliArgs];  // Add CLI command at the beginning
-        
+
         // Get effective timeout
         const timeoutSeconds = getCliTimeout(config.cli, config.timeoutSeconds);
 
         // Check if stdin should be closed after prompt
         const shouldCloseStdin = requiresStdinClose(config.cli);
 
+        // For Qwen CLI, add prompt as -p argument instead of stdin
+        const isQwen = config.cli === "qwen";
+        if (isQwen && prompt) {
+            args.push("-p", prompt);
+        }
+
         const proc = Bun.spawn(args, {
             cwd: config.cwd ?? process.cwd(),
-            stdin: "pipe",
+            stdin: isQwen ? "ignore" : "pipe",
             stdout: "pipe",
             stderr: "pipe",
-            env: { 
-                ...process.env, 
+            env: {
+                ...process.env,
                 HIVE_ROLE: config.role,
                 // Add CLI-specific env vars if available
                 ...(cliConfig?.envVars.reduce((acc, key) => {
@@ -117,13 +123,16 @@ export class ProcessManager {
             taskId,
         });
 
-        // Write the prompt to stdin
-        proc.stdin.write(prompt);
-        
-        // Close stdin only if this CLI requires it (e.g., Qwen)
-        // Other CLIs may need stdin open for interactive features
-        if (shouldCloseStdin) {
-            proc.stdin.end();
+        // Write the prompt to stdin (only for non-Qwen CLIs)
+        // Qwen CLI receives the prompt via -p argument
+        if (!isQwen) {
+            proc.stdin.write(prompt);
+
+            // Close stdin only if this CLI requires it (e.g., Qwen)
+            // Other CLIs may need stdin open for interactive features
+            if (shouldCloseStdin) {
+                proc.stdin.end();
+            }
         }
 
         // Stream stdout

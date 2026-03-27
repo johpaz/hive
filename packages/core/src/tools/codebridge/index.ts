@@ -262,6 +262,81 @@ export const codebridgeCancelTool: Tool = {
   },
 };
 
+// ─── codebridge_feedback ───────────────────────────────────────────────────────
+
+export const codebridgeFeedbackTool: Tool = {
+  name: "codebridge_feedback",
+  description: "Send feedback or additional instructions to a running CodeBridge subagent. Use for course correction, clarifications, or iterative improvements during long-running code tasks. Spanish: enviar feedback, corregir rumbo, aclaraciones, mejoras iterativas",
+  parameters: {
+    type: "object",
+    properties: {
+      taskId: {
+        type: "string",
+        description: "Task ID to send feedback to",
+      },
+      feedback: {
+        type: "string",
+        description: "Feedback message or additional instructions for the running agent",
+      },
+    },
+    required: ["taskId", "feedback"],
+  },
+  execute: async (params: Record<string, unknown>) => {
+    const taskId = params.taskId as string;
+    const feedback = params.feedback as string;
+
+    try {
+      const ws = new WebSocket(CODE_BRIDGE_URL);
+      
+      return new Promise((resolve) => {
+        ws.onopen = () => {
+          ws.send(JSON.stringify({
+            cmd: "feedback",
+            taskId,
+            feedback,
+          }));
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === "feedback:ack") {
+              resolve({
+                ok: data.delivered,
+                taskId,
+                delivered: data.delivered,
+                reason: data.reason,
+                message: data.delivered 
+                  ? "Feedback delivered to running agent" 
+                  : `Feedback not delivered: ${data.reason}`,
+              });
+            }
+          } catch {
+            resolve({ ok: false, error: "Failed to parse feedback response" });
+          }
+          ws.close();
+        };
+
+        ws.onerror = () => {
+          resolve({ ok: false, error: "WebSocket error" });
+          ws.close();
+        };
+
+        // Timeout after 5 seconds
+        setTimeout(() => {
+          resolve({ ok: false, error: "Feedback timeout" });
+          ws.close();
+        }, 5000);
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        error: `Failed to send feedback: ${(error as Error).message}`,
+      };
+    }
+  },
+};
+
 export function createTools(): Tool[] {
-  return [codebridgeLaunchTool, codebridgeStatusTool, codebridgeCancelTool];
+  return [codebridgeLaunchTool, codebridgeStatusTool, codebridgeCancelTool, codebridgeFeedbackTool];
 }

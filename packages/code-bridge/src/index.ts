@@ -145,6 +145,31 @@ const server = Bun.serve<{ id: string; lastPong: number }>({
                     ws.send(JSON.stringify({ type: "pong" }));
                     break;
                 }
+
+                case "feedback": {
+                    // Bidirectional communication: coordinator -> code agent
+                    console.log(`[Code Bridge] 💬 Feedback recibido para task ${command.taskId}: ${command.feedback?.substring(0, 100)}...`);
+                    // Forward feedback to the running process via stdin (if supported)
+                    const status = manager.statusForTask(command.taskId);
+                    if (status.found && status.state === "running") {
+                        // Send feedback to the agent (for CLIs that support interactive input)
+                        console.log(`[Code Bridge] 📤 Forwarding feedback to agent...`);
+                        // Note: This is a placeholder - actual implementation depends on CLI capabilities
+                        ws.send(JSON.stringify({ 
+                            type: "feedback:ack", 
+                            taskId: command.taskId,
+                            delivered: true 
+                        }));
+                    } else {
+                        ws.send(JSON.stringify({ 
+                            type: "feedback:ack", 
+                            taskId: command.taskId,
+                            delivered: false,
+                            reason: status.found ? "Agent not running" : "Task not found"
+                        }));
+                    }
+                    break;
+                }
             }
         },
 

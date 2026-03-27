@@ -576,6 +576,21 @@ export const CONTEXT_ENGINE_SCHEMA = `
   -- Simplified schema - standalone FTS5 table (no content table sync)
   -- Note: FTS5 tables are created programmatically in seed.ts to avoid "already exists" errors
 
+  -- REFRESH TOKENS: JWT refresh token storage (hash-based for security)
+  -- Stores hashed refresh tokens with expiry and user linkage
+  CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash      TEXT NOT NULL UNIQUE,
+    expires_at      INTEGER NOT NULL,
+    created_at      INTEGER NOT NULL DEFAULT (unixepoch()),
+    revoked         INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);
+  CREATE INDEX IF NOT EXISTS idx_refresh_tokens_hash ON refresh_tokens(token_hash);
+  CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires ON refresh_tokens(expires_at);
+
   -- Agent Bus: Message queue for worker-to-worker communication
   CREATE TABLE IF NOT EXISTS agent_bus_messages (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,

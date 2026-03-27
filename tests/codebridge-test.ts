@@ -50,7 +50,7 @@ const CLI_CONFIGS: Record<CliTool, CliConfig> = {
   qwen: {
     name: "Qwen CLI",
     command: "qwen",
-    timeoutSeconds: 180,
+    timeoutSeconds: 300, // 5 minutes - Need more time for complex tasks
     description: "Alibaba's Qwen - Fast code generation and debugging",
   },
   claude: {

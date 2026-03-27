@@ -92,6 +92,7 @@ export {
   codebridgeLaunchTool,
   codebridgeStatusTool,
   codebridgeCancelTool,
+  codebridgeFeedbackTool,
 } from "@johpaz/hive-agents/tools/codebridge/index";
 
 export {

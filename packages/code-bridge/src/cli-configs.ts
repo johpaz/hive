@@ -74,19 +74,21 @@ export const CLI_CONFIGS: Record<string, CliConfig> = {
 
   /**
    * Qwen CLI - Alibaba's Code-focused AI
-   * 
+   *
    * Characteristics:
-   * - Requires --non-interactive flag
+   * - Uses -p/--prompt for non-interactive mode (positional prompt)
    * - Needs stdin closed after prompt to finalize
    * - Fast for code generation and debugging
+   * - Requires --yolo flag to auto-approve tool operations
    */
   qwen: {
     cmd: "qwen",
-    defaultArgs: ["--non-interactive"],
+    defaultArgs: ["--yolo"],
     envVars: [],
-    timeoutSeconds: 180, // 3 minutes - Fast responses
-    requiresStdinClose: true,
-    headlessFlag: "--non-interactive",
+    timeoutSeconds: 300, // 5 minutes - Need more time for complex tasks
+    requiresStdinClose: false, // Not needed when using -p flag
+    approvalFlag: "--yolo",
+    headlessFlag: "-p",
     description: "Alibaba's Qwen CLI - Fast code generation and debugging",
     useCases: [
       "Quick code generation",

@@ -125,6 +125,12 @@ export const SEED_DATA: SeedData = {
       category: "codebridge",
       description: "Cancelar y terminar un proceso de subagente CodeBridge en ejecución. Sinónimos: cancelar agente de código, detener Claude Code, terminar subagente externo"
     },
+    {
+      id: "codebridge_feedback",
+      name: "codebridge_feedback",
+      category: "codebridge",
+      description: "Enviar feedback o instrucciones adicionales a un subagente CodeBridge en ejecución. Usar para correcciones de rumbo, aclaraciones o mejoras iterativas durante tareas largas de código. Sinónimos: enviar feedback, corregir rumbo, aclaraciones, mejoras iterativas"
+    },
     // ─────────────────────────────────────────
     // 9. VOICE — Voz
     // ─────────────────────────────────────────

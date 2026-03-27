@@ -2,8 +2,74 @@ import { getDb } from "../../storage/sqlite";
 import { readFileSync } from "node:fs";
 import { getHiveDir } from "../../config/loader";
 import * as path from "node:path";
+import jwt from "jsonwebtoken";
 
 type CorsHelper = (res: Response, req: Request) => Response;
+
+interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+  tokenType: 'Bearer';
+}
+
+const JWT_SECRET = process.env.HIVE_JWT_SECRET || process.env.HIVE_AUTH_TOKEN || "hive-default-jwt-secret-change-in-production";
+const ACCESS_TOKEN_EXPIRY = "15m";
+const REFRESH_TOKEN_EXPIRY = "7d";
+const ACCESS_TOKEN_EXPIRY_SECONDS = 15 * 60;
+
+function hashToken(token: string): string {
+  return Bun.hash(token + JWT_SECRET).toString(16);
+}
+
+export async function generateTokens(userId: string): Promise<AuthTokens> {
+  const accessToken = jwt.sign({ userId, type: "access" }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
+  const refreshToken = jwt.sign({ userId, type: "refresh", jti: crypto.randomUUID() }, JWT_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
+  
+  const expiresAt = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60);
+  const tokenHash = hashToken(refreshToken);
+  
+  getDb().query(
+    `INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)`
+  ).run(userId, tokenHash, expiresAt);
+  
+  return {
+    accessToken,
+    refreshToken,
+    expiresIn: ACCESS_TOKEN_EXPIRY_SECONDS,
+    tokenType: "Bearer"
+  };
+}
+
+export async function refreshAccessToken(refreshToken: string): Promise<AuthTokens | null> {
+  try {
+    const decoded = jwt.verify(refreshToken, JWT_SECRET) as { userId: string; type: string; jti: string };
+    if (decoded.type !== "refresh") return null;
+    
+    const tokenHash = hashToken(refreshToken);
+    const stored = getDb().query(
+      `SELECT user_id FROM refresh_tokens WHERE token_hash = ? AND revoked = 0 AND expires_at > ?`
+    ).get(tokenHash, Math.floor(Date.now() / 1000)) as { user_id: string } | undefined;
+    
+    if (!stored) return null;
+    
+    getDb().query(`DELETE FROM refresh_tokens WHERE token_hash = ?`).run(tokenHash);
+    
+    return generateTokens(stored.user_id);
+  } catch {
+    return null;
+  }
+}
+
+export async function validateAccessToken(token: string): Promise<{ userId: string } | null> {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; type: string };
+    if (decoded.type !== "access") return null;
+    return { userId: decoded.userId };
+  } catch {
+    return null;
+  }
+}
 
 function getAuthTokenFromFile(): string {
   // The auth token lives in ~/.hive/.auth_token — same value as HIVE_AUTH_TOKEN env var
