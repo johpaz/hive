@@ -48,11 +48,11 @@ Esta es la guía definitiva para decidir qué estrategia usar y cómo ejecutarla
 - Si la tarea es de una sola acción, debes cerrarla 
 
 **Tarea repetitiva/programada (se ejecuta en horarios específicos, pregunta al usuario cuantas veces se debe ejecutar):**
-- Usá \`hive.schedule.create\` — puede ser sin proyecto si la tarea es simple
+- Usá \'hive.schedule.create\' — puede ser sin proyecto si la tarea es simple
 - El cron puede ejecutar una acción directa O lanzar un worker
 
 **Tarea compleja (múltiples pasos, múltiples workers, coordinación):**
-- Creá un proyecto con \`project_create\`
+- Creá un proyecto con \'project_create\'
 - Descomponé en tareas atómicas
 - Asigná agents/workers a cada tarea
 - Opcional: vinculá el proyecto a un cron para ejecución programada
@@ -376,7 +376,7 @@ json
 3. **El agente especializado ejecuta con comunicación periódica:**
 
 **Agente Code Developer:**
-```
+'
 // 1. Lanzar subagente CLI
 codebridge_launch({ cli: 'qwen', prompt: '...', timeoutSeconds: 600 })
 -> Retorna: { taskId: 'abc123', pid: 12345 }
@@ -398,7 +398,7 @@ while (task not finished) {
   
   // Publicar update en Agent Bus para comunicación worker-to-worker
   bus_publish({
-    channel: `project:${project_id}`,
+    channel: 'project:project_id',
     message: {
       type: 'code_progress',
       taskId: 'abc123',
@@ -423,14 +423,14 @@ task_update({
   progress: 100,
   result: "JWT auth module created with: generateTokens(), refreshAccessToken(), validateAccessToken()"
 })
-```
+'
 
 4. **El coordinador queda LIBRE** para atender otras tareas mientras el código se genera.
 
 5. **Comunicación bidireccional durante la ejecución:**
 
 **Coordinador -> Agente Código (feedback):**
-```
+'
 // Si el usuario pide cambios durante la ejecución:
 delegate_task({
   task_id: <code_task_id>,
@@ -443,10 +443,10 @@ codebridge_feedback({
   taskId: "abc123",
   feedback: "Usar PostgreSQL en lugar de SQLite para producción"
 })
-```
+'
 
 **Agente Código -> Coordinador (progreso):**
-```
+'
 // Cada 30-60 segundos:
 report_progress({ percent: 45, message: "Compilando módulos...", current_step: "Building auth handlers" })
 
@@ -455,7 +455,7 @@ bus_publish({
   channel: "project:xyz",
   message: { type: "code_progress", percent: 60, output: "...", errors: [] }
 })
-```
+'
 
 **Reglas críticas:**
 - ⚠️ **NUNCA** uses codebridge_launch desde el coordinador directamente
@@ -468,7 +468,7 @@ bus_publish({
 - ✅ Para tareas de código SIMPLES (<30s), podés usar fs_* tools directamente
 
 **Ejemplo completo:**
-```
+'
 // Coordinador recibe: "Creá un sistema de autenticación JWT"
 1. find_agent({ role: 'code_developer' }) -> ¿Existe?
    - NO -> create_agent({ name: 'code_developer', ... })
@@ -489,7 +489,7 @@ bus_publish({
 16.   // Continúa monitoreo...
 17.   task_update({ status: 'completed', result: 'auth.ts created with...' })
 18. // Coordinador recibe actualización y notifica al usuario
-```
+'
 
 **Timeout flexible:**
 - Default: 600s (10 minutos) para tareas complejas
@@ -583,9 +583,9 @@ export function saveUserProfile(data: {
     if (!finalUserId) {
       // 1️⃣ Dejar que SQLite genere el ID automáticamente con randomblob(16)
       const result = db.query(`
-        INSERT INTO users (name, language, timezone, occupation, notes)
-        VALUES (?, ?, ?, ?, ?) RETURNING id
-      `).get(
+        INSERT INTO users(name, language, timezone, occupation, notes)
+VALUES(?, ?, ?, ?, ?) RETURNING id
+  `).get(
         data.userName || null,
         data.userLanguage || null,
         data.userTimezone || null,
@@ -597,15 +597,15 @@ export function saveUserProfile(data: {
     } else {
       // 1️⃣ Upsert con ID explícito (flujo web o actualización)
       db.query(`
-        INSERT INTO users (id, name, language, timezone, occupation, notes)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO users(id, name, language, timezone, occupation, notes)
+VALUES(?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
-          name = COALESCE(excluded.name, name),
-          language = COALESCE(excluded.language, language),
-          timezone = COALESCE(excluded.timezone, timezone),
-          occupation = COALESCE(excluded.occupation, occupation),
-          notes = COALESCE(excluded.notes, notes)
-      `).run(
+name = COALESCE(excluded.name, name),
+  language = COALESCE(excluded.language, language),
+  timezone = COALESCE(excluded.timezone, timezone),
+  occupation = COALESCE(excluded.occupation, occupation),
+  notes = COALESCE(excluded.notes, notes)
+    `).run(
         finalUserId,
         data.userName || null,
         data.userLanguage || null,
@@ -618,9 +618,9 @@ export function saveUserProfile(data: {
     // 2️⃣ Crear identidad base para webchat (sesión única)
     if (data.channelUserId) {
       db.query(`
-        INSERT OR REPLACE INTO user_identities (user_id, channel, channel_user_id)
-        VALUES (?, 'webchat', ?)
-      `).run(finalUserId, data.channelUserId);
+        INSERT OR REPLACE INTO user_identities(user_id, channel, channel_user_id)
+VALUES(?, 'webchat', ?)
+  `).run(finalUserId, data.channelUserId);
       log.info("✅ User identity created for webchat", { userId: finalUserId });
     }
 
@@ -629,16 +629,16 @@ export function saveUserProfile(data: {
 
       db.query(`
         INSERT INTO agents
-          (id, user_id, name, description, tone, system_prompt, status, role)
-        VALUES (?, ?, ?, ?, ?, ?, 'idle', 'coordinator')
+  (id, user_id, name, description, tone, system_prompt, status, role)
+VALUES(?, ?, ?, ?, ?, ?, 'idle', 'coordinator')
         ON CONFLICT(id) DO UPDATE SET
-          user_id = COALESCE(excluded.user_id, user_id),
-          name = COALESCE(excluded.name, name),
-          description = COALESCE(excluded.description, description),
-          tone = COALESCE(excluded.tone, tone),
-          system_prompt = excluded.system_prompt,
-          role = 'coordinator'
-      `).run(
+user_id = COALESCE(excluded.user_id, user_id),
+  name = COALESCE(excluded.name, name),
+  description = COALESCE(excluded.description, description),
+  tone = COALESCE(excluded.tone, tone),
+  system_prompt = excluded.system_prompt,
+  role = 'coordinator'
+    `).run(
         data.agentId,
         finalUserId,
         data.agentName,
@@ -660,7 +660,7 @@ export function activateSkills(userId: string, skillIds: string[]): void {
     const db = getDb();
     // Activar skills seleccionadas
     for (const skillId of skillIds) {
-      db.query(`UPDATE skills SET active = 1 WHERE id = ?`).run(skillId);
+      db.query(`UPDATE skills SET active = 1 WHERE id = ? `).run(skillId);
     }
     log.info("✅ Skills activadas:", { skillIds: skillIds.join(", ") });
   } catch (e) {
@@ -672,9 +672,9 @@ export function activateEthics(userId: string, ethicsId: string): void {
   try {
     const db = getDb();
     // Activar el ethics seleccionado
-    db.query(`UPDATE ethics SET active = 1 WHERE id = ?`).run(ethicsId);
+    db.query(`UPDATE ethics SET active = 1 WHERE id = ? `).run(ethicsId);
     // Desactivar los demás
-    db.query(`UPDATE ethics SET active = 0 WHERE id != ?`).run(ethicsId);
+    db.query(`UPDATE ethics SET active = 0 WHERE id != ? `).run(ethicsId);
     log.info("✅ Ethics activado:", { ethicsId });
   } catch (e) {
     log.error("⚠️ Error activating ethics:", { error: (e as Error).message });
@@ -686,7 +686,7 @@ export function activateTools(userId: string, toolIds: string[]): void {
     const db = getDb();
     // Activar tools seleccionadas
     for (const toolId of toolIds) {
-      db.query(`UPDATE tools SET active = 1, enabled = 1 WHERE id = ?`).run(toolId);
+      db.query(`UPDATE tools SET active = 1, enabled = 1 WHERE id = ? `).run(toolId);
     }
     log.info("✅ Tools activadas:", { toolIds: toolIds.join(", ") });
   } catch (e) {
@@ -712,7 +712,7 @@ export function activateBrowserTools(): void {
     ];
 
     for (const toolId of browserToolIds) {
-      db.query(`UPDATE tools SET active = 1, enabled = 1 WHERE id = ?`).run(toolId);
+      db.query(`UPDATE tools SET active = 1, enabled = 1 WHERE id = ? `).run(toolId);
     }
     log.info("✅ Browser tools activated (Chromium available)");
   } catch (e) {
@@ -741,14 +741,14 @@ export async function saveProviderConfig(data: {
 
     // 1️⃣ Primero: Actualizar provider global con API key del usuario
     db.query(`
-      UPDATE providers SET 
-        api_key_encrypted = ?, 
-        api_key_iv = ?, 
-        base_url = ?,
-        enabled = 1,
-        active = 1
+      UPDATE providers SET
+api_key_encrypted = ?,
+  api_key_iv = ?,
+  base_url = ?,
+  enabled = 1,
+  active = 1
       WHERE id = ?
-    `).run(apiKeyEncrypted, apiKeyIv, data.baseUrl || null, data.provider);
+  `).run(apiKeyEncrypted, apiKeyIv, data.baseUrl || null, data.provider);
 
     log.info("✅ Provider actualizado:", { provider: data.provider });
 
@@ -756,15 +756,15 @@ export async function saveProviderConfig(data: {
     // For Ollama, models are inserted dynamically (not seeded), ensure row exists first
     if (data.provider === "ollama" && data.model) {
       db.query(`
-        INSERT OR IGNORE INTO models (id, name, provider_id, model_type, enabled, active)
-        VALUES (?, ?, 'ollama', 'llm', 1, 1)
-      `).run(data.model, data.model);
+        INSERT OR IGNORE INTO models(id, name, provider_id, model_type, enabled, active)
+VALUES(?, ?, 'ollama', 'llm', 1, 1)
+  `).run(data.model, data.model);
     }
 
     db.query(`
       UPDATE models SET enabled = 1, active = 1
       WHERE id = ?
-    `).run(data.model);
+  `).run(data.model);
 
     log.info("✅ Model activado:", { model: data.model });
   } catch (e) {
@@ -780,8 +780,8 @@ export function activateCodeBridge(userId: string, codeBridgeConfig: { id: strin
     for (const cb of codeBridgeConfig) {
       db.query(`
         UPDATE code_bridge SET enabled = ?, active = ?, port = ?, user_id = ?
-        WHERE id = ?
-      `).run(cb.enabled ? 1 : 0, cb.enabled ? 1 : 0, cb.port || 18791, userId, cb.id);
+  WHERE id = ?
+    `).run(cb.enabled ? 1 : 0, cb.enabled ? 1 : 0, cb.port || 18791, userId, cb.id);
     }
     log.info("✅ Code Bridge configurado:", { codeBridgeIds: codeBridgeConfig.map(c => c.id).join(", ") });
   } catch (e) {
@@ -794,7 +794,7 @@ export function activateMcpServers(userId: string, mcpIds: string[]): void {
     const db = getDb();
     // Activar MCP servers seleccionados
     for (const mcpId of mcpIds) {
-      db.query(`UPDATE mcp_servers SET active = 1, enabled = 1 WHERE id = ?`).run(mcpId);
+      db.query(`UPDATE mcp_servers SET active = 1, enabled = 1 WHERE id = ? `).run(mcpId);
     }
     log.info("✅ MCP servers activados:", { mcpIds: mcpIds.join(", ") });
   } catch (e) {
@@ -827,10 +827,10 @@ export function saveAgentConfig(data: {
     if (!finalAgentId) {
       const result = db.query(`
         INSERT INTO agents
-          (user_id, name, description, tone, system_prompt, provider_id, model_id, status, role, enabled)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'idle', 'coordinator', 1)
+  (user_id, name, description, tone, system_prompt, provider_id, model_id, status, role, enabled)
+VALUES(?, ?, ?, ?, ?, ?, ?, 'idle', 'coordinator', 1)
         RETURNING id
-      `).get(
+  `).get(
         data.userId,
         data.agentName,
         data.description || null,
@@ -845,20 +845,20 @@ export function saveAgentConfig(data: {
       // INSERT or UPDATE agent (crea nuevo o actualiza existente)
       db.query(`
         INSERT INTO agents
-          (id, user_id, name, description, tone, system_prompt, provider_id, model_id, status, role, enabled)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'idle', 'coordinator', 1)
+  (id, user_id, name, description, tone, system_prompt, provider_id, model_id, status, role, enabled)
+VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'idle', 'coordinator', 1)
         ON CONFLICT(id) DO UPDATE SET
-          user_id = COALESCE(excluded.user_id, user_id),
-          name = COALESCE(excluded.name, name),
-          description = COALESCE(excluded.description, description),
-          tone = COALESCE(excluded.tone, tone),
-          system_prompt = excluded.system_prompt,
-          provider_id = COALESCE(excluded.provider_id, provider_id),
-          model_id = COALESCE(excluded.model_id, model_id),
-          status = 'idle',
-          enabled = 1,
-          role = 'coordinator'
-      `).run(
+user_id = COALESCE(excluded.user_id, user_id),
+  name = COALESCE(excluded.name, name),
+  description = COALESCE(excluded.description, description),
+  tone = COALESCE(excluded.tone, tone),
+  system_prompt = excluded.system_prompt,
+  provider_id = COALESCE(excluded.provider_id, provider_id),
+  model_id = COALESCE(excluded.model_id, model_id),
+  status = 'idle',
+  enabled = 1,
+  role = 'coordinator'
+    `).run(
         data.agentId,
         data.userId,
         data.agentName,
@@ -890,23 +890,23 @@ export async function activateChannel(userId: string, data: {
       db.query(`
         UPDATE channels 
         SET user_id = ?, active = 1, enabled = 1, status = 'connected',
-            config_encrypted = ?, config_iv = ?
-        WHERE id = ?
+  config_encrypted = ?, config_iv = ?
+    WHERE id = ?
       `).run(userId, encrypted.encrypted, encrypted.iv, data.channelId);
     } else {
       db.query(`
         UPDATE channels 
         SET user_id = ?, active = 1, enabled = 1, status = 'connected'
         WHERE id = ?
-      `).run(userId, data.channelId);
+  `).run(userId, data.channelId);
     }
 
     // Create user_identity for the channel if channelUserId provided
     if (data.channelUserId) {
       const channelType = data.channelId; // webchat, telegram, discord, etc.
       db.query(`
-        INSERT OR REPLACE INTO user_identities (user_id, channel, channel_user_id)
-        VALUES (?, ?, ?)
+        INSERT OR REPLACE INTO user_identities(user_id, channel, channel_user_id)
+VALUES(?, ?, ?)
       `).run(userId, channelType, data.channelUserId);
       log.info("✅ User identity created", { userId, channel: channelType });
     }
@@ -930,8 +930,8 @@ export async function saveVoiceConfig(data: {
     const db = getDb();
 
     // Activate STT and TTS models
-    db.query(`UPDATE models SET active = 1, enabled = 1 WHERE id = ?`).run(data.sttProvider);
-    db.query(`UPDATE models SET active = 1, enabled = 1 WHERE id = ?`).run(data.ttsProvider);
+    db.query(`UPDATE models SET active = 1, enabled = 1 WHERE id = ? `).run(data.sttProvider);
+    db.query(`UPDATE models SET active = 1, enabled = 1 WHERE id = ? `).run(data.ttsProvider);
 
     // Determine provider IDs based on model IDs
     let sttProviderId = "";
@@ -957,13 +957,13 @@ export async function saveVoiceConfig(data: {
     if (data.sttApiKey && sttProviderId) {
       const encrypted = await encryptApiKey(data.sttApiKey);
       db.query(`
-        UPDATE providers SET 
-          api_key_encrypted = ?, 
-          api_key_iv = ?, 
-          enabled = 1,
-          active = 1
+        UPDATE providers SET
+api_key_encrypted = ?,
+  api_key_iv = ?,
+  enabled = 1,
+  active = 1
         WHERE id = ?
-      `).run(encrypted.encrypted, encrypted.iv, sttProviderId);
+  `).run(encrypted.encrypted, encrypted.iv, sttProviderId);
       log.info("✅ STT API key guardada en BD (encriptada)", { provider: sttProviderId });
     }
 
@@ -971,13 +971,13 @@ export async function saveVoiceConfig(data: {
     if (data.ttsApiKey && ttsProviderId) {
       const encrypted = await encryptApiKey(data.ttsApiKey);
       db.query(`
-        UPDATE providers SET 
-          api_key_encrypted = ?, 
-          api_key_iv = ?, 
-          enabled = 1,
-          active = 1
+        UPDATE providers SET
+api_key_encrypted = ?,
+  api_key_iv = ?,
+  enabled = 1,
+  active = 1
         WHERE id = ?
-      `).run(encrypted.encrypted, encrypted.iv, ttsProviderId);
+  `).run(encrypted.encrypted, encrypted.iv, ttsProviderId);
       log.info("✅ TTS API key guardada en BD (encriptada)", { provider: ttsProviderId });
     }
 
@@ -985,7 +985,7 @@ export async function saveVoiceConfig(data: {
     db.query(`
       UPDATE channels 
       SET user_id = ?, voice_enabled = ?, stt_provider = ?, tts_provider = ?
-      WHERE id = ?
+  WHERE id = ?
     `).run(data.userId, data.voiceEnabled ? 1 : 0, data.sttProvider, data.ttsProvider, data.channelId);
 
     log.info("✅ Voice config saved:", {
@@ -1014,7 +1014,7 @@ export async function saveMcpServer(data: {
   try {
     const db = getDb();
 
-    const mcpId = `${data.userId}:${data.name}`;
+    const mcpId = `${data.userId}:${data.name} `;
 
     let envEncrypted = null;
     let envIv = null;
@@ -1027,9 +1027,9 @@ export async function saveMcpServer(data: {
 
     db.query(`
       INSERT OR REPLACE INTO mcp_servers
-        (id, user_id, name, transport, command, args, env_encrypted, env_iv, url, enabled, builtin)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-    `).run(
+  (id, user_id, name, transport, command, args, env_encrypted, env_iv, url, enabled, builtin)
+VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+  `).run(
       mcpId,
       data.userId,
       data.name,
@@ -1057,7 +1057,7 @@ export function saveToolSelection(userId: string, tools: string[]): void {
       db.query(`
         UPDATE tools SET active = 1, enabled = 1
         WHERE id = ?
-      `).run(tool);
+  `).run(tool);
     }
 
     log.info("✅ Tools activadas:", { tools: tools.join(", ") });
@@ -1072,7 +1072,7 @@ export function activateProvider(providerId: string): void {
     db.query(`
       UPDATE providers SET active = 1, enabled = 1
       WHERE id = ?
-    `).run(providerId);
+  `).run(providerId);
     log.info("✅ Provider activado:", { providerId });
   } catch (e) {
     log.error("⚠️ Error activating provider:", { error: (e as Error).message });
@@ -1085,7 +1085,7 @@ export function activateModel(modelId: string): void {
     db.query(`
       UPDATE models SET active = 1, enabled = 1
       WHERE id = ?
-    `).run(modelId);
+  `).run(modelId);
     log.info("✅ Model activado:", { modelId });
   } catch (e) {
     log.error("⚠️ Error activating model:", { error: (e as Error).message });
@@ -1100,7 +1100,7 @@ export function activateMcpServer(mcpName: string): void {
     db.query(`
       UPDATE mcp_servers SET active = 1, enabled = 1
       WHERE id = ?
-    `).run(mcpName);
+  `).run(mcpName);
     log.info("✅ MCP server activado:", { mcpName });
   } catch (e) {
     log.error("⚠️ Error activating MCP server:", { error: (e as Error).message });
@@ -1113,7 +1113,7 @@ export function deactivateProvider(providerId: string): void {
     db.query(`
       UPDATE providers SET active = 0, enabled = 0
       WHERE id = ?
-    `).run(providerId);
+  `).run(providerId);
     log.warn("⚠️ Provider desactivado:", { providerId });
   } catch (e) {
     log.error("⚠️ Error deactivating provider:", { error: (e as Error).message });
@@ -1126,7 +1126,7 @@ export function deactivateModel(modelId: string): void {
     db.query(`
       UPDATE models SET active = 0, enabled = 0
       WHERE id = ?
-    `).run(modelId);
+  `).run(modelId);
     log.warn("⚠️ Model desactivado:", { modelId });
   } catch (e) {
     log.error("⚠️ Error deactivating model:", { error: (e as Error).message });
@@ -1139,7 +1139,7 @@ export function deactivateChannel(channelType: string): void {
     db.query(`
       UPDATE channels SET active = 0, enabled = 0
       WHERE id = ?
-    `).run(channelType);
+  `).run(channelType);
     log.warn("⚠️ Channel desactivado:", { channelType });
   } catch (e) {
     log.error("⚠️ Error deactivating channel:", { error: (e as Error).message });
@@ -1152,7 +1152,7 @@ export function deactivateMcpServer(mcpName: string): void {
     db.query(`
       UPDATE mcp_servers SET active = 0, enabled = 0
       WHERE id = ?
-    `).run(mcpName);
+  `).run(mcpName);
     log.warn("⚠️ MCP server desactivado:", { mcpName });
   } catch (e) {
     log.error("⚠️ Error deactivating MCP server:", { error: (e as Error).message });
@@ -1171,7 +1171,7 @@ export function getAllProviders(): Array<{
     const results = db.query(`
       SELECT id, name, base_url, enabled, active
       FROM providers
-    `).all() as Array<{
+  `).all() as Array<{
       id: string;
       name: string;
       base_url: string | null;
@@ -1206,7 +1206,7 @@ export function getAllModels(): Array<{
     const results = db.query(`
       SELECT id, name, provider_id, context_window, capabilities, enabled, active
       FROM models
-    `).all() as Array<{
+  `).all() as Array<{
       id: string;
       name: string;
       provider_id: string;
@@ -1244,7 +1244,7 @@ export function getAllEthics(): Array<{
     const results = db.query(`
       SELECT id, name, description, content, is_default, active
       FROM ethics
-    `).all() as Array<{
+  `).all() as Array<{
       id: string;
       name: string;
       description: string | null;
@@ -1280,7 +1280,7 @@ export function getAllCodeBridge(): Array<{
     const results = db.query(`
       SELECT id, name, cli_command, port, enabled, active
       FROM code_bridge
-    `).all() as Array<{
+  `).all() as Array<{
       id: string;
       name: string;
       cli_command: string;
@@ -1317,7 +1317,7 @@ export function getAllSkills(): Array<{
     const results = db.query(`
       SELECT id, name, api_key_encrypted, api_key_iv, base_url, enabled
       FROM providers
-    `).all() as Array<{
+  `).all() as Array<{
       id: string;
       name: string;
       description: string | null;
@@ -1354,7 +1354,7 @@ export function getAllDbTools(): Array<{
     const results = db.query(`
       SELECT id, name, description, category, enabled, active
       FROM tools
-    `).all() as Array<{
+  `).all() as Array<{
       id: string;
       name: string;
       description: string | null;
@@ -1393,7 +1393,7 @@ export function getAllMcpServers(): Array<{
     const results = db.query(`
       SELECT id, name, transport, command, args, url, builtin, enabled, active
       FROM mcp_servers
-    `).all() as Array<{
+  `).all() as Array<{
       id: string;
       name: string;
       transport: string;
@@ -1435,7 +1435,7 @@ export function getAllChannels(): Array<{
     const results = db.query(`
       SELECT id, type, id as account_id, status, enabled, active
       FROM channels
-    `).all() as Array<{
+  `).all() as Array<{
       id: string;
       type: string;
       account_id: string;
@@ -1469,7 +1469,7 @@ export function getActiveTools(): Array<{
     const results = db.query(`
       SELECT id, name, description, category
       FROM tools WHERE active = 1
-    `).all() as Array<{
+  `).all() as Array<{
       id: string;
       name: string;
       description: string | null;
@@ -1513,9 +1513,9 @@ export function saveOnboardingProgress(section: OnboardingSection): void {
   try {
     const db = getDb();
     db.query(`
-      INSERT OR REPLACE INTO onboarding_progress (id, user_id, step, data)
-      VALUES (?, ?, ?, ?)
-    `).run(section.userId, section.userId, section.step, JSON.stringify(section.data));
+      INSERT OR REPLACE INTO onboarding_progress(id, user_id, step, data)
+VALUES(?, ?, ?, ?)
+  `).run(section.userId, section.userId, section.step, JSON.stringify(section.data));
   } catch (e) {
     log.error("⚠️ Error saving progress:", { error: (e as Error).message });
   }
@@ -1533,7 +1533,7 @@ export async function getUserProviders(userId: string): Promise<Array<{
     const results = db.query(`
       SELECT id, name, api_key_encrypted, api_key_iv, base_url, enabled
       FROM providers
-    `).all() as Array<{
+  `).all() as Array<{
       id: string;
       name: string;
       api_key_encrypted: string | null;
@@ -1576,7 +1576,7 @@ export async function getUserChannels(userId: string): Promise<Array<{
     }, [string]>(`
       SELECT id, type, id as account_id, config_encrypted, config_iv, enabled
       FROM channels WHERE user_id = ?
-    `).all(userId);
+  `).all(userId);
 
     return Promise.all(results.map(async r => ({
       id: r.type,
@@ -1611,7 +1611,7 @@ export function getUserAgents(userId: string): Array<{
     }, [string]>(`
       SELECT id, name, provider_id, model_id, tone
       FROM agents WHERE user_id = ?
-    `).all(userId);
+  `).all(userId);
 
     return results.map(r => ({
       id: r.id,
@@ -1799,10 +1799,10 @@ export function getAgentConfig(agentId: string): {
   try {
     const db = getDb();
     const result = db.query(`
-      SELECT id, user_id, name, description, system_prompt, tone, 
-             provider_id, model_id, tools_json, skills_json, max_iterations
+      SELECT id, user_id, name, description, system_prompt, tone,
+  provider_id, model_id, tools_json, skills_json, max_iterations
       FROM agents WHERE id = ?
-    `).get(agentId) as {
+  `).get(agentId) as {
       id: string;
       user_id: string;
       name: string;
