@@ -2,9 +2,9 @@
 
 > Tu colmena de agentes IA. Local-first. Multi-canal. Open source. Construido desde Colombia para el mundo.
 
-[![npm version](https://img.shields.io/npm/v/@johpaz/hive)](https://www.npmjs.com/package/@johpaz/hive)
+[![npm version](https://img.shields.io/npm/v/@johpaz/hive-agents)](https://www.npmjs.com/package/@johpaz/hive-agents)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![npm downloads](https://img.shields.io/npm/dm/@johpaz/hive)](https://www.npmjs.com/package/@johpaz/hive)
+[![npm downloads](https://img.shields.io/npm/dm/@johpaz/hive-agents)](https://www.npmjs.com/package/@johpaz/hive-agents)
 [![Hecho en Colombia 🇨🇴](https://img.shields.io/badge/Hecho%20en-Colombia-brightgreen)](https://github.com/johpaz/hive)
 
 ---
@@ -515,7 +515,7 @@ cp ~/.hive/data/hive.db ~/backup-hive-$(date +%Y%m%d).db
 bun install -g @johpaz/hive-agents
 ```
 
-> También funciona con `npm install -g @johpaz/hive`, pero igualmente necesitas Bun instalado — el CLI lo usa como runtime.
+> También funciona con `npm install -g @johpaz/hive-agents`, pero igualmente necesitas Bun instalado — el CLI lo usa como runtime.
 
 **Iniciar:**
 
@@ -577,7 +577,7 @@ tar -czf hive-datos.tar.gz -C ~ .hive
 cp hive-datos.tar.gz /media/usb/
 
 # En el equipo destino — instalar Hive y restaurar datos
-bun install -g @johpaz/hive
+bun install -g @johpaz/hive-agents
 tar -xzf /media/usb/hive-datos.tar.gz -C ~
 
 # Arrancar — carga tu agente con toda su memoria
