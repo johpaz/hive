@@ -58,8 +58,8 @@ Elige la opción que mejor se adapte a tu caso:
 | | Docker | Binario | npm / bun |
 |---|---|---|---|
 | Requiere | Docker | Bun | Bun |
-| Setup | 1 comando | descarga + ejecuta | `bun install -g @johpaz/hive` |
-| Actualizar | `docker compose pull` | descarga nueva versión | `bun install -g @johpaz/hive` |
+| Setup | 1 comando | descarga + ejecuta | `bun install -g @johpaz/hive-agents` |
+| Actualizar | `docker compose pull` | descarga nueva versión | `bun install -g @johpaz/hive-agents` |
 | Ideal para | Raspberry Pi, VPS, laptop vieja, VM | uso personal, USB | desarrolladores |
 | Abre navegador | automático (con GUI) / por IP (headless) | automático | automático |
 | Tamaño | ~120 MB imagen | ~50 MB | ~12 MB bundle |
