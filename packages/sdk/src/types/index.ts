@@ -11,38 +11,38 @@
 export type {
   AgentDBRecord,
   AgentServiceConfig,
-} from "@johpaz/hive-agents/agent/service";
+} from "@johpaz/hive-agents-core/agent/service";
 
 export type {
   AgentLoopOptions,
   StepEvent,
   StreamChunk,
-} from "@johpaz/hive-agents/agent/agent-loop";
+} from "@johpaz/hive-agents-core/agent/agent-loop";
 
 export type {
   LLMMessage,
   LLMResponse,
   LLMCallOptions,
   LLMToolCall,
-} from "@johpaz/hive-agents/agent/llm-client";
+} from "@johpaz/hive-agents-core/agent/llm-client";
 
 export type {
   OutboundMessage,
   IncomingMessage,
   ChannelConfig,
   IChannel,
-} from "@johpaz/hive-agents/channels/base";
+} from "@johpaz/hive-agents-core/channels/base";
 
 export type {
   MCPTool,
   MCPResource,
   MCPPrompt,
-} from "@johpaz/hive-agents/mcp/manager";
+} from "@johpaz/hive-agents-mcp/manager";
 
 export type {
   MCPConfig,
   MCPServerConfig,
-} from "@johpaz/hive-agents/mcp/config";
+} from "@johpaz/hive-agents-mcp/config";
 
 export type {
   Skill,
@@ -51,8 +51,8 @@ export type {
   SkillExample,
   OutputFormat,
   SkillsConfig,
-} from "@johpaz/hive-agents/skills/loader";
+} from "@johpaz/hive-agents-skills/loader";
 
 export type {
   StoredMessage,
-} from "@johpaz/hive-agents/agent/conversation-store";
+} from "@johpaz/hive-agents-core/agent/conversation-store";

@@ -13,4 +13,4 @@
 export {
   getAllEthics,
   activateEthics,
-} from "@johpaz/hive-agents/storage/onboarding";
+} from "@johpaz/hive-agents-core/storage/onboarding";

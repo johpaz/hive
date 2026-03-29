@@ -20,4 +20,4 @@ export {
   type SkillExample,
   type SkillMetadata,
   type Skill,
-} from "@johpaz/hive-agents/skills/loader";
+} from "@johpaz/hive-agents-skills/loader";

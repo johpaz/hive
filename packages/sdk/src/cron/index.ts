@@ -23,9 +23,10 @@ export {
   scheduleHistoryTool,
   createTools as createScheduleTools,
   setSchedulerInstance,
-} from "@johpaz/hive-agents/tools/schedule";
+} from "@johpaz/hive-agents-core/tools/schedule";
 
 // Legacy cron tools (cron_jobs table) - re-export for backward compatibility
+// Note: These are also available via @johpaz/hive-agents-sdk/tools
 export {
   cronAddTool,
   cronListTool,
@@ -34,4 +35,4 @@ export {
   createTools as createCronTools,
   initCronScheduler,
   resolveBestChannel,
-} from "@johpaz/hive-agents/tools/cron";
+} from "@johpaz/hive-agents-core/tools/cron";

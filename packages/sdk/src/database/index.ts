@@ -13,13 +13,13 @@
  * const db = getDb();
  */
 
-export { getDb, initializeDatabase, getDbPathLazy, dbService } from "@johpaz/hive-agents/storage/sqlite";
+export { getDb, initializeDatabase, getDbPathLazy, dbService } from "@johpaz/hive-agents-core/storage/sqlite";
 
-export { SCHEMA, PROJECTS_SCHEMA, CONTEXT_ENGINE_SCHEMA } from "@johpaz/hive-agents/storage/schema";
+export { SCHEMA, PROJECTS_SCHEMA, CONTEXT_ENGINE_SCHEMA } from "@johpaz/hive-agents-core/storage/schema";
 
-export { seedAllData, seedToolsAndSkills, getAllElements, getActiveElements } from "@johpaz/hive-agents/storage/seed";
+export { seedAllData, seedToolsAndSkills, getAllElements, getActiveElements } from "@johpaz/hive-agents-core/storage/seed";
 
-export { encrypt, decrypt, encryptApiKey, decryptApiKey, encryptConfig, decryptConfig, hashPassword, verifyPassword, maskApiKey } from "@johpaz/hive-agents/storage/crypto";
+export { encrypt, decrypt, encryptApiKey, decryptApiKey, encryptConfig, decryptConfig, hashPassword, verifyPassword, maskApiKey } from "@johpaz/hive-agents-core/storage/crypto";
 
 export {
   getAllProviders,
@@ -38,4 +38,4 @@ export {
   getCoordinatorAgentId,
   getDefaultAgentId,
   getAgentConfig,
-} from "@johpaz/hive-agents/storage/onboarding";
+} from "@johpaz/hive-agents-core/storage/onboarding";

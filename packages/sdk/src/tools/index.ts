@@ -18,7 +18,7 @@ export {
   createToolsByCategory,
   type Tool,
   type ToolResult,
-} from "@johpaz/hive-agents/tools/index";
+} from "@johpaz/hive-agents-core/tools";
 
 export {
   fsEditTool,
@@ -28,7 +28,7 @@ export {
   fsListTool,
   fsGlobTool,
   fsExistsTool,
-} from "@johpaz/hive-agents/tools/filesystem/index";
+} from "@johpaz/hive-agents-core/tools/filesystem";
 
 export {
   webSearchTool,
@@ -37,7 +37,7 @@ export {
   browserScreenshotTool,
   browserClickTool,
   browserTypeTool,
-} from "@johpaz/hive-agents/tools/web/index";
+} from "@johpaz/hive-agents-core/tools/web";
 
 export {
   projectCreateTool,
@@ -48,7 +48,7 @@ export {
   taskCreateTool,
   taskUpdateTool,
   taskEvaluateTool,
-} from "@johpaz/hive-agents/tools/projects/index";
+} from "@johpaz/hive-agents-core/tools/projects";
 
 export {
   cronAddTool,
@@ -57,9 +57,9 @@ export {
   cronRemoveTool,
   initCronScheduler,
   resolveBestChannel,
-} from "@johpaz/hive-agents/tools/cron/index";
+} from "@johpaz/hive-agents-core/tools/cron";
 
-export { cliExecTool } from "@johpaz/hive-agents/tools/cli/index";
+export { cliExecTool } from "@johpaz/hive-agents-core/tools/cli";
 
 export {
   memoryWriteTool,
@@ -76,7 +76,7 @@ export {
   busPublishTool,
   busReadTool,
   projectUpdatesTool,
-} from "@johpaz/hive-agents/tools/agents/index";
+} from "@johpaz/hive-agents-core/tools/agents";
 
 export {
   canvasRenderTool,
@@ -86,23 +86,23 @@ export {
   canvasShowProgressTool,
   canvasShowListTool,
   canvasClearTool,
-} from "@johpaz/hive-agents/tools/canvas/index";
+} from "@johpaz/hive-agents-core/tools/canvas";
 
 export {
   codebridgeLaunchTool,
   codebridgeStatusTool,
   codebridgeCancelTool,
   codebridgeFeedbackTool,
-} from "@johpaz/hive-agents/tools/codebridge/index";
+} from "@johpaz/hive-agents-core/tools/codebridge";
 
 export {
   voiceTranscribeTool,
   voiceSpeakTool,
-} from "@johpaz/hive-agents/tools/voice/index";
+} from "@johpaz/hive-agents-core/tools/voice";
 
 export {
   searchKnowledgeTool,
   notifyTool,
   saveNoteTool,
   reportProgressTool,
-} from "@johpaz/hive-agents/tools/core/index";
+} from "@johpaz/hive-agents-core/tools/core";

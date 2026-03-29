@@ -42,7 +42,7 @@
     },
     "packages/cli": {
       "name": "@johpaz/hive-agents-cli",
-      "version": "0.0.8",
+      "version": "0.0.10",
       "bin": {
         "hive": "./src/index.ts",
       },
@@ -59,23 +59,23 @@
     },
     "packages/code-bridge": {
       "name": "@johpaz/hive-agents-code-bridge",
-      "version": "0.0.8",
+      "version": "0.0.10",
       "dependencies": {
-        "@johpaz/hive-agents-mcp": "^0.0.8",
+        "@johpaz/hive-agents-mcp": "^0.0.10",
         "zod": "^4.3.6",
       },
       "peerDependencies": {
-        "@johpaz/hive-agents-core": "^0.0.8",
+        "@johpaz/hive-agents-core": "^0.0.10",
       },
     },
     "packages/core": {
       "name": "@johpaz/hive-agents-core",
-      "version": "0.0.8",
+      "version": "0.0.10",
       "dependencies": {
         "@ag-ui/core": "^0.0.46",
-        "@johpaz/hive-agents-code-bridge": "^0.0.8",
-        "@johpaz/hive-agents-mcp": "^0.0.8",
-        "@johpaz/hive-agents-skills": "^0.0.8",
+        "@johpaz/hive-agents-code-bridge": "^0.0.10",
+        "@johpaz/hive-agents-mcp": "^0.0.10",
+        "@johpaz/hive-agents-skills": "^0.0.10",
         "@modelcontextprotocol/sdk": "latest",
         "@sapphire/snowflake": "latest",
         "@slack/bolt": "latest",
@@ -96,7 +96,7 @@
     },
     "packages/hive-ui": {
       "name": "@johpaz/hive-agents-ui",
-      "version": "0.0.8",
+      "version": "0.0.10",
       "dependencies": {
         "@hookform/resolvers": "^3.10.0",
         "@radix-ui/react-accordion": "^1.2.11",
@@ -177,7 +177,7 @@
     },
     "packages/mcp": {
       "name": "@johpaz/hive-agents-mcp",
-      "version": "0.0.8",
+      "version": "0.0.10",
       "dependencies": {
         "@modelcontextprotocol/sdk": "latest",
         "zod": "latest",
@@ -195,16 +195,19 @@
       },
       "devDependencies": {
         "@types/bun": "latest",
-        "typescript": "6.0.2",
+        "typescript": "^5.0.0",
       },
       "peerDependencies": {
-        "@johpaz/hive-agents": ">=0.0.1",
-        "typescript": ">=6.0.0",
+        "@johpaz/hive-agents-code-bridge": "^0.0.10",
+        "@johpaz/hive-agents-core": "^0.0.10",
+        "@johpaz/hive-agents-mcp": "^0.0.10",
+        "@johpaz/hive-agents-skills": "^0.0.10",
+        "typescript": "^5.0.0",
       },
     },
     "packages/skills": {
       "name": "@johpaz/hive-agents-skills",
-      "version": "0.0.8",
+      "version": "0.0.10",
       "dependencies": {
         "js-yaml": "latest",
       },
@@ -437,8 +440,6 @@
     "@img/sharp-win32-ia32": ["@img/sharp-win32-ia32@0.34.5", "", { "os": "win32", "cpu": "ia32" }, "sha512-FV9m/7NmeCmSHDD5j4+4pNI8Cp3aW+JvLoXcTUo0IqyjSfAZJ8dIUmijx1qaJsIiU+Hosw6xM5KijAWRJCSgNg=="],
 
     "@img/sharp-win32-x64": ["@img/sharp-win32-x64@0.34.5", "", { "os": "win32", "cpu": "x64" }, "sha512-+29YMsqY2/9eFEiW93eqWnuLcWcufowXewwSNIT6UwZdUUCrM3oFjMWH/Z6/TMmb4hlFenmfAVbpWeup2jryCw=="],
-
-    "@johpaz/hive-agents": ["@johpaz/hive-agents@0.0.8", "", { "dependencies": { "@ag-ui/core": "^0.0.46", "@anthropic-ai/sdk": "^0.74.0", "@clack/prompts": "^0.5.0", "@google/genai": "^1.43.0", "@lightpanda/browser": "^1.0.0", "@modelcontextprotocol/sdk": "^1.26.0", "@sapphire/snowflake": "latest", "@slack/bolt": "latest", "@vitejs/plugin-react": "^5.1.4", "@whiskeysockets/baileys": "latest", "async-mutex": "^0.5.0", "cron-parser": "^5.5.0", "croner": "^10.0.1", "discord.js": "latest", "grammy": "latest", "groq-sdk": "^0.37.0", "isomorphic-git": "^1.37.2", "js-yaml": "^4.1.1", "ollama": "^0.6.3", "openai": "^6.18.0", "puppeteer-core": "^24.0.0", "qrcode-terminal": "latest", "react-markdown": "^10.1.0", "toon-format-parser": "^1.1.0", "zod": "latest" }, "bin": { "hive": "dist/hive.js" } }, "sha512-BYsWC8yt/r+4TIFouXmynZO3xKWjs/FIAIXRyGRCeTyYovPQRPBVujRB3Vs9SHELa5L4U383qvDaCc2aqfDXTw=="],
 
     "@johpaz/hive-agents-cli": ["@johpaz/hive-agents-cli@workspace:packages/cli"],
 
@@ -2128,7 +2129,13 @@
 
     "@johpaz/hive-agents-cli/toon-format-parser": ["toon-format-parser@1.1.3", "", {}, "sha512-jLsz1NK0JPyg+1OZw26khudDmT2jqaJNMAk5jfNea1pYi+RptZBGeM8FLgQvq6RYHv7P3bxS5ZKMNMpR5Op/UA=="],
 
+    "@johpaz/hive-agents-core/@modelcontextprotocol/sdk": ["@modelcontextprotocol/sdk@1.28.0", "", { "dependencies": { "@hono/node-server": "^1.19.9", "ajv": "^8.17.1", "ajv-formats": "^3.0.1", "content-type": "^1.0.5", "cors": "^2.8.5", "cross-spawn": "^7.0.5", "eventsource": "^3.0.2", "eventsource-parser": "^3.0.0", "express": "^5.2.1", "express-rate-limit": "^8.2.1", "hono": "^4.11.4", "jose": "^6.1.3", "json-schema-typed": "^8.0.2", "pkce-challenge": "^5.0.0", "raw-body": "^3.0.0", "zod": "^3.25 || ^4.0", "zod-to-json-schema": "^3.25.1" }, "peerDependencies": { "@cfworker/json-schema": "^4.1.1" }, "optionalPeers": ["@cfworker/json-schema"] }, "sha512-gmloF+i+flI8ouQK7MWW4mOwuMh4RePBuPFAEPC6+pdqyWOUMDOixb6qZ69owLJpz6XmyllCouc4t8YWO+E2Nw=="],
+
+    "@johpaz/hive-agents-mcp/@modelcontextprotocol/sdk": ["@modelcontextprotocol/sdk@1.28.0", "", { "dependencies": { "@hono/node-server": "^1.19.9", "ajv": "^8.17.1", "ajv-formats": "^3.0.1", "content-type": "^1.0.5", "cors": "^2.8.5", "cross-spawn": "^7.0.5", "eventsource": "^3.0.2", "eventsource-parser": "^3.0.0", "express": "^5.2.1", "express-rate-limit": "^8.2.1", "hono": "^4.11.4", "jose": "^6.1.3", "json-schema-typed": "^8.0.2", "pkce-challenge": "^5.0.0", "raw-body": "^3.0.0", "zod": "^3.25 || ^4.0", "zod-to-json-schema": "^3.25.1" }, "peerDependencies": { "@cfworker/json-schema": "^4.1.1" }, "optionalPeers": ["@cfworker/json-schema"] }, "sha512-gmloF+i+flI8ouQK7MWW4mOwuMh4RePBuPFAEPC6+pdqyWOUMDOixb6qZ69owLJpz6XmyllCouc4t8YWO+E2Nw=="],
+
     "@johpaz/hive-agents-ui/zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
+
+    "@johpaz/hive-sdk/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
     "@puppeteer/browsers/yargs": ["yargs@17.7.2", "", { "dependencies": { "cliui": "^8.0.1", "escalade": "^3.1.1", "get-caller-file": "^2.0.5", "require-directory": "^2.1.1", "string-width": "^4.2.3", "y18n": "^5.0.5", "yargs-parser": "^21.1.1" } }, "sha512-7dSzzRQ++CKnNI/krKnYRV7JKKPUXMEh61soaHKg9mrWEhzFWhFnxPxGl+69cD1Ou63C13NUPCnmIcrvqCuM6w=="],
 

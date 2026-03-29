@@ -10,8 +10,8 @@
  * const manager = new MCPClientManager({ servers: {} });
  */
 
-export { MCPClientManager, type MCPTool, type MCPResource, type MCPPrompt } from "@johpaz/hive-agents/mcp/manager";
+export { MCPClientManager, type MCPTool, type MCPResource, type MCPPrompt } from "@johpaz/hive-agents-mcp/manager";
 
-export type { MCPConfig, MCPServerConfig } from "@johpaz/hive-agents/mcp/config";
+export type { MCPConfig, MCPServerConfig } from "@johpaz/hive-agents-mcp/config";
 
-export { logger } from "@johpaz/hive-agents/mcp/logger";
+export { logger } from "@johpaz/hive-agents-mcp/logger";

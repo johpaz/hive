@@ -10,7 +10,7 @@
  * const manager = new ChannelManager(config);
  */
 
-export { ChannelManager } from "@johpaz/hive-agents/channels/manager";
+export { ChannelManager } from "@johpaz/hive-agents-core/channels/manager";
 
 export type {
   OutboundMessage,
@@ -18,14 +18,14 @@ export type {
   ChannelConfig,
   IChannel,
   MessageHandler,
-} from "@johpaz/hive-agents/channels/base";
+} from "@johpaz/hive-agents-core/channels/base";
 
-export { TelegramChannel, type TelegramConfig } from "@johpaz/hive-agents/channels/telegram";
+export { TelegramChannel, type TelegramConfig } from "@johpaz/hive-agents-core/channels/telegram";
 
-export { DiscordChannel, type DiscordConfig } from "@johpaz/hive-agents/channels/discord";
+export { DiscordChannel, type DiscordConfig } from "@johpaz/hive-agents-core/channels/discord";
 
-export { WhatsAppChannel, type WhatsAppConfig, type WhatsAppConnectionState } from "@johpaz/hive-agents/channels/whatsapp";
+export { WhatsAppChannel, type WhatsAppConfig, type WhatsAppConnectionState } from "@johpaz/hive-agents-core/channels/whatsapp";
 
-export { SlackChannel, type SlackConfig, type SlackConnectionState } from "@johpaz/hive-agents/channels/slack";
+export { SlackChannel, type SlackConfig, type SlackConnectionState } from "@johpaz/hive-agents-core/channels/slack";
 
-export { WebChatChannel, type WebChatConfig } from "@johpaz/hive-agents/channels/webchat";
+export { WebChatChannel, type WebChatConfig } from "@johpaz/hive-agents-core/channels/webchat";
