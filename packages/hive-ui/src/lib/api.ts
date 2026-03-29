@@ -79,7 +79,7 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
 
   if (!response.ok) {
     // 401: token inválido/expirado → limpiar y redirigir al login
-    if (response.status === 401 && typeof window !== "undefined" && !endpoint.startsWith("/api/auth/")) {
+    if (response.status === 401 && typeof window !== "undefined" && !endpoint.startsWith("/api/auth/") && window.location.pathname !== "/login") {
       localStorage.removeItem("hive-auth-token");
       window.location.href = "/login";
       throw new Error("No autorizado");

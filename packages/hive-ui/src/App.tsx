@@ -99,11 +99,16 @@ const AppContent = () => {
           navigate("/", { replace: true });
         }
         setSetupChecked(true);
-        if (!setupMode) fetchUser();
+        if (!setupMode) {
+          const existingToken = localStorage.getItem("hive-auth-token");
+          if (existingToken) fetchUser();
+          // Sin token: AuthGuard redirige a /login; fetchUser no aplica aún
+        }
       })
       .catch(() => {
         setSetupChecked(true);
-        fetchUser();
+        const existingToken = localStorage.getItem("hive-auth-token");
+        if (existingToken) fetchUser();
       });
   }, [gatewayReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
