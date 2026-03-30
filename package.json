@@ -149,9 +149,9 @@
     "typescript": "6.0.2"
   },
   "overrides": {
-    "vite": "^7.3.1"
+    "vite": "^8.0.0"
   },
   "resolutions": {
-    "vite": "^7.3.1"
+    "vite": "^8.0.0"
   }
 }
