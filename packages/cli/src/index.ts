@@ -17,7 +17,7 @@ import { update } from "./commands/update";
 import { message } from "./commands/message";
 import { agent } from "./commands/agent-run";
 
-const VERSION = "0.0.13";
+const VERSION = "0.0.14";
 
 const HELP = `
 🐝 Hive — Personal Swarm AI Gateway v${VERSION}
@@ -92,12 +92,15 @@ Documentation:
 async function main(): Promise<void> {
   // In compiled Bun binaries, process.argv is [binaryPath, arg0, arg1, ...]
   // In dev mode (bun run script.ts), it is [bun, scriptPath, arg0, arg1, ...]
-  // We detect compiled mode by checking if argv[1] looks like a command (no path separator)
-  const isCompiled = !process.argv[1]?.includes("/") && !process.argv[1]?.endsWith(".ts");
-  const args = process.argv.slice(isCompiled ? 1 : 2);
-  const command = args[0];
-  const subcommand = args[1];
-  const flags = args.filter((a) => a.startsWith("--"));
+  // We detect dev mode by checking if argv[1] ends with .ts
+  const isDev = process.argv[1]?.endsWith(".ts");
+  // Skip bun executable and script path in dev mode
+  const args = process.argv.slice(isDev ? 2 : 1);
+  // Skip script path in compiled mode (first arg is the script/binary path)
+  const normalizedArgs = args[0]?.includes("\\") || args[0]?.includes("/") ? args.slice(1) : args;
+  const command = normalizedArgs[0];
+  const subcommand = normalizedArgs[1];
+  const flags = normalizedArgs.filter((a) => a.startsWith("--"));
 
   switch (command) {
     case "onboard":
