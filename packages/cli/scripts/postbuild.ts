@@ -1,8 +1,11 @@
 #!/usr/bin/env bun
 import { writeFileSync, chmodSync, existsSync, mkdirSync } from 'fs'
-import { join } from 'path'
+import { join, dirname } from 'path'
 
-const distDir = join(import.meta.dir, '../dist')
+// Calcular ruta correcta: desde packages/cli/scripts/ hacia la raíz y luego a dist/
+const scriptDir = dirname(__filename)
+const rootDir = join(scriptDir, '../../..')
+const distDir = join(rootDir, 'dist')
 
 // Crear dist/ si no existe
 if (!existsSync(distDir)) {
