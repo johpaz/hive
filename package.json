@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-agents",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "Tu colmena de agentes IA. Local-first. Multi-canal. Open source. Construido desde Colombia para el mundo.",
   "private": false,
   "bin": {
@@ -69,6 +69,8 @@
   },
   "files": [
     "dist/hive.js",
+    "dist/hive.cmd",
+    "dist/hive.ps1",
     "dist/ui",
     "README.md",
     "LICENSE"
