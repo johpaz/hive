@@ -54,9 +54,16 @@ export const searchKnowledgeTool: Tool = {
       // Search tools
       if (type === "all" || type === "tools") {
         const tools = db.query(`
-          SELECT t.id, t.name, t.description, t.category, t.enabled, t.active, bm25(tools_fts) as rank
+          SELECT
+            COALESCE(t.id, tools_fts.tool_name) as id,
+            COALESCE(t.name, tools_fts.tool_name) as name,
+            COALESCE(t.description, tools_fts.description) as description,
+            COALESCE(t.category, tools_fts.category) as category,
+            COALESCE(t.enabled, 1) as enabled,
+            COALESCE(t.active, 1) as active,
+            bm25(tools_fts) as rank
           FROM tools_fts
-          LEFT JOIN tools t ON t.name = tools_fts.name
+          LEFT JOIN tools t ON t.name = tools_fts.tool_name
           WHERE tools_fts MATCH ?
           ORDER BY rank
           LIMIT ?
