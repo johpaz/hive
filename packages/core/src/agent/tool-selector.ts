@@ -119,14 +119,14 @@ const CONVERSATIONAL_PATTERNS = [
 // The descriptions are enriched with Spanish/English keywords for better FTS5 matching.
 
 export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
-    // Scheduling tools (hive.schedule.*)
-    { name: "hive.schedule.create", description: "Create new scheduled task: recurring (cron expression) or one-shot (fire_at). Use for reminders, automated reports, periodic checks. Spanish keywords: programar tarea, crear recordatorio, agendar, automatizar horario, tarea recurrente, recordatorio diario, una vez", category: "scheduling", abstractionLevel: "atomic" },
-    { name: "hive.schedule.list", description: "List all scheduled tasks with next execution times and status. Spanish keywords: ver tareas programadas, listar cronograma, próximas ejecuciones, tareas activas, recordatorios pendientes", category: "scheduling", abstractionLevel: "atomic" },
-    { name: "hive.schedule.pause", description: "Pause a scheduled task temporarily without deleting it. Spanish keywords: pausar tarea programada, detener temporalmente, suspender recordatorio, desactivar tarea", category: "scheduling", abstractionLevel: "atomic" },
-    { name: "hive.schedule.resume", description: "Resume a previously paused scheduled task. Spanish keywords: reanudar tarea, continuar tarea pausada, activar recordatorio, volver a activar", category: "scheduling", abstractionLevel: "atomic" },
-    { name: "hive.schedule.delete", description: "Delete a scheduled task permanently. Spanish keywords: eliminar tarea programada, borrar recordatorio, cancelar tarea, quitar programación, eliminar definitivamente", category: "scheduling", abstractionLevel: "atomic" },
-    { name: "hive.schedule.trigger", description: "Manually trigger immediate execution of a scheduled task now. Spanish keywords: ejecutar tarea ahora, forzar ejecución, disparar manualmente, correr inmediatamente", category: "scheduling", abstractionLevel: "atomic" },
-    { name: "hive.schedule.history", description: "Get execution history and run logs for a scheduled task. Spanish keywords: historial ejecuciones, logs tarea, cuándo corrió, registro de ejecuciones, resultados anteriores", category: "scheduling", abstractionLevel: "atomic" },
+    // Cron tools (cron.*)
+    { name: "cron.create", description: "Create new scheduled task: recurring (cron expression) or one-shot (fire_at). Use for reminders, automated reports, periodic checks. Spanish keywords: programar tarea, crear recordatorio, agendar, automatizar horario, tarea recurrente, recordatorio diario, una vez", category: "scheduling", abstractionLevel: "atomic" },
+    { name: "cron.list", description: "List all scheduled tasks with next execution times and status. Spanish keywords: ver tareas programadas, listar cronograma, próximas ejecuciones, tareas activas, recordatorios pendientes", category: "scheduling", abstractionLevel: "atomic" },
+    { name: "cron.pause", description: "Pause a scheduled task temporarily without deleting it. Spanish keywords: pausar tarea programada, detener temporalmente, suspender recordatorio, desactivar tarea", category: "scheduling", abstractionLevel: "atomic" },
+    { name: "cron.resume", description: "Resume a previously paused scheduled task. Spanish keywords: reanudar tarea, continuar tarea pausada, activar recordatorio, volver a activar", category: "scheduling", abstractionLevel: "atomic" },
+    { name: "cron.delete", description: "Delete a scheduled task permanently. Spanish keywords: eliminar tarea programada, borrar recordatorio, cancelar tarea, quitar programación, eliminar definitivamente", category: "scheduling", abstractionLevel: "atomic" },
+    { name: "cron.trigger", description: "Manually trigger immediate execution of a scheduled task now. Spanish keywords: ejecutar tarea ahora, forzar ejecución, disparar manualmente, correr inmediatamente", category: "scheduling", abstractionLevel: "atomic" },
+    { name: "cron.history", description: "Get execution history and run logs for a scheduled task. Spanish keywords: historial ejecuciones, logs tarea, cuándo corrió, registro de ejecuciones, resultados anteriores", category: "scheduling", abstractionLevel: "atomic" },
 
     // Project management tools (high-level orchestration)
     { name: "project_create", description: "Create project with tasks, start new project for complex multi-step work. Spanish keywords: crear proyecto, nuevo proyecto, iniciar trabajo, proyecto nuevo, comenzar proyecto", category: "projects", abstractionLevel: "orchestration" },

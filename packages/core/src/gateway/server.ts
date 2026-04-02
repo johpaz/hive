@@ -63,7 +63,7 @@ import { handleGetWorkspace, handleUpdateWorkspace, handleValidateWorkspace, han
 import { getNarration, expandPath, addCorsHeaders, redactConfig, CORS_ORIGINS } from "./helpers";
 import { CronScheduler } from "../scheduler/CronScheduler";
 import { createTaskHandler, setSchedulerForCleanup } from "../scheduler/integration";
-import { setSchedulerInstance as setScheduleToolsInstance } from "../tools/schedule.ts";
+import { setSchedulerInstance as setScheduleToolsInstance } from "../tools/cron/index.ts";
 import { setSchedulerInstance as setScheduledTasksRoutesInstance } from "./routes/scheduled-tasks";
 import {
   handleGetScheduledTasks,

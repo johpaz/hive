@@ -17,8 +17,8 @@ import * as web from "./web/index.ts";
 // Projects (8)
 import * as projects from "./projects/index.ts";
 
-// Schedule (7) - Croner-based scheduler tools
-import * as schedule from "./schedule.ts";
+// Cron (7) - Croner-based scheduler tools
+import * as cron from "./cron/index.ts";
 
 // CLI (1)
 import * as cli from "./cli/index.ts";
@@ -52,8 +52,8 @@ export function createAllTools(config: Config): Tool[] {
     // PROJECTS (8)
     ...projects.createTools(),
 
-    // SCHEDULE (7)
-    ...schedule.createTools(),
+    // CRON (7)
+    ...cron.createTools(),
 
     // CLI (1)
     ...cli.createTools(),
@@ -86,8 +86,8 @@ export function createToolsByCategory(category: string, config: Config): Tool[] 
       return web.createTools();
     case "projects":
       return projects.createTools();
-    case "schedule":
-      return schedule.createTools();
+    case "cron":
+      return cron.createTools();
     case "cli":
       return cli.createTools();
     case "agents":
@@ -145,15 +145,16 @@ export {
 } from "./projects/index.ts";
 
 export {
-  scheduleCreateTool,
-  scheduleListTool,
-  schedulePauseTool,
-  scheduleResumeTool,
-  scheduleDeleteTool,
-  scheduleTriggerTool,
-  scheduleHistoryTool,
+  cronCreateTool,
+  cronListTool,
+  cronPauseTool,
+  cronResumeTool,
+  cronDeleteTool,
+  cronTriggerTool,
+  cronHistoryTool,
   setSchedulerInstance,
-} from "./schedule.ts";
+  resolveBestChannel,
+} from "./cron/index.ts";
 
 export { cliExecTool } from "./cli/index.ts";
 

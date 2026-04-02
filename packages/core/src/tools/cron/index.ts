@@ -1,390 +1,548 @@
-
 /**
- * Cron Tools - 4 tools
- * 
+ * Cron Tools for Coordinator Agent
+ *
+ * Tools for managing scheduled tasks via natural language chat.
+ * These tools are registered with the Coordinator agent and allow
+ * users to create, list, pause, resume, delete, and trigger scheduled tasks.
+ *
  * @category cron
  */
 
-import type { Tool } from "../types.ts";
-import { getDb } from "../../storage/sqlite.ts";
-import { logger } from "../../utils/logger.ts";
+import type { Tool } from "../types";
+import { getDb } from "../../storage/sqlite";
+import { logger } from "../../utils/logger";
 import { Cron } from "croner";
 
-const log = logger.child("cron");
+const log = logger.child("CronTools");
 
-// ─── cron_add ────────────────────────────────────────────────────────────────
+// Global scheduler instance (set during gateway initialization)
+let _scheduler: any = null;
 
-export const cronAddTool: Tool = {
-  name: "cron_add",
-  description: "Schedule a recurring or one-time job using a cron expression. Spanish: programar tarea, recordatorio, alarma, automatizar horario",
-  parameters: {
-    type: "object",
-    properties: {
-      name: { type: "string", description: "Nombre de la tarea programada" },
-      cronExpression: { type: "string", description: "Expresión cron (5 campos: minuto hora día mes weekday)" },
-      taskType: { type: "string", description: "Tipo de tarea (message, project, etc.)" },
-      taskConfig: { type: "object", description: "Configuración de la tarea" },
-      maxRuns: { type: "number", description: "Máximo de ejecuciones. Usa 1 para tareas de una sola vez (one-shot). Omitir para recurrentes." },
-    },
-    required: ["name", "cronExpression"],
-  },
-  execute: async (params: Record<string, unknown>, config?: any) => {
-    const db = getDb();
-    const userId = config?.configurable?.user_id;
-    const name = (params.name || params.taskName || params.title || params.task) as string | undefined;
-    const cronExpression = (params.cronExpression || params.cron_expression || params.expression) as string | undefined;
-    const taskType = (params.taskType as string) ?? "message";
-    const taskConfig = params.taskConfig as Record<string, unknown> | undefined;
-    const maxRuns = params.maxRuns as number | undefined;
-
-    if (!name) {
-      return { ok: false, error: "Missing required field: name (job name)" };
-    }
-    if (!cronExpression) {
-      return { ok: false, error: "Missing required field: cronExpression (e.g. '0 9 * * *')" };
-    }
-
-    try {
-      // Validate and calculate next run
-      const cronInstance = new Cron(cronExpression);
-      const nextDate = cronInstance.nextRun();
-      cronInstance.stop(); // Solo era para calcular, el scheduler real lo relanzará
-      const nextRun = nextDate ? Math.floor(nextDate.getTime() / 1000) : null;
-
-      const jobId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
-
-      db.query(`
-        INSERT INTO cron_jobs (id, user_id, name, cron_expression, task_type, task_config, max_runs, enabled, next_run, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, unixepoch())
-      `).run(jobId, userId, name, cronExpression, taskType, JSON.stringify(taskConfig ?? {}), maxRuns ?? null, nextRun);
-
-      return {
-        ok: true,
-        jobId,
-        nextRun: nextDate?.toISOString() ?? null,
-        message: `Cron job "${name}" scheduled. Next run: ${nextDate?.toLocaleString() ?? "unknown"}`,
-      };
-    } catch (error) {
-      log.error(`Failed to add cron: ${(error as Error).message}`);
-      return {
-        ok: false,
-        error: `Invalid cron expression or database error: ${(error as Error).message}`,
-      };
-    }
-  },
-};
-
-// ─── cron_list ───────────────────────────────────────────────────────────────
-
-export const cronListTool: Tool = {
-  name: "cron_list",
-  description: "List all scheduled cron jobs and next execution times. Spanish: ver tareas programadas, cronograma, próximos eventos",
-  parameters: {
-    type: "object",
-    properties: {
-      enabled: { type: "boolean", description: "Filter by enabled status" },
-    },
-  },
-  execute: async (params: Record<string, unknown>, config?: any) => {
-    const db = getDb();
-    const userId = config?.configurable?.user_id;
-    const enabledFilter = params.enabled as boolean | undefined;
-
-    try {
-      let query = "SELECT * FROM cron_jobs WHERE user_id = ?";
-      const args: any[] = [userId];
-
-      if (enabledFilter !== undefined) {
-        query += " AND enabled = ?";
-        args.push(enabledFilter ? 1 : 0);
-      }
-
-      query += " ORDER BY next_run ASC";
-
-      const jobs = db.query(query).all(...args) as any[];
-
-      return {
-        ok: true,
-        jobs: jobs.map((j) => ({
-          id: j.id,
-          name: j.name,
-          cronExpression: j.cron_expression,
-          taskType: j.task_type,
-          enabled: j.enabled === 1,
-          runCount: j.run_count,
-          nextRun: j.next_run ? new Date(j.next_run * 1000).toISOString() : null,
-        })),
-        count: jobs.length,
-      };
-    } catch (error) {
-      log.error(`Failed to list crons: ${(error as Error).message}`);
-      return {
-        ok: false,
-        error: `Failed to list cron jobs: ${(error as Error).message}`,
-      };
-    }
-  },
-};
-
-// ─── cron_edit ───────────────────────────────────────────────────────────────
-
-export const cronEditTool: Tool = {
-  name: "cron_edit",
-  description: "Edit an existing cron job expression or config. Spanish: modificar horario, cambiar programación, editar cron",
-  parameters: {
-    type: "object",
-    properties: {
-      jobId: { type: "string", description: "ID del cron job" },
-      cronExpression: { type: "string", description: "Nueva expresión cron" },
-      taskConfig: { type: "object", description: "Nueva configuración" },
-    },
-    required: ["jobId"],
-  },
-  execute: async (params: Record<string, unknown>) => {
-    const db = getDb();
-    const jobId = params.jobId as string;
-    const cronExpression = params.cronExpression as string | undefined;
-    const taskConfig = params.taskConfig as Record<string, unknown> | undefined;
-
-    try {
-      const updates: string[] = [];
-      const values: any[] = [];
-
-      if (cronExpression) {
-        // Validate and recalculate next_run with new expression
-        const cronInstance = new Cron(cronExpression);
-        const nextDate = cronInstance.nextRun();
-        cronInstance.stop();
-        const nextRun = nextDate ? Math.floor(nextDate.getTime() / 1000) : null;
-
-        updates.push("cron_expression = ?");
-        values.push(cronExpression);
-        updates.push("next_run = ?");
-        values.push(nextRun);
-      }
-
-      if (taskConfig !== undefined) {
-        updates.push("task_config = ?");
-        values.push(JSON.stringify(taskConfig));
-      }
-
-      if (updates.length === 0) {
-        return { ok: false, error: "No changes provided" };
-      }
-
-      values.push(jobId);
-
-      const result = db.query(`UPDATE cron_jobs SET ${updates.join(", ")} WHERE id = ?`).run(...values);
-
-      if (result.changes === 0) {
-        return { ok: false, error: `Cron job not found: ${jobId}` };
-      }
-
-      // Stop and remove the active croner instance so it gets rescheduled
-      // with the new expression on the next loadAndSchedule poll (every 30s)
-      const existing = activeJobs.get(jobId);
-      if (existing) {
-        existing.stop();
-        activeJobs.delete(jobId);
-        log.info(`[cron] Stopped active instance for job ${jobId} — will reschedule with new expression`);
-      }
-
-      return { ok: true, jobId, message: "Cron job updated and rescheduled." };
-    } catch (error) {
-      log.error(`Failed to edit cron: ${(error as Error).message}`);
-      return {
-        ok: false,
-        error: `Failed to edit cron job: ${(error as Error).message}`,
-      };
-    }
-  },
-};
-
-// ─── cron_remove ─────────────────────────────────────────────────────────────
-
-export const cronRemoveTool: Tool = {
-  name: "cron_remove",
-  description: "Remove a scheduled cron job. Spanish: eliminar cron, cancelar recordatorio, borrar programación",
-  parameters: {
-    type: "object",
-    properties: {
-      jobId: { type: "string", description: "ID del cron job a eliminar" },
-    },
-    required: ["jobId"],
-  },
-  execute: async (params: Record<string, unknown>) => {
-    const db = getDb();
-    const jobId = params.jobId as string;
-
-    try {
-      const result = db.query("DELETE FROM cron_jobs WHERE id = ?").run(jobId);
-
-      if (result.changes === 0) {
-        return { ok: false, error: `Cron job not found: ${jobId}` };
-      }
-
-      return { ok: true, jobId, message: "Cron job removed." };
-    } catch (error) {
-      log.error(`Failed to remove cron: ${(error as Error).message}`);
-      return {
-        ok: false,
-        error: `Failed to remove cron job: ${(error as Error).message}`,
-      };
-    }
-  },
-};
-
-import crypto from "crypto";
-
-export function createTools(): Tool[] {
-  return [cronAddTool, cronListTool, cronEditTool, cronRemoveTool];
+export function setSchedulerInstance(scheduler: any): void {
+  _scheduler = scheduler;
 }
 
-// Mapa de instancias Cron activas: jobId → Cron instance
-const activeJobs = new Map<string, InstanceType<typeof Cron>>();
-
-type CronCallback = (sessionId: string, task: string, jobId: string, context: { fecha_usuario: string; hora_usuario: string }) => void;
-
-function scheduleJob(
-  job: { id: string; user_id: string; name: string; cron_expression: string; max_runs: number | null; run_count: number; expires_at: number | null },
-  callback: CronCallback
-): void {
-  // Si ya hay una instancia activa para este job, la saltamos
-  if (activeJobs.has(job.id)) return;
-
-  try {
-    const instance = new Cron(job.cron_expression, { protect: true }, () => {
-      const db = getDb();
-      const now = Math.floor(Date.now() / 1000);
-
-      // Verificar expiración
-      if (job.expires_at && now > job.expires_at) {
-        log.info(`[cron] Job "${job.name}" (${job.id}) expired, stopping`);
-        instance.stop();
-        activeJobs.delete(job.id);
-        db.query("UPDATE cron_jobs SET enabled = 0 WHERE id = ?").run(job.id);
-        return;
-      }
-
-      // Actualizar run_count, last_run, next_run
-      const newRunCount = (job.run_count ?? 0) + 1;
-      const nextDate = instance.nextRun();
-      const nextRunTs = nextDate ? Math.floor(nextDate.getTime() / 1000) : null;
-
-      db.query(
-        "UPDATE cron_jobs SET run_count = ?, last_run = ?, next_run = ? WHERE id = ?"
-      ).run(newRunCount, now, nextRunTs, job.id);
-      job.run_count = newRunCount;
-
-      // Verificar max_runs
-      if (job.max_runs !== null && newRunCount >= job.max_runs) {
-        log.info(`[cron] Job "${job.name}" (${job.id}) reached max_runs=${job.max_runs}, stopping`);
-        instance.stop();
-        activeJobs.delete(job.id);
-        db.query("UPDATE cron_jobs SET enabled = 0 WHERE id = ?").run(job.id);
-        return;
-      }
-
-      // Auto-desactivar si no hay próxima ejecución en los próximos 366 días
-      // (detecta expresiones one-shot como "0 19 9 3 *" que croner reprograma al año siguiente)
-      if (!nextDate || nextDate.getTime() - Date.now() > 366 * 24 * 60 * 60 * 1000) {
-        log.info(`[cron] Job "${job.name}" (${job.id}) has no near future run (next=${nextDate?.toISOString() ?? "null"}), disabling`);
-        instance.stop();
-        activeJobs.delete(job.id);
-        db.query("UPDATE cron_jobs SET enabled = 0 WHERE id = ?").run(job.id);
-        return;
-      }
-
-      // Contexto de fecha/hora local
-      const now_date = new Date();
-      const context = {
-        fecha_usuario: now_date.toLocaleDateString("es-ES"),
-        hora_usuario: now_date.toLocaleTimeString("es-ES"),
-      };
-
-      log.info(`[cron] Firing job "${job.name}" (${job.id}) run #${newRunCount}`);
-      callback(job.user_id, job.name, job.id, context);
-    });
-
-    activeJobs.set(job.id, instance);
-
-    // Actualizar next_run inicial en BD
-    const nextDate = instance.nextRun();
-    if (nextDate) {
-      getDb()
-        .query("UPDATE cron_jobs SET next_run = ? WHERE id = ?")
-        .run(Math.floor(nextDate.getTime() / 1000), job.id);
-    }
-
-    log.info(`[cron] Scheduled job "${job.name}" (${job.id}) — next: ${instance.nextRun()?.toISOString() ?? "unknown"}`);
-  } catch (err) {
-    log.error(`[cron] Failed to schedule job "${job.name}" (${job.id}): ${(err as Error).message}`);
-  }
+export function getSchedulerInstance(): any {
+  return _scheduler;
 }
 
 /**
- * Initialize the cron scheduler.
- * Loads all enabled jobs from the DB and schedules them.
- * Polls every 30s for new jobs added after startup.
+ * Get user's timezone from database
  */
-export function initCronScheduler(callback: CronCallback): void {
+function getUserTimezone(): string {
+  const db = getDb();
+  const user = db.query("SELECT timezone FROM users LIMIT 1").get() as { timezone: string } | undefined;
+  return user?.timezone || "UTC";
+}
+
+/**
+ * Resolve the best notification channel for a user
+ *
+ * Priority order:
+ * 1. Explicit channel if provided and has identity
+ * 2. User's preferred channel from preferences
+ * 3. Auto-detect by priority: telegram, discord, slack, whatsapp, webchat
+ * 4. Fallback to "webchat"
+ *
+ * @param userId - User ID to resolve channel for
+ * @param explicitChannel - Optional explicit channel preference
+ * @returns Best channel string
+ */
+export function resolveBestChannel(userId: string, explicitChannel?: string): string {
   const db = getDb();
 
-  const loadAndSchedule = () => {
-    const jobs = db.query(`
-      SELECT id, user_id, name, cron_expression, max_runs, run_count, expires_at
-      FROM cron_jobs
-      WHERE enabled = 1
-    `).all() as { id: string; user_id: string; name: string; cron_expression: string; max_runs: number | null; run_count: number; expires_at: number | null }[];
+  // Get user's preferred channel from preferences
+  const user = db.query("SELECT preferred_cron_channel FROM users WHERE id = ?", [userId]).get() as {
+    preferred_cron_channel: string;
+  } | undefined;
 
-    for (const job of jobs) {
-      scheduleJob(job, callback);
-    }
+  // Get channels that have a user identity AND are currently active/connected
+  const activeChannels = db.query(`
+    SELECT ui.channel FROM user_identities ui
+    JOIN channels c ON c.id = ui.channel
+    WHERE ui.user_id = ? AND c.active = 1 AND c.status = 'connected'
+  `, [userId]).all() as { channel: string }[];
 
-    // Detener jobs que ya no están en BD o están deshabilitados
-    const activeIds = new Set(jobs.map((j) => j.id));
-    for (const [jobId, instance] of activeJobs) {
-      if (!activeIds.has(jobId)) {
-        log.info(`[cron] Stopping removed/disabled job ${jobId}`);
-        instance.stop();
-        activeJobs.delete(jobId);
-      }
-    }
-  };
+  // Fallback: if no active channels found, use any identity
+  const identities = activeChannels.length > 0
+    ? activeChannels
+    : db.query("SELECT channel FROM user_identities WHERE user_id = ?", [userId]).all() as { channel: string }[];
 
-  // Carga inicial
-  loadAndSchedule();
-
-  // Poll cada 30s para detectar nuevos jobs o jobs eliminados
-  setInterval(loadAndSchedule, 30_000);
-
-  log.info(`[cron] Scheduler initialized with ${activeJobs.size} active jobs`);
-}
-
-/**
- * Resolve the best channel TYPE ("webchat", "telegram", etc.) for cron notifications.
- * Priority: explicit notify_channel_id → user_identities (first registered) → "webchat"
- */
-export function resolveBestChannel(userId: string, notifyChannelId?: string | null): string {
-  // 1. Explicit channel set on the job
-  if (notifyChannelId) return notifyChannelId;
-
-  // 2. Look up which channels the user has registered identities for
-  try {
-    const db = getDb();
-    const identities = db.query<{ channel: string }, [string]>(
-      "SELECT channel FROM user_identities WHERE user_id = ? ORDER BY channel ASC LIMIT 5"
-    ).all(userId);
-
-    // Prefer telegram if available (most reliable for async notifications)
-    const preferred = ["telegram", "discord", "slack", "whatsapp"];
-    for (const p of preferred) {
-      if (identities.some((i) => i.channel === p)) return p;
-    }
-  } catch {
-    // DB not ready or no identities — fall through
+  // If no identities at all, return default
+  if (identities.length === 0) {
+    return "webchat";
   }
 
-  // 3. Default to webchat
-  return "webchat";
+  // Determine best channel
+  let bestChannel = "";
+
+  // 1. Try explicit channel first
+  if (explicitChannel && explicitChannel !== "system") {
+    if (identities.some((i) => i.channel === explicitChannel)) {
+      bestChannel = explicitChannel;
+    }
+  }
+
+  // 2. Try user's preferred channel
+  if (!bestChannel && user?.preferred_cron_channel && user.preferred_cron_channel !== "auto") {
+    if (identities.some((i) => i.channel === user.preferred_cron_channel)) {
+      bestChannel = user.preferred_cron_channel;
+    }
+  }
+
+  // 3. Auto-detect by priority
+  if (!bestChannel) {
+    const preferred = ["telegram", "discord", "slack", "whatsapp", "webchat"];
+    for (const p of preferred) {
+      if (identities.some((i) => i.channel === p)) {
+        bestChannel = p;
+        break;
+      }
+    }
+  }
+
+  // 4. Fallback to first available identity
+  if (!bestChannel) {
+    bestChannel = identities[0].channel;
+  }
+
+  return bestChannel;
+}
+
+// ─── cron.create ─────────────────────────────────────────────────────────────
+
+export const cronCreateTool: Tool = {
+  name: "cron.create",
+  description: "Create a new scheduled task. Use for recurring reminders, daily reports, automated checks. Spanish: crear tarea programada, agendar recordatorio, programar reporte",
+  parameters: {
+    type: "object",
+    properties: {
+      name: { type: "string", description: "Name for the scheduled task (e.g., 'daily-report', 'morning-reminder')" },
+      task_type: { type: "string", enum: ["recurring", "one_shot"], description: "Type: 'recurring' for cron-based, 'one_shot' for single execution" },
+      cron_expression: { type: "string", description: "Cron expression (5-7 fields) for recurring tasks. Example: '0 9 * * *' (daily at 9 AM)" },
+      fire_at: { type: "string", description: "ISO 8601 datetime for one_shot tasks. Example: '2026-04-01T09:00:00'" },
+      payload: { type: "object", description: "Payload with 'prompt' or 'message' field containing the task content" },
+      agent_id: { type: "string", description: "Target agent ID (optional, defaults to Coordinator)" },
+      tool_name: { type: "string", description: "Specific tool to execute (optional)" },
+      max_runs: { type: "number", description: "Maximum executions (optional, null = unlimited)" },
+      channel: { type: "string", description: "Notification channel (system, telegram, discord, whatsapp, cli)" },
+    },
+    required: ["name", "task_type"],
+  },
+  execute: async (params: Record<string, unknown>) => {
+    const db = getDb();
+    const timezone = getUserTimezone();
+
+    const name = params.name as string | undefined;
+    const task_type = params.task_type as "recurring" | "one_shot" | undefined;
+    const cron_expression = params.cron_expression as string | undefined;
+    const fire_at = params.fire_at as string | undefined;
+    const payload = params.payload as Record<string, unknown> | undefined;
+    const agent_id = params.agent_id as string | undefined;
+    const tool_name = params.tool_name as string | undefined;
+    const max_runs = params.max_runs as number | undefined;
+    const channel = (params.channel as string) || "system";
+
+    if (!name) {
+      return { ok: false, error: "Missing required field: name" };
+    }
+
+    if (!task_type) {
+      return { ok: false, error: "Missing required field: task_type (recurring or one_shot)" };
+    }
+
+    // Validate based on task type
+    if (task_type === "recurring" && !cron_expression) {
+      return { ok: false, error: "recurring task requires cron_expression" };
+    }
+
+    if (task_type === "one_shot" && !fire_at) {
+      return { ok: false, error: "one_shot task requires fire_at" };
+    }
+
+    // Validate cron expression
+    if (cron_expression) {
+      try {
+        new Cron(cron_expression);
+      } catch (err) {
+        return { ok: false, error: `Invalid cron expression: ${(err as Error).message}` };
+      }
+    }
+
+    // Validate fire_at is in future
+    if (fire_at) {
+      const fireAtDate = new Date(fire_at);
+      if (fireAtDate.getTime() <= Date.now()) {
+        return { ok: false, error: "fire_at must be in the future" };
+      }
+    }
+
+    // Validate payload has prompt or message
+    if (payload && !payload._internal) {
+      const hasPrompt = !!(payload.prompt || payload.message);
+      if (!hasPrompt) {
+        return { ok: false, error: "Payload must contain 'prompt' or 'message' field" };
+      }
+    }
+
+    // Validate agent_id exists if provided
+    if (agent_id) {
+      const agent = db.query("SELECT id FROM agents WHERE id = ?").get(agent_id);
+      if (!agent) {
+        return { ok: false, error: `Agent not found: ${agent_id}` };
+      }
+    }
+
+    try {
+      // Use scheduler if available, otherwise insert directly
+      if (_scheduler) {
+        const result = _scheduler.create({
+          name,
+          task_type,
+          cron_expression,
+          fire_at,
+          timezone,
+          payload: payload || { prompt: `Execute scheduled task: ${name}` },
+          agent_id: agent_id || null,
+          tool_name: tool_name || null,
+          max_runs: max_runs || null,
+          channel,
+        });
+
+        log.info(`[create] Task "${name}" created via scheduler: ${result.id}`);
+
+        return {
+          ok: true,
+          task_id: result.id,
+          next_run: result.nextRun,
+          message: `Task "${name}" scheduled. Next run: ${result.nextRun ? new Date(result.nextRun).toLocaleString() : "unknown"}`,
+        };
+      } else {
+        // Fallback: direct insert (scheduler not initialized)
+        const id = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+        const now = new Date().toISOString();
+
+        db.query(`
+          INSERT INTO scheduled_tasks (
+            id, name, task_type, cron_expression, fire_at, timezone, payload,
+            agent_id, tool_name, max_runs, channel, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          id, name, task_type, cron_expression || null, fire_at || null, timezone,
+          JSON.stringify(payload || {}), agent_id || null, tool_name || null,
+          max_runs || null, channel, now, now
+        );
+
+        return {
+          ok: true,
+          task_id: id,
+          message: `Task "${name}" saved (scheduler not active)`,
+        };
+      }
+    } catch (err) {
+      log.error(`[create] Failed: ${(err as Error).message}`);
+      return { ok: false, error: `Failed to create task: ${(err as Error).message}` };
+    }
+  },
+};
+
+// ─── cron.list ────────────────────────────────────────────────────────────────
+
+export const cronListTool: Tool = {
+  name: "cron.list",
+  description: "List all scheduled tasks with their next execution times. Spanish: ver tareas programadas, listar cronograma",
+  parameters: {
+    type: "object",
+    properties: {
+      status: { type: "string", enum: ["active", "paused", "completed", "failed", "cancelled"], description: "Filter by status" },
+      task_type: { type: "string", enum: ["recurring", "one_shot"], description: "Filter by type" },
+    },
+  },
+  execute: async (params: Record<string, unknown>) => {
+    const db = getDb();
+
+    const status = params.status as string | undefined;
+    const task_type = params.task_type as string | undefined;
+
+    try {
+      let query = "SELECT * FROM scheduled_tasks WHERE 1=1";
+      const args: any[] = [];
+
+      if (status) {
+        query += " AND status = ?";
+        args.push(status);
+      }
+
+      if (task_type) {
+        query += " AND task_type = ?";
+        args.push(task_type);
+      }
+
+      query += " ORDER BY next_run_at ASC";
+
+      const tasks = db.query(query).all(...args) as any[];
+
+      return {
+        ok: true,
+        tasks: tasks.map((t) => ({
+          id: t.id,
+          name: t.name,
+          type: t.task_type,
+          status: t.status,
+          cron_expression: t.cron_expression,
+          fire_at: t.fire_at,
+          next_run: t.next_run_at,
+          last_run: t.last_run_at,
+          run_count: t.run_count,
+          channel: t.channel,
+        })),
+        count: tasks.length,
+      };
+    } catch (err) {
+      log.error(`[list] Failed: ${(err as Error).message}`);
+      return { ok: false, error: `Failed to list tasks: ${(err as Error).message}` };
+    }
+  },
+};
+
+// ─── cron.pause ───────────────────────────────────────────────────────────────
+
+export const cronPauseTool: Tool = {
+  name: "cron.pause",
+  description: "Pause a scheduled task. Spanish: pausar tarea programada, detener temporalmente",
+  parameters: {
+    type: "object",
+    properties: {
+      task_id: { type: "string", description: "ID of the task to pause" },
+    },
+    required: ["task_id"],
+  },
+  execute: async (params: Record<string, unknown>) => {
+    const task_id = params.task_id as string | undefined;
+
+    if (!task_id) {
+      return { ok: false, error: "Missing required field: task_id" };
+    }
+
+    try {
+      if (_scheduler) {
+        const success = _scheduler.pause(task_id);
+        if (success) {
+          return { ok: true, message: `Task "${task_id}" paused` };
+        } else {
+          return { ok: false, error: `Task "${task_id}" not found or already paused` };
+        }
+      } else {
+        // Fallback: direct update
+        const db = getDb();
+        const result = db.query(
+          "UPDATE scheduled_tasks SET status = 'paused' WHERE id = ?"
+        ).run(task_id);
+
+        if (result.changes > 0) {
+          return { ok: true, message: `Task "${task_id}" paused (scheduler not active)` };
+        } else {
+          return { ok: false, error: `Task "${task_id}" not found` };
+        }
+      }
+    } catch (err) {
+      log.error(`[pause] Failed: ${(err as Error).message}`);
+      return { ok: false, error: `Failed to pause task: ${(err as Error).message}` };
+    }
+  },
+};
+
+// ─── cron.resume ──────────────────────────────────────────────────────────────
+
+export const cronResumeTool: Tool = {
+  name: "cron.resume",
+  description: "Resume a paused scheduled task. Spanish: reanudar tarea programada, continuar",
+  parameters: {
+    type: "object",
+    properties: {
+      task_id: { type: "string", description: "ID of the task to resume" },
+    },
+    required: ["task_id"],
+  },
+  execute: async (params: Record<string, unknown>) => {
+    const task_id = params.task_id as string | undefined;
+
+    if (!task_id) {
+      return { ok: false, error: "Missing required field: task_id" };
+    }
+
+    try {
+      if (_scheduler) {
+        const success = _scheduler.resume(task_id);
+        if (success) {
+          return { ok: true, message: `Task "${task_id}" resumed` };
+        } else {
+          return { ok: false, error: `Task "${task_id}" not found or already active` };
+        }
+      } else {
+        // Fallback: direct update
+        const db = getDb();
+        const result = db.query(
+          "UPDATE scheduled_tasks SET status = 'active' WHERE id = ?"
+        ).run(task_id);
+
+        if (result.changes > 0) {
+          return { ok: true, message: `Task "${task_id}" resumed (scheduler not active)` };
+        } else {
+          return { ok: false, error: `Task "${task_id}" not found` };
+        }
+      }
+    } catch (err) {
+      log.error(`[resume] Failed: ${(err as Error).message}`);
+      return { ok: false, error: `Failed to resume task: ${(err as Error).message}` };
+    }
+  },
+};
+
+// ─── cron.delete ──────────────────────────────────────────────────────────────
+
+export const cronDeleteTool: Tool = {
+  name: "cron.delete",
+  description: "Delete a scheduled task permanently. Spanish: eliminar tarea programada, cancelar recordatorio",
+  parameters: {
+    type: "object",
+    properties: {
+      task_id: { type: "string", description: "ID of the task to delete" },
+    },
+    required: ["task_id"],
+  },
+  execute: async (params: Record<string, unknown>) => {
+    const task_id = params.task_id as string | undefined;
+
+    if (!task_id) {
+      return { ok: false, error: "Missing required field: task_id" };
+    }
+
+    try {
+      if (_scheduler) {
+        const success = _scheduler.delete(task_id);
+        if (success) {
+          return { ok: true, message: `Task "${task_id}" deleted` };
+        } else {
+          return { ok: false, error: `Task "${task_id}" not found` };
+        }
+      } else {
+        // Fallback: direct delete
+        const db = getDb();
+        const result = db.query(
+          "DELETE FROM scheduled_tasks WHERE id = ?"
+        ).run(task_id);
+
+        if (result.changes > 0) {
+          return { ok: true, message: `Task "${task_id}" deleted (scheduler not active)` };
+        } else {
+          return { ok: false, error: `Task "${task_id}" not found` };
+        }
+      }
+    } catch (err) {
+      log.error(`[delete] Failed: ${(err as Error).message}`);
+      return { ok: false, error: `Failed to delete task: ${(err as Error).message}` };
+    }
+  },
+};
+
+// ─── cron.trigger ─────────────────────────────────────────────────────────────
+
+export const cronTriggerTool: Tool = {
+  name: "cron.trigger",
+  description: "Manually trigger a scheduled task execution immediately. Spanish: ejecutar tarea ahora, forzar ejecución",
+  parameters: {
+    type: "object",
+    properties: {
+      task_id: { type: "string", description: "ID of the task to trigger" },
+    },
+    required: ["task_id"],
+  },
+  execute: async (params: Record<string, unknown>) => {
+    const task_id = params.task_id as string | undefined;
+
+    if (!task_id) {
+      return { ok: false, error: "Missing required field: task_id" };
+    }
+
+    try {
+      if (_scheduler) {
+        const success = _scheduler.trigger(task_id);
+        if (success) {
+          return { ok: true, message: `Task "${task_id}" triggered` };
+        } else {
+          return { ok: false, error: `Task "${task_id}" not found or not active` };
+        }
+      } else {
+        return { ok: false, error: "Scheduler not active - cannot trigger tasks" };
+      }
+    } catch (err) {
+      log.error(`[trigger] Failed: ${(err as Error).message}`);
+      return { ok: false, error: `Failed to trigger task: ${(err as Error).message}` };
+    }
+  },
+};
+
+// ─── cron.history ─────────────────────────────────────────────────────────────
+
+export const cronHistoryTool: Tool = {
+  name: "cron.history",
+  description: "Get execution history for a scheduled task. Spanish: historial de ejecuciones, logs de tarea",
+  parameters: {
+    type: "object",
+    properties: {
+      task_id: { type: "string", description: "ID of the task" },
+      limit: { type: "number", description: "Maximum number of records (default: 10)" },
+    },
+    required: ["task_id"],
+  },
+  execute: async (params: Record<string, unknown>) => {
+    const task_id = params.task_id as string | undefined;
+    const limit = (params.limit as number) || 10;
+
+    if (!task_id) {
+      return { ok: false, error: "Missing required field: task_id" };
+    }
+
+    try {
+      const db = getDb();
+      const runs = db.query(`
+        SELECT * FROM task_runs
+        WHERE task_id = ?
+        ORDER BY started_at DESC
+        LIMIT ?
+      `).all(task_id, limit) as any[];
+
+      return {
+        ok: true,
+        history: runs.map((r) => ({
+          id: r.id,
+          status: r.status,
+          started_at: r.started_at,
+          finished_at: r.finished_at,
+          duration_ms: r.duration_ms,
+          error_message: r.error_message,
+        })),
+        count: runs.length,
+      };
+    } catch (err) {
+      log.error(`[history] Failed: ${(err as Error).message}`);
+      return { ok: false, error: `Failed to get history: ${(err as Error).message}` };
+    }
+  },
+};
+
+/**
+ * Create all cron tools
+ */
+export function createTools(): Tool[] {
+  return [
+    cronCreateTool,
+    cronListTool,
+    cronPauseTool,
+    cronResumeTool,
+    cronDeleteTool,
+    cronTriggerTool,
+    cronHistoryTool,
+  ];
 }
