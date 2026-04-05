@@ -51,4 +51,13 @@ packages/skills/src/bundled-data.generated.ts
 
 hivelearn
 
+# agentes de codigo
+.claude
+.qwen
+.cursor
+.gemini
+.codex
+.copilot
+.agent
+
 
