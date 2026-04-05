@@ -4,19 +4,6 @@ import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { swal } from "@/lib/swal";
 
-const PROVIDER_TYPES = [
-  { id: "openai", label: "OpenAI" },
-  { id: "anthropic", label: "Anthropic" },
-  { id: "gemini", label: "Gemini" },
-  { id: "ollama", label: "Ollama" },
-  { id: "openrouter", label: "OpenRouter" },
-  { id: "deepseek", label: "DeepSeek" },
-  { id: "mistral", label: "Mistral" },
-  { id: "groq", label: "Groq" },
-  { id: "cohere", label: "Cohere" },
-  { id: "kimi", label: "Kimi" },
-] as const;
-
 interface NewProviderFormProps {
   onSave: (data: {
     id: string;
@@ -39,7 +26,7 @@ export function NewProviderForm({ onSave, onCancel }: NewProviderFormProps) {
   const [headers, setHeaders] = useState("");
   const [numCtx, setNumCtx] = useState<string>("");
 
-  const isLocal = type === "ollama" || baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1");
+  const isLocal = type.toLowerCase() === "ollama" || baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1");
 
   const handleSave = () => {
     if (!name.trim()) {
@@ -91,18 +78,13 @@ export function NewProviderForm({ onSave, onCancel }: NewProviderFormProps) {
 
       <div className="space-y-1">
         <Label className="hive-label">Tipo de Provider</Label>
-        <div className="relative">
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value)}
-            className="hive-select-trigger w-full appearance-none pr-10"
-          >
-            <option value="" disabled>Selecciona un tipo</option>
-            {PROVIDER_TYPES.map(t => (
-              <option key={t.id} value={t.id}>{t.label}</option>
-            ))}
-          </select>
-        </div>
+        <Input
+          value={type}
+          onChange={(e) => setType(e.target.value)}
+          placeholder="openai, anthropic, ollama..."
+          className="hive-input !h-8 text-xs"
+        />
+        <p className="text-[10px] text-white/30">Ej: openai, anthropic, ollama, custom...</p>
       </div>
 
       <div className="space-y-1">

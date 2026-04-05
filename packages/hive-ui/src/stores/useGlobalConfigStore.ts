@@ -892,6 +892,7 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
   },
   toggleProvider: createProvidersSlice().toggleProvider,
   updateProvider: createProvidersSlice().updateProvider,
+  createProvider: createProvidersSlice().createProvider,
 
   // Models methods
   fetchModels: async () => {

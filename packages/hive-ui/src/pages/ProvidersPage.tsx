@@ -1,7 +1,7 @@
 import { Plus, type LucideProps } from "lucide-react";
 import { ProviderList } from "@/modules/providers";
 import { NewProviderForm } from "@/modules/providers/NewProviderForm";
-import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription, DialogHeader } from "@/components/ui/dialog";
 import { useProviders } from "@/hooks/useProviders";
 import { useState } from "react";
 import type React from "react";
@@ -55,14 +55,14 @@ export function ProvidersPage() {
               Añadir Provider
             </button>
           </DialogTrigger>
-          <DialogContent className="hive-card border-white/10 p-0 overflow-hidden max-w-md bg-[#09090b]">
-            <div className="p-6 border-b border-white/5 bg-white/5 relative overflow-hidden">
+          <DialogContent className="max-w-md">
+            <DialogHeader className="p-6 border-b border-white/5 bg-white/5 relative overflow-hidden">
               <div className="hive-glow-blob hive-glow-blob--blue -top-10 -right-10 h-32 w-32 opacity-20" />
               <DialogTitle className="text-xl font-black text-white uppercase tracking-tighter">Añadir Provider</DialogTitle>
               <DialogDescription className="text-xs text-white/40 font-medium mt-1">
                 Crea un nuevo provider de IA para tu infraestructura.
               </DialogDescription>
-            </div>
+            </DialogHeader>
             <div className="p-6">
               <NewProviderForm
                 onSave={handleAdd}

@@ -48,27 +48,27 @@ export function HiveLearnConfigPage() {
         const configData: HiveLearnConfig = await configRes.json();
         const agentsData: AgentResponse = await agentsRes.json();
 
-        // Filter to only active/enabled providers
+        // Filter to only active/enabled providers (match store logic: OR not AND)
         const activeProviders: ProviderOption[] = (providersData.providers ?? [])
-          .filter((p: any) => p.enabled && p.active)
+          .filter((p: any) => p.enabled || p.active)
           .map((p: any) => ({
             id: p.id,
             name: p.name,
-            active: p.active,
-            hasApiKey: !!p.config?.apiKey || p.isLocal,
-            isLocal: p.isLocal,
+            active: p.active ?? false,
+            hasApiKey: !!p.config?.apiKey || p.isLocal || !!p.api_key,
+            isLocal: p.isLocal ?? false,
           }));
 
-        // Filter to only active/enabled models
+        // Filter to only active/enabled models (match store logic: OR not AND)
         const activeModels: ModelOption[] = (modelsData.models ?? [])
-          .filter((m: any) => m.enabled && m.active)
+          .filter((m: any) => m.enabled || m.active)
           .map((m: any) => ({
             id: m.id,
             name: m.name,
             provider_id: m.provider_id,
             context_window: m.context_window,
             capabilities: Array.isArray(m.capabilities) ? m.capabilities : [],
-            active: m.active,
+            active: m.active ?? false,
           }));
 
         setProviders(activeProviders);
