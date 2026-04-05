@@ -16,6 +16,11 @@ import {
   StickyNote,
   Clock,
   Mic,
+  GraduationCap,
+  BookOpen,
+  Network,
+  Settings2,
+  History,
   type LucideProps,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
@@ -76,9 +81,17 @@ const cognitiveItems = [
   { title: "Cron Jobs", url: "/cron-jobs", icon: Clock },
 ];
 
+const hiveLearnSubItems = [
+  { id: "learn",    label: "Aprender",      url: "/hivelearn",          icon: BookOpen },
+  { id: "sessions", label: "Sesiones",      url: "/hivelearn/sessions", icon: History },
+  { id: "swarm",    label: "Enjambre",      url: "/hivelearn/swarm",    icon: Network },
+  { id: "config",   label: "Configuración", url: "/hivelearn/config",   icon: Settings2 },
+];
+
 export function AppSidebar() {
   const location = useLocation();
   const isConfigActive = location.pathname.startsWith("/settings");
+  const isHiveLearnActive = location.pathname.startsWith("/hivelearn");
 
   return (
     <Sidebar collapsible="icon" className="hive-sidebar">
@@ -102,6 +115,42 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+
+              {/* HiveLearn — collapsible submenu */}
+              <Collapsible open={isHiveLearnActive} asChild>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isHiveLearnActive}>
+                    <NavLink
+                      to="/hivelearn"
+                      className="hive-sidebar-item group/item text-white/50 hover:text-white"
+                      activeClassName="hive-sidebar-item--active text-amber-400 font-bold"
+                    >
+                      <Icon icon={GraduationCap as any} className="h-4 w-4 transition-transform group-hover/item:scale-110" />
+                      <span>HiveLearn</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      {hiveLearnSubItems.map((item) => (
+                        <SidebarMenuSubItem key={item.id}>
+                          <SidebarMenuSubButton asChild>
+                            <NavLink
+                              to={item.url}
+                              end={item.url === "/hivelearn"}
+                              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-white/40 hover:text-white hover:bg-white/5 transition-all text-xs"
+                              activeClassName="text-amber-400 bg-amber-500/5 font-semibold"
+                            >
+                              <Icon icon={item.icon as any} className="h-3.5 w-3.5" />
+                              <span>{item.label}</span>
+                            </NavLink>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </SidebarMenuItem>
+              </Collapsible>
 
               <div className="h-4" />
               <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-white/20">

@@ -73,6 +73,8 @@ export function MCPServerAdd() {
         let finalHeaders: Record<string, string> = {};
         if (authType === "api-key" && authToken) {
           finalHeaders["x-api-key"] = authToken;
+        } else if (authType === "google-api-key" && authToken) {
+          finalHeaders["X-Goog-Api-Key"] = authToken;
         } else if (authType === "bearer" && authToken) {
           finalHeaders["Authorization"] = `Bearer ${authToken}`;
         } else if (authType === "custom" && headers.trim()) {
@@ -231,6 +233,12 @@ export function MCPServerAdd() {
                           <span>Bearer Token (Authorization)</span>
                         </div>
                       </SelectItem>
+                      <SelectItem value="google-api-key" className="focus:bg-cyan-500/20 focus:text-cyan-400">
+                        <div className="flex items-center gap-2">
+                          <Key className="h-3.5 w-3.5" />
+                          <span>Google API Key (X-Goog-Api-Key)</span>
+                        </div>
+                      </SelectItem>
                       <SelectItem value="custom" className="focus:bg-cyan-500/20 focus:text-cyan-400">
                         <div className="flex items-center gap-2">
                           <Code className="h-3.5 w-3.5" />
@@ -241,10 +249,10 @@ export function MCPServerAdd() {
                   </Select>
                 </div>
 
-                {(authType === "api-key" || authType === "bearer") && (
+                {(authType === "api-key" || authType === "google-api-key" || authType === "bearer") && (
                   <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
                     <Label htmlFor="mcp-token" className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-                      {authType === "api-key" ? "API Key" : "Bearer Token"}
+                      {authType === "api-key" ? "API Key" : authType === "google-api-key" ? "Google API Key" : "Bearer Token"}
                     </Label>
                     <div className="relative">
                       <Input

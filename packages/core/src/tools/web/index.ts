@@ -1,8 +1,7 @@
 /**
  * Web Tools - Browser automation + Web utilities
  * 
- * Browser tools require Lightpanda running externally.
- * See: https://github.com/lightpanda-org/lightpanda
+ * Browser tools use Puppeteer/Chromium (auto-managed).
  */
 
 import type { Tool } from "../types.ts";

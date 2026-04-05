@@ -68,6 +68,12 @@
       ],
       "@/*": [
         "./packages/hive-ui/src/*"
+      ],
+      "@johpaz/hivelearn": [
+        "./packages/hivelearn/src/index.ts"
+      ],
+      "@johpaz/hivelearn/ui": [
+        "./packages/hivelearn/src/ui/index.ts"
       ]
     }
   },

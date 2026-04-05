@@ -247,6 +247,17 @@
     animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
 
+  .animate-xp-float {
+    animation: xp-float 1.3s ease-out forwards;
+  }
+
+  @keyframes xp-float {
+    0%   { opacity: 0; transform: translateY(0px) scale(0.8); }
+    20%  { opacity: 1; transform: translateY(-8px) scale(1.1); }
+    60%  { opacity: 1; transform: translateY(-28px) scale(1); }
+    100% { opacity: 0; transform: translateY(-50px) scale(0.9); }
+  }
+
   /* ══════════════════════════════════════════
      HIVE DESIGN SYSTEM  –  Component Tokens
      ══════════════════════════════════════════ */

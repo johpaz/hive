@@ -3,7 +3,12 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
+import { lazy, Suspense } from "react";
 import { AppLayout } from "@/modules/layout/AppLayout";
+
+const LessonCanvas = lazy(() =>
+  import("@johpaz/hivelearn/ui").then(m => ({ default: m.LessonCanvas })).catch(() => ({ default: () => <div className="flex h-screen items-center justify-center text-gray-400">HiveLearn no disponible — verifica que Ollama esté corriendo.</div> }))
+);
 import { DashboardPage } from "@/pages/DashboardPage";
 import { AgentsPage } from "@/pages/AgentsPage";
 import { AgentDetailPage } from "@/pages/AgentDetailPage";
@@ -15,6 +20,9 @@ import { LogsPage } from "@/pages/LogsPage";
 import { ChannelsPage } from "@/pages/ChannelsPage";
 import { ProjectsPage } from "@/pages/ProjectsPage";
 import { ProvidersPage } from "@/pages/ProvidersPage";
+import { HiveLearnSwarmPage } from "@/pages/HiveLearnSwarmPage";
+import { HiveLearnConfigPage } from "@/pages/HiveLearnConfigPage";
+import { HiveLearnSessionsPage } from "@/pages/HiveLearnSessionsPage";
 import { WebChatPage } from "@/pages/WebChatPage";
 import SetupPage from "@/pages/SetupPage";
 import LoginPage from "@/pages/LoginPage";
@@ -162,6 +170,14 @@ const AppContent = () => {
           <Route path="/channels" element={<ChannelsPage />} />
           <Route path="/providers" element={<ProvidersPage />} />
           <Route path="/logs" element={<LogsPage />} />
+          <Route path="/hivelearn" element={
+            <Suspense fallback={<div className="flex h-screen items-center justify-center text-amber-400">Cargando HiveLearn...</div>}>
+              <LessonCanvas />
+            </Suspense>
+          } />
+          <Route path="/hivelearn/sessions" element={<HiveLearnSessionsPage />} />
+          <Route path="/hivelearn/swarm" element={<HiveLearnSwarmPage />} />
+          <Route path="/hivelearn/config" element={<HiveLearnConfigPage />} />
         </Route>
         <Route path="*" element={<NotFound />} />
       </Routes>

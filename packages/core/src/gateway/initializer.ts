@@ -257,7 +257,7 @@ export async function initializeGateway(
       
       const browserService = initializeBrowserService(config);
       
-      // Iniciar Lightpanda automáticamente
+      // Iniciar Chromium via puppeteer
       browserAvailable = await browserService.start();
 
       if (browserAvailable) {
@@ -345,6 +345,14 @@ export async function initializeGateway(
 
     // 8. Inicializar channel manager (crítico)
     const channelManager = await initializeChannelManager(config);
+
+    // 9. Inicializar HiveLearn (no crítico — falla silenciosamente si Ollama no está disponible)
+    try {
+      const { initHiveLearn } = await import("@johpaz/hivelearn");
+      await initHiveLearn();
+    } catch (e) {
+      log.warn(`HiveLearn init skipped: ${(e as Error).message}`);
+    }
 
     return { agent, runner, channelManager, provider, model };
 

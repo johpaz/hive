@@ -48,10 +48,10 @@ export const browserScriptTool: Tool = {
 
     const browserService = getBrowserService();
     if (!browserService || !browserService.isAvailable()) {
-      log.warn("Browser not available - Lightpanda not connected");
+      log.warn("Browser not available - Chromium not running");
       return {
         ok: false,
-        error: "Browser automation not available. Lightpanda must be running. See: https://github.com/lightpanda-org/lightpanda",
+        error: "Browser automation not available. Chromium failed to start — run: bunx puppeteer browsers install chrome",
       };
     }
 

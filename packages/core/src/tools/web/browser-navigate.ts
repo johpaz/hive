@@ -1,7 +1,7 @@
 /**
  * browser_navigate - Navigate to URL and get rendered content
  *
- * Uses Puppeteer Core to connect to Lightpanda via CDP.
+ * Uses Puppeteer to launch and control Chromium.
  * Supports full JavaScript rendering.
  *
  * @category web

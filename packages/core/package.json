@@ -81,6 +81,7 @@
     "./integrations": "./src/integrations/index.ts",
     "./integrations/catalog": "./src/integrations/catalog.ts",
     "./integrations/env": "./src/integrations/env.ts",
-    "./voice": "./src/voice/index.ts"
+    "./voice": "./src/voice/index.ts",
+    "./scheduler/dag": "./src/scheduler/dag/index.ts"
   }
 }

@@ -30,38 +30,86 @@ export class BrowserService {
   }
 
   /**
-   * Inicia Chromium via puppeteer (auto-descarga si no existe)
+   * Inicia Chromium via puppeteer. Si el binario no existe, lo descarga automáticamente.
    */
   async start(): Promise<boolean> {
     try {
       log.info("Starting Chromium via puppeteer...");
-
-      const puppeteer = await import("puppeteer");
-
-      this.browser = await puppeteer.launch({
-        headless: true,
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-gpu",
-        ],
-      });
-
-      // Obtener la página inicial (Chromium abre una en blanco por defecto)
-      const pages = await this.browser.pages();
-      this.page = pages[0] ?? await this.browser.newPage();
-
-      this.available = true;
-      log.info("✅ Chromium ready");
-      return true;
-
+      return await this._tryLaunch();
     } catch (error) {
-      log.error(`Failed to start Chromium: ${(error as Error).message}`);
+      const msg = (error as Error).message;
+      if (msg.includes("Could not find Chrome")) {
+        log.info("Chromium not found — installing automatically (this may take a minute)...");
+        try {
+          await this._installChromium();
+          return await this._tryLaunch();
+        } catch (installErr) {
+          log.error(`Chromium auto-install failed: ${(installErr as Error).message}`);
+          this.available = false;
+          return false;
+        }
+      }
+      log.error(`Failed to start Chromium: ${msg}`);
       this.available = false;
       return false;
     }
+  }
+
+  private async _tryLaunch(): Promise<boolean> {
+    const puppeteer = await import("puppeteer");
+
+    this.browser = await puppeteer.launch({
+      headless: true,
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+      ],
+    });
+
+    const pages = await this.browser.pages();
+    this.page = pages[0] ?? await this.browser.newPage();
+
+    this.available = true;
+    log.info("✅ Chromium ready");
+    return true;
+  }
+
+  private async _installChromium(): Promise<void> {
+    const { install, Browser, detectBrowserPlatform, resolveBuildId } =
+      await import("@puppeteer/browsers");
+    const os = await import("node:os");
+    const path = await import("node:path");
+
+    const cacheDir =
+      process.env.PUPPETEER_CACHE_DIR ??
+      path.join(os.homedir(), ".cache", "puppeteer");
+
+    const platform = detectBrowserPlatform();
+    if (!platform) throw new Error("Unsupported platform for Chromium auto-install");
+
+    const buildId = await resolveBuildId(Browser.CHROME, platform, "stable");
+    log.info(`Downloading Chrome ${buildId} for ${platform} → ${cacheDir}`);
+
+    let lastPct = -1;
+    await install({
+      browser: Browser.CHROME,
+      buildId,
+      cacheDir,
+      downloadProgressCallback: (downloaded: number, total: number) => {
+        if (total > 0) {
+          const pct = Math.floor((downloaded / total) * 100);
+          if (pct % 20 === 0 && pct !== lastPct) {
+            lastPct = pct;
+            log.info(`Chrome download: ${pct}%`);
+          }
+        }
+      },
+    });
+
+    log.info("✅ Chromium installed successfully");
   }
 
   /**

@@ -3,11 +3,18 @@ import { emitCanvas } from "../../canvas/emitter"
 import { encryptConfig } from "../../storage/crypto"
 
 export async function handleGetAgents(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
+  const url = new URL(req.url)
+  const typeFilter = url.searchParams.get("type")
+  const hlFilter = typeFilter === "hivelearn"
+    ? "WHERE a.id LIKE 'hl-%'"
+    : "WHERE a.id NOT LIKE 'hl-%'"
+
   const rows = getDb().query(`
     SELECT a.*, u.notes as user_preferences,
     CASE WHEN a.headers_encrypted IS NOT NULL THEN 1 ELSE 0 END as has_headers
     FROM agents a
     LEFT JOIN users u ON a.user_id = u.id
+    ${hlFilter}
     ORDER BY a.created_at DESC
   `).all() as Record<string, unknown>[]
 

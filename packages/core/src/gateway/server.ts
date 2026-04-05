@@ -62,6 +62,7 @@ import { handleGetConfig } from "./routes/config";
 import { handleGetWorkspace, handleUpdateWorkspace, handleValidateWorkspace, handleCreateWorkspace, handleOpenWorkspace } from "./routes/workspace";
 import { getNarration, expandPath, addCorsHeaders, redactConfig, CORS_ORIGINS } from "./helpers";
 import { CronScheduler } from "../scheduler/CronScheduler";
+import { DAGScheduler, ParallelStrategy } from "../scheduler/dag/index";
 import { createTaskHandler, setSchedulerForCleanup } from "../scheduler/integration";
 import { setSchedulerInstance as setScheduleToolsInstance } from "../tools/cron/index.ts";
 import { setSchedulerInstance as setScheduledTasksRoutesInstance } from "./routes/scheduled-tasks";
@@ -136,11 +137,15 @@ export async function startGateway(config: Config): Promise<void> {
   let dbModel: string;
   const agentList = config.agents?.list ?? [];
 
+  // ── HiveLearn live events WS client registry ─────────────────────────────
+  const hlLiveClients = new Map<string, () => void>(); // sessionId → cleanup fn
+
   // ── Bind port immediately so parent health-check doesn't timeout ──────────
   // The full handler is loaded via server.reload() once initialization finishes
   let server = Bun.serve<WebSocketData>({
     port,
     hostname: host,
+    idleTimeout: 0,  // Disable 10s idle timeout — SSE streams can run for minutes
     fetch: (req) => {
       const origin = req.headers.get("Origin") ?? ""
       const isLocalhost = origin.includes("localhost") || origin.includes("127.0.0.1") || origin.includes("0.0.0.0")
@@ -219,6 +224,11 @@ export async function startGateway(config: Config): Promise<void> {
         setSchedulerForCleanup(scheduler);
 
         log.info(`📅 CronScheduler initialized with ${scheduler.getStatus().length} task(s)`);
+
+        // Register DAGScheduler as a global service (opt-in by swarms)
+        const dagScheduler = new DAGScheduler({ strategy: new ParallelStrategy(), maxConcurrentWorkers: 2 });
+        (globalThis as any).__dagScheduler = dagScheduler;
+        log.info("🔀 DAGScheduler ready");
       } catch (err) {
         log.error(`❌ CronScheduler initialization failed: ${(err as Error).message}`);
       }
@@ -580,6 +590,14 @@ export async function startGateway(config: Config): Promise<void> {
           return new Response("Bridge events WebSocket upgrade failed", { status: 400 });
         }
 
+        // ── HiveLearn Live Events WebSocket upgrade ────────────────────────────
+        if (url.pathname === "/hivelearn-events" || url.pathname === "/hivelearn-events/") {
+          const sessionId = `hl:${url.searchParams.get("sessionId") ?? crypto.randomUUID()}`;
+          const success = server.upgrade(req, { data: { sessionId, authenticatedAt: Date.now() } });
+          if (success) return undefined;
+          return new Response("HiveLearn events WebSocket upgrade failed", { status: 400 });
+        }
+
         // ── Health (must be before UI routing so it works in dev mode too) ───
         if (url.pathname === "/health" || url.pathname === "/health/") {
           const uptime = Math.floor((Date.now() - startTime) / 1000);
@@ -893,6 +911,235 @@ export async function startGateway(config: Config): Promise<void> {
         }
 
 
+
+        // ── HiveLearn API ─────────────────────────────────────────────────────
+        if (url.pathname === "/api/hivelearn/generate" && req.method === "POST") {
+          const { HiveLearnSwarm, updateHiveLearnAgentsProviderModel, LessonPersistence, hlSwarmEmitter } = await import("@johpaz/hivelearn");
+          const { getDb } = await import("../storage/sqlite");
+          const body = await req.json() as { perfil: any; meta: string; providerId: string; modelId: string };
+
+          if (!body.providerId || !body.modelId) {
+            return addCorsHeaders(new Response(JSON.stringify({ error: "providerId y modelId son requeridos" }), {
+              status: 400, headers: { "Content-Type": "application/json" },
+            }), req);
+          }
+
+          const db = getDb();
+          updateHiveLearnAgentsProviderModel(db, body.providerId, body.modelId);
+
+          const persistence = new LessonPersistence();
+          persistence.saveStudentProfile(body.perfil);
+
+          // SSE stream — progress events from hlSwarmEmitter (hivelearn-local, not core agentBus)
+          const encoder = new TextEncoder();
+          let ctrl: ReadableStreamDefaultController<Uint8Array>;
+          const stream = new ReadableStream<Uint8Array>({ start(c) { ctrl = c; } });
+
+          const send = (event: string, data: unknown) => {
+            try { ctrl.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)); }
+            catch { /* stream already closed */ }
+          };
+
+          // Keep-alive: send SSE comment every 8s so the connection stays open
+          const keepAlive = setInterval(() => {
+            try { ctrl.enqueue(encoder.encode(': keep-alive\n\n')); }
+            catch { clearInterval(keepAlive); }
+          }, 8_000);
+
+          // Subscribe to hlSwarmEmitter (emitted by DAGScheduler inside hivelearn)
+          const h1 = (data: any) => send("agent_started",   { agentId: data.workerId, agentName: data.workerName });
+          const h2 = (data: any) => send("agent_completed", { agentId: data.workerId, agentName: data.workerName });
+          const h3 = (data: any) => send("agent_failed",    { agentId: data.workerId, agentName: data.workerName, error: data.error });
+          hlSwarmEmitter.subscribe("worker:task_started",   h1);
+          hlSwarmEmitter.subscribe("worker:task_completed", h2);
+          hlSwarmEmitter.subscribe("worker:task_failed",    h3);
+
+          (async () => {
+            try {
+              const swarm = new HiveLearnSwarm({
+                onProgress: (progress: any) => send("progress", progress),
+              });
+              const program = await swarm.run(body.perfil, body.meta);
+
+              const curriculoId = persistence.saveCurriculum(
+                program.sessionId, body.meta, JSON.stringify(program.nodos),
+                program.nodos.length, program.rangoEdad, program.topicSlug,
+              );
+              persistence.createSession(program.sessionId, body.perfil.alumnoId, curriculoId, program.rangoEdad);
+
+              send("complete", { ...program, sessionId: program.sessionId, curriculoId });
+            } catch (e) {
+              send("error", { message: (e as Error).message });
+            } finally {
+              clearInterval(keepAlive);
+              hlSwarmEmitter.unsubscribe("worker:task_started",   h1);
+              hlSwarmEmitter.unsubscribe("worker:task_completed", h2);
+              hlSwarmEmitter.unsubscribe("worker:task_failed",    h3);
+              try { ctrl.close(); } catch { /* already closed */ }
+            }
+          })();
+
+          return addCorsHeaders(new Response(stream, {
+            status: 200,
+            headers: {
+              "Content-Type": "text/event-stream",
+              "Cache-Control": "no-cache",
+              "Connection": "keep-alive",
+              "X-Accel-Buffering": "no",
+            },
+          }), req);
+        }
+
+        if (url.pathname === "/api/hivelearn/feedback" && req.method === "POST") {
+          try {
+            const { AGENT_IDS, runHiveLearnAgent, AGENT_PROMPTS, calificarRespuestaTool } = await import("@johpaz/hivelearn");
+            const body = await req.json() as { nodoId: string; concepto: string; respuesta: string; rangoEdad: string; tipoPedagogico: string };
+            const result = await runHiveLearnAgent({
+              agentId: AGENT_IDS.feedback,
+              taskDescription: `Concepto: "${body.concepto}". Tipo pedagógico: ${body.tipoPedagogico}. Rango edad: ${body.rangoEdad}.\nRespuesta del alumno: "${body.respuesta}".\nEvalúa si comprende el concepto (no exactitud literal). Usa la tool calificar_respuesta.`,
+              systemPrompt: AGENT_PROMPTS[AGENT_IDS.feedback] ?? '',
+              tools: [calificarRespuestaTool],
+              threadId: `hl-feedback-${body.nodoId}-${Date.now()}`,
+            });
+            // El tool passthrough devuelve {ok:true, output:{correcto,xp_ganado,mensaje,...}}
+            let feedback: any = { correcto: false, mensajePrincipal: "¡Sigue intentando!", xpGanado: 0 };
+            try {
+              const parsed = typeof result === 'string' ? JSON.parse(result) : result;
+              const out = parsed?.output ?? parsed;
+              feedback = {
+                correcto: out.correcto ?? false,
+                mensajePrincipal: out.mensaje ?? out.mensajePrincipal ?? "¡Buen intento!",
+                xpGanado: out.xp_ganado ?? out.xpGanado ?? 0,
+                razonamiento: out.razonamiento,
+                pistaSiIncorrecto: out.pista_si_incorrecto ?? out.pistaSiIncorrecto,
+              };
+            } catch {
+              const match = (typeof result === 'string' ? result : '').match(/\{[\s\S]*\}/);
+              if (match) {
+                try { const p = JSON.parse(match[0]); feedback = { correcto: p.correcto ?? false, mensajePrincipal: p.mensaje ?? "¡Buen intento!", xpGanado: p.xp_ganado ?? 5, razonamiento: p.razonamiento }; } catch {}
+              }
+            }
+            return addCorsHeaders(new Response(JSON.stringify(feedback), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }), req);
+          } catch (e) {
+            return addCorsHeaders(new Response(JSON.stringify({ correcto: false, mensajePrincipal: "¡Buen intento! Sigue adelante.", xpGanado: 5 }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }), req);
+          }
+        }
+
+        // ── HiveLearn Metrics ───────────────────────────────────────────
+        if (url.pathname === "/api/hivelearn/metrics" && req.method === "GET") {
+          try {
+            const { LessonPersistence } = await import("@johpaz/hivelearn");
+            const persistence = new LessonPersistence();
+            const metrics = persistence.getAggregateMetrics();
+            return addCorsHeaders(new Response(JSON.stringify(metrics), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }), req);
+          } catch (e) {
+            return addCorsHeaders(new Response(JSON.stringify({ error: (e as Error).message }), {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            }), req);
+          }
+        }
+
+        // ── HiveLearn Sessions ────────────────────────────────────────
+        if (url.pathname === "/api/hivelearn/sessions" && req.method === "GET") {
+          try {
+            const { getDb } = await import("../storage/sqlite");
+            const db = getDb();
+            const rows = db.query(`
+              SELECT s.session_id, s.alumno_id, s.curriculo_id, s.xp_total,
+                     s.nivel_alcanzado, s.nodos_completados, s.evaluacion_puntaje,
+                     s.completada, s.created_at,
+                     c.meta_alumno as meta, c.total_nodos, c.rango_edad,
+                     p.nombre
+              FROM hl_sessions s
+              LEFT JOIN hl_curricula c ON s.curriculo_id = c.id
+              LEFT JOIN hl_student_profiles p ON s.alumno_id = p.alumno_id
+              ORDER BY s.created_at DESC
+              LIMIT 50
+            `).all();
+            return addCorsHeaders(Response.json({ sessions: rows }), req);
+          } catch (e) {
+            return addCorsHeaders(Response.json({ sessions: [], error: (e as Error).message }), req);
+          }
+        }
+
+        // ── HiveLearn Session Delete ──────────────────────────────────
+        const hlSessionMatch = url.pathname.match(/^\/api\/hivelearn\/sessions\/([^/]+)$/);
+        if (hlSessionMatch && req.method === "DELETE") {
+          try {
+            const { getDb } = await import("../storage/sqlite");
+            const db = getDb();
+            const sessionId = hlSessionMatch[1];
+            db.run("DELETE FROM hl_sessions WHERE session_id = ?", [sessionId]);
+            return addCorsHeaders(Response.json({ ok: true }), req);
+          } catch (e) {
+            return addCorsHeaders(Response.json({ ok: false, error: (e as Error).message }, { status: 500 }), req);
+          }
+        }
+
+        // ── HiveLearn Config Check ────────────────────────────────────
+        if (url.pathname === "/api/hivelearn/config" && req.method === "GET") {
+          try {
+            const { LessonPersistence } = await import("@johpaz/hivelearn");
+            const persistence = new LessonPersistence();
+            const providerModel = persistence.getHiveLearnProviderModel();
+            return addCorsHeaders(new Response(JSON.stringify({
+              configured: !!providerModel,
+              providerId: providerModel?.providerId,
+              modelId: providerModel?.modelId,
+            }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }), req);
+          } catch (e) {
+            return addCorsHeaders(new Response(JSON.stringify({ error: (e as Error).message }), {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            }), req);
+          }
+        }
+
+        // ── HiveLearn Config Save ─────────────────────────────────────
+        if (url.pathname === "/api/hivelearn/config" && req.method === "POST") {
+          try {
+            const { updateHiveLearnAgentsProviderModel } = await import("@johpaz/hivelearn");
+            const { getDb } = await import("../storage/sqlite");
+            const body = await req.json() as { providerId: string; modelId: string };
+            if (!body.providerId || !body.modelId) {
+              return addCorsHeaders(new Response(JSON.stringify({ error: "providerId y modelId son requeridos" }), {
+                status: 400,
+                headers: { "Content-Type": "application/json" },
+              }), req);
+            }
+            const db = getDb();
+            // updateHiveLearnAgentsProviderModel updates all hl-* agents in the DB
+            // getHiveLearnProviderModel then reads from agents table automatically
+            updateHiveLearnAgentsProviderModel(db, body.providerId, body.modelId);
+            return addCorsHeaders(new Response(JSON.stringify({ ok: true }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }), req);
+          } catch (e) {
+            return addCorsHeaders(new Response(JSON.stringify({ error: (e as Error).message }), {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            }), req);
+          }
+        }
+
+        // ── HiveLearn Agents List ─────────────────────────────────────
+        if (url.pathname === "/api/hivelearn/agents" && req.method === "GET") {
+          return await handleGetAgents(new Request(req.url + "?type=hivelearn", { method: "GET", headers: req.headers }), addCorsHeaders);
+        }
 
         // ── Channels API ─────────────────────────────────────────────────────
         if ((url.pathname === "/api/channels" || url.pathname === "/api/channels/") && req.method === "POST") {
@@ -1557,6 +1804,45 @@ export async function startGateway(config: Config): Promise<void> {
           return;
         }
 
+        // ── HiveLearn Live Events ──────────────────────────────────────────────
+        if (data.sessionId.startsWith("hl:")) {
+          (async () => {
+            try {
+              const { hlSwarmEmitter } = await import("@johpaz/hivelearn");
+              const sendWs = (type: string, payload: Record<string, unknown> = {}) => {
+                try { ws.send(JSON.stringify({ type, ...payload })); } catch {}
+              };
+              const h1 = (d: any) => sendWs("agent_started",   { agentId: d.workerId, agentName: d.workerName });
+              const h2 = (d: any) => sendWs("agent_completed", { agentId: d.workerId, agentName: d.workerName });
+              const h3 = (d: any) => sendWs("agent_failed",    { agentId: d.workerId, agentName: d.workerName, error: d.error });
+              const h4 = (d: any) => sendWs("swarm_started",   { swarmId: d.swarmId, totalTasks: d.totalTasks });
+              const h5 = (d: any) => sendWs("swarm_completed", { swarmId: d.swarmId, success: d.success });
+              hlSwarmEmitter.subscribe("worker:task_started",   h1);
+              hlSwarmEmitter.subscribe("worker:task_completed", h2);
+              hlSwarmEmitter.subscribe("worker:task_failed",    h3);
+              hlSwarmEmitter.subscribe("swarm:started",         h4);
+              hlSwarmEmitter.subscribe("swarm:completed",       h5);
+              // Server-side heartbeat: ping every 30s
+              const heartbeatTimer = setInterval(() => {
+                try { ws.send(JSON.stringify({ type: "ping" })); } catch { clearInterval(heartbeatTimer); }
+              }, 30_000);
+              hlLiveClients.set(data.sessionId, () => {
+                clearInterval(heartbeatTimer);
+                hlSwarmEmitter.unsubscribe("worker:task_started",   h1);
+                hlSwarmEmitter.unsubscribe("worker:task_completed", h2);
+                hlSwarmEmitter.unsubscribe("worker:task_failed",    h3);
+                hlSwarmEmitter.unsubscribe("swarm:started",         h4);
+                hlSwarmEmitter.unsubscribe("swarm:completed",       h5);
+              });
+              sendWs("hl:connected");
+              log.info(`HiveLearn live client connected: ${data.sessionId}`);
+            } catch (err) {
+              log.warn(`[hivelearn-events] subscribe failed: ${(err as Error).message}`);
+            }
+          })();
+          return;
+        }
+
         log.debug(`WebSocket connected: ${data.sessionId} `);
 
         sessionManager.create(data.sessionId, ws);
@@ -1609,6 +1895,15 @@ export async function startGateway(config: Config): Promise<void> {
 
         // Bridge events clients are read-only; only respond to ping keepalive
         if (data.sessionId.startsWith("bridge:")) {
+          try {
+            const m = JSON.parse(message.toString());
+            if (m?.type === "ping") ws.send(JSON.stringify({ type: "pong" }));
+          } catch { /* ignore */ }
+          return;
+        }
+
+        // HiveLearn live clients: read-only, heartbeat only
+        if (data.sessionId.startsWith("hl:")) {
           try {
             const m = JSON.parse(message.toString());
             if (m?.type === "ping") ws.send(JSON.stringify({ type: "pong" }));
@@ -2096,6 +2391,14 @@ export async function startGateway(config: Config): Promise<void> {
 
         if (isBridge) {
           unsubscribeBridge(ws as any);
+          return;
+        }
+
+        if (data.sessionId.startsWith("hl:")) {
+          const cleanup = hlLiveClients.get(data.sessionId);
+          cleanup?.();
+          hlLiveClients.delete(data.sessionId);
+          log.info(`HiveLearn live client disconnected: ${data.sessionId}`);
           return;
         }
 

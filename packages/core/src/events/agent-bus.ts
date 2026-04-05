@@ -169,7 +169,7 @@ function persistMessage(event: AgentBusEventKey, data: any, metadata?: Record<st
 
   try {
     db.query(`
-      INSERT INTO agent_bus_messages 
+      INSERT OR IGNORE INTO agent_bus_messages
         (event_type, from_worker_id, to_worker_id, topic, content, metadata, created_at, read)
       VALUES (?, ?, ?, ?, ?, ?, unixepoch(), 0)
     `).run(
@@ -181,7 +181,7 @@ function persistMessage(event: AgentBusEventKey, data: any, metadata?: Record<st
       metadata ? JSON.stringify(metadata) : null
     );
   } catch (err) {
-    log.error(`Failed to persist message: ${(err as Error).message}`);
+    log.warn(`Failed to persist message (non-critical): ${(err as Error).message}`);
   }
 }
 

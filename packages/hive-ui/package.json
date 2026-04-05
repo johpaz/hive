@@ -65,9 +65,15 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
     "zod": "^3.25.76",
-    "zustand": "^5.0.11"
+    "zustand": "^5.0.11",
+    "@johpaz/hivelearn": "workspace:*"
   },
   "devDependencies": {
+    "@xyflow/react": "^12.3.6",
+    "dompurify": "^3.2.6",
+    "prismjs": "^1.30.0",
+    "@types/dompurify": "^3.0.5",
+    "@types/prismjs": "^1.26.5",
     "@eslint/js": "^9.32.0",
     "@tailwindcss/typography": "^0.5.16",
     "@tailwindcss/vite": "4.2.1",
