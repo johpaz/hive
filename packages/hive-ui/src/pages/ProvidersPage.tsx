@@ -1,32 +1,40 @@
 import { Plus, type LucideProps } from "lucide-react";
 import { ProviderList } from "@/modules/providers";
+import { NewProviderForm } from "@/modules/providers/NewProviderForm";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { ProviderConfigForm } from "@/modules/providers/ProviderConfigForm";
 import { useProviders } from "@/hooks/useProviders";
 import { useState } from "react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { Provider } from "@/types";
 import type React from "react";
 
 // Type assertion to fix React 19 @types/react + lucide-react incompatibility
 const PlusIcon = Plus as React.ComponentType<LucideProps>;
 
 export function ProvidersPage() {
-  const { providers, updateProvider } = useProviders();
+  const { providers, createProvider } = useProviders();
   const [open, setOpen] = useState(false);
-  const [selectedToAdd, setSelectedToAdd] = useState<Provider | null>(null);
 
-  // Providers that exist but are fully inactive (not yet configured/activated)
-  const inactiveProviders = providers.filter((p) => !p.active);
-
-  const handleAdd = (config: Record<string, any>) => {
-    if (selectedToAdd) {
-      updateProvider(selectedToAdd.id, {
-        active: true,
-        config: { ...selectedToAdd.config, ...config }
+  const handleAdd = async (data: {
+    id: string;
+    name: string;
+    type: string;
+    apiKey: string;
+    baseUrl?: string;
+    headers?: Record<string, string>;
+    numCtx?: number | null;
+  }) => {
+    try {
+      await createProvider({
+        id: data.id,
+        name: data.name,
+        base_url: data.baseUrl,
+        api_key: data.apiKey,
+        headers: data.headers,
+        num_ctx: data.numCtx,
       });
       setOpen(false);
-      setSelectedToAdd(null);
+    } catch (error) {
+      console.error("Error creating provider:", error);
+      // Error is already handled by apiClient with swal
     }
   };
 
@@ -40,9 +48,9 @@ export function ProvidersPage() {
           </div>
           <h2 className="hive-title-page">Providers de IA<span className="hive-title-page__accent">.</span></h2>
         </div>
-        <Dialog open={open} onOpenChange={(val) => { setOpen(val); if (!val) setSelectedToAdd(null); }}>
+        <Dialog open={open} onOpenChange={(val) => { setOpen(val); }}>
           <DialogTrigger asChild>
-            <button className="hive-btn hive-btn--primary" disabled={inactiveProviders.length === 0}>
+            <button className="hive-btn hive-btn--primary">
               <PlusIcon className="mr-1 h-4 w-4" />
               Añadir Provider
             </button>
@@ -52,36 +60,14 @@ export function ProvidersPage() {
               <div className="hive-glow-blob hive-glow-blob--blue -top-10 -right-10 h-32 w-32 opacity-20" />
               <DialogTitle className="text-xl font-black text-white uppercase tracking-tighter">Añadir Provider</DialogTitle>
               <DialogDescription className="text-xs text-white/40 font-medium mt-1">
-                Selecciona un provider inactivo para configurarlo y activarlo.
+                Crea un nuevo provider de IA para tu infraestructura.
               </DialogDescription>
             </div>
-            <div className="space-y-4 p-6">
-              <Select
-                value={selectedToAdd?.id || ""}
-                onValueChange={(val) => setSelectedToAdd(inactiveProviders.find(p => p.id === val) || null)}
-              >
-                <SelectTrigger className="hive-select-trigger">
-                  <SelectValue placeholder="Selecciona un provider" />
-                </SelectTrigger>
-                <SelectContent className="hive-select-content">
-                  {inactiveProviders.length === 0 && (
-                    <SelectItem value="none" disabled className="hive-select-item">Todos los providers están activos</SelectItem>
-                  )}
-                  {inactiveProviders.map(p => (
-                    <SelectItem key={p.id} value={p.id} className="hive-select-item">{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              {selectedToAdd && (
-                <div className="pt-2 border-t border-white/5 mt-4">
-                  <ProviderConfigForm
-                  provider={selectedToAdd}
-                  onSave={handleAdd}
-                  onCancel={() => { setOpen(false); setSelectedToAdd(null); }}
-                />
-                </div>
-              )}
+            <div className="p-6">
+              <NewProviderForm
+                onSave={handleAdd}
+                onCancel={() => setOpen(false)}
+              />
             </div>
           </DialogContent>
         </Dialog>

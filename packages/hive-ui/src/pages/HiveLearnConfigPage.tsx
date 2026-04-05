@@ -1,33 +1,37 @@
-import { useEffect, useState } from "react";
-import { Settings2, CheckCircle2, AlertCircle, Brain, GitBranch, Zap, Database, ChevronDown } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { Settings2, Brain, GitBranch, Zap, Database, Bot } from "lucide-react";
+import {
+  ProviderSelector,
+  ModelSelector,
+  ConfigSummary,
+  SwarmPipelinePreview,
+  ConfigInsightCard,
+  StatusMessage,
+} from "@/modules/hivelearn/config";
+import type { ProviderOption, ModelOption } from "@/modules/hivelearn/config";
 
-interface Provider {
-  id: string;
-  name: string;
-  enabled: boolean;
-  active: boolean;
+interface HiveLearnConfig {
+  configured: boolean;
+  providerId: string | null;
+  modelId: string | null;
 }
 
-interface Model {
-  id: string;
-  name: string;
-  provider_id: string;
-  enabled: boolean;
-  active: boolean;
-  context_window?: number;
+interface AgentResponse {
+  agents: Array<{ id: string; status: string }>;
 }
 
 export function HiveLearnConfigPage() {
-  const [providers, setProviders] = useState<Provider[]>([]);
-  const [models, setModels] = useState<Model[]>([]);
+  const [providers, setProviders] = useState<ProviderOption[]>([]);
+  const [models, setModels] = useState<ModelOption[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error" | "loading">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [agentCount, setAgentCount] = useState(0);
 
+  // Load data from real API
   useEffect(() => {
     const load = async () => {
       setIsLoading(true);
@@ -38,24 +42,46 @@ export function HiveLearnConfigPage() {
           fetch("/api/hivelearn/config"),
           fetch("/api/hivelearn/agents"),
         ]);
-        const { providers: pData } = await providersRes.json();
-        const { models: mData } = await modelsRes.json();
-        const config = await configRes.json();
-        const agentsData = await agentsRes.json();
 
-        const activeProviders = (pData ?? []).filter((p: Provider) => p.enabled && p.active);
-        const activeModels = (mData ?? []).filter((m: Model) => m.enabled && m.active);
+        const providersData = await providersRes.json();
+        const modelsData = await modelsRes.json();
+        const configData: HiveLearnConfig = await configRes.json();
+        const agentsData: AgentResponse = await agentsRes.json();
+
+        // Filter to only active/enabled providers
+        const activeProviders: ProviderOption[] = (providersData.providers ?? [])
+          .filter((p: any) => p.enabled && p.active)
+          .map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            active: p.active,
+            hasApiKey: !!p.config?.apiKey || p.isLocal,
+            isLocal: p.isLocal,
+          }));
+
+        // Filter to only active/enabled models
+        const activeModels: ModelOption[] = (modelsData.models ?? [])
+          .filter((m: any) => m.enabled && m.active)
+          .map((m: any) => ({
+            id: m.id,
+            name: m.name,
+            provider_id: m.provider_id,
+            context_window: m.context_window,
+            capabilities: Array.isArray(m.capabilities) ? m.capabilities : [],
+            active: m.active,
+          }));
 
         setProviders(activeProviders);
         setModels(activeModels);
-        setAgentCount((agentsData.agents ?? []).length);
+        setAgentCount((agentsData.agents ?? []).length || 16);
 
-        if (config.configured && config.providerId) {
-          setSelectedProviderId(config.providerId);
-          setSelectedModelId(config.modelId);
+        // Restore saved config if exists
+        if (configData.configured && configData.providerId) {
+          setSelectedProviderId(configData.providerId);
+          setSelectedModelId(configData.modelId);
         }
       } catch {
-        // silently fail — user will see empty selectors
+        // Silently fail — user will see empty selectors
       } finally {
         setIsLoading(false);
       }
@@ -65,10 +91,10 @@ export function HiveLearnConfigPage() {
 
   const availableModels = models.filter(m => m.provider_id === selectedProviderId);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     if (!selectedProviderId || !selectedModelId) return;
     setIsSaving(true);
-    setSaveStatus("idle");
+    setSaveStatus("loading");
     setSaveError(null);
     try {
       const res = await fetch("/api/hivelearn/config", {
@@ -77,7 +103,7 @@ export function HiveLearnConfigPage() {
         body: JSON.stringify({ providerId: selectedProviderId, modelId: selectedModelId }),
       });
       const data = await res.json();
-      if (data.ok) {
+      if (data.ok || data.configured) {
         setSaveStatus("success");
         setTimeout(() => setSaveStatus("idle"), 3000);
       } else {
@@ -90,132 +116,153 @@ export function HiveLearnConfigPage() {
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [selectedProviderId, selectedModelId]);
 
-  const selectedProviderName = providers.find(p => p.id === selectedProviderId)?.name;
-  const selectedModelName = models.find(m => m.id === selectedModelId)?.name;
+  const selectedProviderName = providers.find(p => p.id === selectedProviderId)?.name ?? "";
+  const selectedModelName = models.find(m => m.id === selectedModelId)?.name ?? "";
 
   return (
-    <div className="hive-page mt-10 animate-in fade-in duration-700">
-      <div className="hive-page-container max-w-2xl">
-        {/* Header */}
-        <div className="hive-page-header mb-8 animate-in slide-in-from-left-8 duration-700">
-          <div className="hive-page-header__eyebrow mb-3 opacity-80">
-            <div className="hive-page-header__dot animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.6)]" />
-            <span className="hive-page-header__label tracking-widest font-semibold text-amber-400">HIVELEARN</span>
+    <div className="hive-page">
+      {/* Ambient mesh gradient */}
+      <div className="fixed inset-0 pointer-events-none">
+        <div className="absolute top-0 left-1/4 h-[600px] w-[600px] rounded-full blur-[150px]" style={{ background: "hsl(var(--hive-amber) / 0.05)" }} />
+        <div className="absolute bottom-0 right-0 h-[500px] w-[500px] rounded-full blur-[150px]" style={{ background: "hsl(var(--hive-blue-dark) / 0.05)" }} />
+      </div>
+
+      <div className="hive-page-container">
+        {/* Header Section */}
+        <div className="mb-12 animate-in slide-in-from-left-8 duration-700">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <div className="flex items-center gap-3 mb-4">
+                <div
+                  className="h-2 w-2 rounded-full animate-pulse"
+                  style={{
+                    background: "hsl(var(--hive-amber))",
+                    boxShadow: "0 0 10px hsl(var(--hive-amber) / 0.6)",
+                  }}
+                />
+                <span className="text-[10px] font-bold tracking-[0.25em] uppercase" style={{ color: "hsl(var(--hive-amber))" }}>
+                  HIVELEARN
+                </span>
+              </div>
+              <h1 className="text-4xl md:text-5xl font-black tracking-tight mb-4" style={{ letterSpacing: "-0.02em", color: "hsl(var(--hive-foreground))" }}>
+                Configuración del{" "}
+                <span className="italic" style={{ color: "hsl(var(--hive-amber))" }}>
+                  Enjambre
+                </span>
+              </h1>
+              <p className="text-sm max-w-lg leading-relaxed font-light" style={{ color: "hsl(var(--hive-muted-foreground))" }}>
+                Selecciona el proveedor y modelo que usarán los {agentCount || 16} agentes educativos.
+                Esta configuración se aplica a todo el enjambre.
+              </p>
+            </div>
+
+            <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-full border" style={{ background: "hsl(var(--hive-surface) / 0.8)", borderColor: "hsl(0 0% 100% / 0.06)" }}>
+              <Bot className="h-4 w-4" style={{ color: "hsl(var(--hive-amber))" }} />
+              <span className="text-sm font-semibold">{agentCount || 16} agentes activos</span>
+            </div>
           </div>
-          <h2 className="text-4xl md:text-5xl font-black tracking-tight text-white drop-shadow-lg mb-4">
-            Configuración <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500">del Enjambre</span>
-          </h2>
-          <p className="text-white/60 text-sm leading-relaxed font-light">
-            Selecciona el proveedor y modelo que usarán los {agentCount || 15} agentes educativos.
-            Esta configuración se aplica a todo el enjambre.
-          </p>
         </div>
 
-        {/* Ambient glow */}
-        <div className="absolute -top-40 -left-40 h-[400px] w-[400px] bg-amber-600/10 rounded-full blur-[120px] pointer-events-none opacity-50" />
-
         {isLoading ? (
-          <div className="h-48 rounded-2xl border border-white/5 bg-white/[0.02] animate-pulse" />
+          <div className="h-64 rounded-2xl animate-pulse border" style={{ background: "hsl(var(--hive-surface))", borderColor: "hsl(0 0% 100% / 0.05)" }} />
         ) : (
-          <div className="relative z-10 space-y-6">
-            {/* Provider selection */}
-            <div className="rounded-2xl border border-white/10 bg-white/[0.02] backdrop-blur-sm p-6 space-y-5">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-amber-500/15 border border-amber-500/20">
-                  <Brain className="h-4 w-4 text-amber-400" />
+          <div className="space-y-8">
+            {/* Main Configuration Card — Motor de Inteligencia */}
+            <div
+              className="rounded-2xl border backdrop-blur-xl p-8 space-y-6"
+              style={{
+                borderColor: "hsl(0 0% 100% / 0.06)",
+                background: "hsl(220 15% 11% / 0.8)",
+                boxShadow: "0 20px 60px hsl(0 0% 0% / 0.4)",
+              }}
+            >
+              {/* Card Header */}
+              <div className="flex items-center gap-4">
+                <div
+                  className="p-3 rounded-xl border"
+                  style={{
+                    background: "hsl(var(--hive-amber) / 0.1)",
+                    borderColor: "hsl(var(--hive-amber) / 0.2)",
+                    boxShadow: "0 0 15px hsl(var(--hive-amber) / 0.1)",
+                  }}
+                >
+                  <Brain className="h-5 w-5" style={{ color: "hsl(var(--hive-amber))" }} />
                 </div>
-                <h3 className="font-bold text-white">Modelo de IA</h3>
+                <div>
+                  <h2 className="text-lg font-semibold" style={{ color: "hsl(var(--hive-foreground))" }}>
+                    Motor de Inteligencia
+                  </h2>
+                  <p className="text-xs mt-0.5" style={{ color: "hsl(var(--hive-muted-foreground) / 0.5)" }}>
+                    Configura el cerebro compartido del enjambre
+                  </p>
+                </div>
               </div>
 
-              {/* Provider */}
+              {/* Divider via tonal transition */}
+              <div className="h-px bg-gradient-to-r from-transparent via-white/8 to-transparent" />
+
+              {/* Provider Selection */}
               <div>
-                <label className="block text-xs text-white/40 mb-3 uppercase tracking-wider font-semibold">
+                <label className="block text-xs font-bold uppercase tracking-widest mb-4" style={{ color: "hsl(var(--hive-muted-foreground) / 0.6)" }}>
                   Proveedor
                 </label>
-                {providers.length === 0 ? (
-                  <p className="text-sm text-white/30 italic">
-                    No hay proveedores activos. Configura uno en{" "}
-                    <a href="/providers" className="text-amber-400 hover:underline">Providers</a>.
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {providers.map(provider => (
-                      <button
-                        key={provider.id}
-                        onClick={() => {
-                          setSelectedProviderId(provider.id);
-                          setSelectedModelId(null);
-                          setSaveStatus("idle");
-                        }}
-                        className={`rounded-xl py-3 px-4 text-sm font-medium border transition-all text-left
-                          ${selectedProviderId === provider.id
-                            ? "bg-amber-500/20 border-amber-500 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.15)]"
-                            : "bg-white/[0.02] border-white/10 text-white/50 hover:border-amber-500/40 hover:text-white/80"}`}
-                      >
-                        <div className="font-bold">{provider.name}</div>
-                        <div className="text-[10px] text-current opacity-50 mt-0.5 font-mono">{provider.id}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <ProviderSelector
+                  providers={providers}
+                  selectedId={selectedProviderId}
+                  onSelect={(id) => {
+                    setSelectedProviderId(id);
+                    setSelectedModelId(null);
+                    setSaveStatus("idle");
+                  }}
+                />
               </div>
 
-              {/* Model */}
+              {/* Model Selection */}
               {selectedProviderId && (
                 <div>
-                  <label className="block text-xs text-white/40 mb-3 uppercase tracking-wider font-semibold">
+                  <label className="block text-xs font-bold uppercase tracking-widest mb-4" style={{ color: "hsl(var(--hive-muted-foreground) / 0.6)" }}>
                     Modelo
                   </label>
-                  {availableModels.length === 0 ? (
-                    <p className="text-sm text-white/30 italic">No hay modelos disponibles para este proveedor.</p>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {availableModels.map(model => (
-                        <button
-                          key={model.id}
-                          onClick={() => { setSelectedModelId(model.id); setSaveStatus("idle"); }}
-                          className={`rounded-xl py-3 px-4 text-sm font-medium border transition-all text-left
-                            ${selectedModelId === model.id
-                              ? "bg-amber-500/20 border-amber-500 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.15)]"
-                              : "bg-white/[0.02] border-white/10 text-white/50 hover:border-amber-500/40 hover:text-white/80"}`}
-                        >
-                          <div className="font-bold">{model.name}</div>
-                          {model.context_window && (
-                            <div className="text-[10px] text-current opacity-50 mt-0.5">
-                              {(model.context_window / 1000).toFixed(0)}K tokens
-                            </div>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <ModelSelector
+                    models={availableModels}
+                    selectedId={selectedModelId}
+                    onSelect={(id) => { setSelectedModelId(id); setSaveStatus("idle"); }}
+                  />
                 </div>
               )}
 
-              {/* Summary */}
-              {selectedProviderId && selectedModelId && (
-                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
-                  <div className="text-[10px] text-amber-400/70 uppercase tracking-wider mb-1 font-semibold">
-                    Configuración seleccionada
-                  </div>
-                  <div className="text-sm text-white">
-                    <span className="font-bold text-amber-300">{selectedProviderName}</span>
-                    <span className="text-white/30 mx-2">→</span>
-                    <span className="font-bold text-amber-300">{selectedModelName}</span>
-                  </div>
-                  <div className="text-[11px] text-white/30 mt-1">
-                    Se aplicará a los {agentCount || 15} agentes del enjambre
-                  </div>
-                </div>
+              {/* Configuration Summary */}
+              {selectedProviderId && selectedModelId && selectedProviderName && selectedModelName && (
+                <ConfigSummary
+                  providerName={selectedProviderName}
+                  modelName={selectedModelName}
+                  agentCount={agentCount || 16}
+                />
               )}
 
-              {/* Save button */}
+              {/* Save Button */}
               <button
                 onClick={handleSave}
                 disabled={!selectedProviderId || !selectedModelId || isSaving}
-                className="w-full py-3 px-6 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-300 shadow-[0_0_20px_rgba(245,158,11,0.3)] hover:shadow-[0_0_30px_rgba(245,158,11,0.5)] flex items-center justify-center gap-2"
+                className="w-full py-3.5 px-6 rounded-xl text-black font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center gap-2.5 active:scale-[0.98]"
+                style={{
+                  background: "linear-gradient(135deg, hsl(var(--hive-amber)), hsl(var(--hive-orange)))",
+                  boxShadow: "0 0 20px hsl(var(--hive-amber) / 0.25)",
+                }}
+                onMouseEnter={(e) => {
+                  if (!e.currentTarget.disabled) {
+                    e.currentTarget.style.background = "linear-gradient(135deg, hsl(var(--hive-amber) / 0.9), hsl(var(--hive-orange) / 0.9))";
+                    e.currentTarget.style.boxShadow = "0 0 30px hsl(var(--hive-amber) / 0.4)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!e.currentTarget.disabled) {
+                    e.currentTarget.style.background = "linear-gradient(135deg, hsl(var(--hive-amber)), hsl(var(--hive-orange)))";
+                    e.currentTarget.style.boxShadow = "0 0 20px hsl(var(--hive-amber) / 0.25)";
+                  }
+                }}
               >
                 {isSaving ? (
                   <>
@@ -230,135 +277,59 @@ export function HiveLearnConfigPage() {
                 )}
               </button>
 
-              {/* Feedback */}
-              {saveStatus === "success" && (
-                <div className="flex items-center gap-2 text-green-400 text-sm animate-in fade-in duration-300">
-                  <CheckCircle2 className="h-4 w-4" />
-                  Configuración guardada — los {agentCount || 15} agentes ahora usan {selectedProviderName} / {selectedModelName}
-                </div>
-              )}
-              {saveStatus === "error" && (
-                <div className="flex items-center gap-2 text-red-400 text-sm animate-in fade-in duration-300">
-                  <AlertCircle className="h-4 w-4" />
-                  {saveError}
-                </div>
+              {/* Status Messages */}
+              {saveStatus !== "idle" && (
+                <StatusMessage
+                  type={saveStatus === "loading" ? "loading" : saveStatus === "success" ? "success" : "error"}
+                  message={
+                    saveStatus === "success"
+                      ? `Configuración guardada — los ${agentCount || 16} agentes ahora usan ${selectedProviderName} / ${selectedModelName}`
+                      : saveError ?? "Error desconocido"
+                  }
+                />
               )}
             </div>
 
-            {/* ── Mini pipeline preview ── */}
-            <MiniSwarmPreview agentCount={agentCount || 16} />
+            {/* Swarm Pipeline Preview */}
+            <SwarmPipelinePreview agentCount={agentCount || 16} />
 
-            {/* ── Insight cards ── */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Insight Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <ConfigInsightCard
                 icon={GitBranch}
                 title="DAG Scheduler"
                 description="Orquesta los agentes en orden óptimo con grafo de dependencias."
-                colorClass="bg-amber-500/5 border-amber-500/20"
-                iconColor="text-amber-400"
+                theme="amber"
               />
               <ConfigInsightCard
                 icon={Zap}
                 title="Paralelismo"
                 description="8 agentes de contenido trabajan simultáneamente. Hasta 8× más rápido."
-                colorClass="bg-blue-500/5 border-blue-500/20"
-                iconColor="text-blue-400"
+                theme="blue"
               />
               <ConfigInsightCard
                 icon={Database}
                 title="Caché Inteligente"
                 description="Nodos ya generados se reutilizan. Segunda lección del mismo tema: ~10s."
-                colorClass="bg-purple-500/5 border-purple-500/20"
-                iconColor="text-purple-400"
+                theme="purple"
               />
             </div>
 
-            {/* ── Timing note ── */}
-            <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3 text-center">
-              <p className="text-[11px] text-white/30 font-mono tracking-wider">
+            {/* Timing Note */}
+            <div
+              className="rounded-xl border p-4 text-center backdrop-blur-sm"
+              style={{
+                background: "hsl(220 15% 11% / 0.6)",
+                borderColor: "hsl(0 0% 100% / 0.06)",
+              }}
+            >
+              <p className="text-[11px] font-mono tracking-wider" style={{ color: "hsl(var(--hive-muted-foreground) / 0.35)" }}>
                 ⏱ Primera lección: ~2 min &nbsp;·&nbsp; 🐝 Con caché: ~10 seg &nbsp;·&nbsp; {agentCount || 16} agentes activos
               </p>
             </div>
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-// ─── Mini pipeline preview (collapsible) ──────────────────────────────────────
-const PIPELINE_PHASES = [
-  { label: "Análisis", agents: ["👤", "🎯", "🗺️"], color: "text-amber-400", pillColor: "bg-amber-500/10 border-amber-500/20" },
-  { label: "Contenido", agents: ["📖", "✏️", "❓", "⚡", "💻", "📊", "🎞️", "🖼️"], color: "text-blue-400", pillColor: "bg-blue-500/10 border-blue-500/20" },
-  { label: "Final", agents: ["📈", "🏆", "📝", "🔍", "🧠"], color: "text-green-400", pillColor: "bg-green-500/10 border-green-500/20" },
-];
-
-function MiniSwarmPreview({ agentCount }: { agentCount: number }) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden">
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-white/[0.02] transition-colors"
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-base">🐝</span>
-          <span className="text-sm font-semibold text-white/70">
-            Ver cómo trabajan los {agentCount} agentes
-          </span>
-        </div>
-        <ChevronDown className={`h-4 w-4 text-white/30 transition-transform duration-300 ${open ? "rotate-180" : ""}`} />
-      </button>
-
-      {open && (
-        <div className="px-5 pb-5 animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className="h-px bg-white/5 mb-4" />
-          <div className="flex items-center gap-2 overflow-x-auto pb-1">
-            {PIPELINE_PHASES.map((phase, i) => (
-              <div key={phase.label} className="flex items-center gap-2 flex-shrink-0">
-                <div className="space-y-1.5">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest border ${phase.pillColor} ${phase.color}`}>
-                    {phase.label}
-                  </span>
-                  <div className="flex flex-wrap gap-1 max-w-[180px]">
-                    {phase.agents.map(emoji => (
-                      <span key={emoji} className="w-7 h-7 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-sm hover:bg-white/10 hover:border-white/10 transition-colors cursor-default">
-                        {emoji}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                {i < PIPELINE_PHASES.length - 1 && (
-                  <div className="flex flex-col items-center gap-0.5 self-end mb-1">
-                    <div className="w-6 h-px border-t-2 border-dashed border-amber-500/25" />
-                    <span className="text-amber-500/30 text-xs">→</span>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Config insight card ───────────────────────────────────────────────────────
-function ConfigInsightCard({ icon: Icon, title, description, colorClass, iconColor }: {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  description: string;
-  colorClass: string;
-  iconColor: string;
-}) {
-  return (
-    <div className={`rounded-xl border p-3.5 space-y-2 transition-all duration-200 hover:scale-[1.01] ${colorClass}`}>
-      <div className="flex items-center gap-2">
-        <Icon className={`h-3.5 w-3.5 ${iconColor}`} />
-        <p className="text-xs font-bold text-white/80">{title}</p>
-      </div>
-      <p className="text-[11px] text-white/40 leading-relaxed">{description}</p>
     </div>
   );
 }

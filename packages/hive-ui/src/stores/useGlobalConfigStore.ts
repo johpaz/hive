@@ -11,6 +11,7 @@ interface ProvidersState {
   fetchProviders: () => Promise<void>;
   toggleProvider: (id: string, active: boolean) => Promise<void>;
   updateProvider: (id: string, data: any) => Promise<void>;
+  createProvider: (data: { id: string; name: string; base_url?: string; api_key?: string; headers?: Record<string, string>; num_ctx?: number | null }) => Promise<void>;
 }
 
 const createProvidersSlice = () => ({
@@ -77,6 +78,52 @@ const createProvidersSlice = () => ({
       }
     } catch (error) {
       console.error("Failed to update provider:", error);
+      throw error;
+    }
+  },
+
+  createProvider: async (data: { id: string; name: string; base_url?: string; api_key?: string; headers?: Record<string, string>; num_ctx?: number | null }) => {
+    try {
+      // Step 1: Create the provider basic info
+      await apiClient<{ ok: boolean }>("/api/providers", {
+        method: "POST",
+        body: {
+          id: data.id,
+          name: data.name,
+          base_url: data.base_url || null,
+          enabled: 1,
+        },
+        showLoader: "Añadiendo proveedor...",
+        showError: true,
+      });
+
+      // Step 2: Update with API key, headers, and num_ctx if provided
+      const updateData: Record<string, unknown> = {};
+      if (data.api_key) {
+        updateData.apiKey = data.api_key;
+      }
+      if (data.headers) {
+        updateData.headers = data.headers;
+      }
+      if (data.num_ctx !== undefined && data.num_ctx !== null) {
+        updateData.num_ctx = data.num_ctx;
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        await apiClient<{ ok: boolean }>(`/api/providers/${data.id}`, {
+          method: "PUT",
+          body: updateData,
+          showLoader: "Configurando proveedor...",
+          showError: true,
+        });
+      }
+
+      // Step 3: Re-fetch providers to update the list
+      const state = useGlobalConfigStore.getState();
+      const result = await state.fetchProviders();
+      useGlobalConfigStore.setState(result);
+    } catch (error) {
+      console.error("Failed to create provider:", error);
       throw error;
     }
   },
@@ -955,6 +1002,7 @@ export function useProviders() {
   const fetchModels = useGlobalConfigStore((state) => state.fetchModels);
   const toggleProvider = useGlobalConfigStore((state) => state.toggleProvider);
   const updateProvider = useGlobalConfigStore((state) => state.updateProvider);
+  const createProvider = useGlobalConfigStore((state) => state.createProvider);
   const getModelsByProvider = useGlobalConfigStore((state) => state.getModelsByProvider);
   const error = useGlobalConfigStore((state) => state.error);
 
@@ -969,6 +1017,7 @@ export function useProviders() {
     fetchModels,
     toggleProvider,
     updateProvider,
+    createProvider,
     getModelsByProvider,
   };
 }

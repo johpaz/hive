@@ -48,19 +48,33 @@
   --color-hive-thinking: hsl(var(--hive-thinking));
   --color-hive-glow: hsl(var(--hive-glow));
 
-  --shadow-blue-glow: 0 0 10px rgba(59, 130, 246, 1);
-  --shadow-amber-glow: 0 0 15px rgba(245, 158, 11, 0.4);
-  --shadow-violet-glow: 0 0 15px rgba(139, 92, 246, 0.4);
-  --shadow-card-active: 0 0 20px rgba(59, 130, 246, 0.15);
-  --shadow-icon-glow: 0 0 15px rgba(59, 130, 246, 0.2);
-  --shadow-icon-glow-amber: 0 0 15px rgba(245, 158, 11, 0.2);
-  --shadow-icon-glow-violet: 0 0 15px rgba(139, 92, 246, 0.2);
-  --shadow-status-glow: 0 0 8px rgba(59, 130, 246, 0.6);
-  --shadow-status-glow-amber: 0 0 8px rgba(245, 158, 11, 0.6);
-  --shadow-btn-primary: 0 4px 20px rgba(37, 99, 235, 0.4);
-  --shadow-btn-primary-hover: 0 8px 30px rgba(37, 99, 235, 0.6);
-  --shadow-btn-submit: 0 0 20px rgba(37, 99, 235, 0.3);
-  --shadow-btn-submit-amber: 0 0 20px rgba(245, 158, 11, 0.3);
+  /* Semantic accent colors */
+  --color-hive-blue: hsl(var(--hive-blue));
+  --color-hive-blue-dark: hsl(var(--hive-blue-dark));
+  --color-hive-purple: hsl(var(--hive-purple));
+  --color-hive-purple-dark: hsl(var(--hive-purple-dark));
+  --color-hive-green: hsl(var(--hive-green));
+  --color-hive-emerald: hsl(var(--hive-emerald));
+  --color-hive-red: hsl(var(--hive-red));
+  --color-hive-red-dark: hsl(var(--hive-red-dark));
+  --color-hive-cyan: hsl(var(--hive-cyan));
+  --color-hive-teal: hsl(var(--hive-teal));
+  --color-hive-amber: hsl(var(--hive-amber));
+  --color-hive-orange: hsl(var(--hive-orange));
+
+  --shadow-blue-glow: 0 0 10px hsl(var(--hive-blue) / 1);
+  --shadow-amber-glow: 0 0 15px hsl(var(--hive-amber) / 0.4);
+  --shadow-violet-glow: 0 0 15px hsl(var(--hive-purple) / 0.4);
+  --shadow-card-active: 0 0 20px hsl(var(--hive-blue) / 0.15);
+  --shadow-icon-glow: 0 0 15px hsl(var(--hive-blue) / 0.2);
+  --shadow-icon-glow-amber: 0 0 15px hsl(var(--hive-amber) / 0.2);
+  --shadow-icon-glow-violet: 0 0 15px hsl(var(--hive-purple) / 0.2);
+  --shadow-status-glow: 0 0 8px hsl(var(--hive-blue) / 0.6);
+  --shadow-status-glow-amber: 0 0 8px hsl(var(--hive-amber) / 0.6);
+  --shadow-btn-primary: 0 4px 20px hsl(var(--hive-blue-dark) / 0.4);
+  --shadow-btn-primary-hover: 0 8px 30px hsl(var(--hive-blue-dark) / 0.6);
+  --shadow-btn-submit: 0 0 20px hsl(var(--hive-blue-dark) / 0.3);
+  --shadow-btn-submit-amber: 0 0 20px hsl(var(--hive-amber) / 0.3);
 
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
@@ -105,6 +119,7 @@
 
 @layer base {
   :root {
+    /* ── Base palette (warm light theme - not actively used) ── */
     --background: 40 10% 96%;
     --foreground: 30 10% 10%;
 
@@ -151,9 +166,24 @@
     --hive-connected: 142 71% 45%;
     --hive-disconnected: 0 72% 51%;
     --hive-thinking: 38 92% 50%;
+
+    /* ── Semantic accent colors (used across all pages) ── */
+    --hive-blue: 217 91% 60%;       /* #3b82f6 — action blue, workers, active states */
+    --hive-blue-dark: 221 83% 53%;   /* #2563eb — buttons, primary actions */
+    --hive-purple: 271 81% 66%;      /* #a855f7 — coordinators, thinking */
+    --hive-purple-dark: 263 70% 50%; /* #9333ea — deep purple accents */
+    --hive-green: 142 71% 45%;       /* #22c55e — success, connected */
+    --hive-emerald: 160 84% 39%;     /* #10b981 — workspace, tools */
+    --hive-red: 0 84% 60%;           /* #ef4444 — errors, disconnected */
+    --hive-red-dark: 0 72% 41%;      /* #b91c1c — destructive */
+    --hive-cyan: 187 95% 42%;        /* #06b6d4 — tool calls */
+    --hive-teal: 173 80% 40%;        /* #14b8a6 — MCP servers */
+    --hive-amber: 38 92% 50%;        /* #f59e0b — brand, thinking, skills */
+    --hive-orange: 25 80% 55%;       /* #e07a2f — warm accent */
   }
 
   .dark {
+    /* ── Core shadcn/ui tokens ── */
     --background: 220 15% 8%;
     --foreground: 40 10% 90%;
 
@@ -172,16 +202,19 @@
     --muted: 220 12% 16%;
     --muted-foreground: 220 8% 55%;
 
-    --accent: 30 80% 55%;
+    --accent: 25 80% 55%;
     --accent-foreground: 30 10% 5%;
 
-    --destructive: 0 62% 40%;
+    --destructive: 0 72% 41%;
     --destructive-foreground: 0 0% 98%;
 
     --border: 220 12% 18%;
     --input: 220 12% 18%;
     --ring: 38 92% 50%;
 
+    --radius: 0.5rem;
+
+    /* ── Sidebar tokens ── */
     --sidebar-background: 220 15% 10%;
     --sidebar-foreground: 40 10% 80%;
     --sidebar-primary: 38 92% 50%;
@@ -191,11 +224,27 @@
     --sidebar-border: 220 12% 16%;
     --sidebar-ring: 38 92% 50%;
 
+    /* ── Custom Hive surface tokens ── */
     --hive-surface: 220 15% 13%;
     --hive-surface-foreground: 40 10% 90%;
     --hive-connected: 142 71% 45%;
-    --hive-disconnected: 0 62% 40%;
+    --hive-disconnected: 0 72% 41%;
     --hive-thinking: 38 92% 50%;
+    --hive-glow: 38 92% 50%;
+
+    /* ── Semantic accent colors (dark mode) ── */
+    --hive-blue: 217 91% 60%;       /* #3b82f6 */
+    --hive-blue-dark: 221 83% 53%;   /* #2563eb */
+    --hive-purple: 271 81% 66%;      /* #a855f7 */
+    --hive-purple-dark: 263 70% 50%; /* #9333ea */
+    --hive-green: 142 71% 45%;       /* #22c55e */
+    --hive-emerald: 160 84% 39%;     /* #10b981 */
+    --hive-red: 0 84% 60%;           /* #ef4444 */
+    --hive-red-dark: 0 72% 41%;      /* #b91c1c */
+    --hive-cyan: 187 95% 42%;        /* #06b6d4 */
+    --hive-teal: 173 80% 40%;        /* #14b8a6 */
+    --hive-amber: 38 92% 50%;        /* #f59e0b */
+    --hive-orange: 25 80% 55%;       /* #e07a2f */
   }
 }
 
@@ -285,7 +334,8 @@
   }
 
   .hive-page-header__label {
-    @apply text-[10px] font-bold tracking-[0.2em] text-blue-400 uppercase;
+    @apply text-[10px] font-bold tracking-[0.2em] uppercase;
+    color: hsl(var(--hive-blue));
   }
 
   /* ─── Typography ─── */
@@ -294,11 +344,13 @@
   }
 
   .hive-title-page__accent {
-    @apply text-blue-500 italic;
+    color: hsl(var(--hive-blue));
+    @apply italic;
   }
 
   .hive-title-section {
-    @apply text-xs font-bold uppercase tracking-widest text-blue-400/80;
+    @apply text-xs font-bold uppercase tracking-widest;
+    color: hsl(var(--hive-blue) / 0.8);
   }
 
   .hive-subtitle {
@@ -323,7 +375,8 @@
   }
 
   .hive-card--active {
-    @apply hover:shadow-card-active hover:border-blue-500/30;
+    @apply hover:border-blue-500/30;
+    box-shadow: var(--shadow-card-active);
   }
 
   .hive-card--disabled {
@@ -385,7 +438,9 @@
   }
 
   .hive-icon-wrap--primary {
-    @apply bg-blue-500/10 border-blue-500/20 text-blue-400;
+    @apply border-blue-500/20;
+    background: hsl(var(--hive-blue) / 0.1);
+    color: hsl(var(--hive-blue));
   }
 
   .hive-icon-wrap--internal {
@@ -393,11 +448,13 @@
   }
 
   .hive-icon-wrap--internal-active {
-    @apply bg-blue-600/10 border-blue-500/20 shadow-icon-glow group-hover:scale-110;
+    @apply border-blue-500/20 shadow-icon-glow group-hover:scale-110;
+    background: hsl(var(--hive-blue-dark) / 0.1);
   }
 
   .hive-icon-wrap--internal-disabled {
-    @apply bg-white/5 border-white/10;
+    @apply border-white/10;
+    background: hsl(0 0% 100% / 0.05);
   }
 
   /* ─── Badges / Tags ─── */
@@ -406,7 +463,9 @@
   }
 
   .hive-tag--provider {
-    @apply bg-blue-500/10 border-blue-500/20 text-blue-400;
+    @apply border-blue-500/20;
+    background: hsl(var(--hive-blue) / 0.1);
+    color: hsl(var(--hive-blue));
   }
 
   .hive-tag--model {
@@ -414,7 +473,9 @@
   }
 
   .hive-tag--tone {
-    @apply bg-purple-500/10 border-purple-500/20 text-purple-400;
+    @apply border-purple-500/20;
+    background: hsl(var(--hive-purple) / 0.1);
+    color: hsl(var(--hive-purple));
   }
 
   .hive-tag--disabled {
@@ -422,7 +483,9 @@
   }
 
   .hive-tag--coordinator {
-    @apply bg-purple-500/10 text-purple-400 border-purple-500/20 text-[9px] uppercase tracking-tighter px-1.5 py-0 hover:bg-transparent;
+    @apply border-purple-500/20 text-[9px] uppercase tracking-tighter px-1.5 py-0 hover:bg-transparent;
+    background: hsl(var(--hive-purple) / 0.1);
+    color: hsl(var(--hive-purple));
   }
 
   /* ─── Stat Block (inside card footer) ─── */
@@ -448,15 +511,18 @@
 
   /* ─── Status Indicator ─── */
   .hive-status-dot--active {
-    @apply h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse shadow-status-glow;
+    @apply h-1.5 w-1.5 rounded-full animate-pulse shadow-status-glow;
+    background: hsl(var(--hive-blue));
   }
 
   .hive-status-dot--disabled {
-    @apply h-1.5 w-1.5 rounded-full bg-red-500/50;
+    @apply h-1.5 w-1.5 rounded-full;
+    background: hsl(var(--hive-red) / 0.5);
   }
 
   .hive-status-label--active {
-    @apply text-[10px] font-bold uppercase tracking-tighter text-blue-400;
+    @apply text-[10px] font-bold uppercase tracking-tighter;
+    color: hsl(var(--hive-blue));
   }
 
   .hive-status-label--disabled {
@@ -469,7 +535,8 @@
   }
 
   .hive-card-cta--active {
-    @apply text-blue-400/0 group-hover:text-blue-400/100;
+    @apply group-hover:text-white/100;
+    color: hsl(var(--hive-blue) / 0);
   }
 
   .hive-card-cta--disabled {
@@ -482,11 +549,11 @@
   }
 
   .hive-glow-blob--blue {
-    @apply bg-blue-600/10;
+    background: hsl(var(--hive-blue-dark) / 0.1);
   }
 
   .hive-glow-blob--purple {
-    @apply bg-purple-600/10;
+    background: hsl(var(--hive-purple) / 0.1);
   }
 
   .hive-glow-blob--card {
@@ -499,66 +566,117 @@
   }
 
   .hive-btn--ghost {
-    @apply px-4 py-2.5 text-sm bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 hover:text-white;
+    @apply px-4 py-2.5 text-sm border text-white/60 hover:bg-white/10 hover:text-white;
+    background: hsl(0 0% 100% / 0.05);
+    border-color: hsl(0 0% 100% / 0.1);
   }
 
   .hive-btn--primary {
-    @apply px-6 py-2.5 text-sm font-bold text-white bg-blue-600 shadow-btn-primary hover:bg-blue-500 hover:shadow-btn-primary-hover;
+    @apply px-6 py-2.5 text-sm font-bold text-white shadow-btn-primary hover:shadow-btn-primary-hover;
+    background: hsl(var(--hive-blue-dark));
+  }
+
+  .hive-btn--primary:hover {
+    background: hsl(var(--hive-blue));
   }
 
   .hive-btn--form-submit {
-    @apply flex-[2] bg-blue-600 hover:bg-blue-500 text-white font-bold transition-all h-12 shadow-btn-submit active:scale-95;
+    @apply flex-[2] text-white font-bold transition-all h-12 shadow-btn-submit active:scale-95;
+    background: hsl(var(--hive-blue-dark));
+  }
+
+  .hive-btn--form-submit:hover {
+    background: hsl(var(--hive-blue));
   }
 
   .hive-btn--form-cancel {
-    @apply flex-1 bg-transparent border-white/10 text-white/70 hover:bg-white/5 hover:text-white transition-all h-12;
+    @apply flex-1 text-white/70 transition-all h-12;
+    background: transparent;
+    border: 1px solid hsl(0 0% 100% / 0.1);
+  }
+
+  .hive-btn--form-cancel:hover {
+    background: hsl(0 0% 100% / 0.05);
+    color: white;
   }
 
   /* ─── Form Fields ─── */
   .hive-input {
-    @apply bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-blue-500/50 transition-all h-11;
+    @apply placeholder:text-white/20 focus:border-blue-500/50 transition-all h-11;
+    background: hsl(0 0% 100% / 0.05);
+    border: 1px solid hsl(0 0% 100% / 0.1);
+    color: white;
   }
 
   .hive-textarea {
-    @apply bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-blue-500/50 transition-all min-h-[100px] resize-none;
+    @apply placeholder:text-white/20 focus:border-blue-500/50 transition-all min-h-[100px] resize-none;
+    background: hsl(0 0% 100% / 0.05);
+    border: 1px solid hsl(0 0% 100% / 0.1);
+    color: white;
   }
 
   .hive-select-trigger {
-    @apply bg-white/5 border-white/10 text-white focus:ring-blue-500/30;
+    @apply focus:ring-blue-500/30;
+    background: hsl(0 0% 100% / 0.05);
+    border: 1px solid hsl(0 0% 100% / 0.1);
+    color: white;
   }
 
   .hive-select-content {
-    @apply bg-zinc-900 border-white/10 text-white;
+    @apply border-white/10 text-white;
+    background: hsl(240 10% 4%); /* zinc-900 equivalent */
   }
 
   .hive-select-item {
-    @apply focus:bg-blue-600 focus:text-white;
+    @apply focus:text-white cursor-pointer;
+  }
+
+  .hive-select-item:focus {
+    background: hsl(var(--hive-blue-dark));
   }
 
   .hive-toggle-panel {
-    @apply flex flex-col justify-end gap-4 p-4 rounded-xl bg-white/5 border border-white/10;
+    @apply flex flex-col justify-end gap-4 p-4 rounded-xl;
+    background: hsl(0 0% 100% / 0.05);
+    border: 1px solid hsl(0 0% 100% / 0.1);
   }
 
   /* ─── Dropdown ─── */
   .hive-dropdown-content {
-    @apply bg-zinc-900 border-white/10 text-white;
+    @apply border-white/10 text-white;
+    background: hsl(240 10% 4%);
   }
 
   .hive-dropdown-item {
-    @apply gap-2 focus:bg-blue-600 focus:text-white cursor-pointer;
+    @apply gap-2 focus:text-white cursor-pointer;
+  }
+
+  .hive-dropdown-item:focus {
+    background: hsl(var(--hive-blue-dark));
   }
 
   .hive-dropdown-item--danger {
-    @apply gap-2 text-red-400 focus:bg-red-600 focus:text-white cursor-pointer;
+    @apply gap-2 cursor-pointer;
+    color: hsl(var(--hive-red));
+  }
+
+  .hive-dropdown-item--danger:focus {
+    background: hsl(var(--hive-red-dark));
+    color: white;
   }
 
   /* ─── Error / Alert ─── */
   .hive-error-banner {
-    @apply relative z-10 p-1 rounded-2xl bg-gradient-to-br from-red-500/20 to-transparent border border-red-500/20 backdrop-blur-xl;
+    @apply relative z-10 p-1 rounded-2xl border backdrop-blur-xl;
+    background: linear-gradient(135deg, hsl(var(--hive-red) / 0.2), transparent);
+    border-color: hsl(var(--hive-red) / 0.2);
   }
 
   .hive-form-error {
-    @apply p-3 text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg animate-in fade-in zoom-in-95 duration-300;
+    @apply p-3 text-sm border rounded-lg animate-in fade-in zoom-in-95 duration-300;
+    color: hsl(var(--hive-red));
+    background: hsl(var(--hive-red) / 0.1);
+    border-color: hsl(var(--hive-red) / 0.2);
   }
 
   /* ─── Empty State ─── */
@@ -573,25 +691,32 @@
 
   /* ─── Network Load Bar (AgentInternalCard) ─── */
   .hive-network-panel {
-    @apply flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm w-full;
+    @apply flex items-center gap-4 p-4 rounded-2xl backdrop-blur-sm w-full;
+    background: hsl(0 0% 100% / 0.05);
+    border: 1px solid hsl(0 0% 100% / 0.1);
   }
 
   .hive-network-track {
-    @apply h-1.5 w-32 bg-white/10 rounded-full overflow-hidden;
+    @apply h-1.5 w-32 rounded-full overflow-hidden;
+    background: hsl(0 0% 100% / 0.1);
   }
 
   .hive-network-fill {
-    @apply h-full w-2/3 bg-blue-500 animate-pulse rounded-full;
+    @apply h-full w-2/3 animate-pulse rounded-full;
+    background: hsl(var(--hive-blue));
   }
 
   /* ─── Decorative Gradient Strip ─── */
   .hive-strip--bottom {
-    @apply absolute bottom-0 right-0 left-0 h-1 bg-gradient-to-r from-transparent via-blue-500/20 to-transparent;
+    @apply absolute bottom-0 right-0 left-0 h-1;
+    background: linear-gradient(90deg, transparent, hsl(var(--hive-blue) / 0.2), transparent);
   }
 
   /* ─── Sidebar Premium ─── */
   .hive-sidebar {
-    @apply border-r border-white/5 bg-zinc-950/50 backdrop-blur-xl;
+    @apply border-r backdrop-blur-xl;
+    background: hsl(240 10% 3% / 0.5);
+    border-color: hsl(0 0% 100% / 0.05);
   }
 
   .hive-sidebar-item {
@@ -599,16 +724,28 @@
   }
 
   .hive-sidebar-item--active {
-    @apply bg-blue-500/10 text-blue-400 border border-blue-500/20 shadow-blue-glow;
+    @apply border shadow-blue-glow;
+    background: hsl(var(--hive-blue) / 0.1);
+    color: hsl(var(--hive-blue));
+    border-color: hsl(var(--hive-blue) / 0.2);
   }
 
   /* ─── Tabs Hive ─── */
   .hive-tabs-list {
-    @apply inline-flex h-12 items-center justify-center rounded-xl bg-white/5 p-1 text-white/40 border border-white/10;
+    @apply inline-flex h-12 items-center justify-center rounded-xl border;
+    background: hsl(0 0% 100% / 0.05);
+    border-color: hsl(0 0% 100% / 0.1);
+    color: hsl(0 0% 100% / 0.4);
   }
 
   .hive-tabs-trigger {
-    @apply inline-flex items-center justify-center whitespace-nowrap rounded-lg px-6 py-2 text-xs font-bold uppercase tracking-widest transition-all focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-btn-primary;
+    @apply inline-flex items-center justify-center whitespace-nowrap rounded-lg px-6 py-2 text-xs font-bold uppercase tracking-widest transition-all focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .hive-tabs-trigger[data-state="active"] {
+    background: hsl(var(--hive-blue-dark));
+    color: white;
+    box-shadow: var(--shadow-btn-primary);
   }
 
   /* ─── Scroll Area ─── */

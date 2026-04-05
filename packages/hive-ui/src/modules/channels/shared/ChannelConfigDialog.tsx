@@ -1,13 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -24,7 +16,7 @@ import {
 import { apiClient } from "@/lib/api";
 import { useChannels, useVoice } from "@/stores/useGlobalConfigStore";
 import type { ConnectedChannel } from "@/types";
-import { Settings, AlertCircle, Loader2, CheckCircle2, Eye, EyeOff, QrCode, RefreshCw } from "lucide-react";
+import { Settings, AlertCircle, Loader2, CheckCircle2, Eye, EyeOff, QrCode, RefreshCw, X } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import QRCode from "qrcode";
 
@@ -833,15 +825,33 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
         return titles[step] ?? "Nuevo Canal";
     };
 
+    if (!isOpen) return null;
+
     return (
-        <Dialog open={isOpen} onOpenChange={handleClose}>
-            <DialogContent className="sm:max-w-[480px] bg-zinc-950 border-white/10 text-white [&>button]:text-white/50 hover:[&>button]:text-white">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
+        <div
+            className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center"
+            onClick={handleClose}
+        >
+            <div
+                className="relative w-full max-w-[480px] mx-4 hive-card border-white/10 overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Close button */}
+                <button
+                    onClick={handleClose}
+                    className="absolute right-4 top-4 z-10 text-white/40 hover:text-white transition-colors"
+                >
+                    <X className="h-4 w-4" />
+                </button>
+
+                {/* Header with glow */}
+                <div className="p-6 border-b border-white/5 bg-white/5 relative overflow-hidden">
+                    <div className="hive-glow-blob hive-glow-blob--blue -top-10 -right-10 h-32 w-32 opacity-20" />
+                    <h2 className="text-xl font-black text-white uppercase tracking-tighter relative z-10 flex items-center gap-2">
                         <Settings className="h-4 w-4 text-blue-400" />
                         {getTitle()}
-                    </DialogTitle>
-                    <DialogDescription className="text-white/40">
+                    </h2>
+                    <p className="text-xs text-white/40 font-medium mt-1 relative z-10">
                         {step === "settings"
                             ? "Ajusta el comportamiento y las opciones de voz del canal."
                             : step === "qr"
@@ -851,15 +861,19 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                                         ? "Ingresa las credenciales para activar este canal."
                                         : "Reconecta el canal con las credenciales existentes o actualízalas."
                                     : "Conecta un nuevo canal de comunicación a Hive."}
-                    </DialogDescription>
-                </DialogHeader>
+                    </p>
+                </div>
 
-                {channel && step === "settings" ? renderSettingsContent() : renderNewChannelContent()}
+                {/* Content */}
+                <div className="p-6">
+                    {channel && step === "settings" ? renderSettingsContent() : renderNewChannelContent()}
+                </div>
 
-                <DialogFooter className="gap-2">
+                {/* Footer */}
+                <div className="p-6 pt-4 flex gap-2">
                     {renderFooter()}
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+                </div>
+            </div>
+        </div>
     );
 }
