@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-sdk",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "description": "Hive SDK - Build on top of Hive for enterprise and custom integrations",
   "private": false,
   "main": "./dist/index.js",
