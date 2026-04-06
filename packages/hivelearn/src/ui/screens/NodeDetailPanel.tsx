@@ -20,6 +20,8 @@ interface Props {
 }
 
 export function NodeDetailPanel({ nodo, onClose, onComplete }: Props) {
+  console.log('[NodeDetailPanel] received nodo:', nodo?.id, 'tipoPedagogico:', nodo?.tipoPedagogico, 'has contenido:', nodo ? Object.keys(nodo.contenido ?? {}).length > 0 : false)
+  
   const { lastFeedback, setLastFeedback, selectedProviderId, selectedModelId } = useLessonStore()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isCompleted, setIsCompleted] = useState(false)

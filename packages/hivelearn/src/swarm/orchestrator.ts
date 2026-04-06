@@ -7,6 +7,9 @@ import type {
   PerfilAdaptacion, RangoEdad, TipoPedagogico, TipoVisual, EstadoNodo, NivelPrevio
 } from '../types'
 import { nodeCache } from '../cache/NodeCache'
+import { logger } from '../utils/logger'
+
+const log = logger.child('orchestrator')
 
 export function parseAgentOutput<T>(raw: string, fallback: T): T {
   try {
@@ -60,23 +63,29 @@ function unwrap(parsed: any): any {
 }
 
 /** Construye la lista de nodos base desde el output de StructureAgent */
-function buildNodosBase(structureResult: string, perfil: PerfilAdaptacion): Omit<NodoLesson, 'posX' | 'posY'>[] {
+export function buildNodosBase(structureResult: string, perfil: PerfilAdaptacion): Omit<NodoLesson, 'posX' | 'posY'>[] {
   const raw = parseAgentOutput<any>(structureResult, { nodos: [] })
   const parsed = unwrap(raw)
-  const nodos = parsed.nodos ?? []
+  const estructuraNodos = parsed.nodos ?? []
 
-  return nodos.map((n, idx) => ({
-    id: n.id ?? `nodo-${idx}`,
-    tipoPedagogico: (n.tipoPedagogico ?? n.tipo_pedagogico ?? 'concept') as TipoPedagogico,
-    tipoVisual: (n.tipoVisual ?? n.tipo_visual ?? 'text_card') as TipoVisual,
-    titulo: n.titulo ?? `Nodo ${idx + 1}`,
-    concepto: n.concepto ?? '',
-    nivel: perfil.nivelPrevio as NivelPrevio,
-    rangoEdad: perfil.rangoEdad as RangoEdad,
-    estado: (idx === 0 ? 'disponible' : 'bloqueado') as EstadoNodo,
-    xpRecompensa: n.xpRecompensa ?? n.xp_recompensa ?? 20,
-    contenido: {} as NodoContenido,
-  }))
+  console.log('[buildNodosBase] raw structureResult:', structureResult.slice(0, 200))
+  console.log('[buildNodosBase] parsed nodos:', estructuraNodos.length, estructuraNodos.map(n => n.id))
+
+  return estructuraNodos.map((n, idx) => {
+    console.log('[buildNodosBase] mapping nodo', idx, 'original id:', n.id, '-> new id:', `nodo-${idx}`)
+    return {
+      id: `nodo-${idx}`,
+      tipoPedagogico: (n.tipo_pedagogico ?? n.tipoPedagogico ?? 'concept') as TipoPedagogico,
+      tipoVisual: (n.tipo_visual ?? n.tipoVisual ?? 'text_card') as TipoVisual,
+      titulo: n.titulo ?? `Nodo ${idx + 1}`,
+      concepto: n.concepto ?? '',
+      nivel: perfil.nivelPrevio as NivelPrevio,
+      rangoEdad: perfil.rangoEdad as RangoEdad,
+      estado: (idx === 0 ? 'disponible' : 'bloqueado') as EstadoNodo,
+      xpRecompensa: n.xp_recompensa ?? n.xpRecompensa ?? 20,
+      contenido: {} as NodoContenido,
+    }
+  })
 }
 
 /** Enriquece los nodos con el contenido generado por los agentes Tier 1 */
@@ -89,16 +98,21 @@ function enriquecerNodos(
     if (node.result) resultMap.set(node.id, node.result)
   }
 
+  console.log('[enriquecerNodos] available keys in resultMap:', [...resultMap.keys()])
+
   return nodos.map(nodo => {
     const contentKey = `content-${nodo.id}`
     const visualKey = `visual-${nodo.id}`
     const contenido: NodoContenido = {}
 
+    console.log('[enriquecerNodos] looking for nodo.id:', nodo.id, 'contentKey:', contentKey, 'found:', resultMap.has(contentKey))
+
     const contentRaw = resultMap.get(contentKey)
     if (contentRaw) {
+      console.log('[enriquecerNodos] found content, parsing...')
       const parsed = unwrap(parseAgentOutput<any>(contentRaw, null))
       if (parsed) {
-        // microEval puede venir embebido dentro del contenido generado
+        console.log('[enriquecerNodos] parsed successfully, keys:', Object.keys(parsed))
         if (parsed.microEval) contenido.microEval = parsed.microEval
         switch (nodo.tipoPedagogico) {
           case 'concept':   contenido.explicacion  = parsed; break
@@ -109,6 +123,8 @@ function enriquecerNodos(
           default:          contenido.explicacion  = parsed; break
         }
       }
+    } else {
+      log.warn(`[enriquecerNodos] missing content for key="${contentKey}" (nodo.id=${nodo.id})`)
     }
 
     const visualRaw = resultMap.get(visualKey)

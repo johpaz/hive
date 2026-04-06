@@ -6,7 +6,7 @@ import { DAGScheduler } from '../scheduler/dag'
 import { HiveLearnExecutor } from '../agent/executor'
 import { runHiveLearnAgent } from '../agent/runner'
 import { buildBaseDAG, buildFullDAG } from './presets/HiveLearnPreset'
-import { buildLessonProgram, parseAgentOutput } from './orchestrator'
+import { buildLessonProgram, parseAgentOutput, buildNodosBase } from './orchestrator'
 import { nodeCache } from '../cache/NodeCache'
 import { AGENT_IDS } from '../agents/registry'
 import { AGENT_PROMPTS } from '../agent/prompts'
@@ -68,23 +68,13 @@ export class HiveLearnSwarm {
     let nodosBase: NodoLesson[] = []
 
     if (structureNode?.result) {
-      const rawParsed = parseAgentOutput<any>(structureNode.result, { nodos: [] })
-      // Desenvuelve wrapper {ok, output} que devuelven las passthrough tools
-      const parsed = (rawParsed?.ok === true && rawParsed?.output != null) ? rawParsed.output : rawParsed
-      nodosBase = (parsed.nodos ?? []).map((n: any, idx: number) => ({
-        id: n.id ?? `nodo-${idx}`,
-        tipoPedagogico: n.tipoPedagogico ?? n.tipo_pedagogico ?? 'concept',
-        tipoVisual: n.tipoVisual ?? n.tipo_visual ?? 'text_card',
-        titulo: n.titulo ?? `Nodo ${idx + 1}`,
-        concepto: n.concepto ?? '',
-        nivel: perfilAdaptacion.nivelPrevio,
-        rangoEdad: perfilAdaptacion.rangoEdad,
-        estado: idx === 0 ? 'disponible' : 'bloqueado',
-        xpRecompensa: n.xpRecompensa ?? n.xp_recompensa ?? 20,
+      const estructuraNodos = buildNodosBase(structureNode.result, perfilAdaptacion)
+      
+      nodosBase = estructuraNodos.map((n, idx) => ({
+        ...n,
         posX: 100 + idx * 300,
         posY: 100 + (idx % 2) * 180,
-        contenido: {},
-      })) as NodoLesson[]
+      }))
     }
 
     this.emit('tier1', 'ContentAgents', 35, `Generando contenido para ${nodosBase.length} nodos en paralelo...`)

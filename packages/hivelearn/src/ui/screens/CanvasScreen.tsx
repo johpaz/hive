@@ -102,10 +102,13 @@ export function CanvasScreen() {
   const reactFlowRef = useRef<HTMLDivElement>(null)
 
   // Nodo seleccionado completo
-  const selectedNodo = useMemo(() =>
-    program?.nodos.find(n => n.id === selectedNodeId) ?? null,
-    [program, selectedNodeId]
-  )
+  const selectedNodo = useMemo(() => {
+    const found = program?.nodos.find(n => n.id === selectedNodeId) ?? null
+    if (found) {
+      console.log('[CanvasScreen] selectedNodo:', found.id, 'contenido keys:', Object.keys(found.contenido ?? {}))
+    }
+    return found
+  }, [program, selectedNodeId])
 
   const handleNodeClick = useCallback((nodo: NodoLesson) => {
     selectNode(nodo.id)

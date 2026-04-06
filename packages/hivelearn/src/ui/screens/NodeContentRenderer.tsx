@@ -8,6 +8,8 @@ interface Props {
 export function NodeContentRenderer({ nodo }: Props) {
   const c = nodo.contenido
 
+  console.log('[NodeContentRenderer] nodo:', nodo.id, 'tipoPedagogico:', nodo.tipoPedagogico, 'tipoVisual:', nodo.tipoVisual, 'contenido:', c ? Object.keys(c) : 'empty')
+
   if (!c || Object.keys(c).length === 0) {
     return (
       <div className="flex items-center justify-center h-32 text-white/30 text-sm">
