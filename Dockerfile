@@ -3,17 +3,20 @@ FROM docker.io/oven/bun:1 AS ui-builder
 
 WORKDIR /app
 
+# Copy root manifests
 COPY package.json bun.lock bunfig.toml tsconfig.base.json tsconfig.json ./
+
+# Copy UI and hivelearn source (needed for build)
 COPY packages/hive-ui ./packages/hive-ui
 COPY packages/hivelearn ./packages/hivelearn
 
-# Stub other workspace packages so bun resolves the monorepo correctly
+# Stub workspace packages with correct names so bun workspace resolution works
 RUN mkdir -p packages/core packages/cli packages/mcp packages/skills packages/code-bridge && \
-      echo '{"name":"@hive/core","version":"0.0.0"}' > packages/core/package.json && \
-      echo '{"name":"@hive/cli","version":"0.0.0"}' > packages/cli/package.json && \
-      echo '{"name":"@hive/mcp","version":"0.0.0"}' > packages/mcp/package.json && \
-      echo '{"name":"@hive/skills","version":"0.0.0"}' > packages/skills/package.json && \
-      echo '{"name":"@hive/code-bridge","version":"0.0.0"}' > packages/code-bridge/package.json
+      echo '{"name":"@johpaz/hive-agents-core","version":"0.0.0"}' > packages/core/package.json && \
+      echo '{"name":"@johpaz/hive-agents","version":"0.0.0"}' > packages/cli/package.json && \
+      echo '{"name":"@johpaz/hive-agents-mcp","version":"0.0.0"}' > packages/mcp/package.json && \
+      echo '{"name":"@johpaz/hive-agents-skills","version":"0.0.0"}' > packages/skills/package.json && \
+      echo '{"name":"@johpaz/hive-agents-code-bridge","version":"0.0.0"}' > packages/code-bridge/package.json
 
 RUN bun install
 RUN cd packages/hive-ui && bun run build
