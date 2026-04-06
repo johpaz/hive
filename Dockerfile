@@ -5,17 +5,15 @@ WORKDIR /app
 
 COPY package.json bun.lock bunfig.toml tsconfig.base.json tsconfig.json ./
 COPY packages/hive-ui ./packages/hive-ui
+COPY packages/hivelearn ./packages/hivelearn
 
 # Stub other workspace packages so bun resolves the monorepo correctly
-RUN mkdir -p packages/core packages/cli packages/mcp packages/skills packages/code-bridge packages/hivelearn && \
+RUN mkdir -p packages/core packages/cli packages/mcp packages/skills packages/code-bridge && \
       echo '{"name":"@hive/core","version":"0.0.0"}' > packages/core/package.json && \
       echo '{"name":"@hive/cli","version":"0.0.0"}' > packages/cli/package.json && \
       echo '{"name":"@hive/mcp","version":"0.0.0"}' > packages/mcp/package.json && \
       echo '{"name":"@hive/skills","version":"0.0.0"}' > packages/skills/package.json && \
-      echo '{"name":"@hive/code-bridge","version":"0.0.0"}' > packages/code-bridge/package.json && \
-      echo '{"name":"@johpaz/hivelearn","version":"0.0.0","main":"index.ts","exports":{".":"./index.ts","./ui":"./ui.ts"}}' > packages/hivelearn/package.json && \
-      echo 'export {}' > packages/hivelearn/index.ts && \
-      echo 'export {}' > packages/hivelearn/ui.ts
+      echo '{"name":"@hive/code-bridge","version":"0.0.0"}' > packages/code-bridge/package.json
 
 RUN bun install
 RUN cd packages/hive-ui && bun run build
@@ -32,6 +30,7 @@ COPY packages/cli/package.json ./packages/cli/package.json
 COPY packages/mcp/package.json ./packages/mcp/package.json
 COPY packages/skills/package.json ./packages/skills/package.json
 COPY packages/code-bridge/package.json ./packages/code-bridge/package.json
+COPY packages/hivelearn/package.json ./packages/hivelearn/package.json
 
 RUN bun install
 
@@ -41,6 +40,7 @@ COPY packages/cli ./packages/cli
 COPY packages/mcp ./packages/mcp
 COPY packages/skills ./packages/skills
 COPY packages/code-bridge ./packages/code-bridge
+COPY packages/hivelearn ./packages/hivelearn
 
 # Set NODE_ENV=production so Bun inlines it correctly in the compiled binary
 ENV NODE_ENV=production
