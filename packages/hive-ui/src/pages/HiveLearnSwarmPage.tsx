@@ -315,7 +315,6 @@ function StatusPill({ status }: { status: AgentState["status"] }) {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 export function HiveLearnSwarmPage() {
-  const navigate = useNavigate();
   const [dbAgents, setDbAgents] = useState<HLAgent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
