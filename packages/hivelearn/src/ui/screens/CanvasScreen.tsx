@@ -6,9 +6,6 @@ import {
   type Node,
   type Edge,
   type NodeTypes,
-  type NodeProps,
-  Handle,
-  Position,
 } from '@xyflow/react'
 // @ts-ignore — CSS side-effect import for React Flow
 import '@xyflow/react/dist/style.css'
@@ -17,83 +14,18 @@ import { useGamification } from '../hooks/useGamification'
 import { GamificationHUD } from './GamificationHUD'
 import { NodeDetailPanel } from './NodeDetailPanel'
 import { XpFloatAnimation } from './XpFloatAnimation'
-import type { NodoLesson, TipoPedagogico } from '../../types'
-
-// ─── Iconos por tipo pedagógico ───────────────────────────────────────────────
-const TIPO_ICON: Record<TipoPedagogico | string, string> = {
-  concept:    '📖',
-  exercise:   '✏️',
-  quiz:       '❓',
-  challenge:  '⚡',
-  milestone:  '🏆',
-  evaluation: '📝',
-}
-
-// ─── Nodo simple del grafo ────────────────────────────────────────────────────
-interface HLNodeData extends Record<string, unknown> {
-  nodo: NodoLesson
-  isActive: boolean
-  onClick: (nodo: NodoLesson) => void
-}
-
-function HiveLearnNode({ data }: NodeProps) {
-  const { nodo, isActive, onClick } = data as HLNodeData
-  const estado = nodo.estado
-  const isLocked = estado === 'bloqueado'
-  const isDone   = estado === 'completado'
-  const isAvail  = estado === 'disponible'
-
-  return (
-    <div className={`
-      w-[160px] rounded-2xl border-2 px-3 py-3 flex flex-col items-center gap-2 text-center
-      transition-all duration-300
-      ${isDone   ? 'bg-green-500/10 border-green-500/50' : ''}
-      ${isAvail && isActive  ? 'bg-gray-800 border-blue-500 shadow-[0_0_18px_rgba(59,130,246,0.35)]' : ''}
-      ${isAvail && !isActive ? 'bg-gray-800 border-blue-500/40' : ''}
-      ${isLocked ? 'bg-gray-900/60 border-gray-700/40 opacity-60' : ''}
-    `}>
-      <Handle type="target" position={Position.Left} className="!bg-gray-600 !border-gray-500 !w-2 !h-2" />
-
-      {/* Emoji + título */}
-      <span className={`text-2xl leading-none ${isLocked ? 'grayscale' : ''}`}>
-        {isDone ? '✅' : isLocked ? '🔒' : TIPO_ICON[nodo.tipoPedagogico] ?? '📌'}
-      </span>
-      <p className={`text-[11px] font-bold leading-tight line-clamp-2
-        ${isDone ? 'text-green-300' : isLocked ? 'text-gray-500' : 'text-white'}`}>
-        {nodo.titulo}
-      </p>
-
-      {/* Botón de acción */}
-      {!isLocked && (
-        <button
-          onClick={() => onClick(nodo)}
-          className={`
-            w-full rounded-lg py-1 text-[10px] font-bold transition-all
-            ${isDone
-              ? 'bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25'
-              : 'bg-blue-600 text-white hover:bg-blue-500 active:scale-95'}
-          `}
-        >
-          {isDone ? '✓ Revisar' : 'Abrir →'}
-        </button>
-      )}
-
-      <Handle type="source" position={Position.Right} className="!bg-gray-600 !border-gray-500 !w-2 !h-2" />
-    </div>
-  )
-}
+import { LessonNode, type HLNodeData } from '../nodes/LessonNode'
+import type { NodoLesson } from '../../types'
 
 const NODE_TYPES: NodeTypes = {
-  hlNode: HiveLearnNode,
+  hlNode: LessonNode,
 }
-
-// ─── CanvasScreen principal ───────────────────────────────────────────────────
 
 export function CanvasScreen() {
   const {
     program, nodoActualId, nodosCompletados, xpFloat,
     selectedNodeId, selectNode, deselectNode,
-    completarNodo, incrementarRacha, resetRacha, perderVida, showXpFloat,
+    completarNodo, incrementarRacha, resetRacha, showXpFloat,
     setLastFeedback, setScreen,
   } = useLessonStore()
   const { checkLogros } = useGamification()
@@ -101,14 +33,10 @@ export function CanvasScreen() {
   const [xpFloatPos, setXpFloatPos] = useState({ x: 0, y: 0 })
   const reactFlowRef = useRef<HTMLDivElement>(null)
 
-  // Nodo seleccionado completo
-  const selectedNodo = useMemo(() => {
-    const found = program?.nodos.find(n => n.id === selectedNodeId) ?? null
-    if (found) {
-      console.log('[CanvasScreen] selectedNodo:', found.id, 'contenido keys:', Object.keys(found.contenido ?? {}))
-    }
-    return found
-  }, [program, selectedNodeId])
+  const selectedNodo = useMemo(() =>
+    program?.nodos.find(n => n.id === selectedNodeId) ?? null,
+    [program, selectedNodeId]
+  )
 
   const handleNodeClick = useCallback((nodo: NodoLesson) => {
     selectNode(nodo.id)
@@ -119,7 +47,6 @@ export function CanvasScreen() {
     completarNodo(nodo.id, xpGanado)
     checkLogros()
 
-    // Animar XP flotante sobre el nodo
     if (xpGanado > 0) {
       const el = reactFlowRef.current?.querySelector(`[data-id="${nodo.id}"]`)
       if (el) {
@@ -143,23 +70,35 @@ export function CanvasScreen() {
         nodo,
         isActive: nodo.id === nodoActualId,
         onClick: handleNodeClick,
-      },
+      } satisfies HLNodeData,
     }))
   }, [program, nodoActualId, handleNodeClick])
 
   const rfEdges = useMemo((): Edge[] => {
     if (!program) return []
-    return program.nodos.slice(0, -1).map((nodo, i) => ({
-      id: `e-${nodo.id}-${program.nodos[i + 1].id}`,
-      source: nodo.id,
-      target: program.nodos[i + 1].id,
-      style: {
-        stroke: nodo.estado === 'completado' ? '#22c55e' : '#374151',
-        strokeWidth: 2,
-        opacity: 0.6,
-      },
-      animated: nodo.estado === 'disponible',
-    }))
+    return program.nodos.slice(0, -1).map((nodo, i) => {
+      const next = program.nodos[i + 1]
+      const isDone  = nodo.estado === 'completado'
+      const isActive = nodo.estado === 'disponible'
+      const isLocked = next.estado === 'bloqueado'
+
+      return {
+        id: `e-${nodo.id}-${next.id}`,
+        source: nodo.id,
+        target: next.id,
+        animated: isDone || isActive,
+        style: {
+          stroke: isDone
+            ? '#22c55e'
+            : isActive
+            ? '#3b82f6'
+            : '#1e2a3e',
+          strokeWidth: isDone ? 2 : isActive ? 1.5 : 1,
+          opacity: isLocked ? 0.25 : isDone ? 0.7 : 0.5,
+          strokeDasharray: isLocked ? '5 5' : undefined,
+        },
+      }
+    })
   }, [program])
 
   if (!program) return null
@@ -167,16 +106,16 @@ export function CanvasScreen() {
   const todoCompleto = nodosCompletados.length >= program.nodos.filter(n => n.tipoPedagogico !== 'evaluation').length
 
   return (
-    <div className="absolute inset-0 bg-gray-950 flex flex-col overflow-hidden">
+    <div className="absolute inset-0 flex flex-col overflow-hidden" style={{ background: '#080d1a' }}>
       {/* HUD Superior */}
       <GamificationHUD tema={program.tema} />
 
-      {/* Botón evaluación final */}
+      {/* Evaluación final */}
       {todoCompleto && (
         <div className="absolute top-14 right-4 z-20">
           <button
             onClick={() => setScreen('evaluation')}
-            className="rounded-full bg-blue-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-blue-500 shadow-lg"
+            className="rounded-full bg-blue-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-blue-500 shadow-lg shadow-blue-900/50 transition-all"
           >
             📝 Evaluación final →
           </button>
@@ -190,21 +129,25 @@ export function CanvasScreen() {
           edges={rfEdges}
           nodeTypes={NODE_TYPES}
           fitView
-          fitViewOptions={{ padding: 0.25 }}
-          className="bg-gray-950"
+          fitViewOptions={{ padding: 0.3 }}
           proOptions={{ hideAttribution: true }}
           nodesDraggable={false}
           nodesConnectable={false}
           elementsSelectable={false}
+          style={{ background: '#080d1a' }}
         >
-          <Background color="#1f2937" gap={28} size={1} />
+          <Background
+            color="#1a2035"
+            gap={24}
+            size={1.5}
+            style={{ opacity: 0.7 }}
+          />
           <Controls
-            className="[&>button]:bg-gray-800 [&>button]:border-gray-700 [&>button]:text-white"
+            className="[&>button]:bg-[#111827] [&>button]:border-white/10 [&>button]:text-white/50 [&>button]:hover:bg-[#1f2937] [&>button]:hover:text-white/80"
             showInteractive={false}
           />
         </ReactFlow>
 
-        {/* XP float overlay */}
         {xpFloat && (
           <XpFloatAnimation
             xp={xpFloat.xp}

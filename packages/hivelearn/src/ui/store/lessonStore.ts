@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import type { StudentProfile, LessonProgram, NodoLesson, SwarmProgress, FeedbackOutput, AgentStatus, CoordinatorState } from '../../types'
 
 export type Screen = 'provider-select' | 'profile' | 'goal' | 'loading' | 'canvas' | 'evaluation' | 'result'
@@ -125,7 +126,7 @@ const initialState = {
 
 let xpFloatKey = 0
 
-export const useLessonStore = create<LessonState>((set, get) => ({
+export const useLessonStore = create<LessonState>()(persist((set, get) => ({
   ...initialState,
 
   setScreen: (screen) => set({ screen }),
@@ -214,4 +215,26 @@ export const useLessonStore = create<LessonState>((set, get) => ({
       if (get().xpFloat?.key === key) set({ xpFloat: null })
     }, 1400)
   },
+}), {
+  name: 'hivelearn-session-v1',
+  storage: createJSONStorage(() => localStorage),
+  // Solo persistir los campos necesarios para restaurar la sesión
+  partialize: (state) => ({
+    screen:              state.screen,
+    program:             state.program,
+    sessionId:           state.sessionId,
+    curriculoId:         state.curriculoId,
+    perfil:              state.perfil,
+    meta:                state.meta,
+    xpTotal:             state.xpTotal,
+    nodosCompletados:    state.nodosCompletados,
+    nodoActualId:        state.nodoActualId,
+    selectedProviderId:  state.selectedProviderId,
+    selectedModelId:     state.selectedModelId,
+    vidas:               state.vidas,
+    racha:               state.racha,
+    logrosDesbloqueados: state.logrosDesbloqueados,
+    swarmProgress:       state.swarmProgress,
+    agentStatuses:       state.agentStatuses,
+  }),
 }))

@@ -33,7 +33,9 @@ export class HiveLearnSwarm {
   }
 
   async run(perfil: StudentProfile, meta: string): Promise<LessonProgram> {
-    const sessionId = crypto.randomUUID()
+    const ts = new Date().toISOString().replace(/[-T:.Z]/g, '').slice(0, 14) // YYYYMMDDHHmmss
+    const nombreSlug = perfil.nombre.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '').slice(0, 20)
+    const sessionId = `${nombreSlug}_${ts}`
 
     const perfilAdaptacion: PerfilAdaptacion = {
       rangoEdad: perfil.rangoEdad,

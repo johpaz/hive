@@ -23,7 +23,8 @@ export function LessonCanvas() {
 
   const [configChecked, setConfigChecked] = useState(false)
 
-  // Verificar si ya hay provider/model configurado al entrar
+  // Verificar si ya hay provider/model configurado al entrar.
+  // Si hay un programa activo en el store (restaurado de localStorage), NO pisar la pantalla.
   useEffect(() => {
     if (configChecked) return
     ;(async () => {
@@ -31,17 +32,20 @@ export function LessonCanvas() {
         const res = await fetch('/api/hivelearn/config')
         const data = await res.json()
         if (data.configured && data.providerId && data.modelId) {
-          // Ya está configurado, usar directamente
           setSelectedProvider(data.providerId)
           setSelectedModel(data.modelId)
-          setScreen('profile')
+          // Solo ir a 'profile' si no hay ya una sesión activa en el store
+          if (!program) {
+            setScreen('profile')
+          }
+          // Si hay programa en el store, mantener la pantalla que ya tiene (canvas, etc.)
         }
       } catch {
-        // Si falla, mostrar selector
+        // Si falla, mostrar selector de provider
       }
       setConfigChecked(true)
     })()
-  }, [configChecked, setSelectedProvider, setSelectedModel, setScreen])
+  }, [configChecked, setSelectedProvider, setSelectedModel, setScreen, program])
 
   const handleExit = () => {
     if (isGenerating) {
@@ -69,16 +73,20 @@ export function LessonCanvas() {
     )
   }
 
+  // Guardia: si la sesión guardada tenía screen='loading' pero no hay programa
+  // Y tampoco se está generando activamente → el proceso se interrumpió, volver al inicio
+  const safeScreen = (screen === 'loading' && !program && !isGenerating) ? 'profile' : screen
+
   return (
     <div className="flex-1 flex flex-col min-h-0 -m-4 bg-gray-950 overflow-hidden relative">
 
-      {screen === 'provider-select' && <ProviderSelectScreen />}
-      {screen === 'profile'    && <ProfileScreen />}
-      {screen === 'goal'       && <GoalScreen />}
-      {screen === 'loading'    && <LoadingScreen />}
-      {screen === 'canvas'     && <CanvasScreen />}
-      {screen === 'evaluation' && <EvaluationScreen />}
-      {screen === 'result'     && <ResultScreen />}
+      {safeScreen === 'provider-select' && <ProviderSelectScreen />}
+      {safeScreen === 'profile'    && <ProfileScreen />}
+      {safeScreen === 'goal'       && <GoalScreen />}
+      {safeScreen === 'loading'    && <LoadingScreen />}
+      {safeScreen === 'canvas'     && <CanvasScreen />}
+      {safeScreen === 'evaluation' && <EvaluationScreen />}
+      {safeScreen === 'result'     && <ResultScreen />}
     </div>
   )
 }
