@@ -74,11 +74,12 @@ export function AgentConfigDialog({
     setLoading(true);
 
     Promise.all([
-      apiClient<{ agent: AgentData }>(`/api/agents/${agentId}`).catch(() => ({ agent: null })),
+      apiClient<{ agents: AgentData[] }>("/api/agents").catch(() => ({ agents: [] })),
       apiClient<{ providers: Provider[] }>("/api/providers").catch(() => ({ providers: [] })),
       apiClient<{ models: Model[] }>("/api/models").catch(() => ({ models: [] })),
-    ]).then(([agentRes, provRes, modelRes]) => {
-      const agent = (agentRes as any)?.agent;
+    ]).then(([agentsRes, provRes, modelRes]) => {
+      const allAgents = (agentsRes as any)?.agents ?? [];
+      const agent = allAgents.find((a: AgentData) => a.id === agentId);
       if (agent) {
         setFormData({
           systemPrompt: agent.system_prompt ?? "",
