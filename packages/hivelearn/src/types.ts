@@ -5,8 +5,19 @@ export type TipoPedagogico = 'concept' | 'exercise' | 'quiz' | 'challenge' | 'mi
 export type TipoVisual = 'text_card' | 'code_block' | 'svg_diagram' | 'gif_guide' | 'infographic' | 'chart' | 'animated_card' | 'image_ai' | 'audio_ai'
 export type TipoPregunta = 'verdadero_falso' | 'multiple_choice' | 'respuesta_corta' | 'completar_codigo'
 export type NivelPrevio = 'principiante' | 'principiante_base' | 'intermedio'
-export type EstiloAprendizaje = 'visual' | 'lectura' | 'retos' | 'balanceado'
+export type EstiloAprendizaje = 'visual' | 'lectura' | 'retos' | 'balanceado' | 'mis_retos'
 export type EstadoNodo = 'bloqueado' | 'disponible' | 'completado' | 'incorrecto'
+
+// ─── Coordinator & Agent Status ──────────────────────────────────────────────
+export type AgentStatus = 'idle' | 'pending' | 'running' | 'thinking' | 'tool_call' | 'completed' | 'failed'
+export type CoordinatorStatus = 'idle' | 'analyzing' | 'delegating' | 'assembling' | 'rendering' | 'completed' | 'error'
+
+export interface CoordinatorState {
+  status: CoordinatorStatus
+  currentWorker: string | null
+  activeWorkers: string[]
+  totalWorkers: number
+}
 
 export interface StudentProfile {
   alumnoId: string

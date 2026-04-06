@@ -1,179 +1,330 @@
+import { useMemo } from 'react'
 import { useLessonStore } from '../store/lessonStore'
 
-type AgentStatus = 'pending' | 'running' | 'completed' | 'failed'
+// ─── 16 agentes del enjambre ─────────────────────────────────────────────────
+const AGENTS = [
+  { id: 'hl-profile-agent',       label: 'Perfil',       icon: '👤' },
+  { id: 'hl-intent-agent',        label: 'Intención',    icon: '🎯' },
+  { id: 'hl-structure-agent',     label: 'Estructura',   icon: '🗺️' },
+  { id: 'hl-explanation-agent',   label: 'Explicación',  icon: '📖' },
+  { id: 'hl-exercise-agent',      label: 'Ejercicios',   icon: '✏️' },
+  { id: 'hl-quiz-agent',          label: 'Quiz',         icon: '❓' },
+  { id: 'hl-challenge-agent',     label: 'Reto',         icon: '⚡' },
+  { id: 'hl-code-agent',          label: 'Código',       icon: '💻' },
+  { id: 'hl-svg-agent',           label: 'Diagrama',     icon: '📊' },
+  { id: 'hl-gif-agent',           label: 'Animación',    icon: '🎞️' },
+  { id: 'hl-infographic-agent',   label: 'Infografía',   icon: '📈' },
+  { id: 'hl-image-agent',         label: 'Imagen',       icon: '🖼️' },
+  { id: 'hl-gamification-agent',  label: 'Gamificación', icon: '🏆' },
+  { id: 'hl-evaluation-agent',    label: 'Evaluación',   icon: '📝' },
+  { id: 'hl-feedback-agent',      label: 'Feedback',     icon: '🧠' },
+  { id: 'hl-coordinator-agent',   label: 'Coordinador',  icon: '🎯' },
+]
 
-// ─── Metadata por agente ─────────────────────────────────────────────────────
-const AGENT_META: Record<string, { label: string; icon: string; accion: string }> = {
-  'hl-profile-agent':      { label: 'Perfil',        icon: '👤', accion: 'Analizando perfil del alumno'     },
-  'hl-intent-agent':       { label: 'Intención',     icon: '🎯', accion: 'Extrayendo tema y nivel'          },
-  'hl-structure-agent':    { label: 'Estructura',    icon: '🗺️', accion: 'Diseñando programa de nodos'     },
-  'hl-explanation-agent':  { label: 'Explicación',   icon: '📖', accion: 'Generando explicación'            },
-  'hl-exercise-agent':     { label: 'Ejercicios',    icon: '✏️', accion: 'Creando ejercicio práctico'       },
-  'hl-quiz-agent':         { label: 'Quiz',          icon: '❓', accion: 'Preparando preguntas'             },
-  'hl-challenge-agent':    { label: 'Reto',          icon: '⚡', accion: 'Diseñando reto integrador'        },
-  'hl-code-agent':         { label: 'Código',        icon: '💻', accion: 'Generando código ejemplo'         },
-  'hl-svg-agent':          { label: 'Diagrama',      icon: '📊', accion: 'Dibujando diagrama SVG'           },
-  'hl-gif-agent':          { label: 'Animación',     icon: '🎞️', accion: 'Creando animación paso a paso'   },
-  'hl-infographic-agent':  { label: 'Infografía',    icon: '📈', accion: 'Construyendo infografía'          },
-  'hl-image-agent':        { label: 'Imagen',        icon: '🖼️', accion: 'Generando imagen educativa'       },
-  'hl-gamification-agent': { label: 'Gamificación',  icon: '🏆', accion: 'Asignando XP y logros'            },
-  'hl-evaluation-agent':   { label: 'Evaluación',    icon: '📝', accion: 'Preparando evaluación final'      },
-}
+type AgentStatus = 'idle' | 'pending' | 'running' | 'thinking' | 'tool_call' | 'completed' | 'failed'
 
-const ANALYSIS_AGENTS  = ['hl-profile-agent', 'hl-intent-agent', 'hl-structure-agent']
-const CONTENT_AGENTS   = ['hl-explanation-agent', 'hl-exercise-agent', 'hl-quiz-agent', 'hl-challenge-agent', 'hl-code-agent', 'hl-svg-agent', 'hl-gif-agent', 'hl-infographic-agent']
-const PARALLEL_AGENTS  = ['hl-gamification-agent', 'hl-evaluation-agent']
+// ─── Coordinator Visual ──────────────────────────────────────────────────────
+function CoordinatorCenter({ progress, status }: { progress: number; status: string }) {
+  const radius = 52
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference - (progress / 100) * circumference
 
-// ─── AgentCard ────────────────────────────────────────────────────────────────
-function AgentCard({ agentId, status = 'pending', compact = false }: {
-  agentId: string
-  status?: AgentStatus
-  compact?: boolean
-}) {
-  const meta = AGENT_META[agentId] ?? { label: agentId, icon: '🤖', accion: 'Procesando...' }
-  const isRunning   = status === 'running'
-  const isDone      = status === 'completed'
-  const isFailed    = status === 'failed'
-  const isPending   = status === 'pending'
+  const statusColor = status === 'thinking' ? '#a855f7' : status === 'delegating' ? '#06b6d4' : status === 'completed' ? '#22c55e' : '#3b82f6'
 
   return (
-    <div className={`
-      rounded-xl border transition-all duration-500 flex flex-col
-      ${compact ? 'p-2.5 gap-1' : 'p-3 gap-1.5'}
-      ${isRunning ? 'bg-blue-500/10 border-blue-500/50 shadow-[0_0_12px_rgba(59,130,246,0.2)]' : ''}
-      ${isDone    ? 'bg-green-500/8 border-green-500/30' : ''}
-      ${isFailed  ? 'bg-red-500/8 border-red-500/30' : ''}
-      ${isPending ? 'bg-white/[0.02] border-white/8 opacity-50' : ''}
-    `}>
-      {/* Fila superior: icono + nombre + status dot */}
-      <div className="flex items-center gap-1.5">
-        <span className={`text-base flex-shrink-0 ${isPending ? 'grayscale opacity-50' : ''} ${isRunning ? 'animate-pulse' : ''}`}>
-          {meta.icon}
-        </span>
-        <span className={`text-xs font-bold truncate flex-1
-          ${isRunning ? 'text-blue-200' : isDone ? 'text-green-300' : isFailed ? 'text-red-300' : 'text-white/30'}
-        `}>
-          {meta.label}
-        </span>
-        {/* Status indicator */}
-        {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />}
-        {isDone    && <span className="text-green-400 text-xs flex-shrink-0">✓</span>}
-        {isFailed  && <span className="text-red-400 text-xs flex-shrink-0">✗</span>}
+    <div className="relative flex items-center justify-center">
+      {/* Progress ring */}
+      <svg className="absolute w-[120px] h-[120px] -rotate-90" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r={radius} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3" />
+        <circle
+          cx="60" cy="60" r={radius} fill="none"
+          stroke={statusColor} strokeWidth="3"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          className="transition-all duration-700"
+        />
+      </svg>
+
+      {/* Coordinator circle */}
+      <div className="w-[100px] h-[100px] rounded-full bg-gradient-to-br from-blue-600/30 to-purple-600/30 border border-white/10 flex items-center justify-center backdrop-blur-sm">
+        <div className="text-3xl select-none">🎯</div>
       </div>
 
-      {/* Acción — solo visible cuando activo o completado */}
-      {!isPending && (
-        <p className={`text-[10px] leading-tight
-          ${isRunning ? 'text-blue-300/70' : isDone ? 'text-green-400/60' : 'text-red-400/60'}
-        `}>
-          {isDone ? '✓ Listo' : isFailed ? 'Error' : meta.accion}
-        </p>
+      {/* Status label */}
+      <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap">
+        <span className="text-[10px] font-bold text-white/50 uppercase tracking-wider">{status}</span>
+      </div>
+    </div>
+  )
+}
+
+// ─── Worker Orbital Node ─────────────────────────────────────────────────────
+function WorkerNode({
+  agent, status, angle, radius,
+}: {
+  agent: { id: string; label: string; icon: string }
+  status: AgentStatus
+  angle: number
+  radius: number
+}) {
+  const x = Math.cos(angle) * radius
+  const y = Math.sin(angle) * radius
+
+  const isActive = status === 'running' || status === 'thinking' || status === 'tool_call'
+  const isDone = status === 'completed'
+  const isFailed = status === 'failed'
+
+  const statusColor = isActive ? (status === 'thinking' ? '#a855f7' : status === 'tool_call' ? '#06b6d4' : '#3b82f6') : isDone ? '#22c55e' : isFailed ? '#ef4444' : 'rgba(255,255,255,0.2)'
+  const opacity = isActive || isDone || isFailed ? 1 : 0.35
+
+  return (
+    <div
+      className="absolute transition-all duration-700"
+      style={{
+        transform: `translate(${x}px, ${y}px)`,
+        opacity,
+      }}
+    >
+      {/* Connection line to center (only for active) */}
+      {isActive && (
+        <div
+          className="absolute top-1/2 left-1/2 origin-left"
+          style={{
+            width: `${radius - 25}px`,
+            height: '1px',
+            background: `linear-gradient(90deg, ${statusColor}40, transparent)`,
+            transform: `translate(-50%, -50%) rotate(${(angle * 180) / Math.PI + 180}deg)`,
+          }}
+        />
       )}
-    </div>
-  )
-}
 
-// ─── SectionBlock ─────────────────────────────────────────────────────────────
-function SectionBlock({ num, label, description, children, className = '' }: {
-  num?: number
-  label: string
-  description?: string
-  children: React.ReactNode
-  className?: string
-}) {
-  return (
-    <div className={`space-y-2 ${className}`}>
-      <div className="flex items-center gap-2">
-        {num !== undefined && (
-          <div className="w-5 h-5 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-300 text-xs font-bold flex items-center justify-center flex-shrink-0">
-            {num}
-          </div>
+      {/* Worker circle */}
+      <div className={`relative w-[48px] h-[48px] rounded-full flex items-center justify-center transition-all duration-300 ${
+        isActive ? 'bg-white/10 border border-white/20 shadow-lg' : 'bg-white/5 border border-white/5'
+      }`}>
+        {/* Status glow */}
+        {isActive && (
+          <div
+            className="absolute inset-0 rounded-full animate-pulse"
+            style={{
+              background: `radial-gradient(circle, ${statusColor}20, transparent)`,
+              boxShadow: `0 0 12px ${statusColor}30`,
+            }}
+          />
         )}
-        <span className="text-xs font-bold text-white/70 uppercase tracking-wider">{label}</span>
-        {description && <span className="text-xs text-white/25">{description}</span>}
+
+        {/* Icon */}
+        <span className={`text-lg relative z-10 ${isActive ? 'animate-pulse' : ''} ${isDone || isFailed ? 'grayscale' : ''}`}>
+          {isDone ? '✅' : isFailed ? '❌' : agent.icon}
+        </span>
+
+        {/* Status dot */}
+        <div
+          className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full border border-[#0b1326]"
+          style={{ background: statusColor }}
+        />
       </div>
-      {children}
+
+      {/* Label */}
+      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 whitespace-nowrap">
+        <span className="text-[8px] font-medium text-white/40 truncate block max-w-[60px]">{agent.label}</span>
+      </div>
     </div>
   )
 }
 
-// ─── LoadingScreen ────────────────────────────────────────────────────────────
+// ─── Activity Log ────────────────────────────────────────────────────────────
+function ActivityLog({ agentStatuses, progress, mensaje }: {
+  agentStatuses: Record<string, string>
+  progress: number
+  mensaje: string
+}) {
+  const stage = progress < 20 ? 'Análisis' : progress < 60 ? 'Contenido' : progress < 90 ? 'Finalización' : 'Revisión'
+
+  const logLines = useMemo(() => {
+    const lines: { time: string; icon: string; text: string }[] = []
+    const t0 = Date.now() - 60000
+    let timeOffset = 0
+
+    const addLine = (icon: string, text: string, offsetMs: number) => {
+      const t = new Date(t0 + timeOffset + offsetMs)
+      lines.push({
+        time: `${String(t.getMinutes()).padStart(2, '0')}:${String(t.getSeconds()).padStart(2, '0')}`,
+        icon,
+        text,
+      })
+    }
+
+    addLine('🎯', 'Coordinador: Analizando perfil del alumno...', 0)
+    if (agentStatuses['hl-profile-agent'] === 'completed' || agentStatuses['hl-profile-agent'] === 'running') {
+      addLine('👤', 'ProfileAgent: Iniciado', 2000)
+    }
+    if (agentStatuses['hl-profile-agent'] === 'completed') {
+      addLine('👤', 'ProfileAgent: Completado ✓', 5000)
+      addLine('🎯', 'Coordinador: Entendiendo intención...', 6000)
+    }
+    if (agentStatuses['hl-intent-agent'] === 'running' || agentStatuses['hl-intent-agent'] === 'completed') {
+      addLine('🎯', 'IntentAgent: Iniciado', 8000)
+    }
+    if (agentStatuses['hl-intent-agent'] === 'completed') {
+      addLine('🎯', 'IntentAgent: Completado ✓', 11000)
+      addLine('🎯', 'Coordinador: Diseñando estructura...', 12000)
+    }
+
+    // Show current active agents
+    const activeAgents = Object.entries(agentStatuses)
+      .filter(([, s]) => s === 'running' || s === 'thinking')
+      .slice(0, 3)
+
+    for (const [agentId, status] of activeAgents) {
+      const agent = AGENTS.find(a => a.id === agentId)
+      if (agent && status === 'thinking') {
+        addLine(agent.icon, `${agent.label}: Pensando...`, timeOffset + 15000)
+      }
+    }
+
+    return lines.slice(-8)
+  }, [agentStatuses])
+
+  const activeCount = Object.values(agentStatuses).filter(s => s === 'running' || s === 'thinking' || s === 'tool_call').length
+
+  return (
+    <div className="w-full max-w-sm bg-[#131b2e]/80 backdrop-blur-xl rounded-2xl border border-white/[0.06] p-5 space-y-4">
+      {/* Title */}
+      <h3 className="text-xs font-bold text-white/60 uppercase tracking-[0.15em]">Actividad del Enjambre</h3>
+
+      {/* Progress */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] text-white/40 font-medium">{stage}</span>
+          <span className="text-[11px] font-bold text-blue-400 tabular-nums">{progress}%</span>
+        </div>
+        <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-blue-600 to-blue-400 transition-all duration-700"
+            style={{ width: `${Math.max(progress, 2)}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Terminal log */}
+      <div className="bg-[#060e20]/80 rounded-xl p-3 space-y-1.5 max-h-[200px] overflow-y-auto font-mono text-[10px]">
+        {logLines.map((line, i) => (
+          <div key={i} className="flex items-start gap-2 text-white/40">
+            <span className="text-white/20 flex-shrink-0 tabular-nums">{line.time}</span>
+            <span className="flex-shrink-0">{line.icon}</span>
+            <span className="leading-relaxed">{line.text}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Stats */}
+      <div className="flex items-center justify-between text-[10px] text-white/25 pt-2 border-t border-white/[0.04]">
+        <span>{activeCount} de {AGENTS.length - 1} agentes activos</span>
+        <span>Estimado: ~2 min</span>
+      </div>
+    </div>
+  )
+}
+
+// ─── LoadingScreen principal ─────────────────────────────────────────────────
 export function LoadingScreen() {
   const { swarmProgress, meta, perfil, agentStatuses } = useLessonStore()
   const porcentaje = swarmProgress?.porcentaje ?? 0
-  const mensaje    = swarmProgress?.mensaje ?? 'Iniciando el enjambre de agentes...'
+  const mensaje = swarmProgress?.mensaje ?? 'Iniciando el enjambre de agentes...'
+
+  const coordinatorStatus = porcentaje < 10 ? 'analyzing' : porcentaje < 80 ? 'delegating' : porcentaje < 95 ? 'assembling' : 'completed'
+
+  // Calculate orbital positions for 15 workers
+  const workerAgents = AGENTS.filter(a => a.id !== 'hl-coordinator-agent')
+  const orbitRadius = 160
+  const workerNodes = workerAgents.map((agent, i) => {
+    const angle = (i / workerAgents.length) * 2 * Math.PI - Math.PI / 2
+    const status = (agentStatuses[agent.id] as AgentStatus) ?? 'idle'
+    return { agent, status, angle, radius: orbitRadius }
+  })
 
   return (
-    <div className="absolute inset-0 bg-gray-950 overflow-y-auto flex flex-col">
-      {/* Ambient glow */}
-      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-blue-500/6 rounded-full blur-[100px] pointer-events-none" />
-
-      <div className="flex-1 flex flex-col items-center px-4 py-8 gap-6 relative z-10 max-w-3xl mx-auto w-full">
-
-        {/* Hero */}
-        <div className="text-center space-y-2">
-          <div className="relative mx-auto w-16 h-16">
-            <div className="absolute inset-0 rounded-full bg-blue-500/15 animate-ping" style={{ animationDuration: '2.5s' }} />
-            <div className="absolute inset-0 flex items-center justify-center text-4xl select-none">🐝</div>
-          </div>
-          <h2 className="text-xl font-black text-white">Construyendo tu programa</h2>
-          {meta && (
-            <p className="text-blue-400 text-sm font-medium max-w-sm mx-auto truncate">"{meta}"</p>
-          )}
-          {perfil && (
-            <p className="text-white/25 text-xs">
-              {perfil.nombre} · {perfil.tiempoSesion} min · <span className="capitalize">{perfil.rangoEdad}</span>
-            </p>
-          )}
-        </div>
-
-        {/* Progress bar */}
-        <div className="w-full space-y-1.5">
-          <div className="flex justify-between text-xs">
-            <span className="text-white/40 truncate max-w-[80%]">{mensaje}</span>
-            <span className="text-blue-400 font-bold tabular-nums ml-2">{porcentaje}%</span>
-          </div>
-          <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+    <div className="absolute inset-0 bg-[#0b1326] overflow-hidden flex">
+      {/* Nebula background */}
+      <div className="absolute inset-0 z-0">
+        <div className="absolute inset-0 bg-gradient-to-br from-[#0a0e27] via-[#15102e] to-[#0d1128]" />
+        {/* Large nebula orbs */}
+        <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-purple-600/20 rounded-full blur-[100px] animate-pulse" style={{ animationDuration: '5s' }} />
+        <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-blue-600/15 rounded-full blur-[80px] animate-pulse" style={{ animationDuration: '6s' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-indigo-500/10 rounded-full blur-[60px] animate-pulse" style={{ animationDuration: '4s' }} />
+        {/* Star particles */}
+        <div className="absolute inset-0">
+          {[...Array(40)].map((_, i) => (
             <div
-              className="h-full rounded-full bg-gradient-to-r from-blue-600 via-blue-400 to-blue-300 transition-all duration-700"
-              style={{ width: `${Math.max(porcentaje, 2)}%` }}
+              key={i}
+              className="absolute rounded-full animate-pulse"
+              style={{
+                width: `${1 + Math.random() * 2}px`,
+                height: `${1 + Math.random() * 2}px`,
+                background: `rgba(255, 255, 255, ${0.1 + Math.random() * 0.2})`,
+                top: `${Math.random() * 100}%`,
+                left: `${Math.random() * 100}%`,
+                animationDelay: `${Math.random() * 5}s`,
+                animationDuration: `${2 + Math.random() * 4}s`,
+              }}
             />
-          </div>
+          ))}
         </div>
+      </div>
 
-        {/* ─── Sección 1: Análisis (secuencial) ─── */}
-        <SectionBlock num={1} label="Análisis" description="secuencial" className="w-full">
-          <div className="grid grid-cols-3 gap-2">
-            {ANALYSIS_AGENTS.map(id => (
-              <AgentCard key={id} agentId={id} status={agentStatuses[id]} />
+      {/* Header */}
+      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-6 py-3 bg-[#0b1326]/60 backdrop-blur-sm border-b border-white/[0.04]">
+        <div className="flex items-center gap-2.5">
+          <span className="text-lg">🐝</span>
+          <span className="text-sm font-semibold text-white/70">HiveLearn</span>
+          <span className="text-xs text-white/30">—</span>
+          <span className="text-xs text-blue-400/60 font-medium">{mensaje}</span>
+        </div>
+        <span className="text-[10px] font-bold text-white/30 uppercase tracking-wider">Enjambre activo</span>
+      </div>
+
+      {/* Main content */}
+      <div className="relative z-10 flex w-full h-full pt-12">
+        {/* Left: Roundtable */}
+        <div className="flex-1 flex items-center justify-center relative">
+          {/* Meta info */}
+          {meta && (
+            <div className="absolute top-4 left-6 z-10">
+              <p className="text-[11px] text-white/30 font-medium truncate max-w-xs">"{meta}"</p>
+              {perfil && (
+                <p className="text-[10px] text-white/20 mt-0.5">{perfil.nombre} · {perfil.tiempoSesion} min</p>
+              )}
+            </div>
+          )}
+
+          {/* Roundtable container */}
+          <div className="relative w-[500px] h-[500px] flex items-center justify-center">
+            {/* Coordinator */}
+            <CoordinatorCenter progress={porcentaje} status={coordinatorStatus} />
+
+            {/* Workers */}
+            {workerNodes.map((node) => (
+              <WorkerNode
+                key={node.agent.id}
+                agent={node.agent}
+                status={node.status}
+                angle={node.angle}
+                radius={node.radius}
+              />
             ))}
           </div>
-        </SectionBlock>
-
-        {/* ─── Sección 2: Contenido + En paralelo ─── */}
-        <div className="w-full flex gap-3 items-start">
-          {/* Contenido (paralelo) */}
-          <SectionBlock num={2} label="Contenido" description="paralelo" className="flex-1 min-w-0">
-            <div className="grid grid-cols-4 gap-1.5">
-              {CONTENT_AGENTS.map(id => (
-                <AgentCard key={id} agentId={id} status={agentStatuses[id]} compact />
-              ))}
-            </div>
-          </SectionBlock>
-
-          {/* En paralelo (sin número) */}
-          <SectionBlock label="En paralelo" className="w-40 flex-shrink-0">
-            <div className="space-y-1.5">
-              {PARALLEL_AGENTS.map(id => (
-                <AgentCard key={id} agentId={id} status={agentStatuses[id]} />
-              ))}
-            </div>
-          </SectionBlock>
         </div>
 
-        <p className="text-xs text-white/15 text-center">
-          Primera vez: ~2 min · Con caché: ~10s
-        </p>
+        {/* Right: Activity Panel */}
+        <div className="w-[320px] flex items-center justify-center p-6">
+          <ActivityLog
+            agentStatuses={agentStatuses}
+            progress={porcentaje}
+            mensaje={mensaje}
+          />
+        </div>
       </div>
     </div>
   )

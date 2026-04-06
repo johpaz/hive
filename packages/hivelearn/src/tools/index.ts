@@ -24,6 +24,7 @@ export { buscarCurriculoExistenteTool } from './search/buscar-curriculo-existent
 export { buscarEnHiveLearnTool } from './search/buscar-en-hivelearn.tool'
 
 export { revisarProgramaTool } from './coordinator/revisar-programa.tool'
+export { delegarEnjambreTool } from './coordinator/delegar-enjambre.tool'
 
 // ─── LLMToolDef groups por rol de agente ─────────────────────────────────────
 

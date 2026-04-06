@@ -13,6 +13,7 @@ import { AGENT_IDS } from '../agents/registry'
 import {
   // Coordinator
   revisarProgramaTool,
+  delegarEnjambreTool,
   // Canvas / structured output
   disenarEstructuraTool,
   poblarNodoTool,
@@ -38,7 +39,7 @@ import {
 } from '../tools/index'
 
 export const AGENT_EXECUTABLE_TOOLS: Record<string, Tool[]> = {
-  [AGENT_IDS.coordinator]: [revisarProgramaTool],
+  [AGENT_IDS.coordinator]: [delegarEnjambreTool, revisarProgramaTool],
   [AGENT_IDS.profile]:      [clasificarIntencionTool, buscarCurriculoExistenteTool],
   [AGENT_IDS.intent]:       [clasificarIntencionTool, buscarEnHiveLearnTool],
   [AGENT_IDS.structure]:    [disenarEstructuraTool, buscarCurriculoExistenteTool],

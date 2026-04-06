@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { StudentProfile, LessonProgram, NodoLesson, SwarmProgress, FeedbackOutput } from '../../types'
+import type { StudentProfile, LessonProgram, NodoLesson, SwarmProgress, FeedbackOutput, AgentStatus, CoordinatorState } from '../../types'
 
 export type Screen = 'provider-select' | 'profile' | 'goal' | 'loading' | 'canvas' | 'evaluation' | 'result'
 
@@ -32,7 +32,10 @@ interface LessonState {
 
   // Progreso del enjambre
   swarmProgress: SwarmProgress | null
-  agentStatuses: Record<string, 'pending' | 'running' | 'completed' | 'failed'>
+  agentStatuses: Record<string, AgentStatus>
+
+  // Estado del coordinador
+  coordinatorState: CoordinatorState
 
   // Estado de la sesión
   nodoActualId: string | null
@@ -62,7 +65,8 @@ interface LessonState {
   setMeta: (meta: string) => void
   setProgram: (program: LessonProgram) => void
   setSwarmProgress: (progress: SwarmProgress) => void
-  setAgentStatus: (agentId: string, status: 'pending' | 'running' | 'completed' | 'failed') => void
+  setAgentStatus: (agentId: string, status: AgentStatus) => void
+  setCoordinatorStatus: (status: CoordinatorState['status'], currentWorker?: string | null) => void
   setSessionId: (sessionId: string) => void
   setCurriculoId: (curriculoId: number) => void
   setIsGenerating: (isGenerating: boolean) => void
@@ -93,6 +97,12 @@ const initialState = {
   program: null,
   swarmProgress: null,
   agentStatuses: {},
+  coordinatorState: {
+    status: 'idle' as CoordinatorState['status'],
+    currentWorker: null,
+    activeWorkers: [],
+    totalWorkers: 15,
+  },
   selectedProviderId: null,
   selectedModelId: null,
   sessionId: null,
@@ -131,6 +141,19 @@ export const useLessonStore = create<LessonState>((set, get) => ({
   setSwarmProgress: (swarmProgress) => set({ swarmProgress }),
   setAgentStatus: (agentId, status) => set((s) => ({
     agentStatuses: { ...s.agentStatuses, [agentId]: status },
+    coordinatorState: {
+      ...s.coordinatorState,
+      activeWorkers: Object.entries({ ...s.agentStatuses, [agentId]: status })
+        .filter(([, st]) => st === 'running' || st === 'thinking' || st === 'tool_call')
+        .map(([id]) => id),
+    },
+  })),
+  setCoordinatorStatus: (status, currentWorker) => set((s) => ({
+    coordinatorState: {
+      ...s.coordinatorState,
+      status,
+      currentWorker: currentWorker ?? s.coordinatorState.currentWorker,
+    },
   })),
   setSessionId: (sessionId) => set({ sessionId }),
   setCurriculoId: (curriculoId) => set({ curriculoId }),
