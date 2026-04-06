@@ -16,11 +16,12 @@ const TIPO_CONFIG: Record<TipoPedagogico | string, {
 export interface HLNodeData extends Record<string, unknown> {
   nodo: NodoLesson
   isActive: boolean
+  isSelected: boolean
   onClick: (nodo: NodoLesson) => void
 }
 
 export function LessonNode({ data }: NodeProps) {
-  const { nodo, isActive, onClick } = data as HLNodeData
+  const { nodo, isActive, isSelected, onClick } = data as HLNodeData
   const cfg = TIPO_CONFIG[nodo.tipoPedagogico] ?? TIPO_CONFIG.concept
   const isLocked    = nodo.estado === 'bloqueado'
   const isCompleted = nodo.estado === 'completado'
@@ -148,6 +149,17 @@ export function LessonNode({ data }: NodeProps) {
           )}
         </div>
       </div>
+
+      {/* Ring de seleccionado */}
+      {isSelected && (
+        <div
+          className="absolute inset-[-4px] rounded-[20px] pointer-events-none"
+          style={{
+            border: `2px solid ${cfg.band}70`,
+            boxShadow: `0 0 16px ${cfg.band}35`,
+          }}
+        />
+      )}
 
       {/* Active pulse ring (only when active + available) */}
       {isActive && isAvailable && (

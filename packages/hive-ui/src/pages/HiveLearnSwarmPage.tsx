@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import {
-  RefreshCw, Settings2, Crown, Shield, Bot, Terminal, Edit2,
+  RefreshCw, Settings2, Crown, Shield, Bot, Terminal,
   Wifi, WifiOff, Zap,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { useHiveLearnLive, type AgentLiveStatus } from "@/hooks/useHiveLearnLive";
+import { AgentConfigDialog } from "@/modules/hivelearn/AgentConfigDialog";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface HLAgent {
@@ -81,15 +81,17 @@ function LiveBadge({ isConnected }: { isConnected: boolean }) {
 
 // ─── Worker Card (Canvas style) ──────────────────────────────────────────────
 function WorkerGraphNode({
-  agentId, dbAgent, agentState,
+  agentId, dbAgent, agentState, onConfigSuccess,
 }: {
   agentId: string;
   dbAgent?: HLAgent;
   agentState: AgentState;
+  onConfigSuccess: () => void;
 }) {
-  const navigate = useNavigate();
   const meta = AGENT_META[agentId];
   if (!meta) return null;
+
+  const [configOpen, setConfigOpen] = useState(false);
 
   const { status, currentTool } = agentState;
   const isThinking = status === "thinking";
@@ -174,14 +176,24 @@ function WorkerGraphNode({
       )}
 
       {/* Configure button */}
+      <button
+        onClick={() => setConfigOpen(true)}
+        className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity text-white/30 hover:text-white hover:bg-white/10"
+        title="Configurar agente"
+      >
+        <Settings2 className="h-3 w-3" />
+      </button>
+
+      {/* Config Dialog */}
       {dbAgent && (
-        <button
-          onClick={() => navigate(`/agents/${dbAgent.id}`)}
-          className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity text-white/30 hover:text-white hover:bg-white/10"
-          title="Configurar agente"
-        >
-          <Edit2 className="h-3 w-3" />
-        </button>
+        <AgentConfigDialog
+          agentId={dbAgent.id}
+          agentName={meta.label}
+          agentDescription={meta.accion}
+          open={configOpen}
+          onOpenChange={setConfigOpen}
+          onSuccess={onConfigSuccess}
+        />
       )}
     </div>
   );
@@ -189,14 +201,15 @@ function WorkerGraphNode({
 
 // ─── Coordinator Card (prominent) ─────────────────────────────────────────────
 function CoordinatorCard({
-  coordinator, agentState, isConnected, isGenerating,
+  coordinator, agentState, isConnected, isGenerating, onConfigSuccess,
 }: {
   coordinator?: HLAgent;
   agentState: AgentState;
   isConnected: boolean;
   isGenerating: boolean;
+  onConfigSuccess: () => void;
 }) {
-  const navigate = useNavigate();
+  const [configOpen, setConfigOpen] = useState(false);
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-purple-500/30 bg-gradient-to-br from-purple-500/10 via-purple-500/5 to-transparent backdrop-blur-sm p-6 lg:p-8">
@@ -256,14 +269,26 @@ function CoordinatorCard({
           )}
           {coordinator && (
             <button
-              onClick={() => navigate(`/agents/${coordinator.id}`)}
+              onClick={() => setConfigOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white/50 hover:text-white hover:bg-white/10 text-xs transition-all"
             >
-              <Edit2 className="h-3 w-3" /> Configurar
+              <Settings2 className="h-3 w-3" /> Configurar
             </button>
           )}
         </div>
       </div>
+
+      {/* Coordinator Config Dialog */}
+      {coordinator && (
+        <AgentConfigDialog
+          agentId={coordinator.id}
+          agentName={coordinator.name ?? "HiveLearn Coordinator"}
+          agentDescription={coordinator.description ?? "Coordina el enjambre educativo completo"}
+          open={configOpen}
+          onOpenChange={setConfigOpen}
+          onSuccess={onConfigSuccess}
+        />
+      )}
     </div>
   );
 }
@@ -345,6 +370,13 @@ export function HiveLearnSwarmPage() {
   const agentMap = new Map(dbAgents.map(a => [a.id, a]));
   const coordinator = dbAgents.find(a => a.role === "coordinator");
 
+  const [coordinatorConfigOpen, setCoordinatorConfigOpen] = useState(false);
+
+  const handleConfigSuccess = () => {
+    fetchAgents();
+    setCoordinatorConfigOpen(false);
+  };
+
   const activeCount = Object.values(agentStates).filter(s =>
     s.status === "running" || s.status === "thinking" || s.status === "tool_call"
   ).length;
@@ -387,6 +419,7 @@ export function HiveLearnSwarmPage() {
         agentState={agentStates["hl-coordinator-agent"] ?? { status: "idle" }}
         isConnected={isConnected}
         isGenerating={isGenerating}
+        onConfigSuccess={handleConfigSuccess}
       />
 
       {/* ── Workers ── */}
@@ -414,6 +447,7 @@ export function HiveLearnSwarmPage() {
               agentId={id}
               dbAgent={agentMap.get(id)}
               agentState={agentStates[id] ?? { status: "idle" }}
+              onConfigSuccess={handleConfigSuccess}
             />
           ))}
         </div>
@@ -428,13 +462,25 @@ export function HiveLearnSwarmPage() {
             Configura un modelo para el coordinador para activar el enjambre.
           </p>
           <button
-            onClick={() => navigate("/hivelearn/config")}
+            onClick={() => setCoordinatorConfigOpen(true)}
             className="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-sm transition-all flex items-center gap-2"
           >
             <Settings2 className="h-4 w-4" />
-            Configurar modelo
+            Configurar coordinador
           </button>
         </div>
+      )}
+
+      {/* Coordinator Config Dialog (empty state) */}
+      {coordinator && (
+        <AgentConfigDialog
+          agentId={coordinator.id}
+          agentName={coordinator.name ?? "HiveLearn Coordinator"}
+          agentDescription={coordinator.description ?? "Coordina el enjambre educativo completo"}
+          open={coordinatorConfigOpen}
+          onOpenChange={setCoordinatorConfigOpen}
+          onSuccess={handleConfigSuccess}
+        />
       )}
     </div>
   );

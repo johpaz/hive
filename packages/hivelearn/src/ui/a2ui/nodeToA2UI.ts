@@ -156,10 +156,11 @@ export function nodeToA2UI(nodo: NodoLesson): A2UIMessage[] {
   // ── Quiz ─────────────────────────────────────────────────────────────────────
   if (nodo.tipoPedagogico === 'quiz' && c?.quiz) {
     const q = c.quiz
+    const opciones: string[] = Array.isArray(q.opciones) ? q.opciones : []
     comps = [
       column('root', ['q-question', 'q-mc', ...meChildren]),
-      text('q-question', q.pregunta, 'h4'),
-      multipleChoice('q-mc', q.opciones),
+      text('q-question', q.pregunta ?? nodo.concepto, 'h4'),
+      multipleChoice('q-mc', opciones),
       button('q-check', 'Comprobar respuesta ✓', 'check_answer', [
         { key: 'respuesta',      value: { path: '/_selections/q-mc/0' } },
         { key: 'nodoId',         value: { literalString: nodo.id } },
@@ -207,12 +208,14 @@ export function nodeToA2UI(nodo: NodoLesson): A2UIMessage[] {
   // ── Challenge ────────────────────────────────────────────────────────────────
   if (nodo.tipoPedagogico === 'challenge' && c?.reto) {
     const r = c.reto
-    const stepIds = r.pasos.map((_, i) => `reto-step-${i}`)
-    const criteriaIds = r.criteriosExito.map((_, i) => `reto-crit-${i}`)
-    const stepComps = r.pasos.map((paso, i) => row(`reto-step-${i}`, [`reto-step-${i}-num`, `reto-step-${i}-text`], 'start'))
-    const stepNumComps = r.pasos.map((_, i) => text(`reto-step-${i}-num`, `${i + 1}.`, 'h5'))
-    const stepTextComps = r.pasos.map((paso, i) => text(`reto-step-${i}-text`, paso, 'body'))
-    const critComps = r.criteriosExito.map((c, i) => text(`reto-crit-${i}`, `✓ ${c}`, 'caption'))
+    const pasos: string[] = Array.isArray(r.pasos) ? r.pasos : []
+    const criterios: string[] = Array.isArray(r.criteriosExito) ? r.criteriosExito : []
+    const stepIds = pasos.map((_, i) => `reto-step-${i}`)
+    const criteriaIds = criterios.map((_, i) => `reto-crit-${i}`)
+    const stepComps = pasos.map((paso, i) => row(`reto-step-${i}`, [`reto-step-${i}-num`, `reto-step-${i}-text`], 'start'))
+    const stepNumComps = pasos.map((_, i) => text(`reto-step-${i}-num`, `${i + 1}.`, 'h5'))
+    const stepTextComps = pasos.map((paso, i) => text(`reto-step-${i}-text`, paso, 'body'))
+    const critComps = criterios.map((c, i) => text(`reto-crit-${i}`, `✓ ${c}`, 'caption'))
 
     comps = [
       column('root', ['reto-card', 'reto-steps-label', 'reto-steps', 'reto-crit-label', 'reto-crits', ...meChildren]),
@@ -238,7 +241,7 @@ export function nodeToA2UI(nodo: NodoLesson): A2UIMessage[] {
     comps = [
       column('root', ['code-lang-row', 'code-block', 'code-desc', ...meChildren]),
       row('code-lang-row', ['code-lang-badge']),
-      text('code-lang-badge', cod.lenguaje.toUpperCase(), 'caption'),
+      text('code-lang-badge', (cod.lenguaje ?? 'code').toUpperCase(), 'caption'),
       text('code-block', cod.codigo, 'code'),
       ...(cod.descripcionBreve ? [text('code-desc', cod.descripcionBreve, 'caption')] : []),
       ...meComps,
@@ -247,7 +250,7 @@ export function nodeToA2UI(nodo: NodoLesson): A2UIMessage[] {
   }
 
   // ── SVG Diagram ───────────────────────────────────────────────────────────────
-  if (nodo.tipoVisual === 'svg_diagram' && c?.svg) {
+  if (nodo.tipoVisual === 'svg_diagram' && c?.svg?.svgString) {
     // Encode SVG as data URI for the Image component
     const svgSafe = c.svg.svgString.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/on\w+="[^"]*"/gi, '')
     const dataUri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgSafe)}`
@@ -261,7 +264,7 @@ export function nodeToA2UI(nodo: NodoLesson): A2UIMessage[] {
 
   // ── Infographic ───────────────────────────────────────────────────────────────
   if (nodo.tipoVisual === 'infographic' && c?.infografia) {
-    const secs = c.infografia.secciones
+    const secs: any[] = Array.isArray(c.infografia.secciones) ? c.infografia.secciones : []
     const secIds = secs.map((_, i) => `inf-sec-${i}`)
     const secCards = secs.map((s, i) => card(`inf-sec-${i}`, `inf-sec-${i}-inner`))
     const secInners = secs.map((s, i) =>
@@ -285,7 +288,7 @@ export function nodeToA2UI(nodo: NodoLesson): A2UIMessage[] {
 
   // ── GIF Guide ─────────────────────────────────────────────────────────────────
   if (nodo.tipoVisual === 'gif_guide' && c?.gifFrames) {
-    const frames = c.gifFrames.frames
+    const frames: any[] = Array.isArray(c.gifFrames.frames) ? c.gifFrames.frames : []
     const frameIds = frames.map((_, i) => `gif-frame-${i}`)
     const frameCards = frames.flatMap((f, i) => [
       card(`gif-frame-${i}`, `gif-frame-${i}-inner`),
@@ -306,7 +309,7 @@ export function nodeToA2UI(nodo: NodoLesson): A2UIMessage[] {
 
   // ── Evaluation ───────────────────────────────────────────────────────────────
   if (nodo.tipoPedagogico === 'evaluation' && c?.evaluacion) {
-    const pregs = c.evaluacion.preguntas
+    const pregs: any[] = Array.isArray(c.evaluacion.preguntas) ? c.evaluacion.preguntas : []
     const qComps: CompDef[] = []
     const qChildIds: string[] = []
 
@@ -342,8 +345,8 @@ export function nodeToA2UI(nodo: NodoLesson): A2UIMessage[] {
     rootChildren = ['exp-title', 'exp-body', ...meChildren]
     comps = [
       column('root', rootChildren),
-      text('exp-title', exp.titulo, 'h3'),
-      text('exp-body', exp.explicacion, 'body'),
+      text('exp-title', exp.titulo ?? nodo.titulo, 'h3'),
+      text('exp-body', exp.explicacion ?? exp.descripcion ?? nodo.concepto, 'body'),
       ...meComps,
     ]
     if (exp.ejemploConcreto) {
