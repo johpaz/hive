@@ -7,12 +7,15 @@ COPY package.json bun.lock bunfig.toml tsconfig.base.json tsconfig.json ./
 COPY packages/hive-ui ./packages/hive-ui
 
 # Stub other workspace packages so bun resolves the monorepo correctly
-RUN mkdir -p packages/core packages/cli packages/mcp packages/skills packages/code-bridge && \
+RUN mkdir -p packages/core packages/cli packages/mcp packages/skills packages/code-bridge packages/hivelearn && \
       echo '{"name":"@hive/core","version":"0.0.0"}' > packages/core/package.json && \
       echo '{"name":"@hive/cli","version":"0.0.0"}' > packages/cli/package.json && \
       echo '{"name":"@hive/mcp","version":"0.0.0"}' > packages/mcp/package.json && \
       echo '{"name":"@hive/skills","version":"0.0.0"}' > packages/skills/package.json && \
-      echo '{"name":"@hive/code-bridge","version":"0.0.0"}' > packages/code-bridge/package.json
+      echo '{"name":"@hive/code-bridge","version":"0.0.0"}' > packages/code-bridge/package.json && \
+      echo '{"name":"@johpaz/hivelearn","version":"0.0.0","main":"index.ts","exports":{".":"./index.ts","./ui":"./ui.ts"}}' > packages/hivelearn/package.json && \
+      echo 'export {}' > packages/hivelearn/index.ts && \
+      echo 'export {}' > packages/hivelearn/ui.ts
 
 RUN bun install
 RUN cd packages/hive-ui && bun run build

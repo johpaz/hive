@@ -21,7 +21,7 @@ jobs:
         run: |
           # Stub other workspace packages for monorepo resolution
           VERSION=$(node -p "require('./package.json').version")
-          for pkg in core cli mcp skills code-bridge sdk; do
+          for pkg in core cli mcp skills code-bridge sdk hivelearn; do
             mkdir -p packages/$pkg
             echo "{\"name\":\"@johpaz/hive-agents-${pkg}\",\"version\":\"${VERSION}\"}" > packages/$pkg/package.json
           done
