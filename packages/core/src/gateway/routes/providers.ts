@@ -142,35 +142,51 @@ export async function handleSyncProviderModels(
     return addCorsHeaders(new Response("Provider not found", { status: 404 }), req)
   }
 
-  const baseUrl = ((providerRow.base_url as string) || process.env.OLLAMA_HOST || "http://localhost:11434").replace(/\/(v1|api)\/?$/, "")
+  const baseUrl = ((providerRow.base_url as string) || "http://localhost:11434").replace(/\/(v1|api)\/?$/, "")
 
   try {
-    const res = await fetch(`${baseUrl}/api/tags`)
-    if (!res.ok) {
-      return addCorsHeaders(Response.json({ error: `Ollama responded ${res.status}` }, { status: 502 }), req)
+    let modelNames: string[] = []
+
+    // Ollama uses /api/tags, OpenAI-compatible providers use /v1/models
+    if (providerId === "ollama") {
+      const res = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(10000) })
+      if (!res.ok) {
+        return addCorsHeaders(Response.json({ error: `Ollama responded ${res.status}` }, { status: 502 }), req)
+      }
+      const data = await res.json() as { models: Array<{ name: string }> }
+      modelNames = (data.models || []).map(m => m.name)
+    } else {
+      // OpenAI-compatible: local-llama, groq, mistral, etc.
+      const res = await fetch(`${baseUrl}/v1/models`, { signal: AbortSignal.timeout(10000) })
+      if (!res.ok) {
+        return addCorsHeaders(Response.json({ error: `${providerId} responded ${res.status}` }, { status: 502 }), req)
+      }
+      const data = await res.json() as { data: Array<{ id: string }> }
+      modelNames = (data.data || []).map(m => m.id)
     }
 
-    const data = await res.json() as { models: Array<{ name: string }> }
-    const ollamaModels = data.models || []
+    if (modelNames.length === 0) {
+      return addCorsHeaders(Response.json({ error: "No models found from provider" }, { status: 400 }), req)
+    }
 
     const upsert = db.query(
-      `INSERT INTO models (id, provider_id, name, model_type, enabled, active) 
-       VALUES (?, ?, ?, 'llm', 1, 1) 
-       ON CONFLICT(id) DO UPDATE SET name = excluded.name, enabled = 1`
+      `INSERT INTO models (id, provider_id, name, model_type, context_window, enabled, active)
+       VALUES (?, ?, ?, 'llm', 32768, 1, 1)
+       ON CONFLICT(id) DO UPDATE SET name = excluded.name, enabled = 1, active = 1`
     )
 
-    for (const m of ollamaModels) {
-      upsert.run(m.name, providerId, m.name)
+    for (const name of modelNames) {
+      upsert.run(name, providerId, name)
     }
 
-    const installedIds = ollamaModels.map(m => m.name)
+    // Disable models that are no longer present
     const existingModels = db.query<Record<string, unknown>, [string]>(
       "SELECT id FROM models WHERE provider_id = ?"
     ).all(providerId) as Record<string, unknown>[]
 
     const disable = db.query("UPDATE models SET active = 0, enabled = 0 WHERE id = ?")
     for (const row of existingModels) {
-      if (!installedIds.includes(row.id as string)) {
+      if (!modelNames.includes(row.id as string)) {
         disable.run(row.id as string)
       }
     }
@@ -179,14 +195,20 @@ export async function handleSyncProviderModels(
       "SELECT id, name, provider_id, enabled, active FROM models WHERE provider_id = ?"
     ).all(providerId)
 
-    return addCorsHeaders(Response.json({ 
-      success: true, 
-      synced: ollamaModels.length, 
-      models 
+    return addCorsHeaders(Response.json({
+      success: true,
+      synced: modelNames.length,
+      models
     }), req)
   } catch (err: unknown) {
-    return addCorsHeaders(Response.json({ 
-      error: `No se pudo conectar a Ollama: ${(err as Error).message}` 
+    const errorMsg = (err as Error).message
+    const hint = providerId === "ollama"
+      ? "Could not connect to Ollama"
+      : providerId === "local-llama"
+        ? "Could not connect to llama-server. Make sure it's running on :8080"
+        : `Could not connect to provider: ${errorMsg}`
+    return addCorsHeaders(Response.json({
+      error: `${hint}: ${errorMsg}`
     }, { status: 502 }), req)
   }
 }

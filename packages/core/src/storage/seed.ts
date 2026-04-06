@@ -157,6 +157,7 @@ export const SEED_DATA: SeedData = {
     { id: "openrouter", name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1" },
     { id: "ollama", name: "Ollama (Local)", baseUrl: "http://localhost:11434" },
     { id: "groq", name: "Groq", baseUrl: "https://api.groq.com/openai/v1" },
+    { id: "local-llama", name: "Local LLM (llama-server)", baseUrl: "http://localhost:8080/v1" },
     { id: "elevenlabs", name: "ElevenLabs", baseUrl: "https://api.elevenlabs.io/v1" },
     { id: "qwen", name: "Qwen (Alibaba)", baseUrl: "https://dashscope.aliyuncs.com/api/v1" },
   ],
@@ -263,6 +264,9 @@ export const SEED_DATA: SeedData = {
     { id: "distil-whisper-large-v3-en", providerId: "groq", name: "Distil Whisper V3 EN", modelType: "stt", contextWindow: 0, capabilities: JSON.stringify(["transcription", "english"]) },
 
     // ── Ollama: models are detected at runtime via /api/setup/ollama-models and inserted dynamically ──
+
+    // ── Local LLM (llama-server): model detected at runtime via sync ──
+    { id: "local-model", providerId: "local-llama", name: "Local Model (auto-detected)", modelType: "llm", contextWindow: 32768, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
 
     // ── ElevenLabs (TTS) ──
     { id: "eleven_flash_v2_5", providerId: "elevenlabs", name: "Eleven Flash V2.5", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "fast"]) },

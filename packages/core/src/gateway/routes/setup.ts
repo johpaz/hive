@@ -249,6 +249,23 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`,
       }
+    } else if (provider === "local-llama") {
+      const llamaUrl = (process.env.LOCAL_LLM_HOST || "http://localhost:8080").replace(/\/+$/, "")
+      try {
+        const response = await fetch(`${llamaUrl}/health`, {
+          signal: AbortSignal.timeout(5000),
+        })
+        const data = await response.json().catch(() => ({}))
+        return Response.json({
+          success: response.ok && data.status === "ok",
+          error: response.ok && data.status === "ok" ? null : `llama-server is running but not healthy (status: ${data.status || "unknown"})`,
+        })
+      } catch {
+        return Response.json({
+          success: false,
+          error: `Could not connect to llama-server at ${llamaUrl}. Make sure it's running with --port 8080`,
+        })
+      }
     }
 
     if (!testUrl) {
