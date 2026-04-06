@@ -212,6 +212,11 @@ function ProjectGraphNode({ node, tasks }: { node: GraphNode; tasks: GraphNode[]
 }
 
 function GraphView({ nodes, edges }: { nodes: GraphNode[]; edges: GraphEdge[] }) {
+  // Debug: log agent node IDs
+  if (nodes.length > 0) {
+    const allAgentIds = nodes.filter(n => n.type === "agent").map(n => n.id);
+    console.log("[Canvas] Agent node IDs:", allAgentIds);
+  }
   // Exclude hivelearn agents (hl-*) from the main canvas
   const agentNodes = nodes.filter((n) => n.type === "agent" && !n.id.startsWith("hl-"));
   const mcpNodes = nodes.filter((n) => n.type === "mcp");
