@@ -318,7 +318,7 @@ export async function start(flags: string[]): Promise<void> {
  ║   ██║  ██║██║ ╚████╔╝ ███████╗             ║
  ║   ╚═╝  ╚═╝╚═╝  ╚═══╝  ╚══════╝             ║
  ║                                            ║
- ║   Personal Swarm AI Gateway — v0.0.17       ║
+ ║   Personal Swarm AI Gateway — v0.0.18       ║
  ╚════════════════════════════════════════════╝
 
 📦 Installation: ${adapter.name}
