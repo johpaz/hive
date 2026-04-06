@@ -10,7 +10,7 @@ export function ConceptAnimatedNode(props: NodeProps) {
         {exp ? (
           <p className="text-xs text-gray-200">{exp.explicacion}</p>
         ) : (
-          <div className="h-8 rounded bg-amber-500/10 animate-pulse" />
+          <div className="h-8 rounded bg-blue-500/10 animate-pulse" />
         )}
       </div>
     </BaseNode>

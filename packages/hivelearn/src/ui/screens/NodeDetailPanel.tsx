@@ -9,7 +9,7 @@ const TIPO_BADGE: Record<string, { label: string; color: string }> = {
   exercise:   { label: 'Ejercicio',  color: 'bg-green-500/20 text-green-300 border-green-500/30' },
   quiz:       { label: 'Quiz',       color: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
   challenge:  { label: 'Reto',       color: 'bg-orange-500/20 text-orange-300 border-orange-500/30' },
-  milestone:  { label: 'Logro',      color: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
+  milestone:  { label: 'Logro',      color: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
   evaluation: { label: 'Evaluación', color: 'bg-red-500/20 text-red-300 border-red-500/30' },
 }
 
@@ -130,7 +130,7 @@ export function NodeDetailPanel({ nodo, onClose, onComplete }: Props) {
 
               {/* XP badge */}
               {nodo && nodo.xpRecompensa > 0 && !lastFeedback && (
-                <div className="flex items-center gap-1.5 text-xs text-amber-400/60">
+                <div className="flex items-center gap-1.5 text-xs text-blue-400/60">
                   <span>⭐</span>
                   <span>+{nodo.xpRecompensa} XP al completar</span>
                 </div>
@@ -171,7 +171,7 @@ export function NodeDetailPanel({ nodo, onClose, onComplete }: Props) {
               className={`flex-[2] py-2.5 rounded-lg text-sm font-bold transition-all
                 ${isCompleted ? 'bg-green-500 text-white scale-95' :
                   canComplete
-                    ? 'bg-amber-500 text-black hover:bg-amber-400'
+                    ? 'bg-blue-600 text-white hover:bg-blue-500'
                     : 'bg-gray-700 text-gray-500 cursor-not-allowed'}
               `}
             >

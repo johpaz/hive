@@ -12,7 +12,7 @@ export function ConceptInfographicNode(props: NodeProps) {
           {info.secciones.map((s, i) => (
             <div key={i} className="rounded bg-gray-800/60 p-1.5 text-center">
               <span className="text-base">{s.emoji}</span>
-              <p className="text-[10px] font-bold text-amber-400">{s.titulo}</p>
+              <p className="text-[10px] font-bold text-blue-400">{s.titulo}</p>
               <p className="text-[10px] text-gray-300">{s.valor}</p>
             </div>
           ))}

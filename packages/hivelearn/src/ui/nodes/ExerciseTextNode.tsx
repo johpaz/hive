@@ -22,7 +22,7 @@ export function ExerciseTextNode(props: NodeProps) {
           {data.estado === 'disponible' && (
             <>
               <input
-                className="w-full rounded bg-gray-800 border border-gray-600 px-2 py-1 text-xs text-white focus:border-amber-500 outline-none"
+                className="w-full rounded bg-gray-800 border border-gray-600 px-2 py-1 text-xs text-white focus:border-blue-500 outline-none"
                 placeholder="Tu respuesta..."
                 value={respuesta}
                 onChange={e => setRespuesta(e.target.value)}
@@ -31,21 +31,21 @@ export function ExerciseTextNode(props: NodeProps) {
               <div className="flex gap-1">
                 <button
                   onClick={handleSubmit}
-                  className="flex-1 rounded bg-amber-500 px-2 py-1 text-xs font-bold text-black hover:bg-amber-400"
+                  className="flex-1 rounded bg-blue-600 px-2 py-1 text-xs font-bold text-white hover:bg-blue-500"
                 >
                   Enviar
                 </button>
                 {ej.pistaOpcional && (
                   <button
                     onClick={() => setMostrarPista(!mostrarPista)}
-                    className="rounded border border-gray-600 px-2 py-1 text-xs text-gray-400 hover:border-amber-500"
+                    className="rounded border border-gray-600 px-2 py-1 text-xs text-gray-400 hover:border-blue-500"
                   >
                     💡
                   </button>
                 )}
               </div>
               {mostrarPista && ej.pistaOpcional && (
-                <p className="text-xs text-amber-400/80 italic">{ej.pistaOpcional}</p>
+                <p className="text-xs text-gray-300/80 italic">{ej.pistaOpcional}</p>
               )}
             </>
           )}

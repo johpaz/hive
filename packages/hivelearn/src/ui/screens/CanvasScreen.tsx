@@ -48,8 +48,8 @@ function HiveLearnNode({ data }: NodeProps) {
       w-[160px] rounded-2xl border-2 px-3 py-3 flex flex-col items-center gap-2 text-center
       transition-all duration-300
       ${isDone   ? 'bg-green-500/10 border-green-500/50' : ''}
-      ${isAvail && isActive  ? 'bg-gray-800 border-amber-500 shadow-[0_0_18px_rgba(245,158,11,0.35)]' : ''}
-      ${isAvail && !isActive ? 'bg-gray-800 border-amber-500/40' : ''}
+      ${isAvail && isActive  ? 'bg-gray-800 border-blue-500 shadow-[0_0_18px_rgba(59,130,246,0.35)]' : ''}
+      ${isAvail && !isActive ? 'bg-gray-800 border-blue-500/40' : ''}
       ${isLocked ? 'bg-gray-900/60 border-gray-700/40 opacity-60' : ''}
     `}>
       <Handle type="target" position={Position.Left} className="!bg-gray-600 !border-gray-500 !w-2 !h-2" />
@@ -71,7 +71,7 @@ function HiveLearnNode({ data }: NodeProps) {
             w-full rounded-lg py-1 text-[10px] font-bold transition-all
             ${isDone
               ? 'bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25'
-              : 'bg-amber-500 text-black hover:bg-amber-400 active:scale-95'}
+              : 'bg-blue-600 text-white hover:bg-blue-500 active:scale-95'}
           `}
         >
           {isDone ? '✓ Revisar' : 'Abrir →'}
@@ -176,7 +176,7 @@ export function CanvasScreen() {
         <div className="absolute top-14 right-4 z-20">
           <button
             onClick={() => setScreen('evaluation')}
-            className="rounded-full bg-amber-500 px-4 py-1.5 text-xs font-bold text-black hover:bg-amber-400 shadow-lg"
+            className="rounded-full bg-blue-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-blue-500 shadow-lg"
           >
             📝 Evaluación final →
           </button>

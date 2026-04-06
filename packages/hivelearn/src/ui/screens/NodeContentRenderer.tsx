@@ -88,9 +88,9 @@ function ExplicacionCard({ explicacion }: { explicacion: NonNullable<NodoLesson[
       <h3 className="text-white font-bold text-base">{explicacion.titulo}</h3>
       <p className="text-gray-300 text-sm leading-relaxed">{explicacion.explicacion}</p>
       {explicacion.ejemploConcreto && (
-        <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3">
-          <p className="text-xs text-amber-400 font-semibold mb-1">Ejemplo</p>
-          <p className="text-amber-100/80 text-sm">{explicacion.ejemploConcreto}</p>
+        <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-3">
+          <p className="text-xs text-blue-400 font-semibold mb-1">Ejemplo</p>
+          <p className="text-gray-100/80 text-sm">{explicacion.ejemploConcreto}</p>
         </div>
       )}
     </div>
@@ -105,7 +105,7 @@ function CodigoCard({ codigo }: { codigo: NonNullable<NodoLesson['contenido']>['
         <span className="text-xs text-gray-400 font-mono">{codigo.lenguaje}</span>
         <button
           onClick={() => navigator.clipboard.writeText(codigo.codigo)}
-          className="text-xs text-gray-500 hover:text-amber-400 transition-colors"
+          className="text-xs text-gray-500 hover:text-blue-400 transition-colors"
         >
           📋 Copiar
         </button>
@@ -162,11 +162,11 @@ function ChartCard({ infografia }: { infografia: NonNullable<NodoLesson['conteni
           <div key={i} className="space-y-1">
             <div className="flex justify-between text-xs text-gray-400">
               <span>{s.emoji} {s.titulo}</span>
-              <span className="text-amber-300">{s.valor}</span>
+              <span className="text-blue-300">{s.valor}</span>
             </div>
             <div className="h-2 rounded-full bg-gray-700 overflow-hidden">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-amber-600 to-yellow-400 transition-all duration-700"
+                className="h-full rounded-full bg-gradient-to-r from-blue-600 to-blue-400 transition-all duration-700"
                 style={{ width: `${pct}%` }}
               />
             </div>
@@ -244,11 +244,11 @@ function EjercicioCard({ ejercicio }: { ejercicio: NonNullable<NodoLesson['conte
       </div>
       {ejercicio.pistaOpcional && (
         <details className="group">
-          <summary className="text-xs text-amber-400 cursor-pointer hover:text-amber-300 list-none flex items-center gap-1">
+          <summary className="text-xs text-blue-400 cursor-pointer hover:text-blue-300 list-none flex items-center gap-1">
             <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
             Ver pista
           </summary>
-          <p className="mt-1 text-xs text-amber-200/70 pl-4">{ejercicio.pistaOpcional}</p>
+          <p className="mt-1 text-xs text-gray-200/70 pl-4">{ejercicio.pistaOpcional}</p>
         </details>
       )}
     </div>
@@ -287,7 +287,7 @@ function RetoCard({ reto }: { reto: NonNullable<NodoLesson['contenido']>['reto']
       <div className="space-y-1.5">
         {reto.pasos.map((paso, i) => (
           <div key={i} className="flex items-start gap-2 text-sm text-gray-300">
-            <span className="text-amber-400 font-bold text-xs mt-0.5 flex-shrink-0">{i + 1}.</span>
+            <span className="text-blue-400 font-bold text-xs mt-0.5 flex-shrink-0">{i + 1}.</span>
             <span>{paso}</span>
           </div>
         ))}
@@ -301,7 +301,7 @@ function MilestoneCard({ nodo }: { nodo: NodoLesson }) {
     <div className="flex flex-col items-center justify-center py-6 space-y-3 text-center">
       <div className="text-5xl animate-bounce">🏆</div>
       <h3 className="text-white font-black text-lg">{nodo.titulo}</h3>
-      <p className="text-amber-300 text-sm">{nodo.concepto}</p>
+      <p className="text-gray-300 text-sm">{nodo.concepto}</p>
       <div className="text-xs text-gray-400 mt-2">
         +{nodo.xpRecompensa} XP al completar
       </div>

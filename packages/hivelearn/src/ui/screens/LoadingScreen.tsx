@@ -40,7 +40,7 @@ function AgentCard({ agentId, status = 'pending', compact = false }: {
     <div className={`
       rounded-xl border transition-all duration-500 flex flex-col
       ${compact ? 'p-2.5 gap-1' : 'p-3 gap-1.5'}
-      ${isRunning ? 'bg-amber-500/10 border-amber-500/50 shadow-[0_0_12px_rgba(245,158,11,0.2)]' : ''}
+      ${isRunning ? 'bg-blue-500/10 border-blue-500/50 shadow-[0_0_12px_rgba(59,130,246,0.2)]' : ''}
       ${isDone    ? 'bg-green-500/8 border-green-500/30' : ''}
       ${isFailed  ? 'bg-red-500/8 border-red-500/30' : ''}
       ${isPending ? 'bg-white/[0.02] border-white/8 opacity-50' : ''}
@@ -51,12 +51,12 @@ function AgentCard({ agentId, status = 'pending', compact = false }: {
           {meta.icon}
         </span>
         <span className={`text-xs font-bold truncate flex-1
-          ${isRunning ? 'text-amber-200' : isDone ? 'text-green-300' : isFailed ? 'text-red-300' : 'text-white/30'}
+          ${isRunning ? 'text-blue-200' : isDone ? 'text-green-300' : isFailed ? 'text-red-300' : 'text-white/30'}
         `}>
           {meta.label}
         </span>
         {/* Status indicator */}
-        {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse flex-shrink-0" />}
+        {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />}
         {isDone    && <span className="text-green-400 text-xs flex-shrink-0">✓</span>}
         {isFailed  && <span className="text-red-400 text-xs flex-shrink-0">✗</span>}
       </div>
@@ -64,7 +64,7 @@ function AgentCard({ agentId, status = 'pending', compact = false }: {
       {/* Acción — solo visible cuando activo o completado */}
       {!isPending && (
         <p className={`text-[10px] leading-tight
-          ${isRunning ? 'text-amber-300/70' : isDone ? 'text-green-400/60' : 'text-red-400/60'}
+          ${isRunning ? 'text-blue-300/70' : isDone ? 'text-green-400/60' : 'text-red-400/60'}
         `}>
           {isDone ? '✓ Listo' : isFailed ? 'Error' : meta.accion}
         </p>
@@ -85,7 +85,7 @@ function SectionBlock({ num, label, description, children, className = '' }: {
     <div className={`space-y-2 ${className}`}>
       <div className="flex items-center gap-2">
         {num !== undefined && (
-          <div className="w-5 h-5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center justify-center flex-shrink-0">
+          <div className="w-5 h-5 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-300 text-xs font-bold flex items-center justify-center flex-shrink-0">
             {num}
           </div>
         )}
@@ -106,19 +106,19 @@ export function LoadingScreen() {
   return (
     <div className="absolute inset-0 bg-gray-950 overflow-y-auto flex flex-col">
       {/* Ambient glow */}
-      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-amber-500/6 rounded-full blur-[100px] pointer-events-none" />
+      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-blue-500/6 rounded-full blur-[100px] pointer-events-none" />
 
       <div className="flex-1 flex flex-col items-center px-4 py-8 gap-6 relative z-10 max-w-3xl mx-auto w-full">
 
         {/* Hero */}
         <div className="text-center space-y-2">
           <div className="relative mx-auto w-16 h-16">
-            <div className="absolute inset-0 rounded-full bg-amber-500/15 animate-ping" style={{ animationDuration: '2.5s' }} />
+            <div className="absolute inset-0 rounded-full bg-blue-500/15 animate-ping" style={{ animationDuration: '2.5s' }} />
             <div className="absolute inset-0 flex items-center justify-center text-4xl select-none">🐝</div>
           </div>
           <h2 className="text-xl font-black text-white">Construyendo tu programa</h2>
           {meta && (
-            <p className="text-amber-400 text-sm font-medium max-w-sm mx-auto truncate">"{meta}"</p>
+            <p className="text-blue-400 text-sm font-medium max-w-sm mx-auto truncate">"{meta}"</p>
           )}
           {perfil && (
             <p className="text-white/25 text-xs">
@@ -131,11 +131,11 @@ export function LoadingScreen() {
         <div className="w-full space-y-1.5">
           <div className="flex justify-between text-xs">
             <span className="text-white/40 truncate max-w-[80%]">{mensaje}</span>
-            <span className="text-amber-400 font-bold tabular-nums ml-2">{porcentaje}%</span>
+            <span className="text-blue-400 font-bold tabular-nums ml-2">{porcentaje}%</span>
           </div>
           <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-amber-600 via-amber-400 to-yellow-300 transition-all duration-700"
+              className="h-full rounded-full bg-gradient-to-r from-blue-600 via-blue-400 to-blue-300 transition-all duration-700"
               style={{ width: `${Math.max(porcentaje, 2)}%` }}
             />
           </div>

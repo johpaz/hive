@@ -37,7 +37,7 @@ export function ExerciseGifGuideNode(props: NodeProps) {
           {gif.frames.map((_, i) => (
             <div
               key={i}
-              className={`h-1 rounded-full transition-all ${i === frameIdx ? 'w-4 bg-amber-500' : 'w-1 bg-gray-600'}`}
+              className={`h-1 rounded-full transition-all ${i === frameIdx ? 'w-4 bg-blue-500' : 'w-1 bg-gray-600'}`}
             />
           ))}
         </div>

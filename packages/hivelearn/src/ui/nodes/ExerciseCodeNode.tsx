@@ -19,14 +19,14 @@ export function ExerciseCodeNode(props: NodeProps) {
         <div className="mt-1 space-y-2">
           <p className="text-xs text-gray-200">{ej.enunciado}</p>
           <textarea
-            className="w-full rounded bg-black/70 border border-gray-600 p-2 text-xs font-mono text-green-300 focus:border-amber-500 outline-none resize-none h-20"
+            className="w-full rounded bg-black/70 border border-gray-600 p-2 text-xs font-mono text-green-300 focus:border-blue-500 outline-none resize-none h-20"
             placeholder="// Escribe tu código aquí..."
             value={codigo}
             onChange={e => setCodigo(e.target.value)}
           />
           <button
             onClick={handleSubmit}
-            className="w-full rounded bg-amber-500 px-2 py-1 text-xs font-bold text-black hover:bg-amber-400"
+            className="w-full rounded bg-blue-600 px-2 py-1 text-xs font-bold text-white hover:bg-blue-500"
           >
             Ejecutar ▶
           </button>

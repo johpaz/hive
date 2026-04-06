@@ -10,7 +10,7 @@ export function ConceptTextNode(props: NodeProps) {
         <div className="text-xs text-gray-300 space-y-1">
           <p>{exp.explicacion}</p>
           {exp.ejemploConcreto && (
-            <p className="text-amber-400/80 italic">Ej: {exp.ejemploConcreto}</p>
+            <p className="text-gray-300/80 italic">Ej: {exp.ejemploConcreto}</p>
           )}
         </div>
       ) : (

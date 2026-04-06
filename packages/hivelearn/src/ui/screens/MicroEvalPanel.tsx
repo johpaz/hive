@@ -68,11 +68,11 @@ export function MicroEvalPanel({ nodo, feedback, isSubmitting, onSubmit }: Props
       {/* Pista */}
       {!feedback && microEval.pista && (
         <details className="group">
-          <summary className="text-xs text-amber-400/70 cursor-pointer hover:text-amber-400 list-none flex items-center gap-1">
+          <summary className="text-xs text-blue-400/70 cursor-pointer hover:text-blue-400 list-none flex items-center gap-1">
             <span className="group-open:rotate-90 transition-transform inline-block text-xs">▶</span>
             Ver pista
           </summary>
-          <p className="mt-1 text-xs text-amber-200/60 pl-4">{microEval.pista}</p>
+          <p className="mt-1 text-xs text-gray-200/60 pl-4">{microEval.pista}</p>
         </details>
       )}
     </div>
@@ -106,7 +106,7 @@ function VerdaderoFalso({ selected, onSelect, feedback, disabled, onSubmit }: {
             className={`flex-1 py-3 rounded-xl border text-sm font-bold transition-all
               ${isCorrect ? 'bg-green-500/20 border-green-500 text-green-300' :
                 isWrong ? 'bg-red-500/20 border-red-500 text-red-300' :
-                isSelected ? 'bg-amber-500/20 border-amber-500 text-amber-200' :
+                isSelected ? 'bg-blue-500/20 border-blue-500 text-blue-200' :
                 'bg-gray-800 border-gray-600 text-gray-300 hover:border-gray-400'}
               ${disabled && !isSelected ? 'opacity-40' : ''}
             `}
@@ -146,13 +146,13 @@ function MultipleChoice({ opciones, selected, onSelect, feedback, disabled, onSu
             className={`w-full text-left px-3 py-2.5 rounded-lg border text-sm transition-all flex items-center gap-2
               ${isCorrect ? 'bg-green-500/15 border-green-500/60 text-green-200' :
                 isWrong ? 'bg-red-500/15 border-red-500/60 text-red-200' :
-                isSelected ? 'bg-amber-500/15 border-amber-500/50 text-amber-100' :
+                isSelected ? 'bg-blue-500/15 border-blue-500/50 text-blue-100' :
                 'bg-gray-800/60 border-gray-700 text-gray-300 hover:border-gray-500'}
               ${disabled && !isSelected ? 'opacity-40' : ''}
             `}
           >
             <span className={`text-xs font-bold w-5 h-5 rounded flex items-center justify-center flex-shrink-0
-              ${isSelected ? 'bg-amber-500/30 text-amber-300' : 'bg-gray-700 text-gray-400'}`}>
+              ${isSelected ? 'bg-blue-500/30 text-blue-300' : 'bg-gray-700 text-gray-400'}`}>
               {label}
             </span>
             {op}
@@ -183,14 +183,14 @@ function RespuestaCorta({ tipo, value, onChange, feedback, disabled, isSubmittin
         className={`w-full rounded-lg border px-3 py-2 text-sm resize-none outline-none transition-all
           ${tipo === 'completar_codigo' ? 'font-mono bg-gray-950 text-green-300 border-gray-700' :
             'bg-gray-800/60 text-gray-100 border-gray-700'}
-          focus:border-amber-500/60 disabled:opacity-50
+          focus:border-blue-500/60 disabled:opacity-50
         `}
       />
       {!feedback && (
         <button
           onClick={onSubmit}
           disabled={disabled || isSubmitting || !value.trim()}
-          className="w-full py-2.5 rounded-lg bg-amber-500 text-black text-sm font-bold hover:bg-amber-400 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-full py-2.5 rounded-lg bg-blue-600 text-white text-sm font-bold hover:bg-blue-500 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {isSubmitting ? (
             <span className="flex items-center justify-center gap-2">
@@ -209,10 +209,10 @@ function FeedbackBanner({ feedback }: { feedback: FeedbackOutput }) {
     <div className={`rounded-xl border p-3 space-y-1.5 transition-all
       ${feedback.correcto
         ? 'bg-green-500/10 border-green-500/40'
-        : 'bg-amber-500/10 border-amber-500/40'}`}>
+        : 'bg-blue-500/10 border-blue-500/40'}`}>
       <div className="flex items-center gap-2">
         <span className="text-base">{feedback.correcto ? '✅' : '💡'}</span>
-        <span className={`text-sm font-bold ${feedback.correcto ? 'text-green-300' : 'text-amber-300'}`}>
+        <span className={`text-sm font-bold ${feedback.correcto ? 'text-green-300' : 'text-blue-300'}`}>
           {feedback.mensajePrincipal ?? (feedback as any).mensaje}
         </span>
         <span className="ml-auto text-xs font-bold text-amber-400">+{feedback.xpGanado} XP</span>

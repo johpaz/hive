@@ -32,7 +32,7 @@ export function QuizTextNode(props: NodeProps) {
                   className={`w-full text-left rounded px-2 py-1 text-xs border transition-all
                     ${isCorrect ? 'border-green-500 bg-green-500/20 text-green-300' :
                       isWrong ? 'border-red-500 bg-red-500/20 text-red-300' :
-                      isSelected ? 'border-amber-500 bg-amber-500/10 text-white' :
+                      isSelected ? 'border-blue-500 bg-blue-500/10 text-white' :
                       'border-gray-700 bg-gray-800/50 text-gray-300 hover:border-gray-500'}`}
                 >
                   {String.fromCharCode(65 + i)}. {op}
@@ -43,7 +43,7 @@ export function QuizTextNode(props: NodeProps) {
           {!enviado && seleccion !== null && (
             <button
               onClick={handleSubmit}
-              className="w-full rounded bg-amber-500 px-2 py-1 text-xs font-bold text-black hover:bg-amber-400"
+              className="w-full rounded bg-blue-600 px-2 py-1 text-xs font-bold text-white hover:bg-blue-500"
             >
               Confirmar
             </button>

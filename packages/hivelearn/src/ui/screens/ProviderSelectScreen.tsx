@@ -77,7 +77,7 @@ export function ProviderSelectScreen() {
       <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4 sm:p-6">
         <div className="text-center">
           <div className="text-5xl sm:text-6xl mb-3 sm:mb-4 animate-pulse">🐝</div>
-          <h2 className="text-xl sm:text-2xl font-bold text-amber-400 mb-2">Cargando...</h2>
+          <h2 className="text-xl sm:text-2xl font-bold text-blue-400 mb-2">Cargando...</h2>
           <p className="text-sm sm:text-base text-gray-400">Obteniendo proveedores y modelos disponibles</p>
         </div>
       </div>
@@ -94,7 +94,7 @@ export function ProviderSelectScreen() {
             <p className="text-sm text-gray-400 mb-4">{error}</p>
             <button
               onClick={() => window.location.reload()}
-              className="rounded-lg sm:rounded-xl bg-amber-500 px-4 sm:px-6 py-2.5 text-sm font-bold text-black hover:bg-amber-400 transition-all"
+              className="rounded-lg sm:rounded-xl bg-blue-600 px-4 sm:px-6 py-2.5 text-sm font-bold text-white hover:bg-blue-500 transition-all"
             >
               Reintentar
             </button>
@@ -110,13 +110,13 @@ export function ProviderSelectScreen() {
         <div className="w-full max-w-md bg-gray-900 rounded-xl sm:rounded-2xl border border-gray-800 p-4 sm:p-6 space-y-4">
           <div className="text-center">
             <div className="text-5xl sm:text-6xl mb-3">🔧</div>
-            <h2 className="text-xl sm:text-2xl font-bold text-amber-400 mb-2">Sin proveedores</h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-blue-400 mb-2">Sin proveedores</h2>
             <p className="text-sm text-gray-400 mb-4">
               No hay proveedores de IA configurados. Configura al menos uno en Settings &gt; Providers.
             </p>
             <a
               href="/providers"
-              className="inline-block rounded-lg sm:rounded-xl bg-amber-500 px-4 sm:px-6 py-2.5 text-sm font-bold text-black hover:bg-amber-400 transition-all"
+              className="inline-block rounded-lg sm:rounded-xl bg-blue-600 px-4 sm:px-6 py-2.5 text-sm font-bold text-white hover:bg-blue-500 transition-all"
             >
               Ir a Providers
             </a>
@@ -132,7 +132,7 @@ export function ProviderSelectScreen() {
         {/* Header */}
         <div className="text-center mb-6 sm:mb-8">
           <div className="text-5xl sm:text-6xl mb-2 sm:mb-3">🐝</div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-amber-400">HiveLearn</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-blue-400">HiveLearn</h1>
           <p className="text-sm sm:text-base text-gray-400 mt-1">Selecciona tu proveedor y modelo de IA</p>
         </div>
 
@@ -152,8 +152,8 @@ export function ProviderSelectScreen() {
                   }}
                   className={`rounded-lg py-2.5 sm:py-3 px-3 sm:px-4 text-xs sm:text-sm font-medium border transition-all text-left
                     ${selectedProviderId === provider.id
-                      ? 'bg-amber-500/20 border-amber-500 text-amber-300'
-                      : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-amber-500/50'}`}
+                      ? 'bg-blue-500/20 border-blue-500 text-blue-300'
+                      : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-blue-500/50'}`}
                 >
                   <div className="font-bold">{provider.name}</div>
                   <div className="text-[10px] sm:text-xs text-gray-500 mt-1">ID: {provider.id}</div>
@@ -178,8 +178,8 @@ export function ProviderSelectScreen() {
                       onClick={() => setSelectedModel(model.id)}
                       className={`rounded-lg py-2.5 sm:py-3 px-3 sm:px-4 text-xs sm:text-sm font-medium border transition-all text-left
                         ${selectedModelId === model.id
-                          ? 'bg-amber-500/20 border-amber-500 text-amber-300'
-                          : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-amber-500/50'}`}
+                          ? 'bg-blue-500/20 border-blue-500 text-blue-300'
+                          : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-blue-500/50'}`}
                     >
                       <div className="font-bold">{model.name}</div>
                       {model.context_window && (
@@ -196,8 +196,8 @@ export function ProviderSelectScreen() {
 
           {/* Selection Summary */}
           {selectedProviderId && selectedModelId && (
-            <div className="bg-amber-500/10 border border-amber-500/50 rounded-lg p-2.5 sm:p-3">
-              <div className="text-[10px] sm:text-xs text-amber-400 mb-1">Selección actual:</div>
+            <div className="bg-blue-500/10 border border-blue-500/50 rounded-lg p-2.5 sm:p-3">
+              <div className="text-[10px] sm:text-xs text-blue-400 mb-1">Selección actual:</div>
               <div className="text-xs sm:text-sm text-white">
                 <span className="font-bold">{selectedProviderName}</span> → <span className="font-bold">{selectedModelName}</span>
               </div>
@@ -208,7 +208,7 @@ export function ProviderSelectScreen() {
           <button
             onClick={handleContinue}
             disabled={!selectedProviderId || !selectedModelId}
-            className="w-full rounded-lg sm:rounded-xl bg-amber-500 py-2.5 sm:py-3 text-xs sm:text-sm font-bold text-black hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            className="w-full rounded-lg sm:rounded-xl bg-blue-600 py-2.5 sm:py-3 text-xs sm:text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           >
             Continuar →
           </button>

@@ -31,14 +31,14 @@ export function GoalScreen() {
       <div className="w-full max-w-lg">
         <div className="text-center mb-8">
           <h2 className="text-2xl font-bold text-white">
-            ¡Hola, <span className="text-amber-400">{perfil?.nombre}</span>! 👋
+            ¡Hola, <span className="text-blue-400">{perfil?.nombre}</span>! 👋
           </h2>
           <p className="text-gray-400 mt-1">¿Qué quieres aprender hoy?</p>
         </div>
 
         <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6 space-y-4">
           <textarea
-            className="w-full rounded-xl bg-gray-800 border border-gray-700 px-4 py-3 text-white text-sm focus:border-amber-500 outline-none resize-none h-24"
+            className="w-full rounded-xl bg-gray-800 border border-gray-700 px-4 py-3 text-white text-sm focus:border-blue-500 outline-none resize-none h-24"
             placeholder="Ej: Quiero aprender JavaScript básico para crear mis primeros programas..."
             value={meta}
             onChange={e => setMetaLocal(e.target.value)}
@@ -52,7 +52,7 @@ export function GoalScreen() {
                 <button
                   key={s}
                   onClick={() => handleSugerencia(s)}
-                  className="rounded-full border border-gray-700 px-3 py-1 text-xs text-gray-400 hover:border-amber-500/50 hover:text-amber-400 transition-all"
+                  className="rounded-full border border-gray-700 px-3 py-1 text-xs text-gray-400 hover:border-blue-500/50 hover:text-blue-400 transition-all"
                 >
                   {s}
                 </button>
@@ -70,7 +70,7 @@ export function GoalScreen() {
             <button
               onClick={handleStart}
               disabled={!meta.trim()}
-              className="flex-1 rounded-xl bg-amber-500 py-2.5 text-sm font-bold text-black hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              className="flex-1 rounded-xl bg-blue-600 py-2.5 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               🐝 ¡Empezar a aprender!
             </button>

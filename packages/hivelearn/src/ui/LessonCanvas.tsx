@@ -63,7 +63,7 @@ export function LessonCanvas() {
       <div className="flex-1 flex flex-col min-h-0 -m-4 bg-gray-950 items-center justify-center flex">
         <div className="text-center">
           <div className="text-6xl mb-4 animate-pulse">🐝</div>
-          <p className="text-amber-400 font-bold">Cargando HiveLearn...</p>
+          <p className="text-blue-400 font-bold">Cargando HiveLearn...</p>
         </div>
       </div>
     )

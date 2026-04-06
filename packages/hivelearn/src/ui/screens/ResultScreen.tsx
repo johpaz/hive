@@ -51,9 +51,9 @@ export function ResultScreen() {
         </div>
 
         {/* Nivel */}
-        <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-4 text-center">
-          <p className="text-xs text-amber-400/70 uppercase tracking-widest">Nivel alcanzado</p>
-          <p className="text-2xl font-black text-amber-400 mt-1">{nivelActual}</p>
+        <div className="rounded-xl bg-blue-500/10 border border-blue-500/30 p-4 text-center">
+          <p className="text-xs text-blue-400/70 uppercase tracking-widest">Nivel alcanzado</p>
+          <p className="text-2xl font-black text-blue-400 mt-1">{nivelActual}</p>
         </div>
 
         {/* Logros */}
@@ -78,7 +78,7 @@ export function ResultScreen() {
         <div className="flex gap-3">
           <button
             onClick={reset}
-            className="flex-1 rounded-xl bg-amber-500 py-3 text-sm font-bold text-black hover:bg-amber-400"
+            className="flex-1 rounded-xl bg-blue-600 py-3 text-sm font-bold text-white hover:bg-blue-500"
           >
             🐝 Nueva lección
           </button>
