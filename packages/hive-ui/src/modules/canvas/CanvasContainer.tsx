@@ -212,7 +212,8 @@ function ProjectGraphNode({ node, tasks }: { node: GraphNode; tasks: GraphNode[]
 }
 
 function GraphView({ nodes, edges }: { nodes: GraphNode[]; edges: GraphEdge[] }) {
-  const agentNodes = nodes.filter((n) => n.type === "agent");
+  // Exclude hivelearn agents (hl-*) from the main canvas
+  const agentNodes = nodes.filter((n) => n.type === "agent" && !n.id.startsWith("hl-"));
   const mcpNodes = nodes.filter((n) => n.type === "mcp");
   const projectNodes = nodes.filter((n) => n.type === "project");
   const taskNodes = nodes.filter((n) => n.type === "task");

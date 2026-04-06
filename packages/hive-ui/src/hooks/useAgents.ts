@@ -20,7 +20,9 @@ export function useAgents() {
 
   const filteredAgents = useMemo(() => {
     if (!Array.isArray(allAgents)) return [];
-    return filter === "all" ? allAgents : allAgents.filter((a) => a.status === filter);
+    const base = filter === "all" ? allAgents : allAgents.filter((a) => a.status === filter);
+    // Exclude hivelearn agents (hl-*) from the main agents list
+    return base.filter((a: any) => !a.id?.startsWith("hl-"));
   }, [allAgents, filter]);
 
   return {
