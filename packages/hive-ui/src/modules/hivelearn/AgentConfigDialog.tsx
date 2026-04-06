@@ -17,6 +17,7 @@ interface AgentConfigDialogProps {
   agentId: string;
   agentName: string;
   agentDescription: string;
+  agentData: AgentData;  // Required - passed from parent
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
@@ -52,7 +53,7 @@ interface AgentData {
 }
 
 export function AgentConfigDialog({
-  agentId, agentName, agentDescription, open, onOpenChange, onSuccess,
+  agentId, agentName, agentDescription, agentData, open, onOpenChange, onSuccess,
 }: AgentConfigDialogProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -68,34 +69,32 @@ export function AgentConfigDialog({
     maxIterations: 3,
   });
 
-  // Load agent data + providers + models
+  // Initialize form data from passed agentData + fetch providers/models
   useEffect(() => {
     if (!open) return;
     setLoading(true);
 
+    // Initialize form from passed data (no fetch needed)
+    setFormData({
+      systemPrompt: agentData.system_prompt ?? "",
+      providerId: agentData.provider_id ?? "",
+      modelId: agentData.model_id ?? "",
+      workspace: agentData.workspace ?? "",
+      tone: agentData.tone ?? "",
+      enabled: agentData.enabled ?? true,
+      maxIterations: agentData.max_iterations ?? 3,
+    });
+
+    // Only fetch providers and models
     Promise.all([
-      apiClient<{ agents: AgentData[] }>("/api/agents").catch(() => ({ agents: [] })),
       apiClient<{ providers: Provider[] }>("/api/providers").catch(() => ({ providers: [] })),
       apiClient<{ models: Model[] }>("/api/models").catch(() => ({ models: [] })),
-    ]).then(([agentsRes, provRes, modelRes]) => {
-      const allAgents = (agentsRes as any)?.agents ?? [];
-      const agent = allAgents.find((a: AgentData) => a.id === agentId);
-      if (agent) {
-        setFormData({
-          systemPrompt: agent.system_prompt ?? "",
-          providerId: agent.provider_id ?? "",
-          modelId: agent.model_id ?? "",
-          workspace: agent.workspace ?? "",
-          tone: agent.tone ?? "",
-          enabled: agent.enabled ?? true,
-          maxIterations: agent.max_iterations ?? 3,
-        });
-      }
+    ]).then(([provRes, modelRes]) => {
       setProviders(provRes.providers ?? []);
       setModels(modelRes.models ?? []);
       setLoading(false);
     });
-  }, [open, agentId]);
+  }, [open, agentData]);
 
   const filteredModels = models.filter(m => m.provider_id === formData.providerId && m.enabled && m.active);
 

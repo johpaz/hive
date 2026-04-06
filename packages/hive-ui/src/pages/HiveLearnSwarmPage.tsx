@@ -16,6 +16,10 @@ interface HLAgent {
   providerId: string;
   modelId: string;
   enabled: boolean;
+  systemPrompt?: string;
+  workspace?: string;
+  tone?: string;
+  maxIterations?: number;
 }
 
 interface AgentState {
@@ -190,6 +194,19 @@ function WorkerGraphNode({
           agentId={dbAgent.id}
           agentName={meta.label}
           agentDescription={meta.accion}
+          agentData={{
+            id: dbAgent.id,
+            name: dbAgent.name,
+            description: dbAgent.description,
+            provider_id: dbAgent.providerId,
+            model_id: dbAgent.modelId,
+            system_prompt: dbAgent.systemPrompt ?? "",
+            workspace: dbAgent.workspace ?? "",
+            tone: dbAgent.tone ?? "",
+            role: dbAgent.role,
+            enabled: dbAgent.enabled,
+            max_iterations: dbAgent.maxIterations ?? 3,
+          }}
           open={configOpen}
           onOpenChange={setConfigOpen}
           onSuccess={onConfigSuccess}
@@ -284,6 +301,19 @@ function CoordinatorCard({
           agentId={coordinator.id}
           agentName={coordinator.name ?? "HiveLearn Coordinator"}
           agentDescription={coordinator.description ?? "Coordina el enjambre educativo completo"}
+          agentData={{
+            id: coordinator.id,
+            name: coordinator.name ?? "HiveLearn Coordinator",
+            description: coordinator.description ?? "Coordina el enjambre educativo completo",
+            provider_id: coordinator.providerId,
+            model_id: coordinator.modelId,
+            system_prompt: coordinator.systemPrompt ?? "",
+            workspace: coordinator.workspace ?? "",
+            tone: coordinator.tone ?? "",
+            role: coordinator.role,
+            enabled: coordinator.enabled,
+            max_iterations: 10,
+          }}
           open={configOpen}
           onOpenChange={setConfigOpen}
           onSuccess={onConfigSuccess}
@@ -476,6 +506,19 @@ export function HiveLearnSwarmPage() {
           agentId={coordinator.id}
           agentName={coordinator.name ?? "HiveLearn Coordinator"}
           agentDescription={coordinator.description ?? "Coordina el enjambre educativo completo"}
+          agentData={{
+            id: coordinator.id,
+            name: coordinator.name ?? "HiveLearn Coordinator",
+            description: coordinator.description ?? "Coordina el enjambre educativo completo",
+            provider_id: coordinator.providerId,
+            model_id: coordinator.modelId,
+            system_prompt: coordinator.systemPrompt ?? "",
+            workspace: coordinator.workspace ?? "",
+            tone: coordinator.tone ?? "",
+            role: coordinator.role,
+            enabled: coordinator.enabled,
+            max_iterations: 10,
+          }}
           open={coordinatorConfigOpen}
           onOpenChange={setCoordinatorConfigOpen}
           onSuccess={handleConfigSuccess}
