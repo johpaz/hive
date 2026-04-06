@@ -57,9 +57,10 @@ export function LessonNode({ data }: NodeProps) {
         style={{ borderColor: borderColor, opacity: 0.5 }}
       />
 
-      {/* Card */}
+      {/* Card — clickable completo */}
       <div
-        className="rounded-2xl overflow-hidden"
+        onClick={() => !isLocked && onClick(nodo)}
+        className="rounded-2xl overflow-hidden cursor-pointer"
         style={{
           background: isCompleted ? 'rgba(34,197,94,0.06)' : cfg.bg,
           border: `1.5px solid ${borderColor}`,
@@ -132,10 +133,9 @@ export function LessonNode({ data }: NodeProps) {
                 </span>
               </div>
 
-              {/* Action button */}
+              {/* Action button — visual only, click handled by card */}
               <button
-                onClick={(e) => { e.stopPropagation(); onClick(nodo) }}
-                className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-all active:scale-95 ${
+                className={`text-[10px] font-bold px-2.5 py-1 rounded-lg pointer-events-none ${
                   isCompleted
                     ? 'text-emerald-400 hover:bg-emerald-500/15'
                     : 'text-white/70 hover:text-white hover:bg-white/8'

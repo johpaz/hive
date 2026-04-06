@@ -1,13 +1,12 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import {
-  RefreshCw, Settings2, Crown, Network, Zap, Database, GitBranch, Edit2,
-  Wifi, WifiOff, Shield, Bot, Terminal, CheckCircle2, XCircle, Circle,
-  Loader2, MinusCircle,
+  RefreshCw, Settings2, Crown, Shield, Bot, Terminal, Edit2,
+  Wifi, WifiOff, Zap,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useHiveLearnLive, type AgentLiveStatus } from "@/hooks/useHiveLearnLive";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 interface HLAgent {
   id: string;
   name: string;
@@ -26,25 +25,27 @@ interface AgentState {
   tools?: number;
 }
 
-// ─── Static metadata per agent ────────────────────────────────────────────────
-const AGENT_META: Record<string, { emoji: string; label: string; accion: string; phase: 0 | 1 | 2 }> = {
-  "hl-profile-agent":      { emoji: "👤", label: "Perfil",       accion: "Analiza edad, nivel y estilo de aprendizaje",  phase: 0 },
-  "hl-intent-agent":       { emoji: "🎯", label: "Intención",    accion: "Extrae el tema y define los objetivos",          phase: 0 },
-  "hl-structure-agent":    { emoji: "🗺️", label: "Estructura",   accion: "Diseña el mapa de nodos del currículo",          phase: 0 },
-  "hl-explanation-agent":  { emoji: "📖", label: "Explicación",  accion: "Genera teoría clara y ejemplos",                 phase: 1 },
-  "hl-exercise-agent":     { emoji: "✏️", label: "Ejercicios",   accion: "Crea práctica activa paso a paso",               phase: 1 },
-  "hl-quiz-agent":         { emoji: "❓", label: "Quiz",         accion: "Prepara preguntas de verificación",              phase: 1 },
-  "hl-challenge-agent":    { emoji: "⚡", label: "Reto",         accion: "Diseña desafíos integradores",                   phase: 1 },
-  "hl-code-agent":         { emoji: "💻", label: "Código",       accion: "Genera ejemplos ejecutables",                    phase: 1 },
-  "hl-svg-agent":          { emoji: "📊", label: "Diagrama",     accion: "Dibuja visualizaciones SVG",                     phase: 1 },
-  "hl-gif-agent":          { emoji: "🎞️", label: "Animación",    accion: "Crea guías animadas paso a paso",                phase: 1 },
-  "hl-image-agent":        { emoji: "🖼️", label: "Imagen",       accion: "Genera imágenes educativas con IA",              phase: 1 },
-  "hl-infographic-agent":  { emoji: "📈", label: "Infografía",   accion: "Construye resumen visual del tema",              phase: 2 },
-  "hl-gamification-agent": { emoji: "🏆", label: "Gamificación", accion: "Asigna XP, logros y rachas",                    phase: 2 },
-  "hl-evaluation-agent":   { emoji: "📝", label: "Evaluación",   accion: "Prepara examen final adaptativo",                phase: 2 },
-  "hl-coordinator-agent":  { emoji: "🔍", label: "Coordinador",  accion: "Revisa coherencia pedagógica",                   phase: 2 },
-  "hl-feedback-agent":     { emoji: "🧠", label: "Feedback",     accion: "Evalúa comprensión semántica del alumno",        phase: 2 },
+// ─── Static metadata ──────────────────────────────────────────────────────────
+const AGENT_META: Record<string, { emoji: string; label: string; accion: string }> = {
+  "hl-profile-agent":      { emoji: "👤", label: "Perfil",       accion: "Analiza edad, nivel y estilo de aprendizaje" },
+  "hl-intent-agent":       { emoji: "🎯", label: "Intención",    accion: "Extrae el tema y define los objetivos" },
+  "hl-structure-agent":    { emoji: "🗺️", label: "Estructura",   accion: "Diseña el mapa de nodos del currículo" },
+  "hl-explanation-agent":  { emoji: "📖", label: "Explicación",  accion: "Genera teoría clara y ejemplos" },
+  "hl-exercise-agent":     { emoji: "✏️", label: "Ejercicios",   accion: "Crea práctica activa paso a paso" },
+  "hl-quiz-agent":         { emoji: "❓", label: "Quiz",         accion: "Prepara preguntas de verificación" },
+  "hl-challenge-agent":    { emoji: "⚡", label: "Reto",         accion: "Diseña desafíos integradores" },
+  "hl-code-agent":         { emoji: "💻", label: "Código",       accion: "Genera ejemplos ejecutables" },
+  "hl-svg-agent":          { emoji: "📊", label: "Diagrama",     accion: "Dibuja visualizaciones SVG" },
+  "hl-gif-agent":          { emoji: "🎞️", label: "Animación",    accion: "Crea guías animadas paso a paso" },
+  "hl-image-agent":        { emoji: "🖼️", label: "Imagen",       accion: "Genera imágenes educativas con IA" },
+  "hl-infographic-agent":  { emoji: "📈", label: "Infografía",   accion: "Construye resumen visual del tema" },
+  "hl-gamification-agent": { emoji: "🏆", label: "Gamificación", accion: "Asigna XP, logros y rachas" },
+  "hl-evaluation-agent":   { emoji: "📝", label: "Evaluación",   accion: "Prepara examen final adaptativo" },
+  "hl-coordinator-agent":  { emoji: "🔍", label: "Coordinador",  accion: "Revisa coherencia pedagógica" },
+  "hl-feedback-agent":     { emoji: "🧠", label: "Feedback",     accion: "Evalúa comprensión semántica del alumno" },
 };
+
+const WORKER_IDS = Object.keys(AGENT_META).filter(id => id !== "hl-coordinator-agent");
 
 const STATUS_COLORS: Record<AgentState["status"], string> = {
   idle: "bg-emerald-500",
@@ -64,16 +65,10 @@ const STATUS_LABELS: Record<AgentState["status"], string> = {
   failed: "Error",
 };
 
-const PHASE_CONFIG = [
-  { label: "Análisis",    pill: "bg-blue-500/10 border-blue-500/30 text-blue-400",  cardBorderActive: "border-purple-500/40", accent: "via-purple-500/60", note: "Secuencial · cada uno espera al anterior" },
-  { label: "Contenido",   pill: "bg-blue-500/10 border-blue-500/30 text-blue-400",    cardBorderActive: "border-blue-500/60",  accent: "via-blue-500/60",  note: "Paralelo · 8 agentes simultáneos" },
-  { label: "Finalización",pill: "bg-green-500/10 border-green-500/30 text-green-400", cardBorderActive: "border-green-500/60", accent: "via-green-500/60", note: "Paralelo · revisión y cierre" },
-] as const;
-
 // ─── Live Badge ───────────────────────────────────────────────────────────────
 function LiveBadge({ isConnected }: { isConnected: boolean }) {
   return (
-    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-widest transition-all
+    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-widest
       ${isConnected
         ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
         : "bg-white/5 border-white/10 text-white/30"}`}>
@@ -84,41 +79,31 @@ function LiveBadge({ isConnected }: { isConnected: boolean }) {
   );
 }
 
-// ─── Agent Card (Canvas style) ───────────────────────────────────────────────
-function AgentGraphNode({
-  agentId, dbAgent, liveStatus, isCurrentlyRunning, phase,
-  agentState,
+// ─── Worker Card (Canvas style) ──────────────────────────────────────────────
+function WorkerGraphNode({
+  agentId, dbAgent, agentState,
 }: {
   agentId: string;
   dbAgent?: HLAgent;
-  liveStatus: AgentLiveStatus;
-  isCurrentlyRunning: boolean;
-  phase: 0 | 1 | 2;
   agentState: AgentState;
 }) {
   const navigate = useNavigate();
   const meta = AGENT_META[agentId];
   if (!meta) return null;
 
-  const status = agentState.status;
-  const currentTool = agentState.currentTool;
+  const { status, currentTool } = agentState;
   const isThinking = status === "thinking";
   const isToolCall = status === "tool_call";
   const isActive = isThinking || isToolCall || status === "running";
-  const isCoordinator = agentId === "hl-coordinator-agent";
   const isCompleted = status === "completed";
   const isFailed = status === "failed";
   const isDisabled = dbAgent && !dbAgent.enabled;
 
-  const cfg = PHASE_CONFIG[phase];
-
   return (
-    <div className={`relative group w-64 rounded-xl p-5 flex flex-col gap-3 transition-all duration-300
+    <div className={`relative group w-full rounded-xl p-5 flex flex-col gap-3 transition-all duration-300
       bg-[rgba(255,255,255,0.03)] backdrop-blur-xl border
       ${isThinking
         ? "border-purple-500/40 shadow-[0_0_20px_rgba(168,85,247,0.25)]"
-        : isCoordinator
-        ? "border-purple-500/20 shadow-[0_0_16px_rgba(168,85,247,0.1)] hover:border-purple-500/40"
         : isCompleted
         ? "border-green-500/30"
         : isFailed
@@ -128,24 +113,19 @@ function AgentGraphNode({
     `}>
       {/* Top accent line when active */}
       {isActive && (
-        <div className={`absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent ${cfg.accent} to-transparent animate-pulse`} />
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-500/60 to-transparent animate-pulse" />
       )}
 
-      {/* Role badge + avatar */}
+      {/* Avatar + badge */}
       <div className="flex justify-between items-start">
-        <div className={`p-2.5 rounded-lg ${isCoordinator ? "bg-purple-500/10" : "bg-blue-500/10"}`}>
-          {isCoordinator
-            ? <Shield className="h-6 w-6 text-purple-400" />
-            : <Bot className={`h-6 w-6 text-blue-400 ${isActive ? "animate-pulse" : ""}`} />
-          }
+        <div className="p-2.5 rounded-lg bg-blue-500/10">
+          <Bot className={`h-6 w-6 text-blue-400 ${isActive ? "animate-pulse" : ""}`} />
         </div>
         <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase border
-          ${isCoordinator
-            ? "bg-purple-500/10 text-purple-400 border-purple-500/20"
-            : isCompleted
+          ${isCompleted
             ? "bg-green-500/10 text-green-400 border-green-500/20"
             : "bg-blue-500/10 text-blue-400 border-blue-500/20"}`}>
-          {isCoordinator ? "Coordinador" : meta.label}
+          {meta.label}
         </span>
       </div>
 
@@ -207,6 +187,87 @@ function AgentGraphNode({
   );
 }
 
+// ─── Coordinator Card (prominent) ─────────────────────────────────────────────
+function CoordinatorCard({
+  coordinator, agentState, isConnected, isGenerating,
+}: {
+  coordinator?: HLAgent;
+  agentState: AgentState;
+  isConnected: boolean;
+  isGenerating: boolean;
+}) {
+  const navigate = useNavigate();
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-purple-500/30 bg-gradient-to-br from-purple-500/10 via-purple-500/5 to-transparent backdrop-blur-sm p-6 lg:p-8">
+      {/* Decorative accents */}
+      <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-purple-400 to-purple-600" />
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-purple-500/60 to-transparent" />
+      <div className="absolute bottom-0 right-0 left-0 h-px bg-gradient-to-r from-transparent via-purple-500/20 to-transparent" />
+
+      {/* Ambient glow */}
+      <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/5 rounded-full blur-[80px] pointer-events-none" />
+
+      <div className="relative z-10 flex flex-col lg:flex-row lg:items-start gap-6">
+        {/* Left: icon + info */}
+        <div className="flex items-start gap-4 flex-1 min-w-0">
+          <div className="p-4 rounded-2xl bg-purple-500/15 border border-purple-500/30 shadow-[0_0_20px_rgba(168,85,247,0.15)] flex-shrink-0">
+            <Crown className="h-8 w-8 text-purple-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <h3 className="font-bold text-white text-xl lg:text-2xl">
+                {coordinator?.name ?? "HiveLearn Coordinator"}
+              </h3>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                Coordinador
+              </span>
+              <StatusPill status={agentState.status} />
+            </div>
+            <p className="text-white/50 text-sm leading-relaxed mb-3">
+              {coordinator?.description ?? "Coordina el enjambre educativo completo. Recibe el perfil del alumno y su meta, delega tareas a 15 agentes workers, ensambla el LessonProgram y lo renderiza vía A2UI."}
+            </p>
+
+            {/* Tool chip if active */}
+            {(agentState.status === "thinking" || agentState.status === "tool_call") && agentState.currentTool && (
+              <div className="inline-flex items-center gap-1.5 bg-purple-500/5 border border-purple-500/10 rounded-md px-3 py-1.5">
+                <Terminal className="h-3.5 w-3.5 text-purple-400/70 shrink-0" />
+                <span className="text-[10px] font-mono text-purple-400/80 truncate">⚙ {agentState.currentTool}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right: config info */}
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          <div className="flex items-center gap-3">
+            <LiveBadge isConnected={isConnected} />
+            {isGenerating && (
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[10px] font-bold uppercase tracking-widest animate-pulse">
+                <Zap className="h-3 w-3" /> Generando...
+              </span>
+            )}
+          </div>
+          {coordinator?.providerId && (
+            <div className="text-[10px] text-white/30 text-right">
+              <div className="font-mono">{coordinator.providerId}</div>
+              <div className="font-mono text-purple-400/60">{coordinator.modelId}</div>
+            </div>
+          )}
+          {coordinator && (
+            <button
+              onClick={() => navigate(`/agents/${coordinator.id}`)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white/50 hover:text-white hover:bg-white/10 text-xs transition-all"
+            >
+              <Edit2 className="h-3 w-3" /> Configurar
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Status Pill (compact) ───────────────────────────────────────────────────
 function StatusPill({ status }: { status: AgentState["status"] }) {
   const colorMap: Record<AgentState["status"], string> = {
@@ -227,24 +288,6 @@ function StatusPill({ status }: { status: AgentState["status"] }) {
   );
 }
 
-// ─── Insight Card ─────────────────────────────────────────────────────────────
-function InsightCard({ icon: Icon, title, description, colorClass }: {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  description: string;
-  colorClass: string;
-}) {
-  return (
-    <div className={`rounded-xl border p-4 space-y-3 transition-all duration-200 hover:scale-[1.01] ${colorClass}`}>
-      <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 text-white/40" />
-        <p className="font-bold text-white/90 text-sm">{title}</p>
-      </div>
-      <p className="text-xs text-white/40 leading-relaxed">{description}</p>
-    </div>
-  );
-}
-
 // ─── Main page ────────────────────────────────────────────────────────────────
 export function HiveLearnSwarmPage() {
   const navigate = useNavigate();
@@ -253,7 +296,6 @@ export function HiveLearnSwarmPage() {
   const [error, setError] = useState<string | null>(null);
   const [agentStates, setAgentStates] = useState<Record<string, AgentState>>({});
 
-  // Live WS connection for real-time agent status
   const { isConnected, isGenerating, agentStatuses, currentAgentId } = useHiveLearnLive();
 
   const fetchAgents = async () => {
@@ -272,32 +314,21 @@ export function HiveLearnSwarmPage() {
 
   useEffect(() => { fetchAgents(); }, []);
 
-  // Derive agent states from live statuses
+  // Derive agent states
   useEffect(() => {
     const newStates: Record<string, AgentState> = {};
     for (const agentId of Object.keys(AGENT_META)) {
-      const liveStatus = agentStatuses[agentId];
       const isCurrent = currentAgentId === agentId;
       let status: AgentState["status"] = "idle";
       let currentTool: string | null = null;
 
-      if (isCurrent) {
-        // Simulate tool call or thinking based on phase
-        const phaseIdx = Object.values(PHASE_ORDER).findIndex(ids => ids.includes(agentId));
-        if (phaseIdx === 0) {
-          status = Math.random() > 0.5 ? "thinking" : "tool_call";
-          currentTool = status === "tool_call" ? "clasificar_intencion" : null;
-        } else if (phaseIdx === 1) {
-          status = "running";
-        } else {
-          status = liveStatus === "completed" ? "completed" : "idle";
-        }
-      } else if (liveStatus === "completed") {
+      if (isCurrent && isGenerating) {
+        status = Math.random() > 0.5 ? "thinking" : "tool_call";
+        currentTool = status === "tool_call" ? "delegar_a_enjambre" : null;
+      } else if (agentStatuses[agentId] === "completed") {
         status = "completed";
-      } else if (liveStatus === "failed") {
+      } else if (agentStatuses[agentId] === "failed") {
         status = "failed";
-      } else {
-        status = "idle";
       }
 
       const dbAgent = dbAgents.find(a => a.id === agentId);
@@ -311,264 +342,100 @@ export function HiveLearnSwarmPage() {
     setAgentStates(newStates);
   }, [agentStatuses, currentAgentId, dbAgents, isGenerating]);
 
-  // Map DB agents by ID
   const agentMap = new Map(dbAgents.map(a => [a.id, a]));
   const coordinator = dbAgents.find(a => a.role === "coordinator");
-  const isConfigured = !!coordinator?.providerId;
 
-  const PHASE_ORDER = [
-    ["hl-profile-agent", "hl-intent-agent", "hl-structure-agent"],
-    ["hl-explanation-agent", "hl-exercise-agent", "hl-quiz-agent", "hl-challenge-agent", "hl-code-agent", "hl-svg-agent", "hl-gif-agent", "hl-image-agent"],
-    ["hl-infographic-agent", "hl-gamification-agent", "hl-evaluation-agent", "hl-coordinator-agent", "hl-feedback-agent"],
-  ] as const;
+  const activeCount = Object.values(agentStates).filter(s =>
+    s.status === "running" || s.status === "thinking" || s.status === "tool_call"
+  ).length;
 
-  const phaseIsActive = PHASE_ORDER.map(ids =>
-    ids.some(id => {
-      const st = agentStates[id]?.status;
-      return st === "running" || st === "thinking" || st === "tool_call" || st === "completed";
-    })
-  );
+  const completedCount = Object.values(agentStates).filter(s => s.status === "completed").length;
 
   return (
-    <div className="hive-page mt-8 animate-in fade-in duration-700">
-      <div className="hive-page-container relative">
+    <div className="relative z-10 space-y-6">
 
-        {/* Ambient glows */}
-        <div className="absolute -top-40 -left-40 h-[500px] w-[500px] bg-blue-600/10 rounded-full blur-[120px] pointer-events-none opacity-50" />
-        <div className="absolute top-40 -right-40 h-[400px] w-[400px] bg-indigo-600/8 rounded-full blur-[100px] pointer-events-none opacity-40" />
-
-        {/* ── Header ── */}
-        <div className="relative z-10 flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-10 animate-in slide-in-from-left-8 duration-700">
-          <div>
-            <div className="flex items-center gap-3 mb-3 opacity-80">
-              <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse shadow-[0_0_10px_rgba(59,130,246,0.6)]" />
-              <span className="text-[10px] font-bold tracking-[0.2em] text-blue-400 uppercase">HIVELEARN · ENJAMBRE</span>
-            </div>
-            <h2 className="text-4xl md:text-5xl font-black tracking-tight text-white mb-3">
-              Enjambre{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-blue-600">
-                Educativo
-              </span>
-            </h2>
-            <p className="text-white/50 text-sm max-w-xl leading-relaxed font-light">
-              {dbAgents.length || 16} agentes especializados colaboran en pipeline para generar lecciones adaptativas.
-            </p>
+      {/* ── Header ─ */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="h-2 w-2 rounded-full bg-purple-500 animate-pulse shadow-[0_0_10px_rgba(168,85,247,0.6)]" />
+            <span className="text-[10px] font-bold tracking-[0.2em] text-purple-400 uppercase">HIVELEARN · ENJAMBRE</span>
           </div>
-
-          <div className="flex items-center gap-3 animate-in slide-in-from-right-8 duration-700">
-            <LiveBadge isConnected={isConnected} />
-            {isGenerating && (
-              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[10px] font-bold uppercase tracking-widest animate-pulse">
-                <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" /> Generando...
-              </span>
-            )}
-            {!isConfigured && !isLoading && (
-              <button
-                onClick={() => navigate("/hivelearn/config")}
-                className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 hover:text-blue-300 rounded-lg border border-blue-500/30 hover:border-blue-400/50 transition-all duration-300 flex items-center gap-2 font-medium text-sm"
-              >
-                <Settings2 className="h-4 w-4" />
-                Configurar modelo
-              </button>
-            )}
-            <button
-              className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white rounded-lg border border-white/10 hover:border-white/20 transition-all duration-300 flex items-center gap-2 font-medium text-sm backdrop-blur-sm group"
-              onClick={fetchAgents}
-              disabled={isLoading}
-            >
-              <RefreshCw className={`h-4 w-4 text-blue-400 transition-transform duration-500 group-hover:rotate-180 ${isLoading ? "animate-spin" : ""}`} />
-              Refrescar
-            </button>
-          </div>
+          <h2 className="text-2xl lg:text-3xl font-black tracking-tight text-white">
+            Enjambre{" "}
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-purple-600">
+              Educativo
+            </span>
+          </h2>
         </div>
-
-        {error && (
-          <div className="relative overflow-hidden rounded-2xl border border-red-500/20 bg-red-500/5 mb-8">
-            <div className="absolute top-0 left-0 w-1 h-full bg-red-500" />
-            <p className="px-6 py-5 text-red-400 text-sm font-medium">{error}</p>
-          </div>
-        )}
-
-        <div className="relative z-10 space-y-10">
-
-          {/* ── Status Legend ── */}
-          <div className="flex items-center gap-3 flex-wrap">
-            {[
-              { color: "bg-green-400", label: "Ejecutando" },
-              { color: "bg-purple-400", label: "Pensando" },
-              { color: "bg-cyan-400", label: "Herramienta" },
-              { color: "bg-emerald-400", label: "Disponible" },
-              { color: "bg-red-400", label: "Error" },
-            ].map(({ color, label }) => (
-              <div key={label} className="flex items-center gap-1.5 bg-white/[0.03] backdrop-blur-md px-3 py-1.5 rounded-full border border-white/[0.06]">
-                <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
-                <span className="text-[10px] font-bold tracking-wider text-white/50 uppercase">{label}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* ── Pipeline flow ── */}
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-white/25 mb-5 px-1">
-              Pipeline · {PHASE_ORDER.flat().length} agentes · 3 fases
-            </p>
-
-            <div className="flex gap-1 items-start overflow-x-auto pb-3">
-              {PHASE_ORDER.map((phaseIds, phaseIdx) => {
-                const cfg = PHASE_CONFIG[phaseIdx];
-                const active = phaseIsActive[phaseIdx];
-                return (
-                  <div key={phaseIdx} className="flex items-start gap-1 flex-shrink-0">
-                    <div className={`flex-shrink-0 space-y-2 transition-all duration-500 ${phaseIdx === 1 ? "w-[420px]" : "w-52"}`}>
-                      {/* Phase header */}
-                      <div className="flex items-center gap-2 mb-3 flex-wrap">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest border transition-all ${cfg.pill} ${active ? "shadow-[0_0_12px_rgba(255,255,255,0.05)]" : ""}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full bg-current ${active ? "animate-pulse" : ""}`} />
-                          Fase {phaseIdx} · {cfg.label}
-                        </span>
-                        {phaseIdx === 1 && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-500/10 border border-blue-500/20 text-blue-400">
-                            <Zap className="h-3 w-3" /> 8 en paralelo
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-white/20 uppercase tracking-widest mb-3">{cfg.note}</p>
-
-                      {/* Agent cards */}
-                      {phaseIdx === 1 ? (
-                        <div className="grid grid-cols-2 gap-3">
-                          {phaseIds.map(id => (
-                            <AgentGraphNode
-                              key={id}
-                              agentId={id}
-                              dbAgent={agentMap.get(id)}
-                              liveStatus={agentStatuses[id] ?? "idle"}
-                              isCurrentlyRunning={currentAgentId === id}
-                              phase={1}
-                              agentState={agentStates[id] ?? { status: "idle" }}
-                            />
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {phaseIds.map(id => (
-                            <AgentGraphNode
-                              key={id}
-                              agentId={id}
-                              dbAgent={agentMap.get(id)}
-                              liveStatus={agentStatuses[id] ?? "idle"}
-                              isCurrentlyRunning={currentAgentId === id}
-                              phase={phaseIdx as 0 | 2}
-                              agentState={agentStates[id] ?? { status: "idle" }}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Arrow between phases */}
-                    {phaseIdx < 2 && (
-                      <div className="flex flex-col items-center justify-center gap-0.5 px-1 self-center flex-shrink-0">
-                        <div className={`h-px w-6 border-t-2 border-dashed transition-colors ${active ? "border-blue-500/60" : "border-white/10"}`} />
-                        <span className={`text-xs font-bold transition-colors ${active ? "text-blue-400/60" : "text-white/15"}`}>→</span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Timing note */}
-            <div className="mt-4 flex items-center justify-center gap-3 text-[10px] text-white/20 font-mono">
-              <span>⏱ Primera lección: ~2 min</span>
-              <span className="text-white/8">·</span>
-              <span>🐝 Con caché: ~10 seg</span>
-              {isGenerating && (
-                <>
-                  <span className="text-white/8">·</span>
-                  <span className="text-purple-400/60 animate-pulse">🔄 Generando ahora...</span>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* ── Coordinator card ── */}
-          {!isLoading && (
-            <div>
-              <p className="px-1 pb-3 text-[10px] font-bold uppercase tracking-widest text-purple-400/50">
-                Coordinador del enjambre
-              </p>
-              <div className="relative overflow-hidden rounded-2xl border border-purple-500/30 bg-gradient-to-br from-purple-500/10 via-purple-500/5 to-transparent backdrop-blur-sm p-6">
-                <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-purple-400 to-purple-600" />
-                <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-purple-500/60 to-transparent" />
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-4">
-                    <div className="p-3 rounded-xl bg-purple-500/15 border border-purple-500/30 shadow-[0_0_20px_rgba(168,85,247,0.15)] flex-shrink-0">
-                      <Crown className="h-6 w-6 text-purple-400" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <h3 className="font-bold text-white text-lg">
-                          {coordinator?.name ?? "hl-coordinator-agent"}
-                        </h3>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-500/20 text-purple-400 border border-purple-500/30">
-                          Coordinador
-                        </span>
-                        {coordinator && (
-                          <StatusPill status={agentStates["hl-coordinator-agent"]?.status ?? "idle"} />
-                        )}
-                      </div>
-                      <p className="text-white/50 text-sm leading-relaxed">
-                        {coordinator?.description ?? "Coordina el enjambre educativo completo y revisa la coherencia pedagógica del programa generado."}
-                      </p>
-                      <div className="mt-3 flex items-center gap-2 text-white/20 text-xs">
-                        <Network className="h-3.5 w-3.5 text-purple-400/40" />
-                        <span>Delega tareas a {PHASE_ORDER.flat().length - 1} agentes workers · revisión final antes de entregar</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end gap-2 shrink-0">
-                    {coordinator?.providerId && (
-                      <div className="text-[10px] text-white/30 text-right">
-                        <div className="font-mono">{coordinator.providerId}</div>
-                        <div className="font-mono text-purple-400/60">{coordinator.modelId}</div>
-                      </div>
-                    )}
-                    {coordinator && (
-                      <button
-                        onClick={() => navigate(`/agents/${coordinator.id}`)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white/50 hover:text-white hover:bg-white/10 text-xs transition-all"
-                      >
-                        <Edit2 className="h-3 w-3" /> Configurar
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <div className="absolute bottom-0 right-0 left-0 h-px bg-gradient-to-r from-transparent via-purple-500/20 to-transparent" />
-              </div>
-            </div>
-          )}
-
-          {/* ── Insight cards ── */}
-          <div>
-            <p className="px-1 pb-4 text-[10px] font-bold uppercase tracking-widest text-white/25">
-              ¿Cómo funciona el enjambre?
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <InsightCard icon={GitBranch} title="DAG Scheduler"
-                description="Orquesta los 16 agentes en orden óptimo con un grafo de dependencias. Ningún agente comienza hasta que sus dependencias estén listas."
-                colorClass="bg-blue-500/5 border-blue-500/20 hover:border-blue-500/40" />
-              <InsightCard icon={Zap} title="Paralelismo Inteligente"
-                description="8 agentes de contenido trabajan simultáneamente. El tiempo total = el más lento. Hasta 8× más rápido que secuencial."
-                colorClass="bg-cyan-500/5 border-cyan-500/20 hover:border-cyan-500/40" />
-              <InsightCard icon={Database} title="Caché de Nodos"
-                description="Los nodos ya generados se reutilizan. Segunda lección del mismo tema: disponible en ~10 segundos sin re-ejecutar agentes."
-                colorClass="bg-purple-500/5 border-purple-500/20 hover:border-purple-500/40" />
-            </div>
-          </div>
-
+        <div className="flex items-center gap-3">
+          <LiveBadge isConnected={isConnected} />
+          <button
+            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all group"
+            onClick={fetchAgents}
+            disabled={isLoading}
+            title="Refrescar"
+          >
+            <RefreshCw className={`h-4 w-4 text-purple-400/70 transition-transform duration-500 group-hover:rotate-180 ${isLoading ? "animate-spin" : ""}`} />
+          </button>
         </div>
       </div>
+
+      {/* ── Coordinator (prominent, first) ── */}
+      <CoordinatorCard
+        coordinator={coordinator}
+        agentState={agentStates["hl-coordinator-agent"] ?? { status: "idle" }}
+        isConnected={isConnected}
+        isGenerating={isGenerating}
+      />
+
+      {/* ── Workers ── */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-white/30">
+            15 agentes workers
+          </p>
+          <div className="flex items-center gap-3 text-[10px] text-white/25">
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+              {activeCount} activos
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+              {completedCount} completados
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {WORKER_IDS.map(id => (
+            <WorkerGraphNode
+              key={id}
+              agentId={id}
+              dbAgent={agentMap.get(id)}
+              agentState={agentStates[id] ?? { status: "idle" }}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* ── Empty state if no agents ── */}
+      {dbAgents.length === 0 && !isLoading && (
+        <div className="flex flex-col items-center justify-center py-16 text-center border border-white/5 rounded-3xl bg-black/20 backdrop-blur-sm">
+          <div className="text-5xl mb-4">🔍</div>
+          <h3 className="text-lg font-bold text-white mb-2">Sin agentes configurados</h3>
+          <p className="text-white/40 mb-6 text-sm max-w-xs">
+            Configura un modelo para el coordinador para activar el enjambre.
+          </p>
+          <button
+            onClick={() => navigate("/hivelearn/config")}
+            className="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-sm transition-all flex items-center gap-2"
+          >
+            <Settings2 className="h-4 w-4" />
+            Configurar modelo
+          </button>
+        </div>
+      )}
     </div>
   );
 }

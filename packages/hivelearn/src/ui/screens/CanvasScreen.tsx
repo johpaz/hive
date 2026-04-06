@@ -133,7 +133,11 @@ export function CanvasScreen() {
           proOptions={{ hideAttribution: true }}
           nodesDraggable={false}
           nodesConnectable={false}
-          elementsSelectable={false}
+          selectNodesOnDrag={false}
+          onNodeClick={(_event, rfNode) => {
+            const nodo = program.nodos.find(n => n.id === rfNode.id)
+            if (nodo && nodo.estado !== 'bloqueado') handleNodeClick(nodo)
+          }}
           style={{ background: '#080d1a' }}
         >
           <Background
