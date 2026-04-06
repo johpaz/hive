@@ -127,6 +127,9 @@ export function AppSidebar() {
                     >
                       <Icon icon={GraduationCap as any} className="h-4 w-4 transition-transform group-hover/item:scale-110" />
                       <span>HiveLearn</span>
+                      <span className="ml-auto rounded-full bg-amber-500/20 text-[9px] font-semibold text-amber-400 px-1.5 py-0.5 leading-none">
+                        En construcción
+                      </span>
                     </NavLink>
                   </SidebarMenuButton>
 

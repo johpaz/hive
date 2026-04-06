@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "types": ["@types/bun"],
+    "paths": {
+      "@johpaz/hive-agents-core": ["../core/src/index.ts"],
+      "@johpaz/hive-agents-core/*": ["../core/src/*"],
+      "@johpaz/hivelearn": ["./src/index.ts"],
+      "@johpaz/hivelearn/ui": ["./src/ui/index.ts"],
+      "@johpaz/hive": ["../core/src/index.ts"],
+      "@johpaz/hive/agent/*": ["../core/src/agent/*"],
+      "@johpaz/hive/storage/*": ["../core/src/storage/*"],
+      "@johpaz/hive/utils/*": ["../core/src/utils/*"],
+      "@johpaz/hive/scheduler/*": ["../core/src/scheduler/*"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "dev-data"]
+}

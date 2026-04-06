@@ -1,0 +1,6 @@
+export { LessonCanvas } from './LessonCanvas'
+export { useLessonStore } from './store/lessonStore'
+export { useLessonSwarm } from './hooks/useLessonSwarm'
+export { useNodeInteraction } from './hooks/useNodeInteraction'
+export { useGamification } from './hooks/useGamification'
+export { useEvaluation } from './hooks/useEvaluation'
