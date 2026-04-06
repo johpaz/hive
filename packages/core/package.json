@@ -20,6 +20,7 @@
     "@johpaz/hive-agents-mcp": "^0.0.19",
     "@johpaz/hive-agents-skills": "^0.0.19",
     "@modelcontextprotocol/sdk": "latest",
+    "@puppeteer/browsers": "^2.13.0",
     "@sapphire/snowflake": "latest",
     "@slack/bolt": "latest",
     "@whiskeysockets/baileys": "latest",
