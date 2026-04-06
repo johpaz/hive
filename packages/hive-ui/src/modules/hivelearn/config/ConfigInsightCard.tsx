@@ -2,18 +2,10 @@ interface ConfigInsightCardProps {
   icon: React.ComponentType<{ className?: string }>;
   title: string;
   description: string;
-  theme: "amber" | "blue" | "purple";
+  theme: "blue" | "cyan" | "purple";
 }
 
 const themeStyles = {
-  amber: {
-    bg: "bg-amber-500/5",
-    border: "border-amber-500/15",
-    borderHover: "hover:border-amber-500/25",
-    iconBg: "bg-amber-500/10",
-    iconBorder: "border-amber-500/20",
-    iconColor: "text-amber-400",
-  },
   blue: {
     bg: "bg-blue-500/5",
     border: "border-blue-500/15",
@@ -29,6 +21,14 @@ const themeStyles = {
     iconBg: "bg-purple-500/10",
     iconBorder: "border-purple-500/20",
     iconColor: "text-purple-400",
+  },
+  cyan: {
+    bg: "bg-cyan-500/5",
+    border: "border-cyan-500/15",
+    borderHover: "hover:border-cyan-500/25",
+    iconBg: "bg-cyan-500/10",
+    iconBorder: "border-cyan-500/20",
+    iconColor: "text-cyan-400",
   },
 };
 

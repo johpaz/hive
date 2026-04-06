@@ -97,19 +97,19 @@ function SessionCard({
     <div className={`relative overflow-hidden rounded-2xl border transition-all duration-300 group flex flex-col
       ${isComplete
         ? 'bg-green-500/[0.03] border-green-500/20 hover:border-green-500/40 hover:shadow-[0_0_20px_rgba(34,197,94,0.08)]'
-        : 'bg-white/[0.02] border-white/8 hover:border-amber-500/30 hover:shadow-[0_0_20px_rgba(245,158,11,0.08)]'
+        : 'bg-white/[0.02] border-white/8 hover:border-blue-500/30 hover:shadow-[0_0_20px_rgba(59,130,246,0.08)]'
       }`}>
 
       {/* Top accent */}
       <div className={`h-px w-full ${isComplete
         ? 'bg-gradient-to-r from-transparent via-green-500/50 to-transparent'
-        : 'bg-gradient-to-r from-transparent via-amber-500/40 to-transparent'}`} />
+        : 'bg-gradient-to-r from-transparent via-blue-500/40 to-transparent'}`} />
 
       {/* Left accent bar */}
       <div className={`absolute top-0 left-0 w-0.5 h-full
         ${isComplete
           ? 'bg-gradient-to-b from-green-400/60 to-transparent'
-          : 'bg-gradient-to-b from-amber-400/60 to-transparent'}`} />
+          : 'bg-gradient-to-b from-blue-400/60 to-transparent'}`} />
 
       <div className="p-5 flex flex-col flex-1 gap-3">
         {/* Header */}
@@ -120,7 +120,7 @@ function SessionCard({
               <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider border
                 ${isComplete
                   ? 'bg-green-500/15 border-green-500/25 text-green-400'
-                  : 'bg-amber-500/15 border-amber-500/25 text-amber-400'}`}>
+                  : 'bg-blue-500/15 border-blue-500/25 text-blue-400'}`}>
                 {isComplete ? 'Completada' : 'En progreso'}
               </span>
             </div>
@@ -142,11 +142,11 @@ function SessionCard({
         <div>
           <div className="flex justify-between text-[11px] text-white/30 mb-1.5">
             <span>{session.nodos_completados} / {session.total_nodos} nodos</span>
-            <span className={`font-bold ${isComplete ? 'text-green-400' : 'text-amber-400'}`}>{progress}%</span>
+            <span className={`font-bold ${isComplete ? 'text-green-400' : 'text-blue-400'}`}>{progress}%</span>
           </div>
           <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-700 ${isComplete ? 'bg-green-500/60' : 'bg-gradient-to-r from-amber-500/70 to-orange-500/70'}`}
+              className={`h-full rounded-full transition-all duration-700 ${isComplete ? 'bg-green-500/60' : 'bg-gradient-to-r from-blue-500/70 to-blue-400/70'}`}
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -155,7 +155,7 @@ function SessionCard({
         {/* XP + score row */}
         <div className="flex items-center gap-3 text-xs">
           {session.xp_total > 0 && (
-            <div className="flex items-center gap-1 text-amber-400/80 font-semibold">
+            <div className="flex items-center gap-1 text-blue-400/80 font-semibold">
               <Zap className="h-3 w-3" />
               {session.xp_total} XP
             </div>
@@ -180,7 +180,7 @@ function SessionCard({
           {!isComplete && (
             <button
               onClick={() => onResume(session.session_id)}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 hover:border-amber-500/40 text-amber-400 text-xs font-bold transition-all"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 hover:border-blue-500/40 text-blue-400 text-xs font-bold transition-all"
             >
               <Play className="h-3.5 w-3.5" />
               Continuar
@@ -282,18 +282,18 @@ export function HiveLearnSessionsPage() {
       <div className="hive-page-container">
 
         {/* Ambient glows */}
-        <div className="absolute -top-40 -left-40 h-[500px] w-[500px] bg-amber-600/8 rounded-full blur-[120px] pointer-events-none opacity-60" />
-        <div className="absolute top-20 -right-40 h-[400px] w-[400px] bg-orange-600/6 rounded-full blur-[100px] pointer-events-none opacity-50" />
+        <div className="absolute -top-40 -left-40 h-[500px] w-[500px] bg-blue-600/8 rounded-full blur-[120px] pointer-events-none opacity-60" />
+        <div className="absolute top-20 -right-40 h-[400px] w-[400px] bg-indigo-600/6 rounded-full blur-[100px] pointer-events-none opacity-50" />
 
         {/* ── Header ── */}
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-8">
           <div className="animate-in slide-in-from-left-8 duration-700">
             <div className="hive-page-header__eyebrow mb-3 opacity-80">
-              <div className="hive-page-header__dot animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.6)]" />
-              <span className="hive-page-header__label tracking-widest font-semibold text-amber-400">HIVELEARN</span>
+              <div className="hive-page-header__dot animate-pulse shadow-[0_0_10px_rgba(59,130,246,0.6)]" />
+              <span className="hive-page-header__label tracking-widest font-semibold text-blue-400">HIVELEARN</span>
             </div>
             <h2 className="text-4xl md:text-5xl font-black tracking-tight text-white drop-shadow-lg mb-2">
-              Mis <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500">Sesiones</span>
+              Mis <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-blue-600">Sesiones</span>
             </h2>
             <p className="text-white/50 text-sm font-light">
               {isLoading ? 'Cargando...' : sessions.length === 0
@@ -305,7 +305,7 @@ export function HiveLearnSessionsPage() {
           <div className="flex items-center gap-3 animate-in slide-in-from-right-8 duration-700">
             <button
               onClick={() => navigate("/hivelearn")}
-              className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-xl text-sm transition-all shadow-[0_0_20px_rgba(245,158,11,0.3)] hover:shadow-[0_0_30px_rgba(245,158,11,0.5)] flex items-center gap-2"
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-sm transition-all shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:shadow-[0_0_30px_rgba(59,130,246,0.5)] flex items-center gap-2"
             >
               <Zap className="h-4 w-4" />
               Nueva lección
@@ -316,7 +316,7 @@ export function HiveLearnSessionsPage() {
               className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all group"
               title="Refrescar"
             >
-              <RefreshCw className={`h-4 w-4 text-amber-400/70 transition-transform group-hover:rotate-180 ${isLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-4 w-4 text-blue-400/70 transition-transform group-hover:rotate-180 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>
@@ -334,13 +334,13 @@ export function HiveLearnSessionsPage() {
               icon={Target}
               value={inProgress}
               label="En progreso"
-              color="bg-amber-500/5 border-amber-500/20 text-amber-400"
+              color="bg-blue-500/5 border-blue-500/20 text-blue-400"
             />
             <StatChip
               icon={Zap}
               value={`${totalXp} XP`}
               label="XP total"
-              color="bg-orange-500/5 border-orange-500/20 text-orange-400"
+              color="bg-cyan-500/5 border-cyan-500/20 text-cyan-400"
             />
             <StatChip
               icon={TrendingUp}
@@ -360,7 +360,7 @@ export function HiveLearnSessionsPage() {
                 onClick={() => setFilter(f)}
                 className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all
                   ${filter === f
-                    ? 'bg-amber-500/20 border border-amber-500/30 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.1)]'
+                    ? 'bg-blue-500/20 border border-blue-500/30 text-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.1)]'
                     : 'text-white/30 hover:text-white/60 border border-transparent'}`}
               >
                 {f === 'all' ? 'Todas' : f === 'active' ? 'En progreso' : 'Completadas'}
@@ -384,7 +384,7 @@ export function HiveLearnSessionsPage() {
               </p>
               <button
                 onClick={() => navigate("/hivelearn")}
-                className="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(245,158,11,0.3)]"
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(59,130,246,0.3)]"
               >
                 Empezar a aprender
               </button>

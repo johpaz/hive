@@ -42,7 +42,7 @@ const PHASE_ORDER = [
 ] as const;
 
 const PHASE_CONFIG = [
-  { label: "Análisis",    pill: "bg-amber-500/10 border-amber-500/30 text-amber-400",  cardBg: "bg-amber-500/[0.06]",  cardBorder: "border-amber-500/20",  cardBorderActive: "border-amber-500/60 shadow-[0_0_20px_rgba(245,158,11,0.2)]", accent: "via-amber-500/60", note: "Secuencial · cada uno espera al anterior" },
+  { label: "Análisis",    pill: "bg-blue-500/10 border-blue-500/30 text-blue-400",  cardBg: "bg-blue-500/[0.06]",  cardBorder: "border-blue-500/20",  cardBorderActive: "border-blue-500/60 shadow-[0_0_20px_rgba(59,130,246,0.2)]", accent: "via-blue-500/60", note: "Secuencial · cada uno espera al anterior" },
   { label: "Contenido",   pill: "bg-blue-500/10 border-blue-500/30 text-blue-400",    cardBg: "bg-blue-500/[0.06]",   cardBorder: "border-blue-500/20",   cardBorderActive: "border-blue-500/60 shadow-[0_0_20px_rgba(59,130,246,0.2)]",  accent: "via-blue-500/60",  note: "Paralelo · 8 agentes simultáneos" },
   { label: "Finalización",pill: "bg-green-500/10 border-green-500/30 text-green-400", cardBg: "bg-green-500/[0.06]",  cardBorder: "border-green-500/20",  cardBorderActive: "border-green-500/60 shadow-[0_0_20px_rgba(34,197,94,0.2)]",  accent: "via-green-500/60", note: "Paralelo · revisión y cierre" },
 ] as const;
@@ -84,7 +84,7 @@ function AgentCard({
   const isDisabled  = dbAgent && !dbAgent.enabled;
 
   const borderCls = isRunning   ? cfg.cardBorderActive
-                  : isCompleted ? (phase === 0 ? "border-amber-500/40" : phase === 1 ? "border-blue-500/40" : "border-green-500/40")
+                  : isCompleted ? (phase === 0 ? "border-blue-500/40" : phase === 1 ? "border-blue-500/40" : "border-green-500/40")
                   : isFailed    ? "border-red-500/30"
                   : `${cfg.cardBorder} hover:border-white/20`;
 
@@ -153,8 +153,8 @@ function AgentCard({
 function StatusPill({ liveStatus, isCurrentlyRunning }: { liveStatus: AgentLiveStatus; isCurrentlyRunning: boolean }) {
   const isRunning = liveStatus === "running" || isCurrentlyRunning;
   if (isRunning) return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" /> Activo ▶
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" /> Activo ▶
     </span>
   );
   if (liveStatus === "completed") return (
@@ -177,8 +177,8 @@ function StatusPill({ liveStatus, isCurrentlyRunning }: { liveStatus: AgentLiveS
 function PhaseArrow({ isActive }: { isActive: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center gap-0.5 px-1 self-center flex-shrink-0">
-      <div className={`h-px w-6 border-t-2 border-dashed transition-colors ${isActive ? "border-amber-500/60" : "border-white/10"}`} />
-      <span className={`text-xs font-bold transition-colors ${isActive ? "text-amber-400/60" : "text-white/15"}`}>→</span>
+      <div className={`h-px w-6 border-t-2 border-dashed transition-colors ${isActive ? "border-blue-500/60" : "border-white/10"}`} />
+      <span className={`text-xs font-bold transition-colors ${isActive ? "text-blue-400/60" : "text-white/15"}`}>→</span>
     </div>
   );
 }
@@ -241,19 +241,19 @@ export function HiveLearnSwarmPage() {
       <div className="hive-page-container relative">
 
         {/* Ambient glows */}
-        <div className="absolute -top-40 -left-40 h-[500px] w-[500px] bg-amber-600/10 rounded-full blur-[120px] pointer-events-none opacity-50" />
-        <div className="absolute top-40 -right-40 h-[400px] w-[400px] bg-orange-600/8 rounded-full blur-[100px] pointer-events-none opacity-40" />
+        <div className="absolute -top-40 -left-40 h-[500px] w-[500px] bg-blue-600/10 rounded-full blur-[120px] pointer-events-none opacity-50" />
+        <div className="absolute top-40 -right-40 h-[400px] w-[400px] bg-indigo-600/8 rounded-full blur-[100px] pointer-events-none opacity-40" />
 
         {/* ── Header ── */}
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-10 animate-in slide-in-from-left-8 duration-700">
           <div>
             <div className="flex items-center gap-3 mb-3 opacity-80">
-              <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.6)]" />
-              <span className="text-[10px] font-bold tracking-[0.2em] text-amber-400 uppercase">HIVELEARN · ENJAMBRE</span>
+              <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse shadow-[0_0_10px_rgba(59,130,246,0.6)]" />
+              <span className="text-[10px] font-bold tracking-[0.2em] text-blue-400 uppercase">HIVELEARN · ENJAMBRE</span>
             </div>
             <h2 className="text-4xl md:text-5xl font-black tracking-tight text-white mb-3">
               Enjambre{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-blue-600">
                 Educativo
               </span>
             </h2>
@@ -265,14 +265,14 @@ export function HiveLearnSwarmPage() {
           <div className="flex items-center gap-3 animate-in slide-in-from-right-8 duration-700">
             <LiveBadge isConnected={isConnected} />
             {isGenerating && (
-              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-bold uppercase tracking-widest animate-pulse">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" /> Generando...
+              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[10px] font-bold uppercase tracking-widest animate-pulse">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" /> Generando...
               </span>
             )}
             {!isConfigured && !isLoading && (
               <button
                 onClick={() => navigate("/hivelearn/config")}
-                className="px-4 py-2 bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 hover:text-amber-300 rounded-lg border border-amber-500/30 hover:border-amber-400/50 transition-all duration-300 flex items-center gap-2 font-medium text-sm"
+                className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 hover:text-blue-300 rounded-lg border border-blue-500/30 hover:border-blue-400/50 transition-all duration-300 flex items-center gap-2 font-medium text-sm"
               >
                 <Settings2 className="h-4 w-4" />
                 Configurar modelo
@@ -283,7 +283,7 @@ export function HiveLearnSwarmPage() {
               onClick={fetchAgents}
               disabled={isLoading}
             >
-              <RefreshCw className={`h-4 w-4 text-amber-400 transition-transform duration-500 group-hover:rotate-180 ${isLoading ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-4 w-4 text-blue-400 transition-transform duration-500 group-hover:rotate-180 ${isLoading ? "animate-spin" : ""}`} />
               Refrescar
             </button>
           </div>
@@ -357,7 +357,7 @@ export function HiveLearnSwarmPage() {
                               />
                               {phaseIdx === 0 && i < phaseIds.length - 1 && (
                                 <div className="flex justify-center py-1">
-                                  <div className={`w-px h-4 border-l-2 border-dashed transition-colors ${active ? "border-amber-500/30" : "border-white/8"}`} />
+                                  <div className={`w-px h-4 border-l-2 border-dashed transition-colors ${active ? "border-blue-500/30" : "border-white/8"}`} />
                                 </div>
                               )}
                             </div>
@@ -392,23 +392,23 @@ export function HiveLearnSwarmPage() {
           {/* ── Coordinator card ── */}
           {!isLoading && (
             <div>
-              <p className="px-1 pb-3 text-[10px] font-bold uppercase tracking-widest text-amber-400/50">
+              <p className="px-1 pb-3 text-[10px] font-bold uppercase tracking-widest text-blue-400/50">
                 Coordinador del enjambre
               </p>
-              <div className="relative overflow-hidden rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent backdrop-blur-sm p-6">
-                <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-amber-400 to-orange-500" />
-                <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-amber-500/60 to-transparent" />
+              <div className="relative overflow-hidden rounded-2xl border border-blue-500/30 bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent backdrop-blur-sm p-6">
+                <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-blue-400 to-blue-600" />
+                <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-500/60 to-transparent" />
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-4">
-                    <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 shadow-[0_0_20px_rgba(245,158,11,0.15)] flex-shrink-0">
-                      <Crown className="h-6 w-6 text-amber-400" />
+                    <div className="p-3 rounded-xl bg-blue-500/15 border border-blue-500/30 shadow-[0_0_20px_rgba(59,130,246,0.15)] flex-shrink-0">
+                      <Crown className="h-6 w-6 text-blue-400" />
                     </div>
                     <div>
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <h3 className="font-bold text-white text-lg">
                           {coordinator?.name ?? "hl-coordinator-agent"}
                         </h3>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-400 border border-blue-500/30">
                           Coordinador
                         </span>
                         {coordinator && (
@@ -422,7 +422,7 @@ export function HiveLearnSwarmPage() {
                         {coordinator?.description ?? "Coordina el enjambre educativo completo y revisa la coherencia pedagógica del programa generado."}
                       </p>
                       <div className="mt-3 flex items-center gap-2 text-white/20 text-xs">
-                        <Network className="h-3.5 w-3.5 text-amber-400/40" />
+                        <Network className="h-3.5 w-3.5 text-blue-400/40" />
                         <span>Delega tareas a {PHASE_ORDER.flat().length - 1} agentes workers · revisión final antes de entregar</span>
                       </div>
                     </div>
@@ -431,7 +431,7 @@ export function HiveLearnSwarmPage() {
                     {coordinator?.providerId && (
                       <div className="text-[10px] text-white/30 text-right">
                         <div className="font-mono">{coordinator.providerId}</div>
-                        <div className="font-mono text-amber-400/60">{coordinator.modelId}</div>
+                        <div className="font-mono text-blue-400/60">{coordinator.modelId}</div>
                       </div>
                     )}
                     {coordinator && (
@@ -444,7 +444,7 @@ export function HiveLearnSwarmPage() {
                     )}
                   </div>
                 </div>
-                <div className="absolute bottom-0 right-0 left-0 h-px bg-gradient-to-r from-transparent via-amber-500/20 to-transparent" />
+                <div className="absolute bottom-0 right-0 left-0 h-px bg-gradient-to-r from-transparent via-blue-500/20 to-transparent" />
               </div>
             </div>
           )}
@@ -457,10 +457,10 @@ export function HiveLearnSwarmPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <InsightCard icon={GitBranch} title="DAG Scheduler"
                 description="Orquesta los 16 agentes en orden óptimo con un grafo de dependencias. Ningún agente comienza hasta que sus dependencias estén listas."
-                colorClass="bg-amber-500/5 border-amber-500/20 hover:border-amber-500/40" />
+                colorClass="bg-blue-500/5 border-blue-500/20 hover:border-blue-500/40" />
               <InsightCard icon={Zap} title="Paralelismo Inteligente"
                 description="8 agentes de contenido trabajan simultáneamente. El tiempo total = el más lento. Hasta 8× más rápido que secuencial."
-                colorClass="bg-blue-500/5 border-blue-500/20 hover:border-blue-500/40" />
+                colorClass="bg-cyan-500/5 border-cyan-500/20 hover:border-cyan-500/40" />
               <InsightCard icon={Database} title="Caché de Nodos"
                 description="Los nodos ya generados se reutilizan. Segunda lección del mismo tema: disponible en ~10 segundos sin re-ejecutar agentes."
                 colorClass="bg-purple-500/5 border-purple-500/20 hover:border-purple-500/40" />

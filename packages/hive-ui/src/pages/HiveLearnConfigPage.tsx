@@ -125,7 +125,7 @@ export function HiveLearnConfigPage() {
     <div className="hive-page">
       {/* Ambient mesh gradient */}
       <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/4 h-[600px] w-[600px] rounded-full blur-[150px]" style={{ background: "hsl(var(--hive-amber) / 0.05)" }} />
+        <div className="absolute top-0 left-1/4 h-[600px] w-[600px] rounded-full blur-[150px]" style={{ background: "hsl(var(--hive-blue) / 0.05)" }} />
         <div className="absolute bottom-0 right-0 h-[500px] w-[500px] rounded-full blur-[150px]" style={{ background: "hsl(var(--hive-blue-dark) / 0.05)" }} />
       </div>
 
@@ -138,17 +138,17 @@ export function HiveLearnConfigPage() {
                 <div
                   className="h-2 w-2 rounded-full animate-pulse"
                   style={{
-                    background: "hsl(var(--hive-amber))",
-                    boxShadow: "0 0 10px hsl(var(--hive-amber) / 0.6)",
+                    background: "hsl(var(--hive-blue))",
+                    boxShadow: "0 0 10px hsl(var(--hive-blue) / 0.6)",
                   }}
                 />
-                <span className="text-[10px] font-bold tracking-[0.25em] uppercase" style={{ color: "hsl(var(--hive-amber))" }}>
+                <span className="text-[10px] font-bold tracking-[0.25em] uppercase" style={{ color: "hsl(var(--hive-blue))" }}>
                   HIVELEARN
                 </span>
               </div>
               <h1 className="text-4xl md:text-5xl font-black tracking-tight mb-4" style={{ letterSpacing: "-0.02em", color: "hsl(var(--hive-foreground))" }}>
                 Configuración del{" "}
-                <span className="italic" style={{ color: "hsl(var(--hive-amber))" }}>
+                <span className="italic" style={{ color: "hsl(var(--hive-blue))" }}>
                   Enjambre
                 </span>
               </h1>
@@ -159,7 +159,7 @@ export function HiveLearnConfigPage() {
             </div>
 
             <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-full border" style={{ background: "hsl(var(--hive-surface) / 0.8)", borderColor: "hsl(0 0% 100% / 0.06)" }}>
-              <Bot className="h-4 w-4" style={{ color: "hsl(var(--hive-amber))" }} />
+              <Bot className="h-4 w-4" style={{ color: "hsl(var(--hive-blue))" }} />
               <span className="text-sm font-semibold">{agentCount || 16} agentes activos</span>
             </div>
           </div>
@@ -183,12 +183,12 @@ export function HiveLearnConfigPage() {
                 <div
                   className="p-3 rounded-xl border"
                   style={{
-                    background: "hsl(var(--hive-amber) / 0.1)",
-                    borderColor: "hsl(var(--hive-amber) / 0.2)",
-                    boxShadow: "0 0 15px hsl(var(--hive-amber) / 0.1)",
+                    background: "hsl(var(--hive-blue) / 0.1)",
+                    borderColor: "hsl(var(--hive-blue) / 0.2)",
+                    boxShadow: "0 0 15px hsl(var(--hive-blue) / 0.1)",
                   }}
                 >
-                  <Brain className="h-5 w-5" style={{ color: "hsl(var(--hive-amber))" }} />
+                  <Brain className="h-5 w-5" style={{ color: "hsl(var(--hive-blue))" }} />
                 </div>
                 <div>
                   <h2 className="text-lg font-semibold" style={{ color: "hsl(var(--hive-foreground))" }}>
@@ -246,21 +246,21 @@ export function HiveLearnConfigPage() {
               <button
                 onClick={handleSave}
                 disabled={!selectedProviderId || !selectedModelId || isSaving}
-                className="w-full py-3.5 px-6 rounded-xl text-black font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center gap-2.5 active:scale-[0.98]"
+                className="w-full py-3.5 px-6 rounded-xl text-white font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center gap-2.5 active:scale-[0.98]"
                 style={{
-                  background: "linear-gradient(135deg, hsl(var(--hive-amber)), hsl(var(--hive-orange)))",
-                  boxShadow: "0 0 20px hsl(var(--hive-amber) / 0.25)",
+                  background: "linear-gradient(135deg, hsl(var(--hive-blue-dark)), hsl(var(--hive-blue)))",
+                  boxShadow: "0 0 20px hsl(var(--hive-blue) / 0.25)",
                 }}
                 onMouseEnter={(e) => {
                   if (!e.currentTarget.disabled) {
-                    e.currentTarget.style.background = "linear-gradient(135deg, hsl(var(--hive-amber) / 0.9), hsl(var(--hive-orange) / 0.9))";
-                    e.currentTarget.style.boxShadow = "0 0 30px hsl(var(--hive-amber) / 0.4)";
+                    e.currentTarget.style.background = "linear-gradient(135deg, hsl(var(--hive-blue-dark) / 0.9), hsl(var(--hive-blue) / 0.9))";
+                    e.currentTarget.style.boxShadow = "0 0 30px hsl(var(--hive-blue) / 0.4)";
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!e.currentTarget.disabled) {
-                    e.currentTarget.style.background = "linear-gradient(135deg, hsl(var(--hive-amber)), hsl(var(--hive-orange)))";
-                    e.currentTarget.style.boxShadow = "0 0 20px hsl(var(--hive-amber) / 0.25)";
+                    e.currentTarget.style.background = "linear-gradient(135deg, hsl(var(--hive-blue-dark)), hsl(var(--hive-blue)))";
+                    e.currentTarget.style.boxShadow = "0 0 20px hsl(var(--hive-blue) / 0.25)";
                   }
                 }}
               >
@@ -299,13 +299,13 @@ export function HiveLearnConfigPage() {
                 icon={GitBranch}
                 title="DAG Scheduler"
                 description="Orquesta los agentes en orden óptimo con grafo de dependencias."
-                theme="amber"
+                theme="blue"
               />
               <ConfigInsightCard
                 icon={Zap}
                 title="Paralelismo"
                 description="8 agentes de contenido trabajan simultáneamente. Hasta 8× más rápido."
-                theme="blue"
+                theme="cyan"
               />
               <ConfigInsightCard
                 icon={Database}

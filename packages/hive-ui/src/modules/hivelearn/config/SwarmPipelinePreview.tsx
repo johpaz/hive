@@ -5,9 +5,9 @@ const PIPELINE_PHASES = [
   {
     label: "Análisis",
     agents: ["👤", "🎯", "🗺️"],
-    color: "text-amber-400",
-    pillBg: "bg-amber-500/10",
-    pillBorder: "border-amber-500/20",
+    color: "text-blue-400",
+    pillBg: "bg-blue-500/10",
+    pillBorder: "border-blue-500/20",
   },
   {
     label: "Contenido",
@@ -88,9 +88,9 @@ export function SwarmPipelinePreview({ agentCount }: SwarmPipelinePreviewProps) 
                   <div className="flex flex-col items-center gap-1 self-center mt-4">
                     <div
                       className="w-8 h-px border-t-2 border-dashed"
-                      style={{ borderTopColor: "hsl(var(--hive-amber) / 0.2)" }}
+                      style={{ borderTopColor: "hsl(var(--hive-blue) / 0.2)" }}
                     />
-                    <span className="text-xs" style={{ color: "hsl(var(--hive-amber) / 0.25)" }}>→</span>
+                    <span className="text-xs" style={{ color: "hsl(var(--hive-blue) / 0.25)" }}>→</span>
                   </div>
                 )}
               </div>

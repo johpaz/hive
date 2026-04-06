@@ -37,17 +37,17 @@ export function ModelSelector({ models, selectedId, onSelect }: ModelSelectorPro
             onClick={() => onSelect(model.id)}
             className={`relative rounded-xl py-4 px-4 text-sm font-medium border transition-all duration-300 text-left overflow-hidden
               ${isSelected
-                ? "border-amber-500/60 text-amber-300 shadow-[0_0_20px_hsl(var(--hive-amber)/0.12)]"
-                : "border-white/[0.06] text-white/60 hover:border-amber-500/30 hover:text-white/90"
+                ? "border-blue-500/60 text-blue-300 shadow-[0_0_20px_hsl(var(--hive-blue)/0.12)]"
+                : "border-white/[0.06] text-white/60 hover:border-blue-500/30 hover:text-white/90"
               }`}
             style={{
               background: isSelected
-                ? "hsl(var(--hive-amber) / 0.15)"
+                ? "hsl(var(--hive-blue) / 0.15)"
                 : "hsl(0 0% 100% / 0.02)",
             }}
           >
             {isSelected && (
-              <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 to-transparent pointer-events-none" />
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent pointer-events-none" />
             )}
             <div className="relative z-10">
               <div className="font-bold text-sm mb-1">{model.name}</div>
