@@ -8,8 +8,6 @@ interface Props {
 export function NodeContentRenderer({ nodo }: Props) {
   const c = nodo.contenido
 
-  console.log('[NodeContentRenderer] nodo:', nodo.id, 'tipoPedagogico:', nodo.tipoPedagogico, 'tipoVisual:', nodo.tipoVisual, 'contenido:', c ? Object.keys(c) : 'empty')
-
   if (!c || Object.keys(c).length === 0) {
     return (
       <div className="flex items-center justify-center h-32 text-white/30 text-sm">
@@ -194,23 +192,23 @@ function AnimatedCard({ explicacion }: { explicacion: NonNullable<NodoLesson['co
 
 function ImageCard({ imagen }: { imagen: NonNullable<NodoLesson['contenido']>['imagen'] }) {
   if (!imagen) return null
-  const src = imagen.url ?? (imagen.base64 ? `data:image/png;base64,${imagen.base64}` : null)
+  const svgSafe = imagen.svg_fallback?.replace(/<script[\s\S]*?<\/script>/gi, '') ?? ''
   return (
     <div className="space-y-2">
-      {src ? (
+      {imagen.url ? (
         <img
-          src={src}
-          alt={imagen.descripcionAlt}
+          src={imagen.url}
+          alt={imagen.alt_text}
           className="rounded-lg w-full object-contain max-h-60 border border-gray-700"
         />
-      ) : imagen.svgFallback ? (
+      ) : svgSafe ? (
         <div
           className="rounded-lg overflow-hidden border border-gray-700 flex items-center justify-center"
-          dangerouslySetInnerHTML={{ __html: imagen.svgFallback.replace(/<script[\s\S]*?<\/script>/gi, '') }}
+          dangerouslySetInnerHTML={{ __html: svgSafe }}
         />
       ) : (
         <div className="rounded-lg bg-gray-800 border border-gray-700 h-40 flex items-center justify-center text-gray-500 text-sm">
-          {imagen.descripcionAlt}
+          {imagen.alt_text}
         </div>
       )}
       {imagen.caption && (
@@ -225,11 +223,24 @@ function AudioCard({ audio }: { audio: NonNullable<NodoLesson['contenido']>['aud
   return (
     <div className="space-y-3 rounded-lg bg-blue-500/5 border border-blue-500/20 p-4">
       <div className="flex items-center gap-2 text-blue-300">
-        <span className="text-xl">🎵</span>
-        <span className="text-sm font-semibold">Contenido auditivo</span>
-        <span className="text-xs text-blue-400/60">~{audio.duracionEstimada}s</span>
+        <span className="text-xl">🎧</span>
+        <span className="text-sm font-semibold">{audio.title ?? 'Narración'}</span>
       </div>
-      <p className="text-gray-300 text-sm leading-relaxed">{audio.texto}</p>
+      <p className="text-gray-300 text-sm leading-relaxed">{audio.narration_text}</p>
+      <button
+        onClick={() => {
+          if (!('speechSynthesis' in window)) return
+          window.speechSynthesis.cancel()
+          const utt = new SpeechSynthesisUtterance(audio.narration_text)
+          const rateMap: Record<string, number> = { slow: 0.8, normal: 1.0, fast: 1.3 }
+          utt.rate = rateMap[audio.speed ?? 'normal'] ?? 1.0
+          utt.lang = 'es-ES'
+          window.speechSynthesis.speak(utt)
+        }}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-500/15 text-blue-300 text-xs font-bold hover:bg-blue-500/25 transition-all"
+      >
+        ▶ Escuchar
+      </button>
     </div>
   )
 }

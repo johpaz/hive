@@ -33,6 +33,16 @@ export function NodeContentPopover({ nodo, position, onClose, onComplete }: Prop
   }, [nodo?.id, nodo?.contenido])
 
   const handleA2UIAction = async ({ name, context }: { name: string; context: Record<string, any> }) => {
+    if (name === 'play_audio') {
+      if (!('speechSynthesis' in window)) return
+      window.speechSynthesis.cancel()
+      const utt = new SpeechSynthesisUtterance(context.narration_text ?? '')
+      const speedMap: Record<string, number> = { slow: 0.8, normal: 1.0, fast: 1.3 }
+      utt.rate = speedMap[context.speed ?? 'normal'] ?? 1.0
+      utt.lang = 'es-ES'
+      window.speechSynthesis.speak(utt)
+      return
+    }
     if (name === 'check_answer' || name === 'submit_eval') {
       if (!nodo) return
       setIsSubmitting(true)
@@ -46,10 +56,12 @@ export function NodeContentPopover({ nodo, position, onClose, onComplete }: Prop
           const first = Object.values(context._textValues as Record<string, string>)[0]
           respuesta = first ?? ''
         }
+        const { sessionId } = useLessonStore.getState()
         const res = await fetch('/api/hivelearn/feedback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            sessionId,
             nodoId: nodo.id,
             concepto: nodo.concepto,
             respuesta,

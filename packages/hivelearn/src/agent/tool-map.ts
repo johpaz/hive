@@ -37,6 +37,7 @@ import {
   buscarCurriculoExistenteTool,
   buscarEnHiveLearnTool,
 } from '../tools/index'
+import { generarAudioTool } from '../tools/content/generar-audio.tool'
 
 export const AGENT_EXECUTABLE_TOOLS: Record<string, Tool[]> = {
   [AGENT_IDS.coordinator]: [delegarEnjambreTool, revisarProgramaTool],
@@ -55,4 +56,5 @@ export const AGENT_EXECUTABLE_TOOLS: Record<string, Tool[]> = {
   [AGENT_IDS.evaluation]:   [generarEvaluacionTool, calificarEvaluacionTool],
   [AGENT_IDS.gamification]: [],  // genera JSON libre, sin tool calls
   [AGENT_IDS.feedback]:     [calificarRespuestaTool],
+  [AGENT_IDS.audio]: [generarAudioTool],
 }

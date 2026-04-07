@@ -992,8 +992,8 @@ export async function startGateway(config: Config): Promise<void> {
 
         if (url.pathname === "/api/hivelearn/feedback" && req.method === "POST") {
           try {
-            const { AGENT_IDS, runHiveLearnAgent, AGENT_PROMPTS, calificarRespuestaTool } = await import("@johpaz/hivelearn");
-            const body = await req.json() as { nodoId: string; concepto: string; respuesta: string; rangoEdad: string; tipoPedagogico: string };
+            const { AGENT_IDS, runHiveLearnAgent, AGENT_PROMPTS, calificarRespuestaTool, LessonPersistence } = await import("@johpaz/hivelearn");
+            const body = await req.json() as { sessionId?: string; nodoId: string; concepto: string; respuesta: string; rangoEdad: string; tipoPedagogico: string };
             const result = await runHiveLearnAgent({
               agentId: AGENT_IDS.feedback,
               taskDescription: `Concepto: "${body.concepto}". Tipo pedagógico: ${body.tipoPedagogico}. Rango edad: ${body.rangoEdad}.\nRespuesta del alumno: "${body.respuesta}".\nEvalúa si comprende el concepto (no exactitud literal). Usa la tool calificar_respuesta.`,
@@ -1019,6 +1019,22 @@ export async function startGateway(config: Config): Promise<void> {
                 try { const p = JSON.parse(match[0]); feedback = { correcto: p.correcto ?? false, mensajePrincipal: p.mensaje ?? "¡Buen intento!", xpGanado: p.xp_ganado ?? 5, razonamiento: p.razonamiento }; } catch {}
               }
             }
+            // Persistir respuesta del alumno si hay sessionId
+            if (body.sessionId) {
+              try {
+                const persistence = new LessonPersistence();
+                persistence.saveStudentResponse(
+                  body.sessionId,
+                  body.nodoId,
+                  body.tipoPedagogico,
+                  body.respuesta,
+                  JSON.stringify(feedback),
+                  feedback.xpGanado,
+                  feedback.correcto,
+                );
+              } catch { /* non-critical */ }
+            }
+
             return addCorsHeaders(new Response(JSON.stringify(feedback), {
               status: 200,
               headers: { "Content-Type": "application/json" },
@@ -1026,6 +1042,79 @@ export async function startGateway(config: Config): Promise<void> {
           } catch (e) {
             return addCorsHeaders(new Response(JSON.stringify({ correcto: false, mensajePrincipal: "¡Buen intento! Sigue adelante.", xpGanado: 5 }), {
               status: 200,
+              headers: { "Content-Type": "application/json" },
+            }), req);
+          }
+        }
+
+        // ── HiveLearn Vision (Gemma 4 atención vía visión multimodal) ──
+        if (url.pathname === "/api/hivelearn/vision" && req.method === "POST") {
+          try {
+            const { runHiveLearnAgent, AGENT_IDS } = await import("@johpaz/hivelearn");
+            const body = await req.json() as { sessionId: string; imageBase64: string };
+            const result = await runHiveLearnAgent({
+              agentId: AGENT_IDS.profile, // Agente ligero para análisis rápido
+              taskDescription: `Analyze this image of a student studying.\nImage: data:image/jpeg;base64,${body.imageBase64}\n\nDetermine if the student is looking at the screen and paying attention.\nRespond ONLY with valid JSON: {"attention":"focused"|"distracted"|"away","score":0-100,"suggestion":"string"}`,
+              systemPrompt: 'You are an attention analysis system. Analyze images and determine student attention level. Respond ONLY with valid JSON, no other text.',
+              tools: [],
+              threadId: `hl-vision-${body.sessionId}-${Date.now()}`,
+            });
+            let parsed: any = { attention: 'focused', score: 80 };
+            try {
+              const m = (typeof result === 'string' ? result : '').match(/\{[\s\S]*\}/);
+              if (m) parsed = JSON.parse(m[0]);
+            } catch {}
+            return addCorsHeaders(new Response(JSON.stringify(parsed), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }), req);
+          } catch {
+            return addCorsHeaders(new Response(JSON.stringify({ attention: 'focused', score: 80 }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }), req);
+          }
+        }
+
+        // ── HiveLearn Complete Session ──────────────────────────────────
+        if (url.pathname === "/api/hivelearn/complete-session" && req.method === "POST") {
+          try {
+            const { LessonPersistence } = await import("@johpaz/hivelearn");
+            const body = await req.json() as { sessionId: string; puntajeEvaluacion: number; xpTotal: number; logrosJson: string };
+            const persistence = new LessonPersistence();
+            persistence.completeSession(
+              body.sessionId,
+              body.xpTotal,
+              'Explorador', // nivel calculado por gamificación — se puede mejorar después
+              body.logrosJson,
+              body.puntajeEvaluacion,
+            );
+            return addCorsHeaders(new Response(JSON.stringify({ ok: true }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }), req);
+          } catch (e) {
+            return addCorsHeaders(new Response(JSON.stringify({ error: (e as Error).message }), {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            }), req);
+          }
+        }
+
+        // ── HiveLearn Rate (calificación del alumno) ────────────────────
+        if (url.pathname === "/api/hivelearn/rate" && req.method === "POST") {
+          try {
+            const { LessonPersistence } = await import("@johpaz/hivelearn");
+            const body = await req.json() as { sessionId: string; rating: number; comentario?: string };
+            const persistence = new LessonPersistence();
+            persistence.rateSession(body.sessionId, body.rating, body.comentario);
+            return addCorsHeaders(new Response(JSON.stringify({ ok: true }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }), req);
+          } catch (e) {
+            return addCorsHeaders(new Response(JSON.stringify({ error: (e as Error).message }), {
+              status: 500,
               headers: { "Content-Type": "application/json" },
             }), req);
           }
@@ -1073,16 +1162,64 @@ export async function startGateway(config: Config): Promise<void> {
         }
 
         // ── HiveLearn Session Delete ──────────────────────────────────
-        const hlSessionMatch = url.pathname.match(/^\/api\/hivelearn\/sessions\/([^/]+)$/);
-        if (hlSessionMatch && req.method === "DELETE") {
+        // ── HiveLearn Session Outputs (trazabilidad de agentes) ─────────
+        const hlSessionOutputsMatch = url.pathname.match(/^\/api\/hivelearn\/sessions\/([^/]+)\/outputs$/);
+        if (hlSessionOutputsMatch && req.method === "GET") {
+          try {
+            const { LessonPersistence } = await import("@johpaz/hivelearn");
+            const persistence = new LessonPersistence();
+            const outputs = persistence.getAgentOutputs(hlSessionOutputsMatch[1]);
+            return addCorsHeaders(Response.json(outputs), req);
+          } catch (e) {
+            return addCorsHeaders(Response.json({ error: (e as Error).message }, { status: 500 }), req);
+          }
+        }
+
+        // ── HiveLearn Session Responses (respuestas del alumno) ─────────
+        const hlSessionResponsesMatch = url.pathname.match(/^\/api\/hivelearn\/sessions\/([^/]+)\/responses$/);
+        if (hlSessionResponsesMatch && req.method === "GET") {
           try {
             const { getDb } = await import("../storage/sqlite");
             const db = getDb();
-            const sessionId = hlSessionMatch[1];
-            db.run("DELETE FROM hl_sessions WHERE session_id = ?", [sessionId]);
-            return addCorsHeaders(Response.json({ ok: true }), req);
+            const rows = db.query(
+              "SELECT * FROM hl_student_responses WHERE session_id = ? ORDER BY created_at ASC"
+            ).all(hlSessionResponsesMatch[1]);
+            return addCorsHeaders(Response.json(rows), req);
           } catch (e) {
-            return addCorsHeaders(Response.json({ ok: false, error: (e as Error).message }, { status: 500 }), req);
+            return addCorsHeaders(Response.json({ error: (e as Error).message }, { status: 500 }), req);
+          }
+        }
+
+        const hlSessionMatch = url.pathname.match(/^\/api\/hivelearn\/sessions\/([^/]+)$/);
+        if (hlSessionMatch) {
+          if (req.method === "GET") {
+            try {
+              const { getDb } = await import("../storage/sqlite");
+              const db = getDb();
+              const row = db.query(`
+                SELECT s.*, c.meta_alumno as meta, c.total_nodos, c.rango_edad, c.nodos_json, c.topic_slug,
+                       p.nombre, p.rango_edad as perfil_rango_edad, p.nivel_previo, p.estilo, p.tiempo_sesion
+                FROM hl_sessions s
+                LEFT JOIN hl_curricula c ON s.curriculo_id = c.id
+                LEFT JOIN hl_student_profiles p ON s.alumno_id = p.alumno_id
+                WHERE s.session_id = ?
+              `).get(hlSessionMatch[1]);
+              if (!row) return addCorsHeaders(Response.json({ error: "Session not found" }, { status: 404 }), req);
+              return addCorsHeaders(Response.json(row), req);
+            } catch (e) {
+              return addCorsHeaders(Response.json({ error: (e as Error).message }, { status: 500 }), req);
+            }
+          }
+          if (req.method === "DELETE") {
+            try {
+              const { getDb } = await import("../storage/sqlite");
+              const db = getDb();
+              const sessionId = hlSessionMatch[1];
+              db.run("DELETE FROM hl_sessions WHERE session_id = ?", [sessionId]);
+              return addCorsHeaders(Response.json({ ok: true }), req);
+            } catch (e) {
+              return addCorsHeaders(Response.json({ ok: false, error: (e as Error).message }, { status: 500 }), req);
+            }
           }
         }
 

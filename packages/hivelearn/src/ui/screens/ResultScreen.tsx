@@ -1,5 +1,7 @@
+import { useState, useEffect } from 'react'
 import { useLessonStore } from '../store/lessonStore'
 import { useGamification } from '../hooks/useGamification'
+import { RatingModal } from './RatingModal'
 
 function getCalificacion(puntaje: number): { emoji: string; texto: string; color: string } {
   if (puntaje >= 90) return { emoji: '🏆', texto: '¡Excelente!', color: 'text-yellow-400' }
@@ -14,6 +16,13 @@ export function ResultScreen() {
     logrosDesbloqueados, nodosCompletados, tiempoInicioSesion, reset
   } = useLessonStore()
   const { nivelActual, formatXP } = useGamification()
+  const [showRating, setShowRating] = useState(false)
+
+  // Mostrar el modal de rating automáticamente al entrar en la pantalla de resultado
+  useEffect(() => {
+    const t = setTimeout(() => setShowRating(true), 1200)
+    return () => clearTimeout(t)
+  }, [])
 
   const puntaje = puntajeEvaluacion ?? 0
   const cal = getCalificacion(puntaje)
@@ -24,6 +33,8 @@ export function ResultScreen() {
   const logros = program?.gamificacion.logros.filter(l => logrosDesbloqueados.includes(l.id)) ?? []
 
   return (
+    <>
+    {showRating && <RatingModal onClose={() => setShowRating(false)} />}
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
       <div className="w-full max-w-md space-y-6">
 
@@ -91,5 +102,6 @@ export function ResultScreen() {
         </div>
       </div>
     </div>
+    </>
   )
 }

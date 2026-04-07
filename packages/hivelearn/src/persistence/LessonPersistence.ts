@@ -254,6 +254,95 @@ export class LessonPersistence {
     }
   }
 
+  // ─── Agent Output Traceability ─────────────────────────────────────
+
+  saveAgentOutput(sessionId: string, agentId: string, taskId: string, outputJson: string, durationMs: number, status: 'ok' | 'failed' = 'ok'): void {
+    try {
+      this.db.query(`
+        INSERT INTO hl_session_agent_outputs (session_id, agent_id, task_id, output_json, duration_ms, status)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(sessionId, agentId, taskId, outputJson, durationMs, status)
+    } catch {
+      // Non-critical — never block the pipeline
+    }
+  }
+
+  getAgentOutputs(sessionId: string): Array<{ agent_id: string; task_id: string; output_json: string; duration_ms: number; status: string }> {
+    return this.db.query(
+      'SELECT agent_id, task_id, output_json, duration_ms, status FROM hl_session_agent_outputs WHERE session_id = ? ORDER BY id ASC'
+    ).all(sessionId) as any[]
+  }
+
+  // ─── Student Responses ──────────────────────────────────────────────
+
+  saveStudentResponse(sessionId: string, nodeId: string, tipoPedagogico: string, respuesta: string, feedbackJson: string, xpAwarded: number, esCorrecto: boolean): void {
+    // Calculate attempt number
+    const prev = this.db.query(
+      'SELECT COUNT(*) as cnt FROM hl_student_responses WHERE session_id = ? AND node_id = ?'
+    ).get(sessionId, nodeId) as { cnt: number }
+
+    this.db.query(`
+      INSERT INTO hl_student_responses (session_id, node_id, attempt_num, tipo_pedagogico, respuesta_texto, feedback_json, xp_awarded, es_correcto)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(sessionId, nodeId, (prev?.cnt ?? 0) + 1, tipoPedagogico, respuesta, feedbackJson, xpAwarded, esCorrecto ? 1 : 0)
+
+    // Update node effectiveness
+    this.updateNodeEffectiveness(nodeId, tipoPedagogico, esCorrecto)
+  }
+
+  updateNodeEffectiveness(nodeId: string, tipoPedagogico: string, esCorrecto: boolean): void {
+    const existing = this.db.query(
+      'SELECT veces_visto, veces_completado FROM hl_node_effectiveness WHERE id = ?'
+    ).get(nodeId) as { veces_visto: number; veces_completado: number } | undefined
+
+    if (existing) {
+      this.db.query(`
+        UPDATE hl_node_effectiveness
+        SET veces_visto = veces_visto + 1,
+            veces_completado = veces_completado + ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(esCorrecto ? 1 : 0, nodeId)
+    } else {
+      this.db.query(`
+        INSERT OR REPLACE INTO hl_node_effectiveness
+          (id, nodo_content_hash, agente_tipo, tema, tipo_pedagogico, tipo_visual, rango_edad, intentos_promedio, tasa_abandono, tiempo_promedio, veces_visto, veces_completado)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 0, 1, ?)
+      `).run(nodeId, nodeId, 'feedback', '', tipoPedagogico, 'text_card', '', esCorrecto ? 0 : 1, esCorrecto ? 1 : 0)
+    }
+  }
+
+  rateSession(sessionId: string, rating: number, comentario?: string): void {
+    this.db.query(`
+      UPDATE hl_sessions SET rating = ?, rating_comentario = ? WHERE session_id = ?
+    `).run(rating, comentario ?? null, sessionId)
+  }
+
+  getTopicEffectiveness(topicSlug: string | null): { nodosConMasFallas: string[]; nivelPromedioAprobacion: number } {
+    if (!topicSlug) return { nodosConMasFallas: [], nivelPromedioAprobacion: 0 }
+    const rows = this.db.query(`
+      SELECT tipo_pedagogico, veces_visto, veces_completado
+      FROM hl_node_effectiveness
+      WHERE tema = ?
+      ORDER BY (CAST(veces_completado AS FLOAT) / MAX(veces_visto, 1)) ASC
+      LIMIT 5
+    `).all(topicSlug) as Array<{ tipo_pedagogico: string; veces_visto: number; veces_completado: number }>
+
+    const nodosConMasFallas = rows
+      .filter(r => r.veces_visto > 2)
+      .map(r => r.tipo_pedagogico)
+
+    const allRows = this.db.query(`
+      SELECT AVG(CAST(veces_completado AS FLOAT) / MAX(veces_visto, 1)) as avg_rate
+      FROM hl_node_effectiveness WHERE tema = ?
+    `).get(topicSlug) as { avg_rate: number | null }
+
+    return {
+      nodosConMasFallas,
+      nivelPromedioAprobacion: allRows.avg_rate ? Math.round(allRows.avg_rate * 100) : 0,
+    }
+  }
+
   // ─── Metrics Dashboard ──────────────────────────────────────────────
 
   getAggregateMetrics(): Record<string, any> {

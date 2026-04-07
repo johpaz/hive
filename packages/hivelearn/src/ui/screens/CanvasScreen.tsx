@@ -17,6 +17,7 @@ import { GamificationHUD } from './GamificationHUD'
 import { NodeContentPopover } from './NodeContentPopover'
 import { XpFloatAnimation } from './XpFloatAnimation'
 import { LessonNode, type HLNodeData } from '../nodes/LessonNode'
+import { VisionAttentionMonitor } from '../components/VisionAttentionMonitor'
 import type { NodoLesson } from '../../types'
 
 const NODE_TYPES: NodeTypes = {
@@ -42,10 +43,11 @@ function CanvasContent() {
     program, nodoActualId, nodosCompletados, xpFloat,
     selectedNodeId, selectNode, deselectNode,
     completarNodo, incrementarRacha, resetRacha, showXpFloat,
-    setLastFeedback, setScreen,
+    setLastFeedback, setScreen, sessionId,
   } = useLessonStore()
   const { checkLogros } = useGamification()
   const [xpFloatPos, setXpFloatPos] = useState({ x: 0, y: 0 })
+  const [attentionPaused, setAttentionPaused] = useState(false)
 
   const selectedNodo = useMemo(() =>
     program?.nodos.find(n => n.id === selectedNodeId) ?? null,
@@ -170,6 +172,31 @@ function CanvasContent() {
   return (
     <div className="absolute inset-0 flex flex-col overflow-hidden" style={{ background: '#080d1a' }}>
       <GamificationHUD tema={program.tema} />
+      <div className="absolute top-2 right-32 z-20 flex items-center">
+        <VisionAttentionMonitor
+          sessionId={sessionId ?? ''}
+          onAttentionLost={() => setAttentionPaused(true)}
+          enabled={!!sessionId}
+        />
+      </div>
+
+      {/* Overlay de atención perdida */}
+      {attentionPaused && (
+        <div
+          className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4"
+          style={{ background: 'rgba(8,13,26,0.85)', backdropFilter: 'blur(4px)' }}
+        >
+          <span className="text-4xl">👀</span>
+          <p className="text-white font-bold text-lg">¿Sigues ahí?</p>
+          <p className="text-white/50 text-sm">Parece que te alejaste. Haz clic para continuar.</p>
+          <button
+            onClick={() => setAttentionPaused(false)}
+            className="px-6 py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-500 transition-all"
+          >
+            ¡Aquí estoy! →
+          </button>
+        </div>
+      )}
 
       {todoCompleto && (
         <div className="absolute top-14 right-4 z-20">

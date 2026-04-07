@@ -3,7 +3,7 @@ import { useLessonStore } from '../store/lessonStore'
 import type { PreguntaEvaluacion } from '../../types'
 
 export function useEvaluation() {
-  const { program, responderEvaluacion, respuestasEvaluacion, setPuntajeEvaluacion, setScreen } = useLessonStore()
+  const { program, responderEvaluacion, respuestasEvaluacion, setPuntajeEvaluacion, setScreen, sessionId, xpTotal, logrosDesbloqueados } = useLessonStore()
   const [preguntaActual, setPreguntaActual] = useState(0)
   const [enviando, setEnviando] = useState(false)
 
@@ -29,11 +29,26 @@ export function useEvaluation() {
       })
       const puntaje = Math.round((correctas / total) * 100)
       setPuntajeEvaluacion(puntaje)
+
+      // Marcar sesión como completada en el backend
+      if (sessionId) {
+        fetch('/api/hivelearn/complete-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId,
+            puntajeEvaluacion: puntaje,
+            xpTotal,
+            logrosJson: JSON.stringify(logrosDesbloqueados),
+          }),
+        }).catch(() => { /* non-critical */ })
+      }
+
       setScreen('result')
     } finally {
       setEnviando(false)
     }
-  }, [preguntas, respuestasEvaluacion, total, setPuntajeEvaluacion, setScreen])
+  }, [preguntas, respuestasEvaluacion, total, setPuntajeEvaluacion, setScreen, sessionId, xpTotal, logrosDesbloqueados])
 
   return {
     preguntas,

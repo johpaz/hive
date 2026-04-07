@@ -19,6 +19,7 @@ import { INFOGRAPHIC_PROMPT } from './prompts/infographic.prompt'
 import { GAMIFICATION_PROMPT } from './prompts/gamification.prompt'
 import { EVALUATION_PROMPT } from './prompts/evaluation.prompt'
 import { FEEDBACK_PROMPT } from './prompts/feedback.prompt'
+import { AUDIO_PROMPT } from './prompts/audio.prompt'
 
 export const AGENT_IDS = {
   coordinator:   'hl-coordinator-agent',
@@ -34,6 +35,7 @@ export const AGENT_IDS = {
   gif:           'hl-gif-agent',
   infographic:   'hl-infographic-agent',
   image:         'hl-image-agent',
+  audio:         'hl-audio-agent',
   gamification:  'hl-gamification-agent',
   evaluation:    'hl-evaluation-agent',
   feedback:      'hl-feedback-agent',
@@ -64,6 +66,7 @@ const HIVELEARN_AGENTS: AgentDef[] = [
   { id: AGENT_IDS.gamification,  name: 'GamificationAgent',description: 'Asigna XP, logros y gamificación adaptada por edad',   systemPrompt: GAMIFICATION_PROMPT,maxIterations: 3  },
   { id: AGENT_IDS.evaluation,    name: 'EvaluationAgent',  description: 'Genera 5 preguntas de evaluación final',               systemPrompt: EVALUATION_PROMPT,  maxIterations: 3  },
   { id: AGENT_IDS.feedback,      name: 'FeedbackAgent',    description: 'Feedback motivador on-demand por respuesta del alumno', systemPrompt: FEEDBACK_PROMPT,    maxIterations: 3  },
+  { id: AGENT_IDS.audio,         name: 'AudioAgent',       description: 'Genera script de narración educativa (Web Speech API)',  systemPrompt: AUDIO_PROMPT,       maxIterations: 3  },
 ]
 
 export function registerHiveLearnAgents(db: Database): void {

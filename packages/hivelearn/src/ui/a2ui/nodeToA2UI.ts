@@ -307,6 +307,28 @@ export function nodeToA2UI(nodo: NodoLesson): A2UIMessage[] {
     return buildMessages(comps, dataContents)
   }
 
+  // ── Audio Narration ───────────────────────────────────────────────────────────
+  if (nodo.tipoVisual === 'audio_ai' && c?.audio) {
+    const aud = c.audio
+    comps = [
+      column('root', ['aud-card', 'aud-play-btn', ...meChildren]),
+      card('aud-card', 'aud-card-inner'),
+      column('aud-card-inner', ['aud-icon-row', 'aud-title', 'aud-text'], 'center', 'center'),
+      row('aud-icon-row', ['aud-icon', 'aud-label'], 'center'),
+      text('aud-icon', '🎧', 'h2'),
+      text('aud-label', 'Narración', 'label'),
+      text('aud-title', aud.title ?? nodo.titulo, 'h4'),
+      text('aud-text', aud.narration_text, 'body'),
+      button('aud-play-btn', '▶ Escuchar narración', 'play_audio', [
+        { key: 'narration_text', value: { literalString: aud.narration_text } },
+        { key: 'speed',          value: { literalString: aud.speed ?? 'normal' } },
+        { key: 'voice_tone',     value: { literalString: aud.voice_tone ?? 'friendly' } },
+      ]),
+      ...meComps,
+    ]
+    return buildMessages(comps, dataContents)
+  }
+
   // ── Evaluation ───────────────────────────────────────────────────────────────
   if (nodo.tipoPedagogico === 'evaluation' && c?.evaluacion) {
     const pregs: any[] = Array.isArray(c.evaluacion.preguntas) ? c.evaluacion.preguntas : []
@@ -346,7 +368,7 @@ export function nodeToA2UI(nodo: NodoLesson): A2UIMessage[] {
     comps = [
       column('root', rootChildren),
       text('exp-title', exp.titulo ?? nodo.titulo, 'h3'),
-      text('exp-body', exp.explicacion ?? exp.descripcion ?? nodo.concepto, 'body'),
+      text('exp-body', exp.explicacion ?? nodo.concepto, 'body'),
       ...meComps,
     ]
     if (exp.ejemploConcreto) {

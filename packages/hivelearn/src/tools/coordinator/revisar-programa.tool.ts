@@ -28,6 +28,11 @@ export const revisarProgramaTool: Tool = {
         description: 'Correcciones opcionales por nodeId. Ejemplo: {"nodo-1": {"titulo": "...", "xpRecompensa": 30}}',
         additionalProperties: true,
       },
+      suggestedRetries: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Lista de task IDs que deben re-ejecutarse porque el contenido está vacío, es incoherente o falló. Usa los IDs exactos: "content-nodo-0", "visual-nodo-2", etc. Máximo 3 retries.',
+      },
       mensaje: {
         type: 'string',
         description: 'Resumen de la revisión para el log',

@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import type { StudentProfile, LessonProgram, NodoLesson, SwarmProgress, FeedbackOutput, AgentStatus, CoordinatorState } from '../../types'
 
-export type Screen = 'provider-select' | 'profile' | 'goal' | 'loading' | 'canvas' | 'evaluation' | 'result'
+export type Screen = 'provider-select' | 'sessions' | 'profile' | 'goal' | 'loading' | 'canvas' | 'evaluation' | 'result'
 
 export interface XpFloat {
   nodeId: string
@@ -92,7 +92,7 @@ interface LessonState {
 }
 
 const initialState = {
-  screen: 'provider-select' as Screen,
+  screen: 'sessions' as Screen,
   perfil: null,
   meta: '',
   program: null,

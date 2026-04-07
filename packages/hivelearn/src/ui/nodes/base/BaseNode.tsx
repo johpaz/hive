@@ -10,7 +10,6 @@ const ESTADO_STYLES: Record<EstadoNodo, string> = {
   bloqueado:   'opacity-40 cursor-not-allowed bg-gray-800 border-gray-600',
   disponible:  'cursor-pointer bg-gray-900 border-blue-500 hover:border-blue-400 hover:shadow-blue-500/20 hover:shadow-lg transition-all',
   completado:  'bg-gray-900 border-green-500 border-2',
-  incorrecto:  'bg-gray-900 border-red-500 border-2',
 }
 
 const TIPO_EMOJI: Record<string, string> = {

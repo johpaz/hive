@@ -20,18 +20,29 @@ export async function initHiveLearn(): Promise<void> {
   try {
     const db = getDb()
 
-    // 1. Ejecutar migración SQLite
-    const candidates = [
-      join((import.meta as any).dir ?? __dirname, '..', 'db', 'migrations', '001_hivelearn.sql'),
-      join(process.cwd(), 'packages', 'hivelearn', 'db', 'migrations', '001_hivelearn.sql'),
-    ]
-    let migration: string | null = null
-    for (const p of candidates) {
-      try { migration = readFileSync(p, 'utf-8'); break } catch { /* try next */ }
+    // 1. Ejecutar migraciones SQLite
+    for (const migFile of ['001_hivelearn.sql', '002_agent_outputs.sql']) {
+      const candidates = [
+        join((import.meta as any).dir ?? __dirname, '..', 'db', 'migrations', migFile),
+        join(process.cwd(), 'packages', 'hivelearn', 'db', 'migrations', migFile),
+      ]
+      let migration: string | null = null
+      for (const p of candidates) {
+        try { migration = readFileSync(p, 'utf-8'); break } catch { /* try next */ }
+      }
+      if (!migration) {
+        if (migFile === '001_hivelearn.sql') throw new Error(`HiveLearn: no se encontró ${migFile}`)
+        log.warn(`HiveLearn: migración ${migFile} no encontrada, omitida`)
+        continue
+      }
+      try {
+        db.exec(migration)
+        log.info(`HiveLearn: migración ${migFile} ejecutada`)
+      } catch (e) {
+        // ALTER TABLE falla si la columna ya existe — ignorar esos errores
+        log.warn(`HiveLearn: migración ${migFile} parcial: ${(e as Error).message}`)
+      }
     }
-    if (!migration) throw new Error('HiveLearn: no se encontró la migración 001_hivelearn.sql')
-    db.exec(migration)
-    log.info('HiveLearn: migración 001_hivelearn.sql ejecutada')
 
     // 2. Upsert provider Ollama + modelo Gemma 4
     upsertOllamaProvider(db)

@@ -6,7 +6,7 @@ export type TipoVisual = 'text_card' | 'code_block' | 'svg_diagram' | 'gif_guide
 export type TipoPregunta = 'verdadero_falso' | 'multiple_choice' | 'respuesta_corta' | 'completar_codigo'
 export type NivelPrevio = 'principiante' | 'principiante_base' | 'intermedio'
 export type EstiloAprendizaje = 'visual' | 'lectura' | 'retos' | 'balanceado' | 'mis_retos'
-export type EstadoNodo = 'bloqueado' | 'disponible' | 'completado' | 'incorrecto'
+export type EstadoNodo = 'bloqueado' | 'disponible' | 'completado'
 
 // ─── Coordinator & Agent Status ──────────────────────────────────────────────
 export type AgentStatus = 'idle' | 'pending' | 'running' | 'thinking' | 'tool_call' | 'completed' | 'failed'
@@ -83,18 +83,25 @@ export interface NodoContenido {
   infografia?: InfografiaOutput
   evaluacion?: EvaluacionOutput
   microEval?: MicroEvaluacion
-  imagen?: {
-    prompt: string
-    url?: string
-    base64?: string
-    descripcionAlt: string
-    caption: string
-    svgFallback?: string
-  }
-  audio?: {
-    texto: string
-    duracionEstimada: number
-  }
+  imagen?: ImagenOutput
+  audio?: AudioOutput
+}
+
+export interface ImagenOutput {
+  prompt: string
+  estilo: 'diagram' | 'illustration' | 'chart'
+  alt_text: string
+  caption: string
+  svg_fallback: string
+  url?: string
+}
+
+export interface AudioOutput {
+  narration_text: string
+  voice_tone: 'friendly' | 'professional' | 'motivating'
+  key_pauses: string[]
+  speed: 'slow' | 'normal' | 'fast'
+  title: string
 }
 
 export interface ExplicacionOutput {

@@ -68,11 +68,9 @@ export function buildNodosBase(structureResult: string, perfil: PerfilAdaptacion
   const parsed = unwrap(raw)
   const estructuraNodos = parsed.nodos ?? []
 
-  console.log('[buildNodosBase] raw structureResult:', structureResult.slice(0, 200))
-  console.log('[buildNodosBase] parsed nodos:', estructuraNodos.length, estructuraNodos.map(n => n.id))
+  log.info(`[buildNodosBase] ${estructuraNodos.length} nodos`)
 
   return estructuraNodos.map((n, idx) => {
-    console.log('[buildNodosBase] mapping nodo', idx, 'original id:', n.id, '-> new id:', `nodo-${idx}`)
     return {
       id: `nodo-${idx}`,
       tipoPedagogico: (n.tipo_pedagogico ?? n.tipoPedagogico ?? 'concept') as TipoPedagogico,
@@ -98,21 +96,17 @@ function enriquecerNodos(
     if (node.result) resultMap.set(node.id, node.result)
   }
 
-  console.log('[enriquecerNodos] available keys in resultMap:', [...resultMap.keys()])
+  log.info(`[enriquecerNodos] keys: ${[...resultMap.keys()].join(', ')}`)
 
   return nodos.map(nodo => {
     const contentKey = `content-${nodo.id}`
     const visualKey = `visual-${nodo.id}`
     const contenido: NodoContenido = {}
 
-    console.log('[enriquecerNodos] looking for nodo.id:', nodo.id, 'contentKey:', contentKey, 'found:', resultMap.has(contentKey))
-
     const contentRaw = resultMap.get(contentKey)
     if (contentRaw) {
-      console.log('[enriquecerNodos] found content, parsing...')
       const parsed = unwrap(parseAgentOutput<any>(contentRaw, null))
       if (parsed) {
-        console.log('[enriquecerNodos] parsed successfully, keys:', Object.keys(parsed))
         if (parsed.microEval) contenido.microEval = parsed.microEval
         switch (nodo.tipoPedagogico) {
           case 'concept':   contenido.explicacion  = parsed; break
@@ -137,6 +131,7 @@ function enriquecerNodos(
           case 'gif_guide':   contenido.gifFrames = parsed; break
           case 'infographic': contenido.infografia= parsed; break
           case 'image_ai':    contenido.imagen    = parsed; break
+          case 'audio_ai':    contenido.audio     = parsed; break
         }
       }
     }

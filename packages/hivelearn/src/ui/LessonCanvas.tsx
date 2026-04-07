@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLessonStore } from './store/lessonStore'
 import { ProviderSelectScreen } from './screens/ProviderSelectScreen'
+import { SessionsListScreen } from './screens/SessionsListScreen'
 import { ProfileScreen }   from './screens/ProfileScreen'
 import { GoalScreen }      from './screens/GoalScreen'
 import { LoadingScreen }   from './screens/LoadingScreen'
@@ -23,8 +24,8 @@ export function LessonCanvas() {
 
   const [configChecked, setConfigChecked] = useState(false)
 
-  // Verificar si ya hay provider/model configurado al entrar.
-  // Si hay un programa activo en el store (restaurado de localStorage), NO pisar la pantalla.
+  // Al entrar siempre ir a la lista de sesiones (excepto si hay generación activa).
+  // Cargar provider/model en background para que esté disponible al crear nueva sesión.
   useEffect(() => {
     if (configChecked) return
     ;(async () => {
@@ -34,30 +35,27 @@ export function LessonCanvas() {
         if (data.configured && data.providerId && data.modelId) {
           setSelectedProvider(data.providerId)
           setSelectedModel(data.modelId)
-          // Solo ir a 'profile' si no hay ya una sesión activa en el store
-          if (!program) {
-            setScreen('profile')
-          }
-          // Si hay programa en el store, mantener la pantalla que ya tiene (canvas, etc.)
         }
       } catch {
-        // Si falla, mostrar selector de provider
+        // Si falla la config, igual mostramos sessions
+      }
+      // Siempre ir a sessions salvo que haya una generación SSE activa
+      if (!isGenerating) {
+        setScreen('sessions')
       }
       setConfigChecked(true)
     })()
-  }, [configChecked, setSelectedProvider, setSelectedModel, setScreen, program])
+  }, [configChecked, setSelectedProvider, setSelectedModel, setScreen, isGenerating])
 
   const handleExit = () => {
     if (isGenerating) {
-      window.location.href = '/'
-    } else if (program) {
-      // Hay progreso guardado, confirmar
-      if (window.confirm('¿Salir sin guardar los cambios? Tu progreso se mantendrá.')) {
-        window.location.href = '/'
+      // Mid-generation: solo redirigimos, el proceso SSE sigue en el backend
+      if (window.confirm('¿Salir mientras se genera la lección? Podrás verla en la lista cuando termine.')) {
+        setScreen('sessions')
       }
     } else {
-      reset()
-      window.location.href = '/'
+      // Volver a la lista de sesiones (no al dashboard)
+      setScreen('sessions')
     }
   }
 

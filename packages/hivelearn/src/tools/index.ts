@@ -1,9 +1,6 @@
 export { disenarEstructuraTool } from './canvas/disenar-estructura.tool'
 export { poblarNodoTool } from './canvas/poblar-nodo.tool'
-export { crearNodoCanvasTool } from './canvas/crear-nodo-canvas.tool'
-export { conectarNodosTool } from './canvas/conectar-nodos.tool'
-export { marcarCompletadoTool } from './canvas/marcar-completado.tool'
-export { avanzarNodoTool } from './canvas/avanzar-nodo.tool'
+// avanzar-nodo, conectar-nodos, crear-nodo-canvas, marcar-completado — sin uso en tool-map, omitidos
 
 export { generarExplicacionTool } from './content/generar-explicacion.tool'
 export { generarEjercicioTool } from './content/generar-ejercicio.tool'

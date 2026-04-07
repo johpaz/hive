@@ -109,6 +109,7 @@ export function buildContentNodes(
         gif_guide:     AGENT_IDS.gif,
         infographic:   AGENT_IDS.infographic,
         image_ai:      AGENT_IDS.image,
+        audio_ai:      AGENT_IDS.audio,
       }
 
       const visualAgentId = visualAgentMap[nodo.tipoVisual]
