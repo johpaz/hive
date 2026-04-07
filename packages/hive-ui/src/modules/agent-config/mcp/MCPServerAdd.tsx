@@ -152,17 +152,17 @@ export function MCPServerAdd() {
           <div className="space-y-2">
             <Label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Protocolo de Transporte</Label>
             <Select value={transport} onValueChange={setTransport}>
-              <SelectTrigger className="bg-white/5 border-white/10 focus:border-cyan-500/50 h-9">
-                <SelectValue />
+              <SelectTrigger className="bg-zinc-900/80 border-white/10 text-white focus:border-cyan-500/50 hover:bg-zinc-900 transition-all h-9 cursor-pointer">
+                <SelectValue placeholder="Seleccionar transporte" />
               </SelectTrigger>
-              <SelectContent className="bg-zinc-900 border-white/10">
-                <SelectItem value="stdio" className="focus:bg-cyan-500/20 focus:text-cyan-400">
+              <SelectContent position="popper" className="bg-zinc-900 border-white/10 z-[99999]" sideOffset={4}>
+                <SelectItem value="stdio" className="focus:bg-cyan-500/20 focus:text-cyan-400 cursor-pointer">
                   <div className="flex items-center gap-2">
                     <Terminal className="h-3.5 w-3.5" />
                     <span>stdio (Binario Local)</span>
                   </div>
                 </SelectItem>
-                <SelectItem value="sse" className="focus:bg-cyan-500/20 focus:text-cyan-400">
+                <SelectItem value="sse" className="focus:bg-cyan-500/20 focus:text-cyan-400 cursor-pointer">
                   <div className="flex items-center gap-2">
                     <Globe className="h-3.5 w-3.5" />
                     <span>SSE (Remote HTTP)</span>
@@ -211,35 +211,35 @@ export function MCPServerAdd() {
                 <div className="space-y-2">
                   <Label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Autenticación</Label>
                   <Select value={authType} onValueChange={setAuthType}>
-                    <SelectTrigger className="bg-white/5 border-white/10 focus:border-cyan-500/50 h-9">
-                      <SelectValue />
+                    <SelectTrigger className="bg-zinc-900/80 border-white/10 text-white focus:border-cyan-500/50 hover:bg-zinc-900 transition-all h-9 cursor-pointer">
+                      <SelectValue placeholder="Seleccionar autenticación" />
                     </SelectTrigger>
-                    <SelectContent className="bg-zinc-900 border-white/10">
-                      <SelectItem value="none" className="focus:bg-cyan-500/20 focus:text-cyan-400">
+                    <SelectContent position="popper" className="bg-zinc-900 border-white/10 z-[99999]" sideOffset={4}>
+                      <SelectItem value="none" className="focus:bg-cyan-500/20 focus:text-cyan-400 cursor-pointer">
                         <div className="flex items-center gap-2">
                           <Globe className="h-3.5 w-3.5" />
                           <span>Ninguna</span>
                         </div>
                       </SelectItem>
-                      <SelectItem value="api-key" className="focus:bg-cyan-500/20 focus:text-cyan-400">
+                      <SelectItem value="api-key" className="focus:bg-cyan-500/20 focus:text-cyan-400 cursor-pointer">
                         <div className="flex items-center gap-2">
                           <Key className="h-3.5 w-3.5" />
                           <span>API Key (x-api-key)</span>
                         </div>
                       </SelectItem>
-                      <SelectItem value="bearer" className="focus:bg-cyan-500/20 focus:text-cyan-400">
+                      <SelectItem value="bearer" className="focus:bg-cyan-500/20 focus:text-cyan-400 cursor-pointer">
                         <div className="flex items-center gap-2">
                           <ShieldCheck className="h-3.5 w-3.5" />
                           <span>Bearer Token (Authorization)</span>
                         </div>
                       </SelectItem>
-                      <SelectItem value="google-api-key" className="focus:bg-cyan-500/20 focus:text-cyan-400">
+                      <SelectItem value="google-api-key" className="focus:bg-cyan-500/20 focus:text-cyan-400 cursor-pointer">
                         <div className="flex items-center gap-2">
                           <Key className="h-3.5 w-3.5" />
                           <span>Google API Key (X-Goog-Api-Key)</span>
                         </div>
                       </SelectItem>
-                      <SelectItem value="custom" className="focus:bg-cyan-500/20 focus:text-cyan-400">
+                      <SelectItem value="custom" className="focus:bg-cyan-500/20 focus:text-cyan-400 cursor-pointer">
                         <div className="flex items-center gap-2">
                           <Code className="h-3.5 w-3.5" />
                           <span>Custom Headers (JSON)</span>

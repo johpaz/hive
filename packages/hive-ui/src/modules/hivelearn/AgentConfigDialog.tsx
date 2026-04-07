@@ -28,6 +28,13 @@ interface Provider {
   name: string;
   enabled: boolean;
   active: boolean;
+  has_api_key?: boolean;
+  hasApiKey?: boolean;
+  isLocal?: boolean;
+  base_url?: string;
+  baseUrl?: string;
+  config?: { apiKey?: string };
+  api_key?: string;
 }
 
 interface Model {
@@ -96,7 +103,13 @@ export function AgentConfigDialog({
     });
   }, [open, agentData]);
 
-  const filteredModels = models.filter(m => m.provider_id === formData.providerId && m.enabled && m.active);
+  const filteredModels = models.filter(m => {
+    const pid = m.provider_id ?? m.providerId;
+    return pid === formData.providerId && (m.active || m.enabled);
+  });
+
+  // Providers disponibles: enabled O active debe ser true (al menos uno en 1)
+  const availableProviders = providers.filter(p => p.enabled || p.active);
 
   const handleSave = async () => {
     setSaving(true);
@@ -166,7 +179,7 @@ export function AgentConfigDialog({
                     <SelectValue placeholder="Seleccionar..." />
                   </SelectTrigger>
                   <SelectContent className="bg-[#131b2e] border-white/[0.08]">
-                    {providers.filter(p => p.enabled && p.active).map(p => (
+                    {availableProviders.map(p => (
                       <SelectItem key={p.id} value={p.id} className="text-white hover:bg-white/10">
                         {p.name}
                       </SelectItem>
