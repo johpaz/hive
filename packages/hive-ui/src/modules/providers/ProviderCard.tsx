@@ -238,17 +238,22 @@ export function ProviderCard({ provider, updateProvider, onManageModels }: Provi
             </span>
           </button>
 
-          {/* Botón sync — solo providers locales */}
+          {/* Badge + botón sync — solo providers locales */}
           {isLocal && (
-            <button
-              type="button"
-              onClick={handleSyncModels}
-              disabled={syncing}
-              title="Sincronizar modelos instalados en Ollama"
-              className="h-6 w-6 flex items-center justify-center rounded-md text-white/30 hover:text-amber-400 hover:bg-amber-400/10 disabled:opacity-40 transition-colors"
-            >
-              <RefreshCwIcon className={`h-3 w-3 ${syncing ? 'animate-spin' : ''}`} />
-            </button>
+            <>
+              <span className="text-[9px] font-semibold text-amber-400/70 bg-amber-400/10 border border-amber-400/20 rounded px-1.5 py-0.5 leading-none whitespace-nowrap">
+                Actualiza modelos locales
+              </span>
+              <button
+                type="button"
+                onClick={handleSyncModels}
+                disabled={syncing}
+                title="Sincronizar modelos instalados en Ollama"
+                className="h-6 w-6 flex items-center justify-center rounded-md text-white/30 hover:text-amber-400 hover:bg-amber-400/10 disabled:opacity-40 transition-colors"
+              >
+                <RefreshCwIcon className={`h-3 w-3 ${syncing ? 'animate-spin' : ''}`} />
+              </button>
+            </>
           )}
         </div>
 

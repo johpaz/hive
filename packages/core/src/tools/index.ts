@@ -38,6 +38,9 @@ import * as voice from "./voice/index.ts";
 // Core (4)
 import * as core from "./core/index.ts";
 
+// Office (8)
+import * as office from "./office/index.ts";
+
 /**
  * Creates all 66 tools with proper configuration
  */
@@ -72,6 +75,9 @@ export function createAllTools(config: Config): Tool[] {
 
     // CORE (4)
     ...core.createTools(),
+
+    // OFFICE (8)
+    ...office.createTools(),
   ];
 }
 
@@ -100,6 +106,8 @@ export function createToolsByCategory(category: string, config: Config): Tool[] 
       return voice.createTools();
     case "core":
       return core.createTools();
+    case "office":
+      return office.createTools();
     default:
       return [];
   }
@@ -202,3 +210,14 @@ export {
   saveNoteTool,
   reportProgressTool,
 } from "./core/index.ts";
+
+export {
+  officeLeerPdfTool,
+  officeEscribirPdfTool,
+  officeLeerDocxTool,
+  officeEscribirDocxTool,
+  officeLeerXlsxTool,
+  officeEscribirXlsxTool,
+  officeLeerPptxTool,
+  officeEscribirPptxTool,
+} from "./office/index.ts";

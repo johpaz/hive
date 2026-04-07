@@ -24,69 +24,81 @@ const HELP = `
 
 Usage: hive <command> [subcommand] [options]
 
-Commands:
+Gateway:
   start [--daemon]           Arrancar el Gateway (abre setup web si es primera vez)
-  dev                        Modo desarrollo con hot-reload
+  dev                        Modo desarrollo con hot-reload (usa ~/.hive-dev)
   stop                       Detener el Gateway
   reload                     Recargar config sin reiniciar
   status                     Estado del Gateway y agentes
-  chat [--agent <id>]        Chat directo en terminal
-  logs [--follow] [--level]  Ver logs del Gateway
+  onboard                    Asistente de configuración inicial paso a paso
 
+Chat y mensajes:
+  chat [--agent <id>]        Chat directo en terminal
+  logs [--follow] [--level]  Ver logs del Gateway en tiempo real
   message send --to <id> --content <text>
                              Enviar mensaje por canal
-  agent run --message <text> Ejecutar agente con mensaje
+  agent run --message <text> [--wait]
+                             Ejecutar agente con mensaje
 
-  agents add <id>            Crear nuevo agente
-  agents list [--bindings]   Listar agentes
+Agentes:
+  agents list [--bindings]   Listar agentes activos e hibernados
+  agents create              Crear agente con asistente interactivo
+  agents add <id>            Crear agente (forma rápida)
   agents remove <id>         Eliminar agente
+  agents logs <agent-id>     Ver logs de un agente específico
+  agents hibernate <id>      Poner agente en sleep (conserva contexto)
+  agents wake <id>           Despertar agente hibernado
+  agents terminate <id>      Terminar agente permanentemente
+  agents tree                Mostrar árbol jerárquico de agentes
 
-  mcp list                   Listar servidores MCP
-  mcp add                    Añadir servidor MCP
-  mcp test <nombre>          Verificar servidor MCP
-  mcp tools <nombre>         Listar tools de un servidor
+MCP:
+  mcp list                   Listar servidores MCP conectados
+  mcp add                    Añadir servidor MCP (asistente interactivo)
+  mcp test <nombre>          Verificar conectividad de un servidor MCP
+  mcp tools <nombre>         Listar tools disponibles en un servidor
   mcp remove <nombre>        Eliminar servidor MCP
 
+Skills:
   skills list                Listar skills instaladas
-  skills search <query>      Buscar skills
+  skills search <query>      Buscar skills en el catálogo
   skills install <slug>      Instalar skill
   skills remove <nombre>     Eliminar skill
-  skills update              Actualizar skills
+  skills update              Actualizar todas las skills
 
+Configuración:
   config get <key>           Leer valor de config
   config set <key> <value>   Escribir valor de config
   config show                Mostrar config completa
 
-  sessions list              Listar sesiones
-  sessions view <id>         Ver transcripción
+Sesiones y cron:
+  sessions list              Listar sesiones de conversación
+  sessions view <id>         Ver transcripción de una sesión
   sessions prune             Eliminar sesiones inactivas
+  cron list                  Listar tareas programadas
+  cron add                   Añadir tarea programada
+  cron remove <id>           Eliminar tarea programada
+  cron logs                  Ver logs de ejecuciones cron
 
-  cron list                  Listar cron jobs
-  cron add                   Añadir cron job
-  cron remove <id>           Eliminar cron job
-  cron logs                  Ver logs de cron
-
-  doctor                     Diagnóstico y auto-reparación
-  security audit             Auditoría de seguridad
-  install-service            Instalar servicio systemd
-  update                     Actualizar Hive
+Sistema:
+  doctor                     Diagnóstico completo y auto-reparación
+  update                     Actualizar Hive a la última versión
+  security audit             Auditoría de seguridad del entorno
+  install-service            Instalar servicio systemd (Linux)
 
 Options:
-  --help, -h                 Mostrar ayuda
+  --help, -h                 Mostrar esta ayuda
   --version, -v              Mostrar versión
 
 Examples:
   hive start                 Arrancar Hive (el browser se abre automáticamente)
+  hive onboard               Configurar Hive por primera vez
   hive chat                  Chatear con el agente en terminal
   hive message send --to 123 --content "Hola"
   hive agent run --message "Analiza README.md" --wait
-  hive agents add work       Crear agente "work"
+  hive agents create         Crear nuevo agente con asistente
   hive mcp add               Añadir servidor MCP
-  hive doctor                Diagnosticar problemas
-
-Documentation:
-  English: https://github.com/johpaz/hive/docs
-  Español: https://github.com/johpaz/hive/docs/es
+  hive doctor                Diagnosticar problemas del sistema
+  hive update                Actualizar a la última versión
 `;
 
 async function main(): Promise<void> {

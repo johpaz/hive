@@ -95,7 +95,7 @@ export function buildContentNodes(
       agentId: contentAgentId,
       name: `${contentAgentId.split('-')[1]}:${nodo.id}`,
       taskDescription: `${ctx}\nTipo pedagógico: ${nodo.tipoPedagogico}. Genera el contenido apropiado en JSON.`,
-      deps: ['structure'],
+      deps: [],  // Phase 1 ya completó 'structure'; content corre en paralelo directo
       timeout: 30_000,
       maxRetries: 2,
       priority: 5,
@@ -119,7 +119,7 @@ export function buildContentNodes(
           agentId: visualAgentId,
           name: `visual:${nodo.id}`,
           taskDescription: `${ctx}\nTipo visual: ${nodo.tipoVisual}. Genera el asset visual en JSON.`,
-          deps: ['structure'],
+          deps: [],  // Phase 1 ya completó 'structure'; visual corre en paralelo directo
           timeout: nodo.tipoVisual === 'svg_diagram' ? 45_000 : 25_000,
           maxRetries: 2,
           priority: 4,
@@ -131,44 +131,15 @@ export function buildContentNodes(
   return tierOneNodes
 }
 
-/** Construye el TaskGraph completo con nodos de contenido ya conocidos */
+/**
+ * Construye el TaskGraph de Fase 2 (solo content + tier2).
+ * NO incluye tier0 (profile/intent/structure) — ya corrieron en buildBaseDAG.
+ * Los content tasks no tienen deps en 'structure' porque Phase 1 ya lo resolvió.
+ */
 export function buildFullDAG(input: HiveLearnDAGInput, nodos: NodoLesson[]): TaskGraph {
   const ctxBase = `Alumno: ${input.alumnoId}. Rango edad: ${input.perfil.rangoEdad}. Nivel: ${input.perfil.nivelPrevio}. Tono: ${input.perfil.tono}.`
   const contentNodes = buildContentNodes(nodos, ctxBase)
   const contentIds = contentNodes.map(n => n.id)
-
-  const tier0: TaskNodeConfig[] = [
-    {
-      id: 'profile',
-      agentId: AGENT_IDS.profile,
-      name: 'ProfileAgent',
-      taskDescription: `Perfil JSON: ${JSON.stringify(input.perfil)}. Produce la configuración de adaptación. Responde SOLO con JSON.`,
-      deps: [],
-      timeout: 30_000,
-      maxRetries: 2,
-      priority: 10,
-    },
-    {
-      id: 'intent',
-      agentId: AGENT_IDS.intent,
-      name: 'IntentAgent',
-      taskDescription: `${ctxBase} Meta: "${input.meta}". Extrae tema, nivel, slug, tono y confianza. Responde SOLO con JSON.`,
-      deps: ['profile'],
-      timeout: 60_000,
-      maxRetries: 2,
-      priority: 9,
-    },
-    {
-      id: 'structure',
-      agentId: AGENT_IDS.structure,
-      name: 'StructureAgent',
-      taskDescription: `${ctxBase} Meta: "${input.meta}". Diseña el programa con ${nodos.length} nodos. Responde SOLO con JSON válido con estructura {"tema":"string","nodos":[...]}`,
-      deps: ['intent'],
-      timeout: 120_000,
-      maxRetries: 2,
-      priority: 8,
-    },
-  ]
 
   const tier2: TaskNodeConfig[] = [
     {
@@ -176,7 +147,7 @@ export function buildFullDAG(input: HiveLearnDAGInput, nodos: NodoLesson[]): Tas
       agentId: AGENT_IDS.gamification,
       name: 'GamificationAgent',
       taskDescription: `${ctxBase} Rango edad: ${input.perfil.rangoEdad}. Genera XP, logros y celebración.`,
-      deps: contentIds.length > 0 ? contentIds : ['structure'],
+      deps: contentIds.length > 0 ? contentIds : [],
       timeout: 30_000,
       maxRetries: 1,
       priority: 3,
@@ -186,12 +157,12 @@ export function buildFullDAG(input: HiveLearnDAGInput, nodos: NodoLesson[]): Tas
       agentId: AGENT_IDS.evaluation,
       name: 'EvaluationAgent',
       taskDescription: `${ctxBase} Meta: "${input.meta}". 5 preguntas evaluación final (3 opción múltiple + 2 respuesta corta).`,
-      deps: contentIds.length > 0 ? contentIds : ['structure'],
+      deps: contentIds.length > 0 ? contentIds : [],
       timeout: 45_000,
       maxRetries: 2,
       priority: 3,
     },
   ]
 
-  return new TaskGraph([...tier0, ...contentNodes, ...tier2])
+  return new TaskGraph([...contentNodes, ...tier2])
 }

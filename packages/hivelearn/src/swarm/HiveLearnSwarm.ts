@@ -112,8 +112,23 @@ export class HiveLearnSwarm {
     this.emit('tier2', 'GamificationAgent', 85, 'Configurando logros y gamificación...')
     this.emit('post', 'Orchestrator', 95, 'Ensamblando tu lección...')
 
+    // Mergear Phase 1 (structure/intent/profile) con Phase 2 (content/gamification/evaluation).
+    // Phase 2 ya no re-corre structure, así que inyectamos Phase 1 para que
+    // buildLessonProgram use la misma estructura con la que se construyeron los content tasks.
+    const mergedResult: DAGResult = {
+      ...fullResult,
+      completed: [
+        ...baseResult.completed,   // profile, intent, structure (Phase 1)
+        ...fullResult.completed,   // content-*, visual-*, gamification, evaluation (Phase 2)
+      ],
+      failed: [
+        ...(baseResult.failed ?? []),
+        ...(fullResult.failed ?? []),
+      ],
+    }
+
     const program = buildLessonProgram({
-      dagResult: fullResult,
+      dagResult: mergedResult,
       alumnoId: perfil.alumnoId,
       meta,
       sessionId,
@@ -124,12 +139,12 @@ export class HiveLearnSwarm {
 
     // Construir mapa de outputs raw para que el coordinador tenga acceso completo
     const rawOutputs = new Map<string, string>()
-    for (const n of [...fullResult.completed, ...fullResult.failed]) {
+    for (const n of [...mergedResult.completed, ...mergedResult.failed]) {
       if (n.result) rawOutputs.set(n.id, n.result)
     }
 
     const reviewed = await this.runCoordinatorReview(
-      program, meta, sessionId, rawOutputs, fullResult, fullGraph, executor,
+      program, meta, sessionId, rawOutputs, mergedResult, fullGraph, executor,
     )
 
     this.emit('complete', 'HiveLearn', 100, '¡Tu lección está lista! 🐝')

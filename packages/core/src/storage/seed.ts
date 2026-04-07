@@ -145,6 +145,18 @@ export const SEED_DATA: SeedData = {
     { id: "save_note", name: "save_note", category: "core", description: "Guardar nota persistente en el scratchpad. Sinónimos: guardar nota, escribir nota, recordatorio rápido, apuntar" },
     { id: "report_progress", name: "report_progress", category: "core", description: "Reportar progreso actual al usuario. Sinónimos: reportar progreso, informar estado, actualizar progreso, porcentaje" },
 
+    // ─────────────────────────────────────────
+    // 12. OFFICE — Archivos Office (PDF, DOCX, XLSX, PPTX)
+    // ─────────────────────────────────────────
+    { id: "office_leer_pdf", name: "office_leer_pdf", category: "office", description: "Leer contenido de un archivo PDF y retornar texto plano con metadata. Sinónimos: leer pdf, abrir pdf, extraer texto de pdf, contenido pdf, pdf a texto" },
+    { id: "office_escribir_pdf", name: "office_escribir_pdf", category: "office", description: "Generar un archivo PDF desde texto con configuración de márgenes y tamaño de página. Sinónimos: crear pdf, generar pdf, escribir pdf, exportar a pdf" },
+    { id: "office_leer_docx", name: "office_leer_docx", category: "office", description: "Leer un archivo Word (.docx) y retornar texto con estructura de párrafos y tablas. Sinónimos: leer word, abrir docx, extraer texto de word, contenido word" },
+    { id: "office_escribir_docx", name: "office_escribir_docx", category: "office", description: "Generar un archivo Word (.docx) con párrafos, títulos y tablas. Sinónimos: crear word, generar docx, escribir documento word, exportar a docx" },
+    { id: "office_leer_xlsx", name: "office_leer_xlsx", category: "office", description: "Leer un archivo Excel (.xlsx) y retornar hojas con datos en JSON (filas y columnas). Sinónimos: leer excel, abrir xlsx, extraer datos de excel, hojas excel" },
+    { id: "office_escribir_xlsx", name: "office_escribir_xlsx", category: "office", description: "Generar un archivo Excel (.xlsx) desde un objeto JSON con hojas, filas y columnas. Sinónimos: crear excel, generar xlsx, escribir excel, exportar a xlsx" },
+    { id: "office_leer_pptx", name: "office_leer_pptx", category: "office", description: "Leer un archivo PowerPoint (.pptx) y retornar el texto de cada diapositiva como array estructurado. Sinónimos: leer powerpoint, abrir pptx, extraer texto de presentacion, contenido slides" },
+    { id: "office_escribir_pptx", name: "office_escribir_pptx", category: "office", description: "Generar un archivo PowerPoint (.pptx) desde un array de diapositivas con título y contenido. Sinónimos: crear powerpoint, generar pptx, escribir presentacion, exportar a pptx" },
+
   ],
 
   providers: [

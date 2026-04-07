@@ -2,12 +2,11 @@
  * HiveLearn — Backend entry point
  * Exporta initHiveLearn() para ser llamado desde gateway/initializer.ts
  */
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { getDb } from '@johpaz/hive-agents-core/storage/sqlite'
 import { logger } from './utils/logger'
 import { upsertOllamaProvider, isOllamaAvailable } from './providers/ollama.provider'
 import { registerHiveLearnAgents } from './agents/registry'
+import { HIVELEARN_SCHEMA_V1, HIVELEARN_SCHEMA_V2 } from './storage/hivelearn-schema'
 
 const log = logger.child('hivelearn:init')
 
@@ -20,27 +19,19 @@ export async function initHiveLearn(): Promise<void> {
   try {
     const db = getDb()
 
-    // 1. Ejecutar migraciones SQLite
-    for (const migFile of ['001_hivelearn.sql', '002_agent_outputs.sql']) {
-      const candidates = [
-        join((import.meta as any).dir ?? __dirname, '..', 'db', 'migrations', migFile),
-        join(process.cwd(), 'packages', 'hivelearn', 'db', 'migrations', migFile),
-      ]
-      let migration: string | null = null
-      for (const p of candidates) {
-        try { migration = readFileSync(p, 'utf-8'); break } catch { /* try next */ }
-      }
-      if (!migration) {
-        if (migFile === '001_hivelearn.sql') throw new Error(`HiveLearn: no se encontró ${migFile}`)
-        log.warn(`HiveLearn: migración ${migFile} no encontrada, omitida`)
-        continue
-      }
+    // 1. Ejecutar migraciones SQLite (inline — funciona en binarios compilados)
+    const migrations: Array<{ name: string; sql: string; optional?: boolean }> = [
+      { name: '001_hivelearn', sql: HIVELEARN_SCHEMA_V1 },
+      { name: '002_agent_outputs', sql: HIVELEARN_SCHEMA_V2, optional: true },
+    ]
+
+    for (const mig of migrations) {
       try {
-        db.exec(migration)
-        log.info(`HiveLearn: migración ${migFile} ejecutada`)
+        db.exec(mig.sql)
+        log.info(`HiveLearn: migración ${mig.name} ejecutada`)
       } catch (e) {
-        // ALTER TABLE falla si la columna ya existe — ignorar esos errores
-        log.warn(`HiveLearn: migración ${migFile} parcial: ${(e as Error).message}`)
+        // ALTER TABLE ADD COLUMN IF NOT EXISTS puede fallar en SQLite < 3.37 — ignorar
+        log.warn(`HiveLearn: migración ${mig.name} parcial: ${(e as Error).message}`)
       }
     }
 

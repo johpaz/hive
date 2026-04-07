@@ -186,6 +186,96 @@ export async function doctor(): Promise<void> {
   const running = isGatewayRunning();
   checks.push({ category: "Gateway", name: "Estado", status: running ? "ok" : "warn", message: running ? "corriendo" : "detenido" });
 
+  // HiveLearn — verificar tablas y Ollama
+  try {
+    const { initializeDatabase } = await import("@johpaz/hive-agents-core/storage/sqlite");
+    initializeDatabase();
+    const { getDb } = await import("@johpaz/hive-agents-core/storage/sqlite");
+    const db = getDb();
+
+    // Verificar si el schema de HiveLearn está aplicado
+    const hlTables = ["hl_topics", "hl_sessions", "hl_student_profiles"];
+    const missingTables: string[] = [];
+    for (const table of hlTables) {
+      const exists = db.query(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name=?`
+      ).get(table);
+      if (!exists) missingTables.push(table);
+    }
+
+    if (missingTables.length === 0) {
+      // Contar temas cargados
+      const topicsRow = db.query("SELECT COUNT(*) as n FROM hl_topics").get() as { n: number } | null;
+      const nTopics = topicsRow?.n ?? 0;
+      checks.push({
+        category: "HiveLearn",
+        name: "Schema",
+        status: "ok",
+        message: `tablas presentes, ${nTopics} temas en catálogo`,
+      });
+    } else {
+      checks.push({
+        category: "HiveLearn",
+        name: "Schema",
+        status: "warn",
+        message: `tablas faltantes: ${missingTables.join(", ")}`,
+        hint: "El schema se aplica al arrancar el gateway. Ejecuta 'hive start' una vez.",
+      });
+    }
+  } catch {
+    checks.push({
+      category: "HiveLearn",
+      name: "Schema",
+      status: "warn",
+      message: "No se pudo verificar (BD no disponible)",
+    });
+  }
+
+  // HiveLearn — verificar Ollama
+  const ollamaUrl = process.env.HIVELEARN_OLLAMA_URL ?? "http://localhost:11434";
+  try {
+    const res = await fetch(`${ollamaUrl}/api/tags`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { models?: { name: string }[] };
+      const modelTarget = (process.env.HIVELEARN_MODEL ?? "gemma4:2b").split(":")[0];
+      const found = (data.models ?? []).some((m) => m.name.startsWith(modelTarget));
+      if (found) {
+        checks.push({
+          category: "HiveLearn",
+          name: "Ollama",
+          status: "ok",
+          message: `disponible en ${ollamaUrl} — modelo ${process.env.HIVELEARN_MODEL ?? "gemma4:2b"} encontrado`,
+        });
+      } else {
+        checks.push({
+          category: "HiveLearn",
+          name: "Ollama",
+          status: "warn",
+          message: `Ollama disponible pero modelo no encontrado`,
+          hint: `Ejecuta: ollama pull ${process.env.HIVELEARN_MODEL ?? "gemma4:2b"}`,
+        });
+      }
+    } else {
+      checks.push({
+        category: "HiveLearn",
+        name: "Ollama",
+        status: "warn",
+        message: `Ollama no responde correctamente en ${ollamaUrl}`,
+        hint: "HiveLearn estará desactivado. Instala Ollama y configura HIVELEARN_OLLAMA_URL",
+      });
+    }
+  } catch {
+    checks.push({
+      category: "HiveLearn",
+      name: "Ollama",
+      status: "warn",
+      message: `Ollama no disponible en ${ollamaUrl}`,
+      hint: "HiveLearn estará desactivado. Instala Ollama o configura HIVELEARN_OLLAMA_URL",
+    });
+  }
+
   // Mostrar resultados
   const categories = [...new Set(checks.map((c) => c.category))];
 
