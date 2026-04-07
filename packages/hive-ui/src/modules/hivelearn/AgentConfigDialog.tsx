@@ -109,7 +109,7 @@ export function AgentConfigDialog({
   });
 
   // Providers disponibles: enabled O active debe ser true (al menos uno en 1)
-  const availableProviders = providers.filter(p => p.enabled || p.active);
+  const availableProviders = providers.filter(p => p.enabled && p.active);
 
   const handleSave = async () => {
     setSaving(true);

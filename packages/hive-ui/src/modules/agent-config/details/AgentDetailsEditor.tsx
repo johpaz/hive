@@ -170,18 +170,13 @@ export function AgentDetailsEditor({ agentId }: AgentDetailsEditorProps) {
         );
     }
 
-    // Providers disponibles: activos + tienen API key, o son locales (Ollama/localhost)
-    const activeProviders = providers.filter(p => {
-        if (!p.active) return false;
-        const baseUrl = p.base_url || p.baseUrl || "";
-        const isLocal = p.id === "ollama" || baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1");
-        return p.has_api_key || isLocal;
-    });
+    // Providers disponibles: enabled=1 Y active=1
+    const activeProviders = providers.filter(p => p.enabled && p.active);
 
-    // Modelos del provider seleccionado que estén activos o habilitados
+    // Modelos del provider seleccionado que estén enabled=1 Y active=1
     const availableModels = models.filter(m => {
         const pid = m.provider_id || m.providerId;
-        return pid === formData.provider_id && (m.active || m.enabled);
+        return pid === formData.provider_id && m.active && m.enabled;
     });
 
     return (

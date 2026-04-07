@@ -1,6 +1,6 @@
 # 🐝 Hive Native Tools Reference
 
-Complete reference of all **52 native tools** available in Hive, organized by category.
+Complete reference of all **73 native tools** available in Hive, organized by category.
 
 ---
 
@@ -10,12 +10,13 @@ Complete reference of all **52 native tools** available in Hive, organized by ca
 2. [Agents Tools (14)](#-agents-tools-14)
 3. [Canvas Tools (7)](#-canvas-tools-7)
 4. [CodeBridge Tools (3)](#-codebridge-tools-3)
-5. [Cron Tools (4)](#-cron-tools-4)
+5. [Cron Tools (7)](#-cron-tools-7)
 6. [Filesystem Tools (7)](#-filesystem-tools-7)
 7. [Projects Tools (8)](#-projects-tools-8)
 8. [Voice Tools (2)](#-voice-tools-2)
 9. [Web Tools (9)](#-web-tools-9)
 10. [CLI Tools (1)](#-cli-tools-1)
+11. [Office Tools (8)](#-office-tools-8)
 
 ---
 
@@ -193,6 +194,62 @@ Tools for executing shell commands in the agent workspace.
 - `dd if=` - Raw disk write
 - Fork bomb patterns
 - Windows: `del /f /s`, `format X:`
+
+---
+
+## 📄 Office Tools (8)
+
+Tools for reading and writing Office files — PDF, Word, Excel and PowerPoint — directly from the agent workspace.
+
+> Requires: `pdf-lib`, `pdfjs-dist`, `mammoth`, `docx`, `xlsx`, `pptxgenjs`, `jszip` (installed in `packages/core`).
+
+### PDF
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `office_leer_pdf` | Read a PDF file and return plain text with metadata (page count, title). Supports page range. | `ruta` (required), `pagina_inicio`, `pagina_fin` |
+| `office_escribir_pdf` | Generate a PDF file from text. Supports page size (A4/Letter), margins, and font size. | `ruta` (required), `contenido` (required), `titulo`, `tamaño_pagina`, `margen`, `tamaño_fuente` |
+
+### Word
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `office_leer_docx` | Read a Word `.docx` file and return text preserving paragraph structure and tables. | `ruta` (required), `incluir_tablas` |
+| `office_escribir_docx` | Generate a `.docx` file with paragraphs, headings (H1/H2/H3), bullet lists, and tables. | `ruta` (required), `titulo`, `parrafos` (array), `tablas` (array) |
+
+**`parrafos` item shape:**
+```json
+{ "texto": "...", "tipo": "titulo1|titulo2|titulo3|parrafo|lista", "negrita": false, "cursiva": false }
+```
+
+**`tablas` item shape:**
+```json
+{ "filas": [{ "celdas": ["A", "B"] }], "encabezado": true }
+```
+
+### Excel
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `office_leer_xlsx` | Read an Excel `.xlsx` file and return all sheets as JSON objects (rows × columns). | `ruta` (required), `hoja`, `incluir_encabezados`, `rango` |
+| `office_escribir_xlsx` | Generate an `.xlsx` file from a JSON object with named sheets, rows, and columns. | `ruta` (required), `hojas` (required, array) |
+
+**`hojas` item shape:**
+```json
+{ "nombre": "Sheet1", "datos": [{"col1": "val", "col2": "val"}], "encabezados": ["col1", "col2"] }
+```
+
+### PowerPoint
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `office_leer_pptx` | Read a PowerPoint `.pptx` file and return slide text as a structured array. | `ruta` (required), `solo_diapositiva` |
+| `office_escribir_pptx` | Generate a `.pptx` file from an array of slides with title, bullet points, and speaker notes. | `ruta` (required), `diapositivas` (required, array), `titulo_presentacion` |
+
+**`diapositivas` item shape:**
+```json
+{ "titulo": "Slide title", "contenido": "free text", "puntos": ["point 1", "point 2"], "notas": "speaker notes" }
+```
 
 ---
 

@@ -598,8 +598,8 @@ cp ~/.hive/data/hive.db ~/backup-hive-$(date +%Y%m%d).db
 
 | Pilar | Descripción |
 |-------|-------------|
-| **Tools** | Herramientas nativas: navegador, sistema de archivos, cron, canvas. |
-| **Skills** | Habilidades incluidas: búsqueda web, shell, memoria, HTTP client, file manager. |
+| **Tools** | 73 herramientas nativas: navegador, sistema de archivos, cron, canvas, Office (PDF/Word/Excel/PowerPoint). |
+| **Skills** | 30 habilidades incluidas: búsqueda web, shell, memoria, file manager, gestión de documentos Office. |
 | **MCP** | Compatible con Model Context Protocol para extender funcionalidades. |
 | **Ética** | Límites claros definidos en ETHICS.md — tu agente siempre sabe qué puede y qué no puede hacer. |
 
@@ -892,7 +892,7 @@ bun run dev
 | Tipo de cambio | Ubicación |
 |---------------|-----------|
 | Canal nuevo | `packages/core/src/channels/` + registrar en `manager.ts` |
-| Tool nativa | `packages/core/src/tools/` + registrar en `native-tools.ts` |
+| Tool nativa | `packages/core/src/tools/{categoria}/` + registrar en `tools/index.ts` y `seed.ts` |
 | Skill nueva | `packages/skills/src/` |
 | MCP nuevo | `packages/core/src/mcp/` |
 | Capability en el manifest | tabla `hive_capabilities` vía `seed.ts` |

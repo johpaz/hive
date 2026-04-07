@@ -12,8 +12,8 @@
  * 3. Si el LLM produce texto → retorna ese texto
  * 4. maxIterations como safety cap
  */
-import { callLLM } from '../llm/client'
-import type { LLMMessage, LLMToolDef, LLMCallOptions } from '../llm/interface'
+import { callLLM } from '@johpaz/hive-agents-core/agent/llm-client'
+import type { LLMMessage, LLMToolDef, LLMCallOptions } from '@johpaz/hive-agents-core/agent/llm-client'
 import type { Tool } from '../types/tool'
 import { logger } from '../utils/logger'
 

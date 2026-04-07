@@ -6,7 +6,7 @@
  *
  * Sin dependencias de context-compiler, agent-bus ni lógica del enjambre principal.
  */
-import { resolveProviderConfig } from '../llm/client'
+import { resolveProviderConfig } from '@johpaz/hive-agents-core/agent/llm-client'
 import { runAgentLoop } from './agent-loop'
 import type { Tool } from '../types/tool'
 import { getDb } from '@johpaz/hive-agents-core/storage/sqlite'
