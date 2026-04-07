@@ -408,7 +408,7 @@ export function ProfileScreen() {
             </div>
 
             {/* ── CTA ── */}
-            <div className="pt-2">
+            <div className="pt-2 flex flex-col gap-3">
               <button
                 onClick={handleSubmit}
                 disabled={!form.nombre.trim()}
@@ -431,6 +431,12 @@ export function ProfileScreen() {
               >
                 Comenzar Expedición
                 <span aria-hidden>→</span>
+              </button>
+              <button
+                onClick={() => setScreen('sessions')}
+                className="w-full py-2.5 rounded-full text-sm font-medium text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                ← Mis sesiones
               </button>
             </div>
           </div>

@@ -15,7 +15,6 @@ import { ResultScreen }    from './screens/ResultScreen'
  */
 export function LessonCanvas() {
   const screen = useLessonStore(s => s.screen)
-  const reset = useLessonStore(s => s.reset)
   const isGenerating = useLessonStore(s => s.isGenerating)
   const program = useLessonStore(s => s.program)
   const setSelectedProvider = useLessonStore(s => s.setSelectedProvider)
@@ -72,13 +71,14 @@ export function LessonCanvas() {
   }
 
   // Guardia: si la sesión guardada tenía screen='loading' pero no hay programa
-  // Y tampoco se está generando activamente → el proceso se interrumpió, volver al inicio
-  const safeScreen = (screen === 'loading' && !program && !isGenerating) ? 'profile' : screen
+  // Y tampoco se está generando activamente → el proceso se interrumpió, volver a sessions
+  const safeScreen = (screen === 'loading' && !program && !isGenerating) ? 'sessions' : screen
 
   return (
     <div className="flex-1 flex flex-col min-h-0 -m-4 bg-gray-950 overflow-hidden relative">
 
       {safeScreen === 'provider-select' && <ProviderSelectScreen />}
+      {safeScreen === 'sessions'    && <SessionsListScreen />}
       {safeScreen === 'profile'    && <ProfileScreen />}
       {safeScreen === 'goal'       && <GoalScreen />}
       {safeScreen === 'loading'    && <LoadingScreen />}

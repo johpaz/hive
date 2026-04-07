@@ -1162,6 +1162,33 @@ export async function startGateway(config: Config): Promise<void> {
         }
 
         // ── HiveLearn Session Delete ──────────────────────────────────
+        // ── HiveLearn Session Nodos (debug: nodos_json con contenido) ──────
+        const hlSessionNodosMatch = url.pathname.match(/^\/api\/hivelearn\/sessions\/([^/]+)\/nodos$/);
+        if (hlSessionNodosMatch && req.method === "GET") {
+          try {
+            const { getDb } = await import("../storage/sqlite");
+            const db = getDb();
+            const row = db.query(
+              "SELECT nodos_json FROM hl_curricula WHERE session_id = ?"
+            ).get(hlSessionNodosMatch[1]) as { nodos_json: string } | undefined;
+            if (!row) return addCorsHeaders(Response.json({ error: "Session not found" }, { status: 404 }), req);
+            const nodos = JSON.parse(row.nodos_json || "[]");
+            // Resumen compacto: id, tipo, tieneContenido, claves de contenido
+            const summary = nodos.map((n: any) => ({
+              id: n.id,
+              titulo: n.titulo,
+              tipoPedagogico: n.tipoPedagogico,
+              tipoVisual: n.tipoVisual,
+              contenidoKeys: Object.keys(n.contenido ?? {}),
+              tieneContenido: Object.keys(n.contenido ?? {}).length > 0,
+              contenido: n.contenido,
+            }));
+            return addCorsHeaders(Response.json({ total: nodos.length, nodos: summary }), req);
+          } catch (e) {
+            return addCorsHeaders(Response.json({ error: (e as Error).message }, { status: 500 }), req);
+          }
+        }
+
         // ── HiveLearn Session Outputs (trazabilidad de agentes) ─────────
         const hlSessionOutputsMatch = url.pathname.match(/^\/api\/hivelearn\/sessions\/([^/]+)\/outputs$/);
         if (hlSessionOutputsMatch && req.method === "GET") {

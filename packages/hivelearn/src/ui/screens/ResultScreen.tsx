@@ -13,7 +13,7 @@ function getCalificacion(puntaje: number): { emoji: string; texto: string; color
 export function ResultScreen() {
   const {
     program, perfil, puntajeEvaluacion, xpTotal,
-    logrosDesbloqueados, nodosCompletados, tiempoInicioSesion, reset
+    logrosDesbloqueados, nodosCompletados, tiempoInicioSesion, reset, setScreen
   } = useLessonStore()
   const { nivelActual, formatXP } = useGamification()
   const [showRating, setShowRating] = useState(false)
@@ -94,10 +94,10 @@ export function ResultScreen() {
             🐝 Nueva lección
           </button>
           <button
-            onClick={() => window.location.href = '/'}
+            onClick={() => setScreen('sessions')}
             className="flex-1 rounded-xl border border-gray-700 py-3 text-sm text-gray-400 hover:border-gray-500"
           >
-            ← Dashboard
+            ← Mis sesiones
           </button>
         </div>
       </div>

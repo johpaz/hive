@@ -101,7 +101,15 @@ export function NodeContentPopover({ nodo, position, onClose, onComplete }: Prop
   const cfg = nodo ? (TIPO_CONFIG[nodo.tipoPedagogico] ?? TIPO_CONFIG.concept) : null
   const isLocked = nodo?.estado === 'bloqueado'
   const isAlreadyDone = nodo?.estado === 'completado'
-  const hasInteraction = nodo && ['exercise', 'quiz', 'challenge', 'evaluation'].includes(nodo.tipoPedagogico)
+  // Solo bloquea si el nodo es interactivo Y el contenido realmente existe
+  const hasInteraction = nodo != null
+    && ['exercise', 'quiz', 'challenge', 'evaluation'].includes(nodo.tipoPedagogico)
+    && !!(
+      (nodo.tipoPedagogico === 'exercise'   && nodo.contenido?.ejercicio)  ||
+      (nodo.tipoPedagogico === 'quiz'       && nodo.contenido?.quiz)       ||
+      (nodo.tipoPedagogico === 'challenge'  && nodo.contenido?.reto)       ||
+      (nodo.tipoPedagogico === 'evaluation' && nodo.contenido?.evaluacion)
+    )
   const canComplete = !hasInteraction || !!lastFeedback || nodo?.tipoPedagogico === 'milestone'
 
   return (

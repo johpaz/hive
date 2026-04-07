@@ -198,7 +198,11 @@ export const useLessonStore = create<LessonState>()(persist((set, get) => ({
     sessionRestored: true,
     screen: 'canvas',
   }),
-  reset: () => set(initialState),
+  reset: () => set((s) => ({
+    ...initialState,
+    selectedProviderId: s.selectedProviderId,
+    selectedModelId:    s.selectedModelId,
+  })),
 
   // Panel lateral
   selectNode: (nodeId) => set({ selectedNodeId: nodeId, lastFeedback: null }),

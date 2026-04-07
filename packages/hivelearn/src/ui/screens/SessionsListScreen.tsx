@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLessonStore } from '../store/lessonStore'
-import type { LessonProgram } from '../../types'
+import type { LessonProgram, RangoEdad, EstiloAprendizaje, NivelPrevio } from '../../types'
 
 interface SessionRow {
   session_id: string
@@ -83,11 +83,11 @@ export function SessionsListScreen() {
         },
         evaluacion: { preguntas: [] },
         perfilAdaptacion: {
-          rangoEdad:          data.rango_edad,
+          rangoEdad:          (data.rango_edad ?? 'adulto') as RangoEdad,
           duracionSesion:     data.tiempo_sesion ?? 20,
           nodosRecomendados:  data.total_nodos ?? nodos.length,
-          estilo:             data.estilo ?? 'visual',
-          nivelPrevio:        data.nivel_previo ?? 'principiante',
+          estilo:             (data.estilo ?? 'visual') as EstiloAprendizaje,
+          nivelPrevio:        (data.nivel_previo ?? 'principiante') as NivelPrevio,
           tono:               'amigable',
         },
       }
