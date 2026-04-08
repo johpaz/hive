@@ -182,14 +182,106 @@ export async function doctor(): Promise<void> {
     checks.push({ category: "Workspace", name: "Directorio", status: "ok", message: workspacePath });
   }
 
+  // Seed Data — verificar que los datos del seed estén actualizados
+  try {
+    const { initializeDatabase, getDb } = await import("@johpaz/hive-agents-core/storage/sqlite");
+    initializeDatabase();
+    const db = getDb();
+    const { SEED_DATA } = await import("@johpaz/hive-agents-core/storage/seed");
+
+    // Tools: comparar count en BD vs seed
+    const toolsInDb = (db.query("SELECT COUNT(*) as n FROM tools").get() as { n: number })?.n ?? 0;
+    const toolsInSeed = SEED_DATA.tools.length;
+    if (toolsInDb < toolsInSeed) {
+      checks.push({
+        category: "Seed Data",
+        name: "Tools",
+        status: "warn",
+        message: `${toolsInDb}/${toolsInSeed} tools — faltan ${toolsInSeed - toolsInDb}`,
+        hint: "Ejecuta 'hive update' o 'hive migrate' para actualizar",
+      });
+    } else {
+      checks.push({
+        category: "Seed Data",
+        name: "Tools",
+        status: "ok",
+        message: `${toolsInDb} tools sincronizadas`,
+      });
+    }
+
+    // Models: comparar count en BD vs seed
+    const modelsInDb = (db.query("SELECT COUNT(*) as n FROM models").get() as { n: number })?.n ?? 0;
+    const modelsInSeed = SEED_DATA.models.length;
+    if (modelsInDb < modelsInSeed) {
+      checks.push({
+        category: "Seed Data",
+        name: "Models",
+        status: "warn",
+        message: `${modelsInDb}/${modelsInSeed} models — faltan ${modelsInSeed - modelsInDb}`,
+        hint: "Ejecuta 'hive update' o 'hive migrate' para actualizar",
+      });
+    } else {
+      checks.push({
+        category: "Seed Data",
+        name: "Models",
+        status: "ok",
+        message: `${modelsInDb} models sincronizados`,
+      });
+    }
+
+    // Providers: comparar count en BD vs seed
+    const providersInDb = (db.query("SELECT COUNT(*) as n FROM providers").get() as { n: number })?.n ?? 0;
+    const providersInSeed = SEED_DATA.providers.length;
+    if (providersInDb < providersInSeed) {
+      checks.push({
+        category: "Seed Data",
+        name: "Providers",
+        status: "warn",
+        message: `${providersInDb}/${providersInSeed} providers — faltan ${providersInSeed - providersInDb}`,
+        hint: "Ejecuta 'hive update' o 'hive migrate' para actualizar",
+      });
+    } else {
+      checks.push({
+        category: "Seed Data",
+        name: "Providers",
+        status: "ok",
+        message: `${providersInSeed} providers sincronizados`,
+      });
+    }
+
+    // Skills: comparar count en BD
+    const skillsInDb = (db.query("SELECT COUNT(*) as n FROM skills").get() as { n: number })?.n ?? 0;
+    if (skillsInDb === 0) {
+      checks.push({
+        category: "Seed Data",
+        name: "Skills",
+        status: "warn",
+        message: "0 skills en BD",
+        hint: "Ejecuta 'hive update' o 'hive migrate' para cargar skills",
+      });
+    } else {
+      checks.push({
+        category: "Seed Data",
+        name: "Skills",
+        status: "ok",
+        message: `${skillsInDb} skills en BD`,
+      });
+    }
+  } catch {
+    checks.push({
+      category: "Seed Data",
+      name: "Verificación",
+      status: "warn",
+      message: "No se pudo verificar (BD no disponible)",
+    });
+  }
+
   // Gateway
   const running = isGatewayRunning();
   checks.push({ category: "Gateway", name: "Estado", status: running ? "ok" : "warn", message: running ? "corriendo" : "detenido" });
 
   // HiveLearn — verificar tablas y Ollama
   try {
-    const { initializeDatabase } = await import("@johpaz/hive-agents-core/storage/sqlite");
-    initializeDatabase();
     const { getDb } = await import("@johpaz/hive-agents-core/storage/sqlite");
     const db = getDb();
 

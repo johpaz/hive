@@ -16,8 +16,9 @@ import { installService } from "./commands/service";
 import { update } from "./commands/update";
 import { message } from "./commands/message";
 import { agent } from "./commands/agent-run";
+import { migrate } from "./commands/migrate";
 
-const VERSION = "0.0.20";
+const VERSION = "0.0.21";
 
 const HELP = `
 🐝 Hive — Personal Swarm AI Gateway v${VERSION}
@@ -82,6 +83,7 @@ Sesiones y cron:
 Sistema:
   doctor                     Diagnóstico completo y auto-reparación
   update                     Actualizar Hive a la última versión
+  migrate                    Migrar schema y datos de la BD existente
   security audit             Auditoría de seguridad del entorno
   install-service            Instalar servicio systemd (Linux)
 
@@ -179,10 +181,14 @@ async function main(): Promise<void> {
     case "update":
       await update();
       break;
+    case "migrate":
+      await migrate();
+      break;
     case "--version":
     case "-v":
     case "version":
       console.log(`Hive v${VERSION}`);
+      process.exit(0);
       break;
     case "--help":
     case "-h":

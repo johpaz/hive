@@ -173,15 +173,43 @@ async function removeSkill(slug: string | undefined): Promise<void> {
 }
 
 async function updateSkills(): Promise<void> {
-  if (!fs.existsSync(SKILLS_DIR)) {
-    console.log("No hay skills instaladas para actualizar");
-    return;
+  console.log("\n🔄 Actualizando skills...\n");
+
+  try {
+    // 1. Contar skills actuales en BD
+    const { initializeDatabase, getDb } = await import("@johpaz/hive-agents-core/storage/sqlite");
+    initializeDatabase();
+    const db = getDb();
+
+    const beforeCount = (db.query("SELECT COUNT(*) as n FROM skills").get() as { n: number })?.n ?? 0;
+    console.log(`   Skills actuales en BD: ${beforeCount}`);
+
+    // 2. Recargar skills desde SkillLoader y re-semear
+    const { seedAllData } = await import("@johpaz/hive-agents-core/storage/seed");
+    seedAllData();
+
+    // 3. Contar skills después del re-seed
+    const afterCount = (db.query("SELECT COUNT(*) as n FROM skills").get() as { n: number })?.n ?? 0;
+    const newSkills = afterCount - beforeCount;
+
+    if (newSkills > 0) {
+      console.log(`   ✅ +${newSkills} nuevas skills añadidas`);
+    } else {
+      console.log(`   ✅ Todas las skills están actualizadas`);
+    }
+
+    // 4. Verificar si el gateway está corriendo
+    const { existsSync } = await import("node:fs");
+    const { getHiveDir } = await import("@johpaz/hive-agents-core/config/loader");
+    const path = await import("node:path");
+    const pidFile = path.join(getHiveDir(), "gateway.pid");
+    if (existsSync(pidFile)) {
+      console.log(`\n   💡 El gateway está corriendo. Ejecuta 'hive reload' para aplicar cambios.`);
+    }
+
+    console.log();
+  } catch (err) {
+    console.log(`   ⚠️  No se pudieron actualizar las skills: ${(err as Error).message}`);
+    console.log(`   💡 Ejecuta 'hive start' para inicializar la base de datos primero.\n`);
   }
-
-  const spinner = p.spinner();
-  spinner.start("Actualizando skills...");
-
-  await new Promise((resolve) => setTimeout(resolve, 1000));
-
-  spinner.stop("Skills actualizadas ✅");
 }

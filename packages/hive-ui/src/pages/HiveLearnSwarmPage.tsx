@@ -30,26 +30,45 @@ interface AgentState {
 }
 
 // ─── Static metadata ──────────────────────────────────────────────────────────
-const AGENT_META: Record<string, { emoji: string; label: string; accion: string }> = {
-  "hl-profile-agent":      { emoji: "👤", label: "Perfil",       accion: "Analiza edad, nivel y estilo de aprendizaje" },
-  "hl-intent-agent":       { emoji: "🎯", label: "Intención",    accion: "Extrae el tema y define los objetivos" },
-  "hl-structure-agent":    { emoji: "🗺️", label: "Estructura",   accion: "Diseña el mapa de nodos del currículo" },
-  "hl-explanation-agent":  { emoji: "📖", label: "Explicación",  accion: "Genera teoría clara y ejemplos" },
-  "hl-exercise-agent":     { emoji: "✏️", label: "Ejercicios",   accion: "Crea práctica activa paso a paso" },
-  "hl-quiz-agent":         { emoji: "❓", label: "Quiz",         accion: "Prepara preguntas de verificación" },
-  "hl-challenge-agent":    { emoji: "⚡", label: "Reto",         accion: "Diseña desafíos integradores" },
-  "hl-code-agent":         { emoji: "💻", label: "Código",       accion: "Genera ejemplos ejecutables" },
-  "hl-svg-agent":          { emoji: "📊", label: "Diagrama",     accion: "Dibuja visualizaciones SVG" },
-  "hl-gif-agent":          { emoji: "🎞️", label: "Animación",    accion: "Crea guías animadas paso a paso" },
-  "hl-image-agent":        { emoji: "🖼️", label: "Imagen",       accion: "Genera imágenes educativas con IA" },
-  "hl-infographic-agent":  { emoji: "📈", label: "Infografía",   accion: "Construye resumen visual del tema" },
-  "hl-gamification-agent": { emoji: "🏆", label: "Gamificación", accion: "Asigna XP, logros y rachas" },
-  "hl-evaluation-agent":   { emoji: "📝", label: "Evaluación",   accion: "Prepara examen final adaptativo" },
-  "hl-coordinator-agent":  { emoji: "🔍", label: "Coordinador",  accion: "Revisa coherencia pedagógica" },
-  "hl-feedback-agent":     { emoji: "🧠", label: "Feedback",     accion: "Evalúa comprensión semántica del alumno" },
+const AGENT_META: Record<string, { icon: any; emoji: string; label: string; accion: string; color: string }> = {
+  "hl-profile-agent":      { icon: Bot,         emoji: "👤", label: "Perfil",       accion: "Analiza edad, nivel y estilo de aprendizaje", color: "blue" },
+  "hl-intent-agent":       { icon: Crown,        emoji: "🎯", label: "Intención",    accion: "Extrae el tema y define los objetivos", color: "amber" },
+  "hl-structure-agent":    { icon: Terminal,     emoji: "🗺️", label: "Estructura",   accion: "Diseña el mapa de nodos del currículo", color: "indigo" },
+  "hl-explanation-agent":  { icon: Bot,          emoji: "📖", label: "Explicación",  accion: "Genera teoría clara y ejemplos", color: "emerald" },
+  "hl-exercise-agent":     { icon: Zap,          emoji: "✏️", label: "Ejercicios",   accion: "Crea práctica activa paso a paso", color: "orange" },
+  "hl-quiz-agent":         { icon: Bot,          emoji: "❓", label: "Quiz",         accion: "Prepara preguntas de verificación", color: "pink" },
+  "hl-challenge-agent":    { icon: Shield,       emoji: "⚡", label: "Reto",         accion: "Diseña desafíos integradores", color: "red" },
+  "hl-code-agent":         { icon: Terminal,     emoji: "💻", label: "Código",       accion: "Genera ejemplos ejecutables", color: "cyan" },
+  "hl-svg-agent":          { icon: Bot,          emoji: "📊", label: "Diagrama",     accion: "Dibuja visualizaciones SVG", color: "teal" },
+  "hl-gif-agent":          { icon: Zap,          emoji: "🎞️", label: "Animación",    accion: "Crea guías animadas paso a paso", color: "violet" },
+  "hl-image-agent":        { icon: Bot,          emoji: "🖼️", label: "Imagen",       accion: "Genera imágenes educativas con IA", color: "fuchsia" },
+  "hl-infographic-agent":  { icon: Terminal,     emoji: "📈", label: "Infografía",   accion: "Construye resumen visual del tema", color: "lime" },
+  "hl-gamification-agent": { icon: Crown,        emoji: "🏆", label: "Gamificación", accion: "Asigna XP, logros y rachas", color: "yellow" },
+  "hl-evaluation-agent":   { icon: Shield,       emoji: "📝", label: "Evaluación",   accion: "Prepara examen final adaptativo", color: "rose" },
+  "hl-coordinator-agent":  { icon: Crown,        emoji: "🔍", label: "Coordinador",  accion: "Revisa coherencia pedagógica", color: "purple" },
+  "hl-feedback-agent":     { icon: Bot,          emoji: "🧠", label: "Feedback",     accion: "Evalúa comprensión semántica del alumno", color: "sky" },
 };
 
 const WORKER_IDS = Object.keys(AGENT_META).filter(id => id !== "hl-coordinator-agent");
+
+const COLOR_MAP: Record<string, { bg: string; border: string; text: string; glow: string; iconBg: string; badgeBorder: string }> = {
+  blue: { bg: "bg-blue-500/10", border: "border-blue-500/30", text: "text-blue-400", glow: "shadow-[0_0_20px_rgba(59,130,246,0.25)]", iconBg: "bg-blue-500/15", badgeBorder: "border-blue-500/20" },
+  amber: { bg: "bg-amber-500/10", border: "border-amber-500/30", text: "text-amber-400", glow: "shadow-[0_0_20px_rgba(245,158,11,0.25)]", iconBg: "bg-amber-500/15", badgeBorder: "border-amber-500/20" },
+  indigo: { bg: "bg-indigo-500/10", border: "border-indigo-500/30", text: "text-indigo-400", glow: "shadow-[0_0_20px_rgba(99,102,241,0.25)]", iconBg: "bg-indigo-500/15", badgeBorder: "border-indigo-500/20" },
+  emerald: { bg: "bg-emerald-500/10", border: "border-emerald-500/30", text: "text-emerald-400", glow: "shadow-[0_0_20px_rgba(16,185,129,0.25)]", iconBg: "bg-emerald-500/15", badgeBorder: "border-emerald-500/20" },
+  orange: { bg: "bg-orange-500/10", border: "border-orange-500/30", text: "text-orange-400", glow: "shadow-[0_0_20px_rgba(249,115,22,0.25)]", iconBg: "bg-orange-500/15", badgeBorder: "border-orange-500/20" },
+  pink: { bg: "bg-pink-500/10", border: "border-pink-500/30", text: "text-pink-400", glow: "shadow-[0_0_20px_rgba(236,72,153,0.25)]", iconBg: "bg-pink-500/15", badgeBorder: "border-pink-500/20" },
+  red: { bg: "bg-red-500/10", border: "border-red-500/30", text: "text-red-400", glow: "shadow-[0_0_20px_rgba(239,68,68,0.25)]", iconBg: "bg-red-500/15", badgeBorder: "border-red-500/20" },
+  cyan: { bg: "bg-cyan-500/10", border: "border-cyan-500/30", text: "text-cyan-400", glow: "shadow-[0_0_20px_rgba(6,182,212,0.25)]", iconBg: "bg-cyan-500/15", badgeBorder: "border-cyan-500/20" },
+  teal: { bg: "bg-teal-500/10", border: "border-teal-500/30", text: "text-teal-400", glow: "shadow-[0_0_20px_rgba(20,184,166,0.25)]", iconBg: "bg-teal-500/15", badgeBorder: "border-teal-500/20" },
+  violet: { bg: "bg-violet-500/10", border: "border-violet-500/30", text: "text-violet-400", glow: "shadow-[0_0_20px_rgba(139,92,246,0.25)]", iconBg: "bg-violet-500/15", badgeBorder: "border-violet-500/20" },
+  fuchsia: { bg: "bg-fuchsia-500/10", border: "border-fuchsia-500/30", text: "text-fuchsia-400", glow: "shadow-[0_0_20px_rgba(217,70,239,0.25)]", iconBg: "bg-fuchsia-500/15", badgeBorder: "border-fuchsia-500/20" },
+  lime: { bg: "bg-lime-500/10", border: "border-lime-500/30", text: "text-lime-400", glow: "shadow-[0_0_20px_rgba(132,204,22,0.25)]", iconBg: "bg-lime-500/15", badgeBorder: "border-lime-500/20" },
+  yellow: { bg: "bg-yellow-500/10", border: "border-yellow-500/30", text: "text-yellow-400", glow: "shadow-[0_0_20px_rgba(234,179,8,0.25)]", iconBg: "bg-yellow-500/15", badgeBorder: "border-yellow-500/20" },
+  rose: { bg: "bg-rose-500/10", border: "border-rose-500/30", text: "text-rose-400", glow: "shadow-[0_0_20px_rgba(244,63,94,0.25)]", iconBg: "bg-rose-500/15", badgeBorder: "border-rose-500/20" },
+  purple: { bg: "bg-purple-500/10", border: "border-purple-500/30", text: "text-purple-400", glow: "shadow-[0_0_20px_rgba(168,85,247,0.25)]", iconBg: "bg-purple-500/15", badgeBorder: "border-purple-500/20" },
+  sky: { bg: "bg-sky-500/10", border: "border-sky-500/30", text: "text-sky-400", glow: "shadow-[0_0_20px_rgba(14,165,233,0.25)]", iconBg: "bg-sky-500/15", badgeBorder: "border-sky-500/20" },
+};
 
 const STATUS_COLORS: Record<AgentState["status"], string> = {
   idle: "bg-emerald-500",
@@ -96,6 +115,8 @@ function WorkerGraphNode({
   if (!meta) return null;
 
   const [configOpen, setConfigOpen] = useState(false);
+  const colors = COLOR_MAP[meta.color] ?? COLOR_MAP.blue;
+  const IconComponent = meta.icon ?? Bot;
 
   const { status, currentTool } = agentState;
   const isThinking = status === "thinking";
@@ -106,49 +127,51 @@ function WorkerGraphNode({
   const isDisabled = dbAgent && !dbAgent.enabled;
 
   return (
-    <div className={`relative group w-full rounded-xl p-5 flex flex-col gap-3 transition-all duration-300
+    <div className={`relative group w-full rounded-xl p-5 flex flex-col gap-4 transition-all duration-300
       bg-[rgba(255,255,255,0.03)] backdrop-blur-xl border
       ${isThinking
-        ? "border-purple-500/40 shadow-[0_0_20px_rgba(168,85,247,0.25)]"
+        ? `${colors.border} ${colors.glow}`
         : isCompleted
         ? "border-green-500/30"
         : isFailed
         ? "border-red-500/30"
-        : "border-white/[0.08] hover:border-blue-500/30 hover:shadow-[0_0_15px_rgba(59,130,246,0.12)]"}
+        : "border-white/[0.08] hover:border-white/20"}
       ${isDisabled ? "opacity-50 grayscale" : ""}
     `}>
       {/* Top accent line when active */}
       {isActive && (
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-500/60 to-transparent animate-pulse" />
+        <div className={`absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-${meta.color}-500/60 to-transparent animate-pulse`} />
       )}
 
-      {/* Avatar + badge */}
-      <div className="flex justify-between items-start">
-        <div className="p-2.5 rounded-lg bg-blue-500/10">
-          <Bot className={`h-6 w-6 text-blue-400 ${isActive ? "animate-pulse" : ""}`} />
+      {/* Header: Icon + Badge */}
+      <div className="flex items-start justify-between">
+        <div className={`p-3 rounded-xl ${colors.iconBg} border ${colors.badgeBorder}`}>
+          <IconComponent className={`h-6 w-6 ${colors.text} ${isActive ? "animate-pulse" : ""}`} />
         </div>
-        <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase border
-          ${isCompleted
-            ? "bg-green-500/10 text-green-400 border-green-500/20"
-            : "bg-blue-500/10 text-blue-400 border-blue-500/20"}`}>
+        <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold uppercase border ${colors.bg} ${colors.text} ${colors.badgeBorder}`}>
           {meta.label}
         </span>
       </div>
 
-      {/* Name + status */}
-      <div>
-        <h3 className="font-bold text-white text-base leading-tight truncate">{meta.label}</h3>
-        <div className="flex items-center gap-1.5 mt-1.5">
+      {/* Content: Name + Description */}
+      <div className="flex-1 space-y-2">
+        <div>
+          <h3 className="font-bold text-white text-base leading-tight mb-1.5">{meta.label}</h3>
+          <p className="text-[11px] text-white/50 leading-relaxed line-clamp-2">{meta.accion}</p>
+        </div>
+
+        {/* Status indicator */}
+        <div className="flex items-center gap-2">
           {isThinking ? (
             <div className="flex gap-0.5">
-              <span className="w-1 h-1 rounded-full bg-purple-400 animate-bounce" />
-              <span className="w-1 h-1 rounded-full bg-purple-400 animate-bounce [animation-delay:-0.15s]" />
-              <span className="w-1 h-1 rounded-full bg-purple-400 animate-bounce [animation-delay:-0.3s]" />
+              <span className={`w-1.5 h-1.5 rounded-full ${colors.text} animate-bounce`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${colors.text} animate-bounce [animation-delay:-0.15s]`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${colors.text} animate-bounce [animation-delay:-0.3s]`} />
             </div>
           ) : (
-            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_COLORS[status] ?? "bg-gray-500"}`} />
+            <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_COLORS[status] ?? "bg-gray-500"}`} />
           )}
-          <span className="text-[10px] text-white/50 font-medium uppercase tracking-widest">
+          <span className="text-[10px] text-white/50 font-medium uppercase tracking-wider">
             {STATUS_LABELS[status] ?? status}
           </span>
         </div>
@@ -156,36 +179,19 @@ function WorkerGraphNode({
 
       {/* Tool chip */}
       {(isToolCall || isThinking) && currentTool && (
-        <div className="flex items-center gap-1.5 bg-cyan-500/5 border border-cyan-500/10 rounded-md px-2 py-1">
-          <Terminal className="h-3 w-3 text-cyan-400/70 shrink-0" />
-          <span className="text-[9px] font-mono text-cyan-400/80 truncate">⚙ {currentTool}</span>
-        </div>
-      )}
-
-      {/* Hover tooltip */}
-      {(agentState.model || agentState.tools !== undefined) && (
-        <div className="absolute -top-[72px] left-1/2 -translate-x-1/2 w-44 p-3 bg-[#1c1b1d] border border-white/10 rounded-lg shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-          {agentState.model && (
-            <div className="text-[10px] text-white/50 flex justify-between mb-1">
-              Modelo: <span className="text-white font-mono text-[9px]">{agentState.model}</span>
-            </div>
-          )}
-          {agentState.tools !== undefined && (
-            <div className="text-[10px] text-white/50 flex justify-between">
-              Tools: <span className="text-white">{agentState.tools}</span>
-            </div>
-          )}
-          <div className="absolute bottom-[-5px] left-1/2 -translate-x-1/2 w-2.5 h-2.5 bg-[#1c1b1d] border-r border-b border-white/10 rotate-45" />
+        <div className={`flex items-center gap-2 ${colors.bg} border ${colors.badgeBorder} rounded-lg px-2.5 py-1.5`}>
+          <Terminal className={`h-3.5 w-3.5 ${colors.text} shrink-0`} />
+          <span className="text-[10px] font-mono text-white/70 truncate">{currentTool}</span>
         </div>
       )}
 
       {/* Configure button */}
       <button
         onClick={() => setConfigOpen(true)}
-        className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity text-white/30 hover:text-white hover:bg-white/10"
+        className="absolute top-3 right-3 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all text-white/30 hover:text-white hover:bg-white/10"
         title="Configurar agente"
       >
-        <Settings2 className="h-3 w-3" />
+        <Settings2 className="h-3.5 w-3.5" />
       </button>
 
       {/* Config Dialog */}
