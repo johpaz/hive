@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-sdk",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Hive SDK - Build on top of Hive for enterprise and custom integrations",
   "private": false,
   "main": "./dist/index.js",
@@ -13,7 +13,7 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "bun build src/index.ts src/agents/index.ts src/tools/index.ts src/skills/index.ts src/mcp/index.ts src/channels/index.ts src/cron/index.ts src/ethics/index.ts src/database/index.ts src/types/index.ts --outdir dist --target bun --external zod --external @google/genai --external @anthropic-ai/sdk --external openai --external ollama --external grammy --external discord.js --external @slack/bolt --external @whiskeysockets/baileys --external puppeteer --external @puppeteer/browsers --external better-sqlite3 --external @modelcontextprotocol/sdk --external croner --external js-yaml --external jszip --external mammoth --external pdf-lib --external pdfjs-dist --external pptxgenjs --external xlsx --external docx --external qrcode-terminal --external toon-format-parser --external @sapphire/snowflake --external @ag-ui/core && bunx tsc -p tsconfig.build.json && cp -r dist/src/. dist/ && cp -r dist/sdk/src/. dist/ && rm -rf dist/src dist/sdk",
+    "build": "bun build src/index.ts src/agents/index.ts src/tools/index.ts src/skills/index.ts src/mcp/index.ts src/channels/index.ts src/cron/index.ts src/ethics/index.ts src/database/index.ts src/types/index.ts --outdir dist --target bun --external zod --external @google/genai --external @anthropic-ai/sdk --external openai --external ollama --external grammy --external discord.js --external @slack/bolt --external @whiskeysockets/baileys --external puppeteer --external @puppeteer/browsers --external better-sqlite3 --external @modelcontextprotocol/sdk && bunx tsc -p tsconfig.build.json && cp -r dist/src/. dist/ && cp -r dist/sdk/src/. dist/ && rm -rf dist/src dist/sdk",
     "prepublishOnly": "bun run build",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
@@ -40,6 +40,7 @@
     "@slack/bolt": "latest",
     "@whiskeysockets/baileys": "latest",
     "puppeteer": "latest",
+    "@puppeteer/browsers": "latest",
     "better-sqlite3": "latest",
     "@modelcontextprotocol/sdk": "latest"
   },
