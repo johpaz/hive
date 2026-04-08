@@ -52,7 +52,7 @@ export function resolveBestChannel(userId: string, explicitChannel?: string): st
   const db = getDb();
 
   // Get user's preferred channel from preferences
-  const user = db.query("SELECT preferred_cron_channel FROM users WHERE id = ?", [userId]).get() as {
+  const user = db.query("SELECT preferred_cron_channel FROM users WHERE id = ?").get(userId) as {
     preferred_cron_channel: string;
   } | undefined;
 
@@ -61,12 +61,12 @@ export function resolveBestChannel(userId: string, explicitChannel?: string): st
     SELECT ui.channel FROM user_identities ui
     JOIN channels c ON c.id = ui.channel
     WHERE ui.user_id = ? AND c.active = 1 AND c.status = 'connected'
-  `, [userId]).all() as { channel: string }[];
+  `).all(userId) as { channel: string }[];
 
   // Fallback: if no active channels found, use any identity
   const identities = activeChannels.length > 0
     ? activeChannels
-    : db.query("SELECT channel FROM user_identities WHERE user_id = ?", [userId]).all() as { channel: string }[];
+    : db.query("SELECT channel FROM user_identities WHERE user_id = ?").all(userId) as { channel: string }[];
 
   // If no identities at all, return default
   if (identities.length === 0) {

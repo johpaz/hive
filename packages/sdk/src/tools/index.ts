@@ -51,11 +51,14 @@ export {
 } from "@johpaz/hive-agents-core/tools/projects";
 
 export {
-  cronAddTool,
+  cronCreateTool,
   cronListTool,
-  cronEditTool,
-  cronRemoveTool,
-  initCronScheduler,
+  cronPauseTool,
+  cronResumeTool,
+  cronDeleteTool,
+  cronTriggerTool,
+  cronHistoryTool,
+  setSchedulerInstance,
   resolveBestChannel,
 } from "@johpaz/hive-agents-core/tools/cron";
 

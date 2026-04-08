@@ -28,11 +28,13 @@ export {
 // Legacy cron tools (cron_jobs table) - re-export for backward compatibility
 // Note: These are also available via @johpaz/hive-agents-sdk/tools
 export {
-  cronAddTool,
+  cronCreateTool,
   cronListTool,
-  cronEditTool,
-  cronRemoveTool,
+  cronPauseTool,
+  cronResumeTool,
+  cronDeleteTool,
+  cronTriggerTool,
+  cronHistoryTool,
   createTools as createCronTools,
-  initCronScheduler,
   resolveBestChannel,
 } from "@johpaz/hive-agents-core/tools/cron";
