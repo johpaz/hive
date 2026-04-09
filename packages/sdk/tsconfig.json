@@ -19,7 +19,9 @@
       "@johpaz/hive-agents-mcp/transports": ["../../node_modules/@johpaz/hive-agents-mcp/src/transports/index.ts"],
       "@johpaz/hive-agents-skills": ["../../node_modules/@johpaz/hive-agents-skills/src/index.ts"],
       "@johpaz/hive-agents-skills/loader": ["../../node_modules/@johpaz/hive-agents-skills/src/loader.ts"],
-      "@johpaz/hive-agents-code-bridge": ["../../node_modules/@johpaz/hive-agents-code-bridge/src/index.ts"]
+      "@johpaz/hive-agents-code-bridge": ["../../node_modules/@johpaz/hive-agents-code-bridge/src/index.ts"],
+      "@johpaz/hivelearn": ["../hivelearn/src/index.ts"],
+      "@johpaz/hivelearn/ui": ["../hivelearn/src/ui/index.ts"]
     }
   },
   "include": ["src/**/*"]

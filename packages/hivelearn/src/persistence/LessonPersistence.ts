@@ -312,10 +312,50 @@ export class LessonPersistence {
     }
   }
 
+  /** Agrega un logro a la lista de logros desbloqueados de la sesión */
+  saveLogro(sessionId: string, logroId: string): void {
+    const row = this.db.query(
+      'SELECT logros_json FROM hl_sessions WHERE session_id = ?'
+    ).get(sessionId) as { logros_json: string } | undefined
+    if (!row) return
+
+    const logros: string[] = JSON.parse(row.logros_json ?? '[]')
+    if (!logros.includes(logroId)) {
+      logros.push(logroId)
+      this.db.query(
+        'UPDATE hl_sessions SET logros_json = ?, updated_at = CURRENT_TIMESTAMP WHERE session_id = ?'
+      ).run(JSON.stringify(logros), sessionId)
+    }
+  }
+
   rateSession(sessionId: string, rating: number, comentario?: string): void {
     this.db.query(`
       UPDATE hl_sessions SET rating = ?, rating_comentario = ? WHERE session_id = ?
     `).run(rating, comentario ?? null, sessionId)
+  }
+
+  /** Devuelve sesión + curriculo completo (nodos_json) para el gateway */
+  getSessionWithCurriculum(sessionId: string): (SessionData & { nodosJson: string; topicSlug: string | null }) | null {
+    const row = this.db.query(`
+      SELECT s.*, c.nodos_json, c.topic_slug
+      FROM hl_sessions s
+      LEFT JOIN hl_curricula c ON c.id = s.curriculo_id
+      WHERE s.session_id = ?
+    `).get(sessionId) as Record<string, any> | undefined
+    if (!row) return null
+    return {
+      sessionId: row.session_id,
+      alumnoId: row.alumno_id,
+      curriculoId: row.curriculo_id,
+      xpTotal: row.xp_total,
+      nivelAlcanzado: row.nivel_alcanzado,
+      logrosJson: row.logros_json,
+      nodosCompletados: row.nodos_completados,
+      evaluacionPuntaje: row.evaluacion_puntaje,
+      completada: !!row.completada,
+      nodosJson: row.nodos_json ?? '[]',
+      topicSlug: row.topic_slug ?? null,
+    }
   }
 
   getTopicEffectiveness(topicSlug: string | null): { nodosConMasFallas: string[]; nivelPromedioAprobacion: number } {

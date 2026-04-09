@@ -1,4 +1,82 @@
 import type { Tool } from '../../types/tool'
+import type { FeedbackOutput, PreguntaEvaluacion } from '../../types'
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Similitud por palabras clave: ratio de tokens de respuestaEsperada presentes en respuestaAlumno */
+function similaridadTexto(esperada: string, alumno: string): number {
+  if (!esperada || !alumno) return 0
+  const normalize = (s: string) => s.toLowerCase().replace(/[^a-záéíóúñü0-9\s]/g, '').trim()
+  const tokensEsperados = normalize(esperada).split(/\s+/).filter(t => t.length > 3)
+  const textoAlumno = normalize(alumno)
+  if (tokensEsperados.length === 0) return textoAlumno.length > 5 ? 0.6 : 0
+  const coincidencias = tokensEsperados.filter(t => textoAlumno.includes(t)).length
+  return coincidencias / tokensEsperados.length
+}
+
+export interface CalificacionInput {
+  preguntas: PreguntaEvaluacion[]
+  respuestasAlumno: Array<string | number>
+}
+
+export interface CalificacionOutput {
+  puntaje: number
+  correctas: number
+  total: number
+  feedback: FeedbackOutput[]
+}
+
+/**
+ * Evalúa directamente las respuestas del alumno sin necesitar un agente LLM.
+ * - multiple_choice: compara índice seleccionado con indiceCorrecto
+ * - respuesta_corta: similitud de palabras clave (umbral 0.5)
+ */
+export function evaluarRespuestas(input: CalificacionInput): CalificacionOutput {
+  const { preguntas, respuestasAlumno } = input
+  const feedback: FeedbackOutput[] = []
+  let correctas = 0
+
+  for (let i = 0; i < preguntas.length; i++) {
+    const pregunta = preguntas[i]
+    const respuesta = respuestasAlumno[i]
+
+    if (pregunta.tipo === 'multiple_choice') {
+      const selectedIdx = typeof respuesta === 'number' ? respuesta : parseInt(String(respuesta), 10)
+      const esCorrecta = selectedIdx === pregunta.indiceCorrecto
+      if (esCorrecta) correctas++
+      feedback.push({
+        correcto: esCorrecta,
+        mensajePrincipal: esCorrecta
+          ? '¡Correcto! Bien hecho.'
+          : `Incorrecto. La respuesta correcta era: "${pregunta.opciones?.[pregunta.indiceCorrecto ?? 0] ?? ''}"`,
+        xpGanado: esCorrecta ? 20 : 0,
+        razonamiento: esCorrecta ? 'Seleccionaste la opción correcta.' : 'La opción seleccionada no era la correcta.',
+      })
+    } else {
+      // respuesta_corta
+      const respuestaTexto = String(respuesta ?? '')
+      const esperada = pregunta.respuestaEsperada ?? ''
+      const sim = similaridadTexto(esperada, respuestaTexto)
+      const esCorrecta = sim >= 0.5
+      if (esCorrecta) correctas++
+      feedback.push({
+        correcto: esCorrecta,
+        mensajePrincipal: esCorrecta
+          ? '¡Muy bien! Captaste la idea principal.'
+          : 'Tu respuesta no captura los conceptos clave.',
+        pistaSiIncorrecto: esCorrecta ? undefined : `Piensa en: "${esperada.slice(0, 80)}..."`,
+        xpGanado: esCorrecta ? 20 : sim >= 0.3 ? 10 : 0,
+        razonamiento: `Similitud semántica: ${Math.round(sim * 100)}%`,
+      })
+    }
+  }
+
+  const puntaje = preguntas.length > 0 ? Math.round((correctas / preguntas.length) * 100) : 0
+
+  return { puntaje, correctas, total: preguntas.length, feedback }
+}
+
+// ─── Tools para agentes ──────────────────────────────────────────────────────
 
 export const calificarEvaluacionTool: Tool = {
   name: 'calificar_evaluacion',
