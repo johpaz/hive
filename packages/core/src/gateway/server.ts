@@ -508,6 +508,19 @@ export async function startGateway(config: Config): Promise<void> {
       }
     }
 
+    // Si no hay credenciales configuradas (modo open), bypass total — el UI
+    // no tiene token en localStorage porque nunca pasó por login.
+    // Coincide con el comportamiento de AuthGuard: status.hasCredentials === false → open.
+    try {
+      const user = getDb().query(
+        `SELECT email, password_hash FROM users LIMIT 1`
+      ).get() as { email: string | null; password_hash: string | null } | null;
+      const hasCredentials = !!(user?.email && user?.password_hash);
+      if (!hasCredentials) return true;
+    } catch {
+      // Si falla la consulta, caemos al chequeo de token
+    }
+
     const activeToken = process.env.HIVE_AUTH_TOKEN;
     if (!activeToken) return true;
     const authHeader = req.headers.get("authorization");

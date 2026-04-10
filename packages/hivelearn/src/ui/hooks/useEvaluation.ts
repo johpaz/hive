@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useLessonStore } from '../store/lessonStore'
 import type { PreguntaEvaluacion } from '../../types'
+import { fetchWithAuth } from '../lib/fetchWithAuth'
 
 export function useEvaluation() {
   const { program, responderEvaluacion, respuestasEvaluacion, setPuntajeEvaluacion, setScreen, sessionId, xpTotal, logrosDesbloqueados } = useLessonStore()
@@ -32,7 +33,7 @@ export function useEvaluation() {
 
       // Marcar sesión como completada en el backend
       if (sessionId) {
-        fetch('/api/hivelearn/complete-session', {
+        fetchWithAuth('/api/hivelearn/complete-session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

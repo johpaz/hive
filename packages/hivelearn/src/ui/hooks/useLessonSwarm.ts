@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { useLessonStore } from '../store/lessonStore'
 import type { StudentProfile } from '../../types'
+import { fetchWithAuth } from '../lib/fetchWithAuth'
 
 /**
  * Hook que conecta HiveLearnSwarm con el store via SSE streaming.
@@ -30,7 +31,7 @@ export function useLessonSwarm() {
     })
 
     try {
-      const response = await fetch('/api/hivelearn/generate', {
+      const response = await fetchWithAuth('/api/hivelearn/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

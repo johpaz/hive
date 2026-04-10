@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { useLessonStore } from '../store/lessonStore'
 import type { FeedbackOutput, NodoLesson } from '../../types'
+import { fetchWithAuth } from '../lib/fetchWithAuth'
 
 export function useNodeInteraction() {
   const { completarNodo, setLastFeedback, setNodoActual, program } = useLessonStore()
@@ -9,7 +10,7 @@ export function useNodeInteraction() {
   const submitRespuesta = useCallback(async (nodo: NodoLesson, respuesta: string) => {
     setLoadingFeedback(true)
     try {
-      const res = await fetch('/api/hivelearn/feedback', {
+      const res = await fetchWithAuth('/api/hivelearn/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLessonStore } from '../store/lessonStore'
+import { fetchWithAuth } from '../lib/fetchWithAuth'
 
 interface Provider {
   id: string
@@ -33,7 +34,7 @@ export function ProviderSelectScreen() {
         setError(null)
         
         // Fetch providers
-        const providersRes = await fetch('/api/providers')
+        const providersRes = await fetchWithAuth('/api/providers')
         const providersData = await providersRes.json()
         const activeProviders = (providersData.providers || []).filter(
           (p: Provider) => p.enabled && p.active
@@ -41,7 +42,7 @@ export function ProviderSelectScreen() {
         setProviders(activeProviders)
 
         // Fetch models
-        const modelsRes = await fetch('/api/models')
+        const modelsRes = await fetchWithAuth('/api/models')
         const modelsData = await modelsRes.json()
         const activeModels = (modelsData.models || []).filter(
           (m: Model) => m.enabled && m.active

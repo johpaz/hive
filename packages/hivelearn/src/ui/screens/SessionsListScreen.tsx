@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLessonStore } from '../store/lessonStore'
+import { fetchWithAuth } from '../lib/fetchWithAuth'
 import type { LessonProgram, RangoEdad, EstiloAprendizaje, NivelPrevio } from '../../types'
 
 interface SessionRow {
@@ -37,7 +38,7 @@ export function SessionsListScreen() {
 
   const fetchSessions = async () => {
     try {
-      const res = await fetch('/api/hivelearn/sessions')
+      const res = await fetchWithAuth('/api/hivelearn/sessions')
       const data = await res.json()
       setSessions(Array.isArray(data) ? data : [])
     } catch {
@@ -64,7 +65,7 @@ export function SessionsListScreen() {
       }
 
       // Cargar desde DB
-      const res = await fetch(`/api/hivelearn/sessions/${session.session_id}`)
+      const res = await fetchWithAuth(`/api/hivelearn/sessions/${session.session_id}`)
       if (!res.ok) throw new Error('Session not found')
       const data = await res.json()
 
@@ -111,7 +112,7 @@ export function SessionsListScreen() {
     if (!window.confirm('¿Eliminar esta sesión? No se puede deshacer.')) return
     setDeleting(sessionId)
     try {
-      await fetch(`/api/hivelearn/sessions/${sessionId}`, { method: 'DELETE' })
+      await fetchWithAuth(`/api/hivelearn/sessions/${sessionId}`, { method: 'DELETE' })
       setSessions(prev => prev.filter(s => s.session_id !== sessionId))
     } catch {
       // silently fail

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLessonStore } from './store/lessonStore'
+import { fetchWithAuth } from './lib/fetchWithAuth'
 import { ProviderSelectScreen } from './screens/ProviderSelectScreen'
 import { SessionsListScreen } from './screens/SessionsListScreen'
 import { ProfileScreen }   from './screens/ProfileScreen'
@@ -29,7 +30,7 @@ export function LessonCanvas() {
     if (configChecked) return
     ;(async () => {
       try {
-        const res = await fetch('/api/hivelearn/config')
+        const res = await fetchWithAuth('/api/hivelearn/config')
         const data = await res.json()
         if (data.configured && data.providerId && data.modelId) {
           setSelectedProvider(data.providerId)

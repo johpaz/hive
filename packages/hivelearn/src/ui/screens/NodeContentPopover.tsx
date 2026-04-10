@@ -3,6 +3,7 @@ import type { NodoLesson, FeedbackOutput } from '../../types'
 import { A2UIRenderer, A2UIFeedbackBanner } from '../a2ui/A2UIRenderer'
 import { nodeToA2UI } from '../a2ui/nodeToA2UI'
 import { useLessonStore } from '../store/lessonStore'
+import { fetchWithAuth } from '../lib/fetchWithAuth'
 
 const TIPO_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
   concept:    { label: 'Concepto',   color: '#3b82f6', icon: '📖' },
@@ -57,7 +58,7 @@ export function NodeContentPopover({ nodo, position, onClose, onComplete }: Prop
           respuesta = first ?? ''
         }
         const { sessionId } = useLessonStore.getState()
-        const res = await fetch('/api/hivelearn/feedback', {
+        const res = await fetchWithAuth('/api/hivelearn/feedback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

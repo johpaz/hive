@@ -4,6 +4,7 @@
  */
 import { useState } from 'react'
 import { useLessonStore } from '../store/lessonStore'
+import { fetchWithAuth } from '../lib/fetchWithAuth'
 
 interface Props {
   onClose: () => void
@@ -21,7 +22,7 @@ export function RatingModal({ onClose }: Props) {
     if (!rating || !sessionId) { onClose(); return }
     setSubmitting(true)
     try {
-      await fetch('/api/hivelearn/rate', {
+      await fetchWithAuth('/api/hivelearn/rate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, rating, comentario: comentario.trim() || undefined }),

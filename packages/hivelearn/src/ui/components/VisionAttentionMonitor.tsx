@@ -3,6 +3,7 @@
  * para detectar si el alumno está atento. Muestra un indicador sutil en la UI.
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { fetchWithAuth } from '../lib/fetchWithAuth'
 
 type AttentionStatus = 'focused' | 'distracted' | 'away' | 'idle' | 'error'
 
@@ -48,7 +49,7 @@ export function VisionAttentionMonitor({ sessionId, onAttentionLost, enabled = t
     const imageBase64 = canvas.toDataURL('image/jpeg', 0.7).split(',')[1]
 
     try {
-      const res = await fetch('/api/hivelearn/vision', {
+      const res = await fetchWithAuth('/api/hivelearn/vision', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, imageBase64 }),
