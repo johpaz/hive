@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { useHiveLearnLive, type AgentLiveStatus } from "@/hooks/useHiveLearnLive";
 import { AgentConfigDialog } from "@/modules/hivelearn/AgentConfigDialog";
+import { apiClient } from "@/lib/api";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface HLAgent {
@@ -379,8 +380,7 @@ export function HiveLearnSwarmPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/hivelearn/agents");
-      const data = await res.json();
+      const data = await apiClient<any[]>("/api/hivelearn/agents", { showError: false });
       setDbAgents(Array.isArray(data) ? data : []);
     } catch {
       setError("No se pudo cargar el enjambre HiveLearn.");

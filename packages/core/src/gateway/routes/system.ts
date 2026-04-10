@@ -3,7 +3,7 @@ import { loadConfig } from "../../config/loader.ts"
 import { cpus } from "node:os"
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
-import pkg from "../../../package.json"
+import pkg from "../../../../../package.json"
 
 const CURRENT_VERSION = pkg.version
 
@@ -140,39 +140,10 @@ export async function handleGetVersion(
     installationType
   }
   
-  // Obtener última versión en background (sin await inicial)
-  const latestPromise = installationType === "docker" 
-    ? getLatestVersionFromGitHub() 
-    : getLatestVersionFromNpm()
-  
-  latestPromise.then(latest => {
-    if (latest) {
-      const isUpdateAvailable = compareVersions(latest, CURRENT_VERSION) > 0
-      versionInfo = {
-        current: CURRENT_VERSION,
-        latest,
-        status: isUpdateAvailable ? "update-available" : "up-to-date",
-        installationType
-      }
-    } else {
-      versionInfo = {
-        current: CURRENT_VERSION,
-        status: "error",
-        error: "No se pudo verificar la última versión",
-        installationType
-      }
-    }
-  }).catch(err => {
-    versionInfo = {
-      current: CURRENT_VERSION,
-      status: "error",
-      error: (err as Error).message,
-      installationType
-    }
-  })
-  
-  // Esperar a que se resuelva la promesa
-  const latest = await latestPromise
+  // Siempre verificar en npm registry (es donde se publica @johpaz/hive-agents)
+  // GitHub Releases solo como fallback si npm falla
+  const latest = await getLatestVersionFromNpm()
+    .then(v => v ?? getLatestVersionFromGitHub())
   
   if (latest) {
     const isUpdateAvailable = compareVersions(latest, CURRENT_VERSION) > 0

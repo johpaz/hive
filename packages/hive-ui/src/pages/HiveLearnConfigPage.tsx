@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { apiClient } from "@/lib/api";
 import { Settings2, Brain, GitBranch, Zap, Database, Bot } from "lucide-react";
 import {
   ProviderSelector,
@@ -36,17 +37,12 @@ export function HiveLearnConfigPage() {
     const load = async () => {
       setIsLoading(true);
       try {
-        const [providersRes, modelsRes, configRes, agentsRes] = await Promise.all([
-          fetch("/api/providers"),
-          fetch("/api/models"),
-          fetch("/api/hivelearn/config"),
-          fetch("/api/hivelearn/agents"),
+        const [providersData, modelsData, configData, agentsData] = await Promise.all([
+          apiClient<any>("/api/providers", { showError: false }),
+          apiClient<any>("/api/models", { showError: false }),
+          apiClient<HiveLearnConfig>("/api/hivelearn/config", { showError: false }),
+          apiClient<AgentResponse>("/api/hivelearn/agents", { showError: false }),
         ]);
-
-        const providersData = await providersRes.json();
-        const modelsData = await modelsRes.json();
-        const configData: HiveLearnConfig = await configRes.json();
-        const agentsData: AgentResponse = await agentsRes.json();
 
         // Filter to only active/enabled providers: enabled=1 Y active=1
         const activeProviders: ProviderOption[] = (providersData.providers ?? [])
@@ -97,12 +93,11 @@ export function HiveLearnConfigPage() {
     setSaveStatus("loading");
     setSaveError(null);
     try {
-      const res = await fetch("/api/hivelearn/config", {
+      const data = await apiClient<any>("/api/hivelearn/config", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerId: selectedProviderId, modelId: selectedModelId }),
+        body: { providerId: selectedProviderId, modelId: selectedModelId },
+        showError: false,
       });
-      const data = await res.json();
       if (data.ok || data.configured) {
         setSaveStatus("success");
         setTimeout(() => setSaveStatus("idle"), 3000);

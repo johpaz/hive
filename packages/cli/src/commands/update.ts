@@ -88,10 +88,24 @@ async function updateFromGlobalPackage(): Promise<void> {
     console.log("Versión actual: desconocida");
   }
 
-  console.log(`\nDescargando ${MAIN_PACKAGE}@latest...`);
+  // Detectar gestor de paquetes disponible
+  const { execSync } = await import("child_process");
+  let packageManager: "bun" | "npm" = "npm";
+  try {
+    execSync("bun --version", { encoding: "utf-8", stdio: "pipe" });
+    packageManager = "bun";
+  } catch {
+    // bun no disponible, usar npm
+  }
+
+  const installCmd = packageManager === "bun"
+    ? ["bun", "install", "-g", `${MAIN_PACKAGE}@latest`]
+    : ["npm", "install", "-g", `${MAIN_PACKAGE}@latest`];
+
+  console.log(`\nDescargando ${MAIN_PACKAGE}@latest (via ${packageManager})...`);
 
   try {
-    const proc = Bun.spawn(["bun", "install", "-g", `${MAIN_PACKAGE}@latest`], {
+    const proc = Bun.spawn(installCmd, {
       stdout: "inherit",
       stderr: "inherit",
     });
@@ -99,7 +113,7 @@ async function updateFromGlobalPackage(): Promise<void> {
 
     if (exitCode !== 0) {
       console.log(`\n⚠️  Error durante la actualización (exit code ${exitCode})`);
-      console.log(`   Intenta manualmente: bun install -g ${MAIN_PACKAGE}@latest\n`);
+      console.log(`   Intenta manualmente: ${installCmd.join(" ")}\n`);
       return;
     }
 

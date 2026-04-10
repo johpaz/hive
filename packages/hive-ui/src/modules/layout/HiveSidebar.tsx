@@ -24,6 +24,7 @@ import {
   type LucideProps,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
+import { apiClient } from "@/lib/api";
 import { useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
@@ -96,8 +97,7 @@ export function AppSidebar() {
   const [hiveLearnEnabled, setHiveLearnEnabled] = useState(false);
 
   useEffect(() => {
-    fetch("/api/hivelearn/status")
-      .then(r => r.json())
+    apiClient<{ enabled: boolean }>("/api/hivelearn/status", { showError: false })
       .then(d => setHiveLearnEnabled(d.enabled ?? false))
       .catch(() => setHiveLearnEnabled(false));
   }, []);

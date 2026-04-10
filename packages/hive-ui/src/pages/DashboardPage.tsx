@@ -57,8 +57,7 @@ function HiveLearnActivationBanner() {
   const [activating, setActivating] = useState(false);
 
   useEffect(() => {
-    fetch("/api/hivelearn/status")
-      .then(r => r.json())
+    apiClient<{ enabled: boolean }>("/api/hivelearn/status", { showError: false })
       .then(d => setStatus(d.enabled ? "enabled" : "disabled"))
       .catch(() => setStatus("disabled"));
   }, []);
@@ -68,8 +67,7 @@ function HiveLearnActivationBanner() {
   const handleActivate = async () => {
     setActivating(true);
     try {
-      const res = await fetch("/api/hivelearn/activate", { method: "POST" });
-      const data = await res.json();
+      const data = await apiClient<{ success: boolean }>("/api/hivelearn/activate", { method: "POST", showError: false });
       if (data.success) {
         setStatus("enabled");
         window.location.reload();

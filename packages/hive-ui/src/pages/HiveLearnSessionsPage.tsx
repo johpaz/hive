@@ -4,6 +4,7 @@ import {
   Trash2, Play, Trophy, Target, TrendingUp, Award,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { apiClient } from "@/lib/api";
 
 interface HLSession {
   session_id: string;
@@ -308,16 +309,12 @@ export function HiveLearnSessionsPage() {
   const fetchAll = async () => {
     setIsLoading(true);
     try {
-      const [sessRes, metRes] = await Promise.all([
-        fetch("/api/hivelearn/sessions"),
-        fetch("/api/hivelearn/metrics").catch(() => null),
+      const [sessData, metData] = await Promise.all([
+        apiClient<{ sessions: any[] }>("/api/hivelearn/sessions", { showError: false }),
+        apiClient<any>("/api/hivelearn/metrics", { showError: false }).catch(() => null),
       ]);
-      const sessData = await sessRes.json();
       setSessions(sessData.sessions ?? []);
-      if (metRes?.ok) {
-        const metData = await metRes.json();
-        setMetrics(metData);
-      }
+      if (metData) setMetrics(metData);
     } catch {
       setSessions([]);
     } finally {

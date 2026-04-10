@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-agents-skills",
-  "version": "0.0.23",
+  "version": "0.0.24",
   "private": true,
   "description": "Hive Skills — Official bundled skills for Hive",
   "main": "./src/index.ts",
