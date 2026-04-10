@@ -46,3 +46,6 @@ export { hlSwarmEmitter } from './events/swarm-events'
 // ─── Cache ────────────────────────────────────────────────────────────────────
 export { nodeCache } from './cache/NodeCache'
 export { cacheInvalidator } from './cache/CacheInvalidator'
+
+// ─── Storage init (llamar desde core al arrancar) ─────────────────────────────
+export { initHiveLearnStorage } from './storage/init'

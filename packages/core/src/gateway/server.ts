@@ -168,9 +168,14 @@ export async function startGateway(config: Config): Promise<void> {
 
   // Inicializar DB siempre (en setup mode crea la DB vacía, los endpoints retornan [] en vez de 500)
   try {
-    initializeDatabase();
+    const db = initializeDatabase();
     // Seed providers/models/hive_capabilities so setup wizard has data before onboarding completes
     seedAllData();
+    // Aplicar schema de HiveLearn y registrar sus agentes (lazy para no romper si el paquete no está)
+    try {
+      const { initHiveLearnStorage } = await import("@johpaz/hivelearn");
+      initHiveLearnStorage(db);
+    } catch { /* HiveLearn no instalado o fallo no crítico */ }
   } catch { /* si falla, los endpoints manejarán el error */ }
 
   // Setup mode: no DB file OR DB existe pero tiene 0 usuarios (primera ejecución interrumpida)
