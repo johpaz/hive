@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
+import { useState, useEffect } from "react";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import {
   Sidebar,
@@ -92,6 +93,14 @@ export function AppSidebar() {
   const location = useLocation();
   const isConfigActive = location.pathname.startsWith("/settings");
   const isHiveLearnActive = location.pathname.startsWith("/hivelearn");
+  const [hiveLearnEnabled, setHiveLearnEnabled] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/hivelearn/status")
+      .then(r => r.json())
+      .then(d => setHiveLearnEnabled(d.enabled ?? false))
+      .catch(() => setHiveLearnEnabled(false));
+  }, []);
 
   return (
     <Sidebar collapsible="icon" className="hive-sidebar">
@@ -116,8 +125,8 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               ))}
 
-              {/* HiveLearn — collapsible submenu */}
-              <Collapsible open={isHiveLearnActive} asChild>
+              {/* HiveLearn — solo visible si está activado */}
+              {hiveLearnEnabled && <Collapsible open={isHiveLearnActive} asChild>
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild isActive={isHiveLearnActive}>
                     <NavLink
@@ -153,7 +162,7 @@ export function AppSidebar() {
                     </SidebarMenuSub>
                   </CollapsibleContent>
                 </SidebarMenuItem>
-              </Collapsible>
+              </Collapsible>}
 
               <div className="h-4" />
               <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-white/20">

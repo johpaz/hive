@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
   Bot,
@@ -6,6 +6,8 @@ import {
   Cable,
   Activity,
   ArrowUpRight,
+  GraduationCap,
+  Loader2,
   type LucideProps
 } from "lucide-react";
 import {
@@ -48,6 +50,56 @@ interface SystemStats {
   memory?: { used: number; total: number; percentage: number };
   connections?: number;
   cores?: number;
+}
+
+function HiveLearnActivationBanner() {
+  const [status, setStatus] = useState<"loading" | "disabled" | "enabled">("loading");
+  const [activating, setActivating] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/hivelearn/status")
+      .then(r => r.json())
+      .then(d => setStatus(d.enabled ? "enabled" : "disabled"))
+      .catch(() => setStatus("disabled"));
+  }, []);
+
+  if (status !== "disabled") return null;
+
+  const handleActivate = async () => {
+    setActivating(true);
+    try {
+      const res = await fetch("/api/hivelearn/activate", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        setStatus("enabled");
+        window.location.reload();
+      }
+    } catch {
+      setActivating(false);
+    }
+  };
+
+  return (
+    <div className="mb-6 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5 flex items-center justify-between gap-4">
+      <div className="flex items-center gap-4">
+        <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+          <GraduationCap className="h-6 w-6 text-amber-400" />
+        </div>
+        <div>
+          <p className="font-semibold text-white text-sm">HiveLearn no está activado</p>
+          <p className="text-xs text-white/40 mt-0.5">Activa el enjambre educativo con 17 agentes de IA para generar lecciones personalizadas.</p>
+        </div>
+      </div>
+      <button
+        onClick={handleActivate}
+        disabled={activating}
+        className="shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-300 text-sm font-semibold hover:bg-amber-500/30 transition-all disabled:opacity-50"
+      >
+        {activating ? <Loader2 className="h-4 w-4 animate-spin" /> : <GraduationCap className="h-4 w-4" />}
+        {activating ? "Activando..." : "Activar HiveLearn"}
+      </button>
+    </div>
+  );
 }
 
 export function DashboardPage() {
@@ -126,6 +178,8 @@ export function DashboardPage() {
       </div>
 
 
+
+      <HiveLearnActivationBanner />
 
       {/* Grilla de Estadísticas */}
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4 mb-8">

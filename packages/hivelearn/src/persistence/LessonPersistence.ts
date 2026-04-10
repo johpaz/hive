@@ -68,7 +68,7 @@ export class LessonPersistence {
   /** Verifica si los agentes de HiveLearn ya tienen provider/model configurados */
   getHiveLearnProviderModel(): { providerId: string; modelId: string } | null {
     const row = this.db.query(`
-      SELECT provider_id, model_id FROM agents WHERE id = ? LIMIT 1
+      SELECT provider_id, model_id FROM hl_agents WHERE id = ? LIMIT 1
     `).get('hl-profile-agent') as { provider_id: string; model_id: string } | undefined
 
     if (row?.provider_id && row?.model_id) {

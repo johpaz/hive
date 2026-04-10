@@ -49,3 +49,5 @@ export { cacheInvalidator } from './cache/CacheInvalidator'
 
 // ─── Storage init (llamar desde core al arrancar) ─────────────────────────────
 export { initHiveLearnStorage } from './storage/init'
+// Alias para compatibilidad con initializer.ts
+export { initHiveLearnStorage as initHiveLearn } from './storage/init'

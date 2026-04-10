@@ -152,6 +152,8 @@ async function applyDatabaseUpdates(): Promise<void> {
     const skillsBefore = (db.query("SELECT COUNT(*) as n FROM skills").get() as { n: number })?.n ?? 0;
 
     // 3. Ejecutar re-seed (idempotente: INSERT OR IGNORE / INSERT OR REPLACE)
+    //    IMPORTANTE: NO llamar initHiveLearnStorage aquí — HiveLearn es opt-in.
+    //    Los agentes hl_* solo se crean si el usuario los activó en setup o dashboard.
     const { seedAllData } = await import("@johpaz/hive-agents-core/storage/seed");
     seedAllData();
 

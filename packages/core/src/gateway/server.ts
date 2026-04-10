@@ -171,11 +171,6 @@ export async function startGateway(config: Config): Promise<void> {
     const db = initializeDatabase();
     // Seed providers/models/hive_capabilities so setup wizard has data before onboarding completes
     seedAllData();
-    // Aplicar schema de HiveLearn y registrar sus agentes (lazy para no romper si el paquete no está)
-    try {
-      const { initHiveLearnStorage } = await import("@johpaz/hivelearn");
-      initHiveLearnStorage(db);
-    } catch { /* HiveLearn no instalado o fallo no crítico */ }
   } catch { /* si falla, los endpoints manejarán el error */ }
 
   // Setup mode: no DB file OR DB existe pero tiene 0 usuarios (primera ejecución interrumpida)
@@ -1305,9 +1300,86 @@ export async function startGateway(config: Config): Promise<void> {
           }
         }
 
+        // ── HiveLearn Status (feature flag implícito) ────────────────
+        if (url.pathname === "/api/hivelearn/status" && req.method === "GET") {
+          try {
+            const tableExists = getDb()
+              .query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='hl_agents'")
+              .get();
+            if (!tableExists) return addCorsHeaders(Response.json({ enabled: false }), req);
+            const cnt = (getDb().query("SELECT COUNT(*) as cnt FROM hl_agents").get() as any).cnt;
+            return addCorsHeaders(Response.json({ enabled: cnt > 0 }), req);
+          } catch {
+            return addCorsHeaders(Response.json({ enabled: false }), req);
+          }
+        }
+
+        // ── HiveLearn Activate (post-setup) ──────────────────────────
+        if (url.pathname === "/api/hivelearn/activate" && req.method === "POST") {
+          try {
+            const { initHiveLearnStorage } = await import("../../../hivelearn/src/storage/init.ts");
+            initHiveLearnStorage(getDb());
+            const cnt = (getDb().query("SELECT COUNT(*) as cnt FROM hl_agents").get() as any).cnt;
+            return addCorsHeaders(Response.json({ success: true, agents: cnt }), req);
+          } catch (e) {
+            return addCorsHeaders(Response.json({ success: false, error: (e as Error).message }, { status: 500 }), req);
+          }
+        }
+
         // ── HiveLearn Agents List ─────────────────────────────────────
         if (url.pathname === "/api/hivelearn/agents" && req.method === "GET") {
-          return await handleGetAgents(new Request(req.url + "?type=hivelearn", { method: "GET", headers: req.headers }), addCorsHeaders);
+          try {
+            const rows = getDb().query(`SELECT * FROM hl_agents ORDER BY role DESC, id ASC`).all() as any[];
+            const agents = rows.map(r => ({
+              id: r.id,
+              name: r.name,
+              description: r.description,
+              role: r.role,
+              providerId: r.provider_id,
+              modelId: r.model_id,
+              systemPrompt: r.system_prompt,
+              workspace: r.workspace,
+              tone: r.tone,
+              enabled: r.enabled === 1,
+              maxIterations: r.max_iterations,
+            }));
+            return addCorsHeaders(Response.json(agents), req);
+          } catch {
+            return addCorsHeaders(Response.json([]), req);
+          }
+        }
+
+        // ── HiveLearn Agent Update ────────────────────────────────────
+        const hlAgentMatch = url.pathname.match(/^\/api\/hivelearn\/agents\/([^/]+)$/);
+        if (hlAgentMatch && req.method === "PUT") {
+          const agentId = hlAgentMatch[1];
+          const body = await req.json().catch(() => ({})) as any;
+          try {
+            getDb().query(`
+              UPDATE hl_agents SET
+                system_prompt  = COALESCE(?, system_prompt),
+                provider_id    = COALESCE(?, provider_id),
+                model_id       = COALESCE(?, model_id),
+                workspace      = ?,
+                tone           = ?,
+                enabled        = ?,
+                max_iterations = COALESCE(?, max_iterations),
+                updated_at     = CURRENT_TIMESTAMP
+              WHERE id = ?
+            `).run(
+              body.systemPrompt ?? null,
+              body.providerId ?? null,
+              body.modelId ?? null,
+              body.workspace ?? null,
+              body.tone ?? null,
+              body.enabled === false ? 0 : 1,
+              body.maxIterations ?? null,
+              agentId
+            );
+            return addCorsHeaders(Response.json({ success: true }), req);
+          } catch (e) {
+            return addCorsHeaders(Response.json({ error: (e as Error).message }, { status: 500 }), req);
+          }
         }
 
         // ── Channels API ─────────────────────────────────────────────────────

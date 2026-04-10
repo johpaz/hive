@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/accordion";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { CheckCircle2, XCircle, Sparkles, Hexagon, Volume2, Loader2 } from "lucide-react";
+import { CheckCircle2, XCircle, Sparkles, Hexagon, Volume2, Loader2, GraduationCap, Cpu } from "lucide-react";
 import { useLoaderStore } from "@/stores/useLoaderStore";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/api";
@@ -80,6 +80,8 @@ interface WizardData {
   // Step 6
   ethicsRules: Record<string, boolean>;
   customRules: Array<{ text: string; category: string }>;
+  // Step 7
+  hiveLearnEnabled: boolean;
 }
 
 const STORAGE_KEY = "hive_setup_wizard_data";
@@ -141,6 +143,7 @@ function getDefaultWizardData(): WizardData {
     ttsVoice: "",
     ethicsRules: {},
     customRules: [],
+    hiveLearnEnabled: false,
   };
 }
 
@@ -233,7 +236,7 @@ export default function SetupPage() {
     const error = getStepError();
     if (error) { setStepError(error); return; }
     setStepError(null);
-    if (currentStep < 7) setCurrentStep(prev => prev + 1);
+    if (currentStep < 8) setCurrentStep(prev => prev + 1);
   };
 
   const handleBack = () => {
@@ -328,22 +331,15 @@ export default function SetupPage() {
 
   const renderStep = () => {
     switch (currentStep) {
-      case 1:
-        return renderStep1();
-      case 2:
-        return renderStep2();
-      case 3:
-        return renderStep3();
-      case 4:
-        return renderStep4();
-      case 5:
-        return renderStep5();
-      case 6:
-        return renderStep6();
-      case 7:
-        return renderStep7();
-      default:
-        return null;
+      case 1: return renderStep1();
+      case 2: return renderStep2();
+      case 3: return renderStep3();
+      case 4: return renderStep4();
+      case 5: return renderStep5();
+      case 6: return renderStep6();
+      case 7: return renderStepModules();
+      case 8: return renderStep7();
+      default: return null;
     }
   };
 
@@ -1078,6 +1074,55 @@ export default function SetupPage() {
     </div>
   );
 
+  const renderStepModules = () => (
+    <div className="space-y-6">
+      <div className="text-center space-y-2">
+        <h2 className="text-2xl font-bold">Módulos opcionales</h2>
+        <p className="text-muted-foreground">Activa las funcionalidades adicionales que quieras usar</p>
+      </div>
+
+      <Card
+        className={`cursor-pointer transition-all border-2 ${wizardData.hiveLearnEnabled ? "border-amber-500 bg-amber-500/5" : "border-border hover:border-amber-500/40"}`}
+        onClick={() => updateData({ hiveLearnEnabled: !wizardData.hiveLearnEnabled })}
+      >
+        <CardContent className="p-5 flex items-start gap-4">
+          <div className={`mt-1 p-2.5 rounded-xl ${wizardData.hiveLearnEnabled ? "bg-amber-500/20" : "bg-muted"}`}>
+            <GraduationCap className={`w-6 h-6 ${wizardData.hiveLearnEnabled ? "text-amber-500" : "text-muted-foreground"}`} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="font-semibold text-base">HiveLearn</h3>
+              <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-wider">
+                Enjambre Educativo
+              </Badge>
+            </div>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Genera lecciones personalizadas con 17 agentes de IA trabajando en paralelo.
+              Requiere <strong>Ollama</strong> corriendo localmente.
+            </p>
+            <div className="flex items-center gap-3 mt-3 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1"><Cpu className="w-3 h-3" /> 17 agentes especializados</span>
+              <span>·</span>
+              <span>Ollama requerido</span>
+              <span>·</span>
+              <span>~2 min primera lección</span>
+            </div>
+          </div>
+          <Switch
+            checked={wizardData.hiveLearnEnabled}
+            onCheckedChange={(v) => { updateData({ hiveLearnEnabled: v }); }}
+            onClick={(e) => e.stopPropagation()}
+            className="mt-1 shrink-0"
+          />
+        </CardContent>
+      </Card>
+
+      <p className="text-xs text-center text-muted-foreground">
+        Puedes activar o desactivar módulos en cualquier momento desde la configuración.
+      </p>
+    </div>
+  );
+
   const renderStep7 = () => (
     <div className="space-y-6">
       <div className="text-center space-y-2">
@@ -1161,6 +1206,17 @@ export default function SetupPage() {
                     })}
                 </div>
               </div>
+
+              <div>
+                <Label className="text-sm text-muted-foreground">Módulos</Label>
+                <div className="flex gap-2 mt-1">
+                  <Badge variant={wizardData.hiveLearnEnabled ? "default" : "secondary"}
+                    className={wizardData.hiveLearnEnabled ? "bg-amber-500" : ""}>
+                    <GraduationCap className="w-3 h-3 mr-1" />
+                    HiveLearn {wizardData.hiveLearnEnabled ? "activado" : "desactivado"}
+                  </Badge>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
@@ -1192,7 +1248,7 @@ export default function SetupPage() {
         {/* Progress */}
         <div className="mb-8 space-y-2">
           <div className="flex justify-between text-sm text-muted-foreground">
-            <span>Paso {currentStep} de 7</span>
+            <span>Paso {currentStep} de 8</span>
             <button
               onClick={handleReset}
               className="text-xs text-muted-foreground hover:text-foreground"
@@ -1200,7 +1256,7 @@ export default function SetupPage() {
               Reiniciar configuración
             </button>
           </div>
-          <Progress value={(currentStep / 7) * 100} className="h-2" />
+          <Progress value={(currentStep / 8) * 100} className="h-2" />
         </div>
 
         {/* Step content */}
@@ -1223,7 +1279,7 @@ export default function SetupPage() {
             >
               ← Anterior
             </Button>
-            {currentStep < 7 ? (
+            {currentStep < 8 ? (
               <Button
                 onClick={handleNext}
                 className="bg-amber-500 hover:bg-amber-600"

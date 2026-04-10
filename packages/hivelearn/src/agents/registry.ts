@@ -76,28 +76,29 @@ const HIVELEARN_AGENTS: AgentDef[] = [
 
 export function registerHiveLearnAgents(db: Database): void {
   const insertWorker = db.prepare(`
-    INSERT INTO agents (id, name, description, system_prompt, role, provider_id, model_id, max_iterations, tools_json, enabled)
+    INSERT INTO hl_agents (id, name, description, system_prompt, role, provider_id, model_id, max_iterations, tools_json, enabled)
     VALUES (?, ?, ?, ?, 'worker', ?, ?, ?, '[]', 1)
     ON CONFLICT(id) DO UPDATE SET
       name          = excluded.name,
       description   = excluded.description,
       system_prompt = excluded.system_prompt,
       max_iterations= excluded.max_iterations,
-      -- Preservar selección del usuario si existe, usar default si es NULL
-      provider_id   = COALESCE(agents.provider_id, excluded.provider_id),
-      model_id      = COALESCE(agents.model_id, excluded.model_id)
+      provider_id   = COALESCE(hl_agents.provider_id, excluded.provider_id),
+      model_id      = COALESCE(hl_agents.model_id, excluded.model_id),
+      updated_at    = CURRENT_TIMESTAMP
   `)
 
   const insertCoordinator = db.prepare(`
-    INSERT INTO agents (id, name, description, system_prompt, role, provider_id, model_id, max_iterations, tools_json, enabled)
+    INSERT INTO hl_agents (id, name, description, system_prompt, role, provider_id, model_id, max_iterations, tools_json, enabled)
     VALUES (?, ?, ?, ?, 'coordinator', ?, ?, ?, '[]', 1)
     ON CONFLICT(id) DO UPDATE SET
       name          = excluded.name,
       description   = excluded.description,
       system_prompt = excluded.system_prompt,
       max_iterations= excluded.max_iterations,
-      provider_id   = COALESCE(agents.provider_id, excluded.provider_id),
-      model_id      = COALESCE(agents.model_id, excluded.model_id)
+      provider_id   = COALESCE(hl_agents.provider_id, excluded.provider_id),
+      model_id      = COALESCE(hl_agents.model_id, excluded.model_id),
+      updated_at    = CURRENT_TIMESTAMP
   `)
 
   const tx = db.transaction(() => {
@@ -141,8 +142,8 @@ export function updateHiveLearnAgentsProviderModel(
   // Incluir los 15 agentes (coordinador + 14 workers)
   const allAgentIds = Object.values(AGENT_IDS)
   const stmt = db.prepare(`
-    UPDATE agents
-    SET provider_id = ?, model_id = ?
+    UPDATE hl_agents
+    SET provider_id = ?, model_id = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id IN (${allAgentIds.map(() => '?').join(', ')})
   `)
 

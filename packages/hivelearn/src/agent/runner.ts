@@ -23,7 +23,7 @@ export async function runHiveLearnAgent(opts: {
 }): Promise<string> {
   const db = getDb()
 
-  const agent = db.query<any, [string]>('SELECT * FROM agents WHERE id = ?').get(opts.agentId)
+  const agent = db.query<any, [string]>('SELECT * FROM hl_agents WHERE id = ?').get(opts.agentId)
   if (!agent) throw new Error(`HiveLearn agent not found in DB: ${opts.agentId}`)
 
   // agents.model_id es el nombre real de la API (ej. "gemini-3-flash-preview")

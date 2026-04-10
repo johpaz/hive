@@ -47,6 +47,7 @@ const AGENT_META: Record<string, { icon: any; emoji: string; label: string; acci
   "hl-evaluation-agent":   { icon: Shield,       emoji: "📝", label: "Evaluación",   accion: "Prepara examen final adaptativo", color: "rose" },
   "hl-coordinator-agent":  { icon: Crown,        emoji: "🔍", label: "Coordinador",  accion: "Revisa coherencia pedagógica", color: "purple" },
   "hl-feedback-agent":     { icon: Bot,          emoji: "🧠", label: "Feedback",     accion: "Evalúa comprensión semántica del alumno", color: "sky" },
+  "hl-audio-agent":        { icon: Zap,          emoji: "🔊", label: "Audio",         accion: "Genera script de narración educativa", color: "green" },
 };
 
 const WORKER_IDS = Object.keys(AGENT_META).filter(id => id !== "hl-coordinator-agent");
@@ -68,6 +69,7 @@ const COLOR_MAP: Record<string, { bg: string; border: string; text: string; glow
   rose: { bg: "bg-rose-500/10", border: "border-rose-500/30", text: "text-rose-400", glow: "shadow-[0_0_20px_rgba(244,63,94,0.25)]", iconBg: "bg-rose-500/15", badgeBorder: "border-rose-500/20" },
   purple: { bg: "bg-purple-500/10", border: "border-purple-500/30", text: "text-purple-400", glow: "shadow-[0_0_20px_rgba(168,85,247,0.25)]", iconBg: "bg-purple-500/15", badgeBorder: "border-purple-500/20" },
   sky: { bg: "bg-sky-500/10", border: "border-sky-500/30", text: "text-sky-400", glow: "shadow-[0_0_20px_rgba(14,165,233,0.25)]", iconBg: "bg-sky-500/15", badgeBorder: "border-sky-500/20" },
+  green: { bg: "bg-green-500/10", border: "border-green-500/30", text: "text-green-400", glow: "shadow-[0_0_20px_rgba(34,197,94,0.25)]", iconBg: "bg-green-500/15", badgeBorder: "border-green-500/20" },
 };
 
 const STATUS_COLORS: Record<AgentState["status"], string> = {
@@ -127,17 +129,23 @@ function WorkerGraphNode({
   const isDisabled = dbAgent && !dbAgent.enabled;
 
   return (
-    <div className={`relative group w-full rounded-xl p-5 flex flex-col gap-4 transition-all duration-300
-      bg-[rgba(255,255,255,0.03)] backdrop-blur-xl border
-      ${isThinking
-        ? `${colors.border} ${colors.glow}`
-        : isCompleted
-        ? "border-green-500/30"
-        : isFailed
-        ? "border-red-500/30"
-        : "border-white/[0.08] hover:border-white/20"}
-      ${isDisabled ? "opacity-50 grayscale" : ""}
-    `}>
+    <div
+      role="button"
+      tabIndex={0}
+      className={`relative group w-full rounded-xl p-5 flex flex-col gap-4 transition-all duration-300 cursor-pointer
+        bg-[rgba(255,255,255,0.03)] backdrop-blur-xl border
+        ${isThinking
+          ? `${colors.border} ${colors.glow}`
+          : isCompleted
+          ? "border-green-500/30"
+          : isFailed
+          ? "border-red-500/30"
+          : "border-white/[0.08] hover:border-white/20"}
+        ${isDisabled ? "opacity-50 grayscale" : ""}
+      `}
+      onClick={() => setConfigOpen(true)}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setConfigOpen(true); }}
+    >
       {/* Top accent line when active */}
       {isActive && (
         <div className={`absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-${meta.color}-500/60 to-transparent animate-pulse`} />
@@ -175,6 +183,15 @@ function WorkerGraphNode({
             {STATUS_LABELS[status] ?? status}
           </span>
         </div>
+
+        {/* Provider / Model badge */}
+        {dbAgent?.providerId && (
+          <div className="flex items-center gap-1.5 text-[9px] font-mono text-white/25">
+            <span className={`${colors.text} opacity-60`}>{dbAgent.providerId}</span>
+            <span className="text-white/15">·</span>
+            <span className="truncate text-white/35">{dbAgent.modelId}</span>
+          </div>
+        )}
       </div>
 
       {/* Tool chip */}
@@ -187,37 +204,37 @@ function WorkerGraphNode({
 
       {/* Configure button */}
       <button
-        onClick={() => setConfigOpen(true)}
-        className="absolute top-3 right-3 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all text-white/30 hover:text-white hover:bg-white/10"
+        onClick={(e) => { e.stopPropagation(); setConfigOpen(true); }}
+        className="absolute top-3 right-3 p-1.5 rounded-lg transition-all text-white/30 hover:text-white hover:bg-white/10"
         title="Configurar agente"
       >
         <Settings2 className="h-3.5 w-3.5" />
       </button>
 
-      {/* Config Dialog */}
-      {dbAgent && (
+      {/* Config Dialog — div detiene propagación para que la card no intercepte clicks del dialog */}
+      <div onClick={e => e.stopPropagation()}>
         <AgentConfigDialog
-          agentId={dbAgent.id}
+          agentId={dbAgent?.id ?? agentId}
           agentName={meta.label}
           agentDescription={meta.accion}
           agentData={{
-            id: dbAgent.id,
-            name: dbAgent.name,
-            description: dbAgent.description,
-            provider_id: dbAgent.providerId,
-            model_id: dbAgent.modelId,
-            system_prompt: dbAgent.systemPrompt ?? "",
-            workspace: dbAgent.workspace ?? "",
-            tone: dbAgent.tone ?? "",
-            role: dbAgent.role,
-            enabled: dbAgent.enabled,
-            max_iterations: dbAgent.maxIterations ?? 3,
+            id: dbAgent?.id ?? agentId,
+            name: dbAgent?.name ?? meta.label,
+            description: dbAgent?.description ?? meta.accion,
+            provider_id: dbAgent?.providerId ?? "",
+            model_id: dbAgent?.modelId ?? "",
+            system_prompt: dbAgent?.systemPrompt ?? "",
+            workspace: dbAgent?.workspace ?? "",
+            tone: dbAgent?.tone ?? "",
+            role: dbAgent?.role ?? "worker",
+            enabled: dbAgent?.enabled ?? true,
+            max_iterations: dbAgent?.maxIterations ?? 3,
           }}
           open={configOpen}
           onOpenChange={setConfigOpen}
           onSuccess={onConfigSuccess}
         />
-      )}
+      </div>
     </div>
   );
 }
@@ -302,29 +319,29 @@ function CoordinatorCard({
       </div>
 
       {/* Coordinator Config Dialog */}
-      {coordinator && (
+      <div onClick={e => e.stopPropagation()}>
         <AgentConfigDialog
-          agentId={coordinator.id}
-          agentName={coordinator.name ?? "HiveLearn Coordinator"}
-          agentDescription={coordinator.description ?? "Coordina el enjambre educativo completo"}
+          agentId={coordinator?.id ?? "hl-coordinator-agent"}
+          agentName={coordinator?.name ?? "HiveLearn Coordinator"}
+          agentDescription={coordinator?.description ?? "Coordina el enjambre educativo completo"}
           agentData={{
-            id: coordinator.id,
-            name: coordinator.name ?? "HiveLearn Coordinator",
-            description: coordinator.description ?? "Coordina el enjambre educativo completo",
-            provider_id: coordinator.providerId,
-            model_id: coordinator.modelId,
-            system_prompt: coordinator.systemPrompt ?? "",
-            workspace: coordinator.workspace ?? "",
-            tone: coordinator.tone ?? "",
-            role: coordinator.role,
-            enabled: coordinator.enabled,
-            max_iterations: 10,
+            id: coordinator?.id ?? "hl-coordinator-agent",
+            name: coordinator?.name ?? "HiveLearn Coordinator",
+            description: coordinator?.description ?? "Coordina el enjambre educativo completo",
+            provider_id: coordinator?.providerId ?? "",
+            model_id: coordinator?.modelId ?? "",
+            system_prompt: coordinator?.systemPrompt ?? "",
+            workspace: coordinator?.workspace ?? "",
+            tone: coordinator?.tone ?? "",
+            role: coordinator?.role ?? "coordinator",
+            enabled: coordinator?.enabled ?? true,
+            max_iterations: coordinator?.maxIterations ?? 10,
           }}
           open={configOpen}
           onOpenChange={setConfigOpen}
           onSuccess={onConfigSuccess}
         />
-      )}
+      </div>
     </div>
   );
 }
@@ -364,7 +381,7 @@ export function HiveLearnSwarmPage() {
     try {
       const res = await fetch("/api/hivelearn/agents");
       const data = await res.json();
-      setDbAgents(data.agents ?? []);
+      setDbAgents(Array.isArray(data) ? data : []);
     } catch {
       setError("No se pudo cargar el enjambre HiveLearn.");
     } finally {
@@ -506,30 +523,28 @@ export function HiveLearnSwarmPage() {
         </div>
       )}
 
-      {/* Coordinator Config Dialog (empty state) */}
-      {coordinator && (
-        <AgentConfigDialog
-          agentId={coordinator.id}
-          agentName={coordinator.name ?? "HiveLearn Coordinator"}
-          agentDescription={coordinator.description ?? "Coordina el enjambre educativo completo"}
-          agentData={{
-            id: coordinator.id,
-            name: coordinator.name ?? "HiveLearn Coordinator",
-            description: coordinator.description ?? "Coordina el enjambre educativo completo",
-            provider_id: coordinator.providerId,
-            model_id: coordinator.modelId,
-            system_prompt: coordinator.systemPrompt ?? "",
-            workspace: coordinator.workspace ?? "",
-            tone: coordinator.tone ?? "",
-            role: coordinator.role,
-            enabled: coordinator.enabled,
-            max_iterations: 10,
-          }}
-          open={coordinatorConfigOpen}
-          onOpenChange={setCoordinatorConfigOpen}
-          onSuccess={handleConfigSuccess}
-        />
-      )}
+      {/* Coordinator Config Dialog (empty state — rendered even without DB agent) */}
+      <AgentConfigDialog
+        agentId={coordinator?.id ?? "hl-coordinator-agent"}
+        agentName={coordinator?.name ?? "HiveLearn Coordinator"}
+        agentDescription={coordinator?.description ?? "Coordina el enjambre educativo completo"}
+        agentData={{
+          id: coordinator?.id ?? "hl-coordinator-agent",
+          name: coordinator?.name ?? "HiveLearn Coordinator",
+          description: coordinator?.description ?? "Coordina el enjambre educativo completo",
+          provider_id: coordinator?.providerId ?? "",
+          model_id: coordinator?.modelId ?? "",
+          system_prompt: coordinator?.systemPrompt ?? "",
+          workspace: coordinator?.workspace ?? "",
+          tone: coordinator?.tone ?? "",
+          role: coordinator?.role ?? "coordinator",
+          enabled: coordinator?.enabled ?? true,
+          max_iterations: coordinator?.maxIterations ?? 10,
+        }}
+        open={coordinatorConfigOpen}
+        onOpenChange={setCoordinatorConfigOpen}
+        onSuccess={handleConfigSuccess}
+      />
     </div>
   );
 }

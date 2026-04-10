@@ -10,6 +10,25 @@ export const HIVELEARN_SCHEMA_V1 = `
 -- HiveLearn Schema v1
 -- Prefijo hl_ para coexistir sin conflictos con tablas de Hive OSS
 
+-- Tabla propia de agentes HL (sin FK a providers/users para evitar constraint failures)
+CREATE TABLE IF NOT EXISTS hl_agents (
+  id              TEXT PRIMARY KEY,
+  name            TEXT NOT NULL,
+  description     TEXT,
+  system_prompt   TEXT,
+  role            TEXT NOT NULL DEFAULT 'worker',
+  provider_id     TEXT NOT NULL DEFAULT 'ollama',
+  model_id        TEXT NOT NULL DEFAULT 'gemma4-e4b',
+  max_iterations  INTEGER NOT NULL DEFAULT 3,
+  tools_json      TEXT DEFAULT '[]',
+  workspace       TEXT,
+  tone            TEXT,
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+
 CREATE TABLE IF NOT EXISTS hl_student_profiles (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   alumno_id       TEXT UNIQUE NOT NULL,
@@ -175,7 +194,5 @@ CREATE TABLE IF NOT EXISTS hl_student_responses (
 CREATE INDEX IF NOT EXISTS idx_sr_session ON hl_student_responses(session_id);
 CREATE INDEX IF NOT EXISTS idx_sr_node    ON hl_student_responses(node_id);
 
--- Rating del alumno al finalizar la lección (1-5 estrellas)
-ALTER TABLE hl_sessions ADD COLUMN IF NOT EXISTS rating INTEGER DEFAULT NULL;
-ALTER TABLE hl_sessions ADD COLUMN IF NOT EXISTS rating_comentario TEXT DEFAULT NULL;
+-- rating: gestionado por initHiveLearnStorage con ensureColumn (compatible SQLite < 3.37)
 `;

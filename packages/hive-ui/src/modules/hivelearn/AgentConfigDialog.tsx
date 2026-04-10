@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -114,7 +114,11 @@ export function AgentConfigDialog({
   const handleSave = async () => {
     setSaving(true);
     try {
-      await apiClient(`/api/agents/${agentId}`, {
+      // Los agentes HL se guardan en su propio endpoint (tabla hl_agents, sin FK)
+      const saveUrl = agentId.startsWith("hl-")
+        ? `/api/hivelearn/agents/${agentId}`
+        : `/api/agents/${agentId}`;
+      await apiClient(saveUrl, {
         method: "PUT",
         body: {
           systemPrompt: formData.systemPrompt,
@@ -269,11 +273,13 @@ export function AgentConfigDialog({
         )}
 
         <DialogFooter className="gap-2 sm:gap-0">
-          <DialogClose asChild>
-            <Button variant="outline" className="border-white/[0.08] text-white/50 hover:text-white hover:bg-white/5">
-              Cancelar
-            </Button>
-          </DialogClose>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            className="border-white/[0.08] text-white/50 hover:text-white hover:bg-white/5"
+          >
+            Cancelar
+          </Button>
           <Button
             onClick={handleSave}
             disabled={saving || loading}
