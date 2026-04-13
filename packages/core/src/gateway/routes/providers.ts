@@ -60,12 +60,17 @@ export async function handleToggleProvider(req: Request, addCorsHeaders: (r: Res
   const providerId = url.pathname.split("/")[3]
   const body = await req.json().catch(() => ({}))
   const { active } = body
-  
+
   if (active === undefined) {
     return addCorsHeaders(new Response("Missing active field", { status: 400 }), req)
   }
-  
-  getDb().query(`UPDATE providers SET active = ?, enabled = ? WHERE id = ?`).run(active ? 1 : 0, active ? 1 : 0, providerId)
+
+  const db = getDb()
+  db.query(`UPDATE providers SET active = ?, enabled = ? WHERE id = ?`).run(active ? 1 : 0, active ? 1 : 0, providerId)
+
+  // Cascade: activate/deactivate all models for this provider
+  db.query(`UPDATE models SET active = ?, enabled = ? WHERE provider_id = ?`).run(active ? 1 : 0, active ? 1 : 0, providerId)
+
   return addCorsHeaders(Response.json({ success: true, active }), req)
 }
 
@@ -123,6 +128,18 @@ export async function handleUpdateProvider(req: Request, addCorsHeaders: (r: Res
   if (updates.length > 0) {
     params.push(id)
     getDb().query(`UPDATE providers SET ${updates.join(", ")} WHERE id = ?`).run(...params as any[])
+
+    // Cascade active/enabled changes to models
+    const activeIdx = updates.findIndex(u => u.startsWith("active"))
+    const enabledIdx = updates.findIndex(u => u.startsWith("enabled"))
+
+    if (activeIdx !== -1) {
+      const activeVal = params[activeIdx]
+      getDb().query(`UPDATE models SET active = ?, enabled = ? WHERE provider_id = ?`).run(activeVal, activeVal, id)
+    } else if (enabledIdx !== -1) {
+      const enabledVal = params[enabledIdx]
+      getDb().query(`UPDATE models SET enabled = ?, active = ? WHERE provider_id = ?`).run(enabledVal, enabledVal, id)
+    }
   }
 
   return addCorsHeaders(Response.json({ ok: true }), req)
