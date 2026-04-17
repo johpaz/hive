@@ -402,11 +402,21 @@ export function CanvasContainer({ sessionId: propSessionId }: CanvasContainerPro
               <p className="hive-label mb-3">Componentes</p>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
                 {components.map((component) => (
-                  <ComponentRenderer
+                  <div
                     key={component.id}
-                    component={component}
-                    onInteraction={handleInteraction}
-                  />
+                    className={
+                      component.span === "full"
+                        ? "col-span-full"
+                        : component.span === "half"
+                        ? "lg:col-span-2 xl:col-span-1"
+                        : ""
+                    }
+                  >
+                    <ComponentRenderer
+                      component={component}
+                      onInteraction={handleInteraction}
+                    />
+                  </div>
                 ))}
               </div>
             </div>

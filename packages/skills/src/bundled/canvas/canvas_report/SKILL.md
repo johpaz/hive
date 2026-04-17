@@ -108,6 +108,13 @@ canvas_show_card({
     { label: "Time", value: "2.5 min" }
   ]
 })
+
+// Full-width card (ocupa todo el ancho del canvas):
+canvas_show_card({
+  title: "Full Report",
+  span: "full",
+  items: [...]
+})
 ```
 
 ### List

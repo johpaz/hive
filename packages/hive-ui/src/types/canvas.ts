@@ -58,6 +58,7 @@ export interface CanvasComponent {
   position: { x: number; y: number };
   size: { width: number; height: number };
   agentId: string;
+  span?: "full" | "half";
 }
 
 export interface CanvasEvent {

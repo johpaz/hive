@@ -913,3 +913,8 @@ Todo en un PR. Una revisión. Un merge.
 ## Licencia
 
 MIT © 2024-2026 Hive Team — Construido con ❤️ desde Colombia
+
+**AVISO IMPORTANTE — Uso no comercial:**
+Este proyecto es de código abierto y completamente gratuito. No está permitido revender este software, distribuirlo comercialmente ni usarlo para ofrecer servicios de pago sin autorización expresa del equipo de Hive.
+
+Si necesitas soporte comercial o integraciones empresariales, contacta al equipo en [Discord](https://discord.gg/hive).

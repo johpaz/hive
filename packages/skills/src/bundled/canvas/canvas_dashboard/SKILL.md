@@ -62,6 +62,7 @@ rules:
   - "Use color coding: green=complete, blue=in_progress, red=error"
   - "Keep dashboard concise — show only critical information"
   - "Clear dashboard when session context changes significantly"
+  - "Use span: 'full' in canvas_render or canvas_show_* for components that need full canvas width (tables, charts, long markdown)"
 
 output_format:
   structure: canvas_dashboard
@@ -108,25 +109,17 @@ Para mostrar dashboards visuales de monitoreo en tiempo real de tareas, proyecto
 
 ```javascript
 canvas_render({
-  component: "dashboard",
-  sections: [
-    {
-      title: "Project Progress",
-      type: "progress",
-      items: [...]
-    },
-    {
-      title: "Active Tasks",
-      type: "status",
-      items: [...]
-    },
-    {
-      title: "Metrics",
-      type: "metrics",
-      items: [...]
-    }
-  ]
+  component: {
+    id: "dashboard-main",
+    type: "markdown",
+    props: { content: "## Dashboard\n..." },
+    span: "full"   // ← ancho completo del canvas
+  }
 })
+
+// O con tarjetas individuales:
+canvas_show_card({ title: "Métricas", span: "full", items: [...] })
+canvas_show_progress({ tasks: [...], span: "full" })
 ```
 
 ## Color Coding

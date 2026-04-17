@@ -32,6 +32,11 @@ export function createCanvasRenderTool(_config: Config): Tool {
               type: "object",
               description: "Component properties",
             },
+            span: {
+              type: "string",
+              enum: ["full", "half"],
+              description: "Width span: 'full' for full-width component, 'half' for half width. Default: single column",
+            },
           },
           required: ["id", "type", "props"],
         },
@@ -48,6 +53,7 @@ export function createCanvasRenderTool(_config: Config): Tool {
         id: string;
         type: "button" | "form" | "chart" | "table" | "markdown" | "text" | "image" | "card" | "progress" | "list" | "confirm";
         props: Record<string, unknown>;
+        span?: "full" | "half";
       };
 
       log.debug(`Rendering component ${component.id} to session ${sessionId}`);
@@ -66,6 +72,7 @@ export function createCanvasRenderTool(_config: Config): Tool {
         id: component.id,
         type: component.type as any,
         props: component.props,
+        span: component.span,
       });
 
       return {
@@ -251,6 +258,11 @@ export function createCanvasCardTool(_config: Config): Tool {
             },
           },
         },
+        span: {
+          type: "string",
+          enum: ["full", "half"],
+          description: "Width span: 'full' for full-width card, 'half' for half width. Default: single column",
+        },
       },
       required: ["items"],
     },
@@ -263,6 +275,7 @@ export function createCanvasCardTool(_config: Config): Tool {
       const title = (params.title as string) ?? "Information";
       const items = (params.items as Array<{ label: string; value: string; variant?: string }>) ?? [];
       const actions = (params.actions as Array<{ id: string; label: string; variant?: string }>) ?? [];
+      const span = params.span as "full" | "half" | undefined;
 
       const cardId = `card-${Date.now()}`;
 
@@ -270,6 +283,7 @@ export function createCanvasCardTool(_config: Config): Tool {
         id: cardId,
         type: "card",
         props: { title, items, actions },
+        span,
       });
 
       return { success: true, cardId, sessionId };
@@ -299,6 +313,11 @@ export function createCanvasProgressTool(_config: Config): Tool {
             },
           },
         },
+        span: {
+          type: "string",
+          enum: ["full", "half"],
+          description: "Width span: 'full' for full-width, 'half' for half width. Default: single column",
+        },
       },
       required: ["tasks"],
     },
@@ -309,6 +328,7 @@ export function createCanvasProgressTool(_config: Config): Tool {
         ? (rawSessionId.startsWith("canvas:") ? rawSessionId : `canvas:${rawSessionId}`)
         : (userId ? `canvas:${userId}` : (() => { throw new Error("No session or user ID provided"); })());
       const tasks = (params.tasks as Array<{ id: string; name: string; progress: number; status?: string }>) ?? [];
+      const span = params.span as "full" | "half" | undefined;
 
       const progressId = `progress-${Date.now()}`;
 
@@ -316,6 +336,7 @@ export function createCanvasProgressTool(_config: Config): Tool {
         id: progressId,
         type: "progress",
         props: { tasks },
+        span,
       });
 
       return { success: true, progressId, sessionId };
@@ -344,6 +365,11 @@ export function createCanvasListTool(_config: Config): Tool {
             },
           },
         },
+        span: {
+          type: "string",
+          enum: ["full", "half"],
+          description: "Width span: 'full' for full-width, 'half' for half width. Default: single column",
+        },
       },
       required: ["items"],
     },
@@ -355,6 +381,7 @@ export function createCanvasListTool(_config: Config): Tool {
         : (userId ? `canvas:${userId}` : (() => { throw new Error("No session or user ID provided"); })());
       const title = (params.title as string) ?? "Details";
       const items = (params.items as Array<{ key: string; value: string }>) ?? [];
+      const span = params.span as "full" | "half" | undefined;
 
       const listId = `list-${Date.now()}`;
 
@@ -362,6 +389,7 @@ export function createCanvasListTool(_config: Config): Tool {
         id: listId,
         type: "list",
         props: { title, items },
+        span,
       });
 
       return { success: true, listId, sessionId };

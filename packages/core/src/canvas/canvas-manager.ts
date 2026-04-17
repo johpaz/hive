@@ -19,6 +19,7 @@ export interface CanvasComponent {
   id: string;
   type: "button" | "form" | "chart" | "table" | "markdown" | "text" | "image" | "card" | "progress" | "list" | "confirm";
   props: Record<string, unknown>;
+  span?: "full" | "half";
 }
 
 export interface CanvasMessage {
