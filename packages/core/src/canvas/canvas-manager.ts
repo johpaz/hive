@@ -256,6 +256,24 @@ export class CanvasManager extends EventEmitter {
     this.log.debug(`Cleared canvas for session ${sessionId}`);
   }
 
+  async sendA2UIMessage(sessionId: string, messageType: string, data: Record<string, unknown>): Promise<void> {
+    const ws = this.sessions.get(sessionId);
+
+    if (!ws || ws.readyState !== WebSocketState.OPEN) {
+      const connected = this.getConnectedSessions();
+      this.log.warn(`Session ${sessionId} NOT connected for A2UI message. Available: ${connected.join(", ")}`);
+      return;
+    }
+
+    const message = {
+      type: messageType,
+      data,
+    };
+
+    ws.send(JSON.stringify(message));
+    this.log.debug(`Sent A2UI message '${messageType}' to session ${sessionId}`);
+  }
+
   async waitForInteraction(
     sessionId: string,
     componentId: string,

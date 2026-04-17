@@ -466,6 +466,55 @@ export async function compileContext(opts: {
       `canvas_render(component:"chart", data:{type:"bar", data:[{mes:"Ene",ventas:1200},{mes:"Feb",ventas:1800}], xKey:"mes", keys:["ventas"], title:"Ventas por mes"})\n` +
       `canvas_render(component:"table", data:{title:"Archivos", columns:[{header:"Nombre",key:"name"},{header:"Tamaño",key:"size"}], data:[{name:"app.ts",size:"12KB"}]})\n` +
       `canvas_render(component:"form", data:{title:"Configuración", fields:[{name:"nombre",label:"Nombre",type:"text"},{name:"tipo",label:"Tipo",type:"select",options:[{value:"a",label:"A"},{value:"b",label:"B"}]}], submitLabel:"Guardar"})\n` +
+      `\`\`\`\n\n` +
+      `# 🎨🎨 CANVAS A2UI v0.9 — Superficies interactivas ricas\n` +
+      `Además de los componentes shadcn, podes crear superficies A2UI v0.9 (protocolo estándar de Google) para UIs ricas e interactivas.\n\n` +
+      `## Flujo A2UI:\n` +
+      `1. \`a2ui_create_surface\` — Crear la superficie (obligatorio primero)\n` +
+      `2. \`a2ui_update_components\` — Enviar componentes (puedes enviar múltiples veces)\n` +
+      `3. \`a2ui_update_data_model\` — Actualizar datos dinámicos\n` +
+      `4. \`a2ui_delete_surface\` — Eliminar la superficie\n\n` +
+      `## Componentes A2UI v0.9:\n` +
+      `- **Column** — Contenedor vertical. Props: children (array de IDs), distribution, alignment\n` +
+      `- **Row** — Contenedor horizontal. Props: children (array de IDs), distribution, alignment\n` +
+      `- **Card** — Tarjeta con child\n` +
+      `- **Text** — Texto con usageHint: h1-h5, body, caption, code, label\n` +
+      `- **Button** — Botón interactivo. Props: child, variant ("primary"|"borderless"), action\n` +
+      `- **TextField** — Campo de texto. Props: label, value (path), variant, placeholder, checks\n` +
+      `- **CheckBox** — Checkbox. Props: label, value (path)\n` +
+      `- **ChoicePicker** — Selección múltiple. Props: options, variant, maxAllowedSelections, selections\n` +
+      `- **Slider** — Slider numérico. Props: value (path), minValue, maxValue\n` +
+      `- **DateTimeInput** — Fecha/hora. Props: value (path), enableDate, enableTime\n` +
+      `- **List** — Lista scrolleable. Props: children, direction\n` +
+      `- **Tabs** — Pestañas. Props: tabItems\n` +
+      `- **Modal** — Diálogo. Props: entryPointChild, contentChild\n` +
+      `- **Divider** — Línea divisora. Props: axis\n` +
+      `- **Image** — Imagen. Props: url, fit, usageHint\n` +
+      `- **Icon** — Ícono. Props: name\n` +
+      `- **Video** — Video. Props: url\n` +
+      `- **AudioPlayer** — Reproductor de audio. Props: url, description\n\n` +
+      `## Data Binding (Dynamic Values):\n` +
+      `- Valor literal: \`"texto"\` o número directo\n` +
+      `- Path del data model: \`{"path": "/user/name"}\` — se resuelve contra el data model de la superficie\n` +
+      `- Function call: \`{"call": "formatDate", "args": {"value": {"path": "/date"}, "format": "yyyy-MM-dd"}}\`\n\n` +
+      `## Acciones:\n` +
+      `- Evento: \`{"event": {"name": "submit_form", "context": {"email": {"path": "/form/email"}}}}\`\n` +
+      `- El contexto se resuelve contra el data model antes de enviar\n\n` +
+      `## Ejemplo completo:\n` +
+      `\`\`\`\n` +
+      `// 1. Crear superficie\n` +
+      `a2ui_create_surface(surfaceId:"contact_form", catalogId:"https://a2ui.org/specification/v0_9/basic_catalog.json", theme:{primaryColor:"#3B82F6", agentDisplayName:"Asistente"})\n\n` +
+      `// 2. Enviar componentes\n` +
+      `a2ui_update_components(surfaceId:"contact_form", components:[\n` +
+      `  {id:"root", component:"Column", children:{array:["header","name_field","email_field","submit_btn"]}},\n` +
+      `  {id:"header", component:"Text", text:"Contacto", usageHint:"h2"},\n` +
+      `  {id:"name_field", component:"TextField", label:"Nombre", value:{path:"/form/name"}, variant:"shortText"},\n` +
+      `  {id:"email_field", component:"TextField", label:"Email", value:{path:"/form/email"}, variant:"shortText", checks:[{call:"required",args:{value:{path:"/form/email"}},message:"Email es obligatorio"},{call:"email",args:{value:{path:"/form/email"}},message:"Email inválido"}]},\n` +
+      `  {id:"submit_text", component:"Text", text:"Enviar"},\n` +
+      `  {id:"submit_btn", component:"Button", child:"submit_text", variant:"primary", action:{event:{name:"submit_contact",context:{name:{path:"/form/name"},email:{path:"/form/email"}}}}}\n` +
+      `])\n\n` +
+      `// 3. Poblar data model\n` +
+      `a2ui_update_data_model(surfaceId:"contact_form", path:"/form", value:{name:"",email:""})\n` +
       `\`\`\`\n`
   }
 

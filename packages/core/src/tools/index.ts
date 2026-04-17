@@ -64,8 +64,8 @@ export function createAllTools(config: Config): Tool[] {
     // AGENTS (14)
     ...agents.createTools(),
 
-    // CANVAS (7)
-    ...canvas.createTools(),
+    // CANVAS (7 + A2UI 4)
+    ...canvas.createTools(config),
 
     // CODEBRIDGE (3)
     ...codebridge.createTools(),
@@ -99,7 +99,7 @@ export function createToolsByCategory(category: string, config: Config): Tool[] 
     case "agents":
       return agents.createTools();
     case "canvas":
-      return canvas.createTools();
+      return canvas.createTools(config);
     case "codebridge":
       return codebridge.createTools();
     case "voice":

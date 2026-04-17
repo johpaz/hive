@@ -2,10 +2,12 @@ import { useEffect, useState, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
-import { Activity, Layout, Terminal, User as UserIcon, Wifi, WifiOff, Bot, Server, FolderOpen, CheckCircle2, Circle, Loader2, XCircle, MinusCircle, Shield, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
+import { Activity, Layout, Terminal, User as UserIcon, Wifi, WifiOff, Bot, Server, FolderOpen, CheckCircle2, Circle, Loader2, XCircle, MinusCircle, Shield, ZoomIn, ZoomOut, RotateCcw, Layers } from "lucide-react";
 import { ComponentRenderer } from "./ComponentRenderer";
 import { useUserStore } from "@/stores/userStore";
 import { useCanvasStore, type GraphNode, type GraphEdge } from "@/stores/canvasStore";
+import { A2UIRenderer } from "./a2ui/A2UIRenderer";
+import type { A2UIActionMessage } from "@/types/a2ui";
 
 interface CanvasContainerProps {
   sessionId?: string;
@@ -314,12 +316,14 @@ export function CanvasContainer({ sessionId: propSessionId }: CanvasContainerPro
   const graphNodes = useCanvasStore((s) => s.graphNodes);
   const graphEdges = useCanvasStore((s) => s.graphEdges);
   const zoomLevel = useCanvasStore((s) => s.zoomLevel);
+  const a2uiSurfaces = useCanvasStore((s) => s.a2uiSurfaces);
   const init = useCanvasStore((s) => s.init);
   const sendMessage = useCanvasStore((s) => s.sendMessage);
   const removeComponent = useCanvasStore((s) => s.removeComponent);
   const zoomIn = useCanvasStore((s) => s.zoomIn);
   const zoomOut = useCanvasStore((s) => s.zoomOut);
   const resetView = useCanvasStore((s) => s.resetView);
+  const sendA2UIAction = useCanvasStore((s) => s.sendA2UIAction);
 
   // Get the effective session ID for display
   const effectiveSessionId = propSessionId || user?.id || "default";
@@ -335,9 +339,14 @@ export function CanvasContainer({ sessionId: propSessionId }: CanvasContainerPro
       action,
       data,
     });
-    // Remove immediately from local store so it doesn't reappear on navigation
     removeComponent(componentId);
   }, [sendMessage, removeComponent]);
+
+  const handleA2UIAction = useCallback((action: A2UIActionMessage) => {
+    sendA2UIAction(action);
+  }, [sendA2UIAction]);
+
+  const surfacesList = Array.from(a2uiSurfaces.values());
 
   return (
     <div className="hive-card flex h-full flex-col shadow-2xl">
@@ -415,6 +424,39 @@ export function CanvasContainer({ sessionId: propSessionId }: CanvasContainerPro
                     <ComponentRenderer
                       component={component}
                       onInteraction={handleInteraction}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* A2UI v0.9 surfaces */}
+          {surfacesList.length > 0 && (
+            <div className="mt-8">
+              <div className="flex items-center gap-2 mb-3">
+                <Layers className="h-4 w-4 text-blue-400" />
+                <p className="hive-label mb-0">Superficies A2UI</p>
+              </div>
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                {surfacesList.map((surface) => (
+                  <div
+                    key={surface.surfaceId}
+                    className="rounded-xl border border-blue-500/20 bg-[rgba(255,255,255,0.02)] backdrop-blur-sm p-4"
+                  >
+                    {surface.theme?.agentDisplayName && (
+                      <div className="flex items-center gap-2 mb-3">
+                        {surface.theme.iconUrl && (
+                          <img src={surface.theme.iconUrl} alt="" className="w-5 h-5 rounded-full" />
+                        )}
+                        <span className="text-xs font-semibold text-blue-300 uppercase tracking-wider">
+                          {surface.theme.agentDisplayName}
+                        </span>
+                      </div>
+                    )}
+                    <A2UIRenderer
+                      surface={surface}
+                      onAction={handleA2UIAction}
                     />
                   </div>
                 ))}

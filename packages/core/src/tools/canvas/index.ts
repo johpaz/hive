@@ -1,5 +1,5 @@
 /**
- * Canvas Tools - 7 tools
+ * Canvas Tools - 7 tools + A2UI v0.9 tools
  *
  * @category canvas
  */
@@ -8,6 +8,8 @@ import type { Tool, ToolResult } from "../types.ts";
 import { emitCanvas, removeCanvasComponent, type CanvasEventType } from "../../canvas/emitter";
 import { logger } from "../../utils/logger.ts";
 import { canvasManager } from "../../canvas/canvas-manager.ts";
+import { createA2UISurfaceTool, createA2UIUpdateComponentsTool, createA2UIUpdateDataModelTool, createA2UIDeleteSurfaceTool } from "../../canvas/a2ui-tools.ts";
+import type { Config } from "../../config/loader.ts";
 
 const log = logger.child("canvas");
 
@@ -355,7 +357,8 @@ export const canvasClearTool: Tool = {
   },
 };
 
-export function createTools(): Tool[] {
+export function createTools(config?: Config): Tool[] {
+  const a2uiConfig = config ?? {} as Config;
   return [
     canvasRenderTool,
     canvasAskTool,
@@ -364,5 +367,9 @@ export function createTools(): Tool[] {
     canvasShowProgressTool,
     canvasShowListTool,
     canvasClearTool,
+    createA2UISurfaceTool(a2uiConfig),
+    createA2UIUpdateComponentsTool(a2uiConfig),
+    createA2UIUpdateDataModelTool(a2uiConfig),
+    createA2UIDeleteSurfaceTool(a2uiConfig),
   ];
 }

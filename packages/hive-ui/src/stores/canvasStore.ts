@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import type { CanvasComponent } from "@/types/canvas";
+import type { A2UISurface, A2UIServerMessage, A2UIActionMessage, ComponentDef } from "@/types/a2ui";
+import { updateDataModel } from "@/modules/canvas/a2ui/dataBinding";
 import { useWebSocketStore } from "./useWebSocketStore";
 
 export interface GraphNode {
@@ -27,6 +29,9 @@ interface CanvasState {
   panX: number;
   panY: number;
 
+  // A2UI v0.9 surfaces
+  a2uiSurfaces: Map<string, A2UISurface>;
+
   // Actions
   setComponents: (components: CanvasComponent[]) => void;
   addComponent: (component: CanvasComponent) => void;
@@ -44,9 +49,17 @@ interface CanvasState {
   resetView: () => void;
   setPan: (x: number, y: number) => void;
 
+  // A2UI actions
+  createA2UISurface: (surface: A2UISurface) => void;
+  updateA2UIComponents: (surfaceId: string, components: ComponentDef[]) => void;
+  updateA2UIDataModel: (surfaceId: string, path: string | undefined, value: unknown) => void;
+  deleteA2UISurface: (surfaceId: string) => void;
+  getA2UISurfaces: () => A2UISurface[];
+
   // Init: subscribes to main WS events, returns cleanup fn
   init: () => () => void;
   sendMessage: (message: any) => void;
+  sendA2UIAction: (action: A2UIActionMessage) => void;
 }
 
 export const useCanvasStore = create<CanvasState>((set, get) => ({
@@ -58,6 +71,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   zoomLevel: 1,
   panX: 0,
   panY: 0,
+  a2uiSurfaces: new Map(),
 
   setComponents: (components) => set({ components }),
   addComponent: (component) => set((s) => ({ components: [...s.components, component] })),
@@ -102,6 +116,53 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   resetView: () => set({ zoomLevel: 1, panX: 0, panY: 0 }),
   
   setPan: (x, y) => set({ panX: x, panY: y }),
+
+  createA2UISurface: (surface) =>
+    set((s) => {
+      const next = new Map(s.a2uiSurfaces);
+      next.set(surface.surfaceId, surface);
+      return { a2uiSurfaces: next };
+    }),
+
+  updateA2UIComponents: (surfaceId, incomingComponents) =>
+    set((s) => {
+      const surface = s.a2uiSurfaces.get(surfaceId);
+      if (!surface) return s;
+      const updated = { ...surface };
+      // Merge components: add new, update existing
+      const existingMap = new Map(updated.components.map((c) => [c.id, c]));
+      for (const comp of incomingComponents) {
+        existingMap.set(comp.id, comp);
+      }
+      updated.components = Array.from(existingMap.values());
+      // Find root if not set
+      if (!updated.rootId) {
+        const root = incomingComponents.find((c) => c.id === "root");
+        if (root) updated.rootId = "root";
+      }
+      const nextMap = new Map(s.a2uiSurfaces);
+      nextMap.set(surfaceId, updated);
+      return { a2uiSurfaces: nextMap };
+    }),
+
+  updateA2UIDataModel: (surfaceId, path, value) =>
+    set((s) => {
+      const surface = s.a2uiSurfaces.get(surfaceId);
+      if (!surface) return s;
+      const newModel = updateDataModel(surface.dataModel, path, value);
+      const nextMap = new Map(s.a2uiSurfaces);
+      nextMap.set(surfaceId, { ...surface, dataModel: newModel });
+      return { a2uiSurfaces: nextMap };
+    }),
+
+  deleteA2UISurface: (surfaceId) =>
+    set((s) => {
+      const next = new Map(s.a2uiSurfaces);
+      next.delete(surfaceId);
+      return { a2uiSurfaces: next };
+    }),
+
+  getA2UISurfaces: () => Array.from(get().a2uiSurfaces.values()),
 
   init: () => {
     const ws = useWebSocketStore.getState();
@@ -220,6 +281,50 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           return { components: [...s.components, component] };
         });
       }),
+
+      // ─── A2UI v0.9 handlers ───────────────────────────────────────────────
+
+      ws.subscribe("a2ui:createSurface", (msg) => {
+        const d = (msg.data as Record<string, unknown>) ?? {};
+        const surface: A2UISurface = {
+          surfaceId: d.surfaceId as string,
+          catalogId: d.catalogId as string ?? "basic",
+          theme: d.theme as A2UISurface["theme"],
+          sendDataModel: d.sendDataModel as boolean ?? false,
+          rootId: undefined,
+          components: [],
+          dataModel: {},
+          componentOrder: [],
+        };
+        get().createA2UISurface(surface);
+      }),
+
+      ws.subscribe("a2ui:updateComponents", (msg) => {
+        const d = (msg.data as Record<string, unknown>) ?? {};
+        const surfaceId = d.surfaceId as string;
+        const components = (d.components as ComponentDef[]) ?? [];
+        if (surfaceId && components.length > 0) {
+          get().updateA2UIComponents(surfaceId, components);
+        }
+      }),
+
+      ws.subscribe("a2ui:updateDataModel", (msg) => {
+        const d = (msg.data as Record<string, unknown>) ?? {};
+        const surfaceId = d.surfaceId as string;
+        const path = d.path as string | undefined;
+        const value = d.value;
+        if (surfaceId) {
+          get().updateA2UIDataModel(surfaceId, path, value);
+        }
+      }),
+
+      ws.subscribe("a2ui:deleteSurface", (msg) => {
+        const d = (msg.data as Record<string, unknown>) ?? {};
+        const surfaceId = d.surfaceId as string;
+        if (surfaceId) {
+          get().deleteA2UISurface(surfaceId);
+        }
+      }),
     ];
 
     return () => unsubs.forEach((u) => u());
@@ -227,5 +332,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   sendMessage: (message) => {
     useWebSocketStore.getState().send(message);
+  },
+
+  sendA2UIAction: (action) => {
+    useWebSocketStore.getState().send({
+      type: "a2ui:action",
+      data: action,
+    });
   },
 }));

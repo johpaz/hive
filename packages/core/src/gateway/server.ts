@@ -2188,6 +2188,7 @@ export async function startGateway(config: Config): Promise<void> {
         // Canvas subscribe
         if (msg.type === "canvas_subscribe") {
           subscribeCanvas(ws);
+          canvasManager.registerSession(`canvas:${data.sessionId}`, ws);
           ws.send(JSON.stringify({
             type: "canvas:snapshot",
             data: getCanvasSnapshot(),
@@ -2198,6 +2199,7 @@ export async function startGateway(config: Config): Promise<void> {
         // Canvas unsubscribe
         if (msg.type === "canvas_unsubscribe") {
           unsubscribeCanvas(ws);
+          canvasManager.unregisterSession(`canvas:${data.sessionId}`);
           return;
         }
 
@@ -2660,6 +2662,8 @@ export async function startGateway(config: Config): Promise<void> {
         logSubscribers.delete(data.sessionId);
         sessionManager.delete(data.sessionId);
         laneQueue.cancel(data.sessionId);
+        unsubscribeCanvas(ws);
+        canvasManager.unregisterSession(`canvas:${data.sessionId}`);
 
         const channel = channelManager?.getChannel("webchat") as any;
         if (channel?.unregisterConnection) channel.unregisterConnection(data.sessionId);

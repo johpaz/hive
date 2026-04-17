@@ -184,6 +184,12 @@ export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
     { name: "canvas_show_list", description: "Display key-value list, show information in structured list format. Spanish keywords: mostrar lista, listar elementos, lista de valores, mostrar elementos", category: "canvas", abstractionLevel: "atomic" },
     { name: "canvas_confirm", description: "Show confirmation dialog, request user confirmation for actions. Spanish keywords: confirmar, diálogo de confirmación, confirmar acción, validación", category: "canvas", abstractionLevel: "atomic" },
 
+    // A2UI v0.9 rich interactive surfaces
+    { name: "a2ui_create_surface", description: "Create A2UI v0.9 surface for rich interactive UIs with forms, dashboards, and workflows. Spanish keywords: crear superficie A2UI, iniciar UI interactiva, crear formulario rico, interfaz A2UI, crear surface", category: "a2ui", abstractionLevel: "orchestration" },
+    { name: "a2ui_update_components", description: "Send A2UI v0.9 components to an existing surface (Text, Button, TextField, Row, Column, Card, etc.). Spanish keywords: enviar componentes A2UI, actualizar UI, renderizar componentes, A2UI componentes, update components", category: "a2ui", abstractionLevel: "atomic" },
+    { name: "a2ui_update_data_model", description: "Update A2UI v0.9 surface data model with JSON Pointer for dynamic data binding. Spanish keywords: actualizar datos A2UI, poblar formulario, cambiar valores, data model A2UI, actualizar modelo de datos", category: "a2ui", abstractionLevel: "atomic" },
+    { name: "a2ui_delete_surface", description: "Delete A2UI v0.9 surface and remove it from the user's canvas. Spanish keywords: eliminar superficie A2UI, borrar UI, limpiar superficie A2UI, cerrar formulario, delete surface", category: "a2ui", abstractionLevel: "atomic" },
+
     // CodeBridge (subagent process management)
     { name: "codebridge_launch", description: "Launch subagent process, spawn new code bridge agent process. Spanish keywords: lanzar proceso, iniciar subagente, ejecutar código, nuevo proceso", category: "code", abstractionLevel: "orchestration" },
     { name: "codebridge_status", description: "Get status of running subagents, check code bridge agent status. Spanish keywords: estado del proceso, verificar subagente, estado del worker, estado", category: "code", abstractionLevel: "atomic" },

@@ -104,6 +104,14 @@ export const SEED_DATA: SeedData = {
     { id: "canvas_clear", name: "canvas_clear", category: "canvas", description: "Limpiar contenido actual del canvas. Sinónimos: limpiar canvas, borrar visualización, resetear" },
 
     // ─────────────────────────────────────────
+    // 7b. CANVAS A2UI v0.9 — Superficies interactivas ricas
+    // ─────────────────────────────────────────
+    { id: "a2ui_create_surface", name: "a2ui_create_surface", category: "a2ui", description: "Crear superficie A2UI v0.9 para UI interactiva rica con formularios, dashboards y flujos. Sinónimos: crear superficie A2UI, iniciar UI A2UI, crear form A2UI, crear interfaz interactiva" },
+    { id: "a2ui_update_components", name: "a2ui_update_components", category: "a2ui", description: "Enviar componentes A2UI v0.9 a una superficie existente (Text, Button, TextField, Row, Column, Card, etc.). Sinónimos: actualizar componentes A2UI, enviar UI, renderizar componentes A2UI, agregar componentes" },
+    { id: "a2ui_update_data_model", name: "a2ui_update_data_model", category: "a2ui", description: "Actualizar data model de una superficie A2UI v0.9 con JSON Pointer. Sinónimos: actualizar datos A2UI, poblar formulario A2UI, cambiar valores A2UI, data model" },
+    { id: "a2ui_delete_surface", name: "a2ui_delete_surface", category: "a2ui", description: "Eliminar superficie A2UI v0.9 del canvas del usuario. Sinónimos: eliminar superficie A2UI, borrar UI A2UI, limpiar superficie A2UI, cerrar formulario" },
+
+    // ─────────────────────────────────────────
     // 8. CODEBRIDGE — Subagentes CLI de código externos
     // Conecta con: Claude Code, Qwen CLI, Gemini CLI, OpenCode CLI
     // ─────────────────────────────────────────
