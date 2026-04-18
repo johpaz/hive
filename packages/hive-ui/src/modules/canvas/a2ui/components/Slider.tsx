@@ -10,9 +10,7 @@ export function A2UISlider({ def, ctx }: { def: ComponentDef; ctx: RenderCtx }) 
   const initialValue = resolveDynamicNumber(def.value as any, ctx.dataModel, ctx.scopeData);
   const [localValue, setLocalValue] = useState(initialValue);
 
-  const handleChange = (val: number[]) => {
-    const v = val[0];
-    setLocalValue(v);
+  const updateModel = (v: number) => {
     if (typeof def.value === "object" && def.value !== null && "path" in (def.value as any)) {
       const path = (def.value as any).path as string;
       ctx.setDataModel((prev) => {
@@ -29,6 +27,21 @@ export function A2UISlider({ def, ctx }: { def: ComponentDef; ctx: RenderCtx }) 
     }
   };
 
+  const handleChange = (val: number[]) => {
+    setLocalValue(val[0]);
+    updateModel(val[0]);
+  };
+
+  const handleCommit = (val: number[]) => {
+    const v = val[0];
+    const action = def.action as any;
+    const event = action?.event ?? action;
+    const eventName = event?.name as string | undefined;
+    if (eventName) {
+      ctx.onAction(eventName, { value: v }, def.id);
+    }
+  };
+
   return (
     <div className="space-y-2" style={def.weight ? { flex: def.weight } : undefined}>
       <div className="flex justify-between text-xs text-white/40">
@@ -42,6 +55,7 @@ export function A2UISlider({ def, ctx }: { def: ComponentDef; ctx: RenderCtx }) 
         max={max}
         step={def.step ?? 1}
         onValueChange={handleChange}
+        onValueCommit={handleCommit}
         className="w-full"
       />
     </div>

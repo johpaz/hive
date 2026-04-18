@@ -135,25 +135,21 @@ Para crear dashboards interactivos en tiempo real usando A2UI v0.9. Usar cuando 
 ## Patrón de Dashboard Típico
 
 ```json
-// Layout: Título + Fila de métricas + Lista de tareas
 [
-  {id: "root", component: "Column", children: {array: ["title", "metrics_row", "tasks_list"]}},
-  {id: "title", component: "Text", text: "Dashboard de Proyecto", usageHint: "h1"},
-  
-  // Fila de métricas con weight proporcional
-  {id: "metrics_row", component: "Row", children: {array: ["card1", "card2", "card3"]}},
-  {id: "card1", component: "Card", child: "card1_content", weight: 1},
-  {id: "card1_content", component: "Column", children: {array: ["card1_label", "card1_value"]}},
-  {id: "card1_label", component: "Text", text: "Completado", usageHint: "caption"},
-  {id: "card1_value", component: "Text", text: {path: "/metrics/completionRate"}, usageHint: "h2"},
-  // ... más cards
-  
-  // Lista de tareas con template
-  {id: "tasks_list", component: "List", children: {path: "/tasks", componentId: "task_template"}},
-  {id: "task_template", component: "Card", child: "task_content"},
-  {id: "task_content", component: "Column", children: {array: ["task_name", "task_status"]}},
-  {id: "task_name", component: "Text", text: {path: "name"}},
-  {id: "task_status", component: "Text", text: {path: "status"}, usageHint: "caption"}
+  {"id": "root", "component": "Column", "children": {"explicitList": ["title", "metrics_row", "tasks_list"]}},
+  {"id": "title", "component": "Text", "text": "Dashboard de Proyecto", "usageHint": "h1"},
+
+  {"id": "metrics_row", "component": "Row", "children": {"explicitList": ["card1", "card2", "card3"]}},
+  {"id": "card1", "component": "Card", "child": "card1_content", "weight": 1},
+  {"id": "card1_content", "component": "Column", "children": {"explicitList": ["card1_label", "card1_value"]}},
+  {"id": "card1_label", "component": "Text", "text": "Completado", "usageHint": "caption"},
+  {"id": "card1_value", "component": "Text", "text": {"path": "/metrics/completionRate"}, "usageHint": "h2"},
+
+  {"id": "tasks_list", "component": "List", "children": {"template": {"dataBinding": "/tasks", "componentId": "task_template"}}},
+  {"id": "task_template", "component": "Card", "child": "task_content"},
+  {"id": "task_content", "component": "Column", "children": {"explicitList": ["task_name", "task_status"]}},
+  {"id": "task_name", "component": "Text", "text": {"path": "/name"}},
+  {"id": "task_status", "component": "Text", "text": {"path": "/status"}, "usageHint": "caption"}
 ]
 ```
 

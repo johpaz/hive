@@ -164,7 +164,7 @@ a2ui_create_surface(surfaceId: "contact_form", catalogId: "https://a2ui.org/spec
 
 // 2. Send components
 a2ui_update_components(surfaceId: "contact_form", components: [
-  {id: "root", component: "Column", children: {array: ["header","name_field","email_field","msg_field","submit_btn"]}},
+  {"id": "root", "component": "Column", "children": {"explicitList": ["header","name_field","email_field","msg_field","submit_btn"]}},
   {id: "header", component: "Text", text: "Contacto", usageHint: "h2"},
   {id: "name_field", component: "TextField", label: "Nombre", value: {path: "/form/name"}, variant: "shortText"},
   {id: "email_field", component: "TextField", label: "Email", value: {path: "/form/email"}, variant: "shortText", checks: [{call: "required", args: {value: {path: "/form/email"}}, message: "Email obligatorio"}, {call: "email", args: {value: {path: "/form/email"}}, message: "Email inválido"}]},

@@ -14,16 +14,32 @@ export type DynamicStringList = string[] | { path: string } | { call: string; ar
 
 // ─── Child Lists ────────────────────────────────────────────────────────────
 
+export interface ChildListExplicit {
+  explicitList: ComponentId[];       // A2UI v0.9 spec oficial
+}
+
 export interface ChildListArray {
-  array: ComponentId[];
+  array: ComponentId[];              // formato legacy/custom
 }
 
 export interface ChildListTemplate {
-  path: string;
+  template: {                        // A2UI v0.9 spec oficial
+    dataBinding: string;
+    componentId: ComponentId;
+  };
+}
+
+export interface ChildListTemplateLegacy {
+  path: string;                      // formato legacy/custom
   componentId: ComponentId;
 }
 
-export type ChildList = ChildListArray | ChildListTemplate | string;
+export type ChildList =
+  | ChildListExplicit
+  | ChildListArray
+  | ChildListTemplate
+  | ChildListTemplateLegacy
+  | string;
 
 // ─── Actions ────────────────────────────────────────────────────────────────
 

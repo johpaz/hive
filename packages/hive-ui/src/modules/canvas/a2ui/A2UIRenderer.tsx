@@ -4,8 +4,10 @@ import type {
   ComponentDef,
   A2UIActionMessage,
   A2UITheme,
+  ChildListExplicit,
   ChildListArray,
   ChildListTemplate,
+  ChildListTemplateLegacy,
 } from "@/types/a2ui";
 import {
   resolveDynamicString,
@@ -133,7 +135,8 @@ function RenderComponent(ctx: RenderCtx): React.ReactNode {
   const def = ctx.compMap.get(ctx.id);
   if (!def) return null;
 
-  const type = def.component;
+  // Normalize type: strip non-ASCII chars (e.g. Gemini appends "项"), trim whitespace
+  const type = def.component?.replace(/[^\x00-\x7F]/g, "").trim();
 
   // Dispatch to component renderers
   switch (type) {
@@ -173,22 +176,49 @@ export function renderChildren(
 ): React.ReactNode[] {
   if (!children) return [];
 
-  // String child (single reference like Card.child)
+  // String child (single reference)
   if (typeof children === "string") {
     return [<RenderComponent key={children} {...ctx} id={children} weight={ctx.compMap.get(children)?.weight} />];
   }
 
-  // Array of IDs
-  if ("array" in children) {
-    const arr = (children as ChildListArray).array;
+  // Raw array — LLM may omit the wrapper object
+  if (Array.isArray(children)) {
+    return (children as string[]).map((childId) => (
+      <RenderComponent key={childId} {...ctx} id={childId} weight={ctx.compMap.get(childId)?.weight} />
+    ));
+  }
+
+  // Array of IDs — spec oficial v0.9: "explicitList" | legacy: "array"
+  if ("explicitList" in children || "array" in children) {
+    const arr = "explicitList" in children
+      ? (children as ChildListExplicit).explicitList
+      : (children as ChildListArray).array;
     return arr.map((childId) => (
       <RenderComponent key={childId} {...ctx} id={childId} weight={ctx.compMap.get(childId)?.weight} />
     ));
   }
 
-  // Template: iterate over data model array
+  // Template — spec oficial v0.9: { template: { dataBinding, componentId } }
+  if ("template" in children) {
+    const tmpl = (children as ChildListTemplate).template;
+    const data = resolvePath(tmpl.dataBinding, ctx.dataModel, ctx.scopeData);
+    if (!Array.isArray(data)) return [];
+    return data.map((item, index) => {
+      const scopeData = typeof item === "object" && item !== null ? item as Record<string, unknown> : { value: item, index };
+      return (
+        <RenderComponent
+          key={`${tmpl.componentId}_${index}`}
+          {...ctx}
+          id={tmpl.componentId}
+          scopeData={scopeData}
+        />
+      );
+    });
+  }
+
+  // Template legacy: { path, componentId }
   if ("path" in children && "componentId" in children) {
-    const tmpl = children as ChildListTemplate;
+    const tmpl = children as ChildListTemplateLegacy;
     const data = resolvePath(tmpl.path, ctx.dataModel, ctx.scopeData);
     if (!Array.isArray(data)) return [];
     return data.map((item, index) => {

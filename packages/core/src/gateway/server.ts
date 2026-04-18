@@ -2203,6 +2203,66 @@ export async function startGateway(config: Config): Promise<void> {
           return;
         }
 
+        // A2UI actions — user interacted with an A2UI surface component
+        if (msg.type === "a2ui:action") {
+          const actionData = (msg.data ?? msg) as Record<string, unknown>;
+          const actionName = actionData.name as string ?? "action";
+          const surfaceId = actionData.surfaceId as string ?? "unknown";
+          const sourceComponentId = actionData.sourceComponentId as string ?? "unknown";
+          const context = actionData.context as Record<string, unknown> ?? {};
+
+          const interactionMsg = `[a2ui:action] surface=${surfaceId} action=${actionName} component=${sourceComponentId}${Object.keys(context).length > 0 ? ` context=${JSON.stringify(context)}` : ""}`;
+          log.info(`A2UI action forwarded to agent: ${interactionMsg}`);
+
+          const sessionId = data.sessionId;
+          ws.send(JSON.stringify({ type: "typing", isTyping: true, sessionId } as OutboundMessage));
+
+          laneQueue.enqueue(sessionId, async (_task, signal) => {
+            if (signal.aborted) {
+              ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId } as OutboundMessage));
+              return;
+            }
+            try {
+              const { userId } = resolveContext({ channel: "webchat", channelUserId: sessionId });
+              const messages = [{ role: "user" as const, content: interactionMsg }];
+              let streamedContent = "";
+              const messageId = crypto.randomUUID();
+
+              const response = await runner.generate({
+                provider: dbProvider as any,
+                messages,
+                maxTokens: 4096,
+                tools: prepareTools(agent, sessionId),
+                maxSteps: 15,
+                threadId: sessionId,
+                userId,
+                onToken: async (token: string) => {
+                  if (signal.aborted) return;
+                  streamedContent += token;
+                  ws.send(JSON.stringify({ type: "message", id: messageId, sessionId, content: token, isChunk: true, isStep: false } as OutboundMessage));
+                },
+                onStep: async (step) => {
+                  if (signal.aborted) return;
+                  log.debug(`[a2ui:action TOOL] ${step.type}: ${step.toolName || ""}`);
+                },
+              });
+
+              ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId } as OutboundMessage));
+
+              const content = streamedContent || response.content?.trim() || "";
+              if (content && streamedContent.length === 0) {
+                ws.send(JSON.stringify({ type: "message", sessionId, content, isStep: false } as OutboundMessage));
+              }
+            } catch (error) {
+              ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId } as OutboundMessage));
+              ws.send(JSON.stringify({ type: "error", sessionId, error: (error as Error).message } as OutboundMessage));
+              log.error(`A2UI action agent error: ${(error as Error).message}`);
+            }
+          });
+
+          return;
+        }
+
         // Canvas interactions from the main session — route to canvasManager and local resolver
         if (msg.type === "canvas:interact") {
           const { componentId } = msg;

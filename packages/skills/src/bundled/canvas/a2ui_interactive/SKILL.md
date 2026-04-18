@@ -146,14 +146,14 @@ Para crear flujos interactivos multi-paso usando A2UI v0.9. Usar cuando se neces
 
 ```json
 [
-  {id: "root", component: "Column", children: {array: ["step_indicator", "tabs"]}},
+  {id: "root", component: "Column", children: {explicitList: ["step_indicator", "tabs"]}},
   {id: "step_indicator", component: "Text", text: {path: "/stepLabel"}, usageHint: "caption"},
   {id: "tabs", component: "Tabs", tabItems: [
     {title: {literalString: "Servicio"}, child: "step1"},
     {title: {literalString: "Fecha"}, child: "step2"},
     {title: {literalString: "Confirmar"}, child: "step3"}
   ]},
-  {id: "step1", component: "Column", children: {array: ["svc_label", "svc_picker"]}},
+  {id: "step1", component: "Column", children: {explicitList: ["svc_label", "svc_picker"]}},
   {id: "svc_label", component: "Text", text: "Seleccioná un servicio", usageHint: "h3"},
   {id: "svc_picker", component: "ChoicePicker", variant: "mutuallyExclusive", options: [...], value: {path: "/data/service"}},
   // ... más pasos
@@ -167,7 +167,7 @@ Para crear flujos interactivos multi-paso usando A2UI v0.9. Usar cuando se neces
   {id: "confirm_modal", component: "Modal", entryPointChild: "confirm_btn", contentChild: "confirm_dialog"},
   {id: "confirm_btn", component: "Button", child: "confirm_btn_text", action: {}},
   {id: "confirm_btn_text", component: "Text", text: "Confirmar Reserva"},
-  {id: "confirm_dialog", component: "Column", children: {array: ["confirm_msg", "confirm_yes", "confirm_no"]}},
+  {id: "confirm_dialog", component: "Column", children: {explicitList: ["confirm_msg", "confirm_yes", "confirm_no"]}},
   {id: "confirm_msg", component: "Text", text: "¿Confirmás tu reserva?"},
   {id: "confirm_yes", component: "Button", child: "yes_text", variant: "primary", action: {event: {name: "confirm_booking", context: {service: {path: "/data/service"}}}}},
   {id: "yes_text", component: "Text", text: "Sí, confirmar"},

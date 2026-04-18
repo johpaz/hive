@@ -135,10 +135,27 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         existingMap.set(comp.id, comp);
       }
       updated.components = Array.from(existingMap.values());
-      // Find root if not set
-      if (!updated.rootId) {
-        const root = incomingComponents.find((c) => c.id === "root");
-        if (root) updated.rootId = "root";
+      // Auto-detect root: prefer explicit "root" id, otherwise find orphan (not referenced as child)
+      if (!updated.rootId || !existingMap.has(updated.rootId)) {
+        const allComponents = updated.components;
+        // Collect all child IDs referenced by any component
+        const referencedIds = new Set<string>();
+        for (const comp of allComponents) {
+          const ch = comp.children;
+          if (typeof ch === "string") referencedIds.add(ch);
+          else if (ch && "array" in ch) ch.array.forEach((id: string) => referencedIds.add(id));
+          else if (ch && "componentId" in ch) referencedIds.add((ch as any).componentId);
+          if (comp.child) referencedIds.add(comp.child);
+          if (comp.entryPointChild) referencedIds.add(comp.entryPointChild as string);
+          if (comp.contentChild) referencedIds.add(comp.contentChild as string);
+          if (Array.isArray(comp.tabItems)) {
+            (comp.tabItems as Array<{ child: string }>).forEach((t) => referencedIds.add(t.child));
+          }
+        }
+        // Root = first component not referenced as a child (true tree root)
+        const orphan = allComponents.find((c) => !referencedIds.has(c.id));
+        if (orphan) updated.rootId = orphan.id;
+        else if (allComponents.length > 0) updated.rootId = allComponents[0].id;
       }
       const nextMap = new Map(s.a2uiSurfaces);
       nextMap.set(surfaceId, updated);

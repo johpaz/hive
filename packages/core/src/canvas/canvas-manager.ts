@@ -44,10 +44,17 @@ interface PendingInteraction {
   timeoutId: ReturnType<typeof setTimeout>;
 }
 
+interface A2UISurfaceCache {
+  createData: Record<string, unknown>;
+  components?: unknown[];
+  dataModel?: Record<string, unknown>;
+}
+
 export class CanvasManager extends EventEmitter {
   private sessions: Map<string, WebSocketLike> = new Map();
   private pendingInteractions: Map<string, PendingInteraction> = new Map();
   private componentCache: Map<string, CanvasComponent[]> = new Map();
+  private a2uiCache: Map<string, A2UISurfaceCache> = new Map();
   private log = logger.child("canvas");
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -94,6 +101,22 @@ export class CanvasManager extends EventEmitter {
 
     // Notify the client that the session is registered
     ws.send(JSON.stringify({ type: "canvas:connected", sessionId }));
+
+    // Replay any cached A2UI surfaces so late-connecting clients get current state
+    for (const [surfaceId, cache] of this.a2uiCache) {
+      try {
+        ws.send(JSON.stringify({ type: "a2ui:createSurface", data: cache.createData }));
+        if (cache.components && cache.components.length > 0) {
+          ws.send(JSON.stringify({ type: "a2ui:updateComponents", data: { surfaceId, components: cache.components } }));
+        }
+        if (cache.dataModel && Object.keys(cache.dataModel).length > 0) {
+          ws.send(JSON.stringify({ type: "a2ui:updateDataModel", data: { surfaceId, path: undefined, value: cache.dataModel } }));
+        }
+        this.log.debug(`Replayed A2UI surface '${surfaceId}' to session ${sessionId}`);
+      } catch (e) {
+        this.log.warn(`Failed to replay A2UI surface '${surfaceId}' to ${sessionId}`);
+      }
+    }
   }
 
   unregisterSession(sessionId: string): void {
@@ -257,20 +280,42 @@ export class CanvasManager extends EventEmitter {
   }
 
   async sendA2UIMessage(sessionId: string, messageType: string, data: Record<string, unknown>): Promise<void> {
+    // Update A2UI cache so late-connecting clients can receive current state
+    const surfaceId = data.surfaceId as string | undefined;
+    if (surfaceId) {
+      if (messageType === "a2ui:createSurface") {
+        this.a2uiCache.set(surfaceId, { createData: data });
+      } else if (messageType === "a2ui:updateComponents") {
+        const cached = this.a2uiCache.get(surfaceId);
+        if (cached) cached.components = data.components as unknown[];
+      } else if (messageType === "a2ui:updateDataModel") {
+        const cached = this.a2uiCache.get(surfaceId);
+        if (cached) {
+          const path = data.path as string | undefined;
+          const value = data.value as Record<string, unknown>;
+          if (!path || path === "/") {
+            cached.dataModel = value;
+          } else {
+            cached.dataModel = cached.dataModel ?? {};
+            // Store the full model snapshot when possible; partial paths accumulate
+            const key = path.replace(/^\//, "").split("/")[0];
+            if (key) cached.dataModel[key] = value;
+          }
+        }
+      } else if (messageType === "a2ui:deleteSurface") {
+        this.a2uiCache.delete(surfaceId);
+      }
+    }
+
     const ws = this.sessions.get(sessionId);
 
     if (!ws || ws.readyState !== WebSocketState.OPEN) {
       const connected = this.getConnectedSessions();
-      this.log.warn(`Session ${sessionId} NOT connected for A2UI message. Available: ${connected.join(", ")}`);
+      this.log.warn(`Session ${sessionId} NOT connected for A2UI message. Cached for replay. Available: ${connected.join(", ")}`);
       return;
     }
 
-    const message = {
-      type: messageType,
-      data,
-    };
-
-    ws.send(JSON.stringify(message));
+    ws.send(JSON.stringify({ type: messageType, data }));
     this.log.debug(`Sent A2UI message '${messageType}' to session ${sessionId}`);
   }
 

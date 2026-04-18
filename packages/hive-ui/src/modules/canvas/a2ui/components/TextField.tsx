@@ -20,7 +20,6 @@ export function A2UITextField({ def, ctx }: { def: ComponentDef; ctx: RenderCtx 
   // Run validation checks
   const validation = def.checks ? runChecks(def.checks, ctx.dataModel, ctx.scopeData) : { valid: true, errors: [] };
 
-  // Update local data model on change (two-way binding)
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setLocalValue(e.target.value);
     if (typeof def.value === "object" && def.value !== null && "path" in (def.value as any)) {
@@ -36,6 +35,25 @@ export function A2UITextField({ def, ctx }: { def: ComponentDef; ctx: RenderCtx 
         cur[parts[parts.length - 1]] = e.target.value;
         return next;
       });
+    }
+  };
+
+  const fireAction = (value: string) => {
+    const action = def.action as any;
+    const event = action?.event ?? action;
+    const eventName = event?.name as string | undefined;
+    if (eventName) {
+      ctx.onAction(eventName, { value }, def.id);
+    }
+  };
+
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    fireAction(e.target.value);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !isLong) {
+      fireAction((e.target as HTMLInputElement).value);
     }
   };
 
@@ -56,6 +74,8 @@ export function A2UITextField({ def, ctx }: { def: ComponentDef; ctx: RenderCtx 
         <textarea
           value={localValue}
           onChange={handleChange}
+          onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
           placeholder={placeholder}
           rows={isCode ? 5 : 3}
           className={inputClass}
@@ -65,6 +85,8 @@ export function A2UITextField({ def, ctx }: { def: ComponentDef; ctx: RenderCtx 
           type={variant === "obscured" ? "password" : variant === "number" ? "number" : "text"}
           value={localValue}
           onChange={handleChange}
+          onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
           placeholder={placeholder}
           className={inputClass}
         />

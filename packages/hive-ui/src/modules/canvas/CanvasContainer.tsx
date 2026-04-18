@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Activity, Layout, Terminal, User as UserIcon, Wifi, WifiOff, Bot, Server, FolderOpen, CheckCircle2, Circle, Loader2, XCircle, MinusCircle, Shield, ZoomIn, ZoomOut, RotateCcw, Layers } from "lucide-react";
 import { ComponentRenderer } from "./ComponentRenderer";
 import { useUserStore } from "@/stores/userStore";
@@ -325,12 +326,22 @@ export function CanvasContainer({ sessionId: propSessionId }: CanvasContainerPro
   const resetView = useCanvasStore((s) => s.resetView);
   const sendA2UIAction = useCanvasStore((s) => s.sendA2UIAction);
 
-  // Get the effective session ID for display
   const effectiveSessionId = propSessionId || user?.id || "default";
+  const [activeTab, setActiveTab] = useState("sistema");
+  const prevSurfaceCount = useRef(0);
 
   useEffect(() => {
     return init();
   }, [init]);
+
+  // Auto-switch to A2UI tab when new surfaces arrive
+  useEffect(() => {
+    const count = a2uiSurfaces.size;
+    if (count > prevSurfaceCount.current) {
+      setActiveTab("a2ui");
+    }
+    prevSurfaceCount.current = count;
+  }, [a2uiSurfaces.size]);
 
   const handleInteraction = useCallback((componentId: string, action: string, data?: unknown) => {
     sendMessage({
@@ -387,122 +398,153 @@ export function CanvasContainer({ sessionId: propSessionId }: CanvasContainerPro
         </Badge>
       </div>
 
-      {/* Content */}
-      <div className="relative flex flex-1 flex-col overflow-hidden"
-        style={{
-          backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px)",
-          backgroundSize: "40px 40px",
-        }}
-      >
-        <ScrollArea className="flex-1 p-6">
-          {/* Graph view with zoom/pan transform */}
-          <div
-            className="origin-top-left transition-transform duration-200 ease-out"
-            style={{
-              transform: `translate(${zoomLevel === 1 ? 0 : zoomLevel * 20}px, 0) scale(${zoomLevel})`,
-            }}
-          >
-            <GraphView nodes={graphNodes} edges={graphEdges} />
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col overflow-hidden">
+        <div className="border-b border-white/5 px-4 pt-2 bg-white/[0.02]">
+          <TabsList className="h-8 bg-transparent gap-1">
+            <TabsTrigger
+              value="sistema"
+              className="h-7 px-3 text-xs data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/40 rounded-md"
+            >
+              Sistema
+            </TabsTrigger>
+            <TabsTrigger
+              value="a2ui"
+              className="h-7 px-3 text-xs data-[state=active]:bg-blue-500/20 data-[state=active]:text-blue-300 text-white/40 rounded-md flex items-center gap-1.5"
+            >
+              <Layers className="h-3 w-3" />
+              A2UI
+              {surfacesList.length > 0 && (
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[9px] font-bold text-white">
+                  {surfacesList.length}
+                </span>
+              )}
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        {/* Tab: Sistema — grafo + componentes shadcn */}
+        <TabsContent value="sistema" className="relative flex flex-1 flex-col overflow-hidden mt-0"
+          style={{
+            backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px)",
+            backgroundSize: "40px 40px",
+          }}
+        >
+          <ScrollArea className="flex-1 p-6">
+            <div
+              className="origin-top-left transition-transform duration-200 ease-out"
+              style={{
+                transform: `translate(${zoomLevel === 1 ? 0 : zoomLevel * 20}px, 0) scale(${zoomLevel})`,
+              }}
+            >
+              <GraphView nodes={graphNodes} edges={graphEdges} />
+            </div>
+
+            {components.length > 0 && (
+              <div className="mt-8">
+                <p className="hive-label mb-3">Componentes</p>
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                  {components.map((component) => (
+                    <div
+                      key={component.id}
+                      className={
+                        component.span === "full"
+                          ? "col-span-full"
+                          : component.span === "half"
+                          ? "lg:col-span-2 xl:col-span-1"
+                          : ""
+                      }
+                    >
+                      <ComponentRenderer
+                        component={component}
+                        onInteraction={handleInteraction}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </ScrollArea>
+
+          <div className="absolute bottom-12 left-1/2 -translate-x-1/2 flex items-center gap-1 px-4 py-2 rounded-full border border-white/10 bg-[#1c1b1d]/70 backdrop-blur-xl shadow-[0_0_20px_rgba(59,130,246,0.08)]">
+            <button className="p-2 text-white/40 hover:text-white hover:scale-110 transition-all duration-150 active:scale-90" onClick={zoomIn} title="Acercar">
+              <ZoomIn className="h-4 w-4" />
+            </button>
+            <button className="p-2 text-white/40 hover:text-white hover:scale-110 transition-all duration-150 active:scale-90" onClick={zoomOut} title="Alejar">
+              <ZoomOut className="h-4 w-4" />
+            </button>
+            <div className="w-px h-4 bg-white/10 mx-1" />
+            <button className="p-2 text-blue-400 bg-blue-500/10 rounded-full hover:bg-blue-500/20 transition-all duration-150 active:scale-90" onClick={resetView} title="Centrar vista">
+              <RotateCcw className="h-4 w-4" />
+            </button>
           </div>
 
-          {/* Agent-rendered UI components */}
-          {components.length > 0 && (
-            <div className="mt-8">
-              <p className="hive-label mb-3">Componentes</p>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                {components.map((component) => (
-                  <div
-                    key={component.id}
-                    className={
-                      component.span === "full"
-                        ? "col-span-full"
-                        : component.span === "half"
-                        ? "lg:col-span-2 xl:col-span-1"
-                        : ""
-                    }
-                  >
-                    <ComponentRenderer
-                      component={component}
-                      onInteraction={handleInteraction}
-                    />
-                  </div>
-                ))}
-              </div>
+          <div className="border-t border-white/5 bg-white/[0.02] px-6 py-2.5">
+            <div className="flex items-center gap-2">
+              <Terminal className="h-3 w-3 text-white/30" />
+              <span className="hive-mono">
+                {isConnected
+                  ? `Sincronizado · ${graphNodes.length} nodos · ${graphEdges.length} conexiones`
+                  : "Reconectando..."}
+              </span>
             </div>
-          )}
+          </div>
+        </TabsContent>
 
-          {/* A2UI v0.9 surfaces */}
-          {surfacesList.length > 0 && (
-            <div className="mt-8">
-              <div className="flex items-center gap-2 mb-3">
-                <Layers className="h-4 w-4 text-blue-400" />
-                <p className="hive-label mb-0">Superficies A2UI</p>
-              </div>
+        {/* Tab: A2UI — exclusivo para superficies A2UI */}
+        <TabsContent value="a2ui" className="flex flex-1 flex-col overflow-hidden mt-0"
+          style={{
+            backgroundImage: "radial-gradient(circle, rgba(59,130,246,0.03) 1px, transparent 1px)",
+            backgroundSize: "40px 40px",
+          }}
+        >
+          {surfacesList.length === 0 ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 text-white/20">
+              <Layers className="h-10 w-10 opacity-30" />
+              <p className="text-sm">Sin superficies A2UI activas</p>
+              <p className="text-xs text-white/15">El agente puede crear interfaces aquí con a2ui_create_surface</p>
+            </div>
+          ) : (
+            <ScrollArea className="flex-1 p-6">
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 {surfacesList.map((surface) => (
                   <div
                     key={surface.surfaceId}
                     className="rounded-xl border border-blue-500/20 bg-[rgba(255,255,255,0.02)] backdrop-blur-sm p-4"
+                    style={surface.theme?.primaryColor
+                      ? { borderColor: `${surface.theme.primaryColor}33` }
+                      : undefined}
                   >
                     {surface.theme?.agentDisplayName && (
-                      <div className="flex items-center gap-2 mb-3">
+                      <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/5">
                         {surface.theme.iconUrl && (
                           <img src={surface.theme.iconUrl} alt="" className="w-5 h-5 rounded-full" />
                         )}
-                        <span className="text-xs font-semibold text-blue-300 uppercase tracking-wider">
+                        <span className="text-xs font-semibold uppercase tracking-wider"
+                          style={{ color: surface.theme.primaryColor ?? "#93c5fd" }}>
                           {surface.theme.agentDisplayName}
                         </span>
                       </div>
                     )}
-                    <A2UIRenderer
-                      surface={surface}
-                      onAction={handleA2UIAction}
-                    />
+                    <A2UIRenderer surface={surface} onAction={handleA2UIAction} />
                   </div>
                 ))}
               </div>
-            </div>
+            </ScrollArea>
           )}
-        </ScrollArea>
 
-        {/* Bottom toolbar */}
-        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 flex items-center gap-1 px-4 py-2 rounded-full border border-white/10 bg-[#1c1b1d]/70 backdrop-blur-xl shadow-[0_0_20px_rgba(59,130,246,0.08)]">
-          <button
-            className="p-2 text-white/40 hover:text-white hover:scale-110 transition-all duration-150 active:scale-90"
-            onClick={zoomIn}
-            title="Acercar"
-          >
-            <ZoomIn className="h-4 w-4" />
-          </button>
-          <button
-            className="p-2 text-white/40 hover:text-white hover:scale-110 transition-all duration-150 active:scale-90"
-            onClick={zoomOut}
-            title="Alejar"
-          >
-            <ZoomOut className="h-4 w-4" />
-          </button>
-          <div className="w-px h-4 bg-white/10 mx-1" />
-          <button
-            className="p-2 text-blue-400 bg-blue-500/10 rounded-full hover:bg-blue-500/20 transition-all duration-150 active:scale-90"
-            onClick={resetView}
-            title="Centrar vista"
-          >
-            <RotateCcw className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Status bar */}
-        <div className="border-t border-white/5 bg-white/[0.02] px-6 py-2.5">
-          <div className="flex items-center gap-2">
-            <Terminal className="h-3 w-3 text-white/30" />
-            <span className="hive-mono">
-              {isConnected
-                ? `Sincronizado · ${graphNodes.length} nodos · ${graphEdges.length} conexiones`
-                : "Reconectando..."}
-            </span>
+          <div className="border-t border-white/5 bg-white/[0.02] px-6 py-2.5">
+            <div className="flex items-center gap-2">
+              <Layers className="h-3 w-3 text-blue-400/50" />
+              <span className="hive-mono">
+                {surfacesList.length > 0
+                  ? `${surfacesList.length} superficie${surfacesList.length > 1 ? "s" : ""} A2UI activa${surfacesList.length > 1 ? "s" : ""}`
+                  : "A2UI · sin superficies"}
+              </span>
+            </div>
           </div>
-        </div>
-      </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

@@ -16,21 +16,24 @@ export function A2UIButton({ def, ctx }: { def: ComponentDef; ctx: RenderCtx }) 
     : "bg-white/5 hover:bg-white/10 text-white/70 border border-white/10";
 
   const handleClick = () => {
-    if (!action?.event || disabled) return;
-    // Resolve context values
+    if (disabled) return;
+    // Normalize: spec uses action.event.name, but agent may send action.name directly
+    const event = action?.event ?? (action as any);
+    const eventName = event?.name as string | undefined;
+    if (!eventName) return;
+
     const context: Record<string, unknown> = {};
-    if (action.event.context) {
-      for (const [key, val] of Object.entries(action.event.context)) {
-        if (isPath(val)) {
-          context[key] = resolvePath(val.path, ctx.dataModel, ctx.scopeData);
-        } else if (isFunctionCall(val)) {
-          context[key] = executeFunctionCallSimple(val, ctx.dataModel, ctx.scopeData);
-        } else {
-          context[key] = val;
-        }
+    const rawContext = event.context ?? {};
+    for (const [key, val] of Object.entries(rawContext)) {
+      if (isPath(val)) {
+        context[key] = resolvePath((val as any).path, ctx.dataModel, ctx.scopeData);
+      } else if (isFunctionCall(val)) {
+        context[key] = executeFunctionCallSimple(val as any, ctx.dataModel, ctx.scopeData);
+      } else {
+        context[key] = val;
       }
     }
-    ctx.onAction(action.event.name, context, def.id);
+    ctx.onAction(eventName, context, def.id);
   };
 
   return (

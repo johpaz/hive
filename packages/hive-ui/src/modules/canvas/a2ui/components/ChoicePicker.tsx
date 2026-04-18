@@ -41,6 +41,14 @@ export function A2UIChoicePicker({ def, ctx }: { def: ComponentDef; ctx: RenderC
         });
       }
 
+      // Fire action if defined
+      const action = def.action as any;
+      const event = action?.event ?? action;
+      const eventName = event?.name as string | undefined;
+      if (eventName) {
+        ctx.onAction(eventName, { selections: next, selected: next[0] ?? null }, def.id);
+      }
+
       return next;
     });
   };
