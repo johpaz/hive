@@ -149,13 +149,13 @@ Para crear flujos interactivos multi-paso usando A2UI v0.9. Usar cuando se neces
   {id: "root", component: "Column", children: {explicitList: ["step_indicator", "tabs"]}},
   {id: "step_indicator", component: "Text", text: {path: "/stepLabel"}, usageHint: "caption"},
   {id: "tabs", component: "Tabs", tabItems: [
-    {title: {literalString: "Servicio"}, child: "step1"},
-    {title: {literalString: "Fecha"}, child: "step2"},
-    {title: {literalString: "Confirmar"}, child: "step3"}
+    {title: "Servicio", child: "step1"},
+    {title: "Fecha", child: "step2"},
+    {title: "Confirmar", child: "step3"}
   ]},
   {id: "step1", component: "Column", children: {explicitList: ["svc_label", "svc_picker"]}},
   {id: "svc_label", component: "Text", text: "Seleccioná un servicio", usageHint: "h3"},
-  {id: "svc_picker", component: "ChoicePicker", variant: "mutuallyExclusive", options: [...], value: {path: "/data/service"}},
+  {id: "svc_picker", component: "ChoicePicker", variant: "mutuallyExclusive", options: [...], selections: {path: "/data/service"}},
   // ... más pasos
 ]
 ```
@@ -183,11 +183,12 @@ Para crear flujos interactivos multi-paso usando A2UI v0.9. Usar cuando se neces
   {id: "service_picker", component: "ChoicePicker",
     variant: "mutuallyExclusive",
     options: [
-      {label: {literalString: "Consulta General"}, value: "general"},
-      {label: {literalString: "Especializada"}, value: "specialist"},
-      {label: {literalString: "Urgencia"}, value: "urgent"}
+      {label: "Consulta General", value: "general"},
+      {label: "Especializada", value: "specialist"},
+      {label: "Urgencia", value: "urgent"}
     ],
-    value: {path: "/data/serviceType"}
+    selections: {path: "/data/serviceType"},
+    action: {name: "service_selected", context: {service: {path: "/data/serviceType"}}}
   }
 ]
 ```

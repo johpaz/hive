@@ -106,10 +106,10 @@ export const SEED_DATA: SeedData = {
     // ─────────────────────────────────────────
     // 7b. CANVAS A2UI v0.9 — Superficies interactivas ricas
     // ─────────────────────────────────────────
-    { id: "a2ui_create_surface", name: "a2ui_create_surface", category: "a2ui", description: "Crear superficie A2UI v0.9 para UI interactiva rica con formularios, dashboards y flujos. Sinónimos: crear superficie A2UI, iniciar UI A2UI, crear form A2UI, crear interfaz interactiva" },
-    { id: "a2ui_update_components", name: "a2ui_update_components", category: "a2ui", description: "Enviar componentes A2UI v0.9 a una superficie existente (Text, Button, TextField, Row, Column, Card, etc.). Sinónimos: actualizar componentes A2UI, enviar UI, renderizar componentes A2UI, agregar componentes" },
-    { id: "a2ui_update_data_model", name: "a2ui_update_data_model", category: "a2ui", description: "Actualizar data model de una superficie A2UI v0.9 con JSON Pointer. Sinónimos: actualizar datos A2UI, poblar formulario A2UI, cambiar valores A2UI, data model" },
-    { id: "a2ui_delete_surface", name: "a2ui_delete_surface", category: "a2ui", description: "Eliminar superficie A2UI v0.9 del canvas del usuario. Sinónimos: eliminar superficie A2UI, borrar UI A2UI, limpiar superficie A2UI, cerrar formulario" },
+    { id: "a2ui_create_surface", name: "a2ui_create_surface", category: "a2ui", description: "Crear superficie A2UI v0.9 para UI interactiva rica: formularios, dashboards, wizards, flujos multi-paso. Siempre llamar ANTES de a2ui_update_components. Requiere surfaceId y catalogId='https://a2ui.org/specification/v0_9/basic_catalog.json'. Sinónimos: crear superficie A2UI, iniciar UI A2UI, crear form A2UI, interfaz interactiva, crear dashboard A2UI" },
+    { id: "a2ui_update_components", name: "a2ui_update_components", category: "a2ui", description: "Enviar componentes A2UI v0.9 como lista plana (adjacency list). Tipos: Text, Button, TextField, Row, Column, Card, List, Tabs, Modal, ChoicePicker, Slider, CheckBox, DateTimeInput, Image, Divider. Reglas: children usa explicitList (NO array), ChoicePicker usa selections (NO value), TextField usa textFieldType (NO variant), Tabs.tabItems.title es string plano. Sinónimos: actualizar componentes A2UI, enviar UI A2UI, renderizar componentes A2UI, layout A2UI" },
+    { id: "a2ui_update_data_model", name: "a2ui_update_data_model", category: "a2ui", description: "Actualizar data model de superficie A2UI v0.9 via JSON Pointer (/ruta/campo). Omitir path reemplaza todo el modelo. Los componentes con {path:'/...'} se actualizan automáticamente en el cliente. Sinónimos: actualizar datos A2UI, poblar formulario A2UI, inicializar estado A2UI, data model, binding" },
+    { id: "a2ui_delete_surface", name: "a2ui_delete_surface", category: "a2ui", description: "Eliminar superficie A2UI v0.9 del canvas. Usar al completar o cancelar el flujo para liberar recursos. Sinónimos: eliminar superficie A2UI, borrar UI A2UI, cerrar formulario A2UI, limpiar canvas A2UI" },
 
     // ─────────────────────────────────────────
     // 8. CODEBRIDGE — Subagentes CLI de código externos
@@ -452,8 +452,9 @@ export function seedAllData(): void {
     let toolCount = 0;
     for (const tool of SEED_DATA.tools) {
       db.query(`
-        INSERT OR IGNORE INTO tools (id, name, description, category, enabled, active, created_at, updated_at)
+        INSERT INTO tools (id, name, description, category, enabled, active, created_at, updated_at)
         VALUES (?, ?, ?, ?, 1, 1, (unixepoch()), (unixepoch()))
+        ON CONFLICT(id) DO UPDATE SET description = excluded.description, updated_at = (unixepoch())
       `).run(tool.id, tool.name, tool.description, tool.category)
       toolCount++;
     }

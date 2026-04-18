@@ -130,9 +130,9 @@ Para crear formularios interactivos ricos usando el protocolo A2UI v0.9. Usar cu
 | `Row` | Layout horizontal | `children`, `distribution`, `alignment` |
 | `Text` | Texto | `text`, `usageHint` (h1-h5, body, caption, code) |
 | `Button` | Botón | `child`, `variant`, `action` |
-| `TextField` | Campo de texto | `label`, `value`, `variant`, `checks` |
+| `TextField` | Campo de texto | `label`, `value`, `textFieldType`, `checks`, `action` |
 | `CheckBox` | Checkbox | `label`, `value` |
-| `ChoicePicker` | Selector múltiple | `options`, `variant`, `maxAllowedSelections` |
+| `ChoicePicker` | Selector múltiple | `options`, `selections`, `variant`, `maxAllowedSelections`, `action` |
 | `Slider` | Slider numérico | `value`, `minValue`, `maxValue` |
 | `DateTimeInput` | Fecha/hora | `value`, `enableDate`, `enableTime` |
 | `Card` | Tarjeta | `child` |
@@ -145,6 +145,21 @@ Para crear formularios interactivos ricos usando el protocolo A2UI v0.9. Usar cu
 - Literal: `"texto directo"` o número
 - Path: `{ "path": "/form/name" }` — se resuelve contra el data model
 - Function call: `{ "call": "formatDate", "args": {...} }`
+
+## Cuándo disparan acciones los inputs
+
+| Componente | Cuándo dispara | Formato de action |
+|------------|---------------|-------------------|
+| `Button` | Al hacer click | `{name: "...", context: {...}}` o `{event: {name: "...", context: {...}}}` |
+| `TextField` | Al perder foco (blur) o presionar Enter (en shortText) | `{name: "...", context: {...}}` |
+| `ChoicePicker` | Inmediatamente al seleccionar/deseleccionar | `{name: "...", context: {...}}` |
+| `Slider` | Al soltar el slider (onValueCommit) | `{name: "...", context: {...}}` |
+| `CheckBox` | Al cambiar estado | — (solo two-way binding) |
+| `DateTimeInput` | Al cambiar valor | — (solo two-way binding) |
+
+**Nota**: Tanto `{name: "...", context: {...}}` (directo) como `{event: {name: "...", context: {...}}}` (con wrapper) son formatos válidos.
+
+**Nota**: Para ChoicePicker usa siempre `selections: {path: "..."}` (no `value`) para two-way binding.
 
 ## Validación (checks)
 
@@ -166,9 +181,9 @@ a2ui_create_surface(surfaceId: "contact_form", catalogId: "https://a2ui.org/spec
 a2ui_update_components(surfaceId: "contact_form", components: [
   {"id": "root", "component": "Column", "children": {"explicitList": ["header","name_field","email_field","msg_field","submit_btn"]}},
   {id: "header", component: "Text", text: "Contacto", usageHint: "h2"},
-  {id: "name_field", component: "TextField", label: "Nombre", value: {path: "/form/name"}, variant: "shortText"},
-  {id: "email_field", component: "TextField", label: "Email", value: {path: "/form/email"}, variant: "shortText", checks: [{call: "required", args: {value: {path: "/form/email"}}, message: "Email obligatorio"}, {call: "email", args: {value: {path: "/form/email"}}, message: "Email inválido"}]},
-  {id: "msg_field", component: "TextField", label: "Mensaje", value: {path: "/form/message"}, variant: "longText"},
+  {id: "name_field", component: "TextField", label: "Nombre", value: {path: "/form/name"}, textFieldType: "shortText"},
+  {id: "email_field", component: "TextField", label: "Email", value: {path: "/form/email"}, textFieldType: "shortText", checks: [{call: "required", args: {value: {path: "/form/email"}}, message: "Email obligatorio"}, {call: "email", args: {value: {path: "/form/email"}}, message: "Email inválido"}]},
+  {id: "msg_field", component: "TextField", label: "Mensaje", value: {path: "/form/message"}, textFieldType: "longText"},
   {id: "submit_label", component: "Text", text: "Enviar"},
   {id: "submit_btn", component: "Button", child: "submit_label", variant: "primary", action: {event: {name: "submit_contact", context: {name: {path: "/form/name"}, email: {path: "/form/email"}, message: {path: "/form/message"}}}}
 ])

@@ -83,7 +83,36 @@ export function createA2UIUpdateComponentsTool(_config: Config): Tool {
 
   return {
     name: "a2ui_update_components",
-    description: "Send A2UI v0.9 components to an existing surface. Components define the UI layout as a flat list with ID references (adjacency list model).",
+    description: `Send A2UI v0.9 components to an existing surface. Components are a FLAT list with ID references (adjacency list).
+
+CHILDREN FORMAT (use explicitList, NOT 'array'):
+  Column/Row: "children": {"explicitList": ["id1", "id2"]}
+  List template: "children": {"template": {"dataBinding": "/items", "componentId": "item_tmpl"}}
+  Single child (Card): "child": "child_id"
+
+COMPONENT PROPS:
+  Text: text (string or {path:"/..."}), usageHint (h1-h5, body, caption, code)
+  Button: child (text component id), variant (primary|secondary|borderless), action
+  TextField: label, value: {path:"/..."}, textFieldType (shortText|longText|number|obscured|code), checks[], action
+    - action fires on blur or Enter key
+  ChoicePicker: options [{label, value}], selections: {path:"/..."} (NOT 'value'), variant (mutuallyExclusive=radio, omit=multi), action
+    - action fires immediately on each toggle; two-way binding uses 'selections' NOT 'value'
+  Slider: value: {path:"/..."}, minValue, maxValue, step, action (fires on release)
+  CheckBox: label, value: {path:"/..."} (two-way binding, no action event)
+  DateTimeInput: value: {path:"/..."}, enableDate, enableTime (two-way binding, no action event)
+  Tabs: tabItems: [{title: "plain string", child: "id"}]  — title must be a plain string, NOT {literalString:...}
+  Modal: entryPointChild (trigger id), contentChild (dialog id)
+  Card: child (single child id), weight
+  Row/Column: children, distribution, alignment, weight
+  List: children (template), weight
+
+ACTION FORMAT (both are valid):
+  {name: "action_name", context: {key: {path: "/data/key"}}}
+  {event: {name: "action_name", context: {key: {path: "/data/key"}}}}
+
+DATA BINDING: "text": "literal" | {path: "/json/pointer"} | {call: "fn", args: {...}}
+
+Root component: use id="root" explicitly.`,
     parameters: {
       type: "object",
       properties: {
@@ -97,7 +126,7 @@ export function createA2UIUpdateComponentsTool(_config: Config): Tool {
         },
         components: {
           type: "array",
-          description: "Flat list of A2UI component definitions. Each component has 'id', 'component' (type name), and component-specific properties. The root component must have id='root'.",
+          description: "Flat list of A2UI component definitions.",
           items: {
             type: "object",
             properties: {
@@ -116,14 +145,6 @@ export function createA2UIUpdateComponentsTool(_config: Config): Tool {
       const sessionId = rawSessionId
         ? (rawSessionId.startsWith("canvas:") ? rawSessionId : `canvas:${rawSessionId}`)
         : (userId ? `canvas:${userId}` : (() => { throw new Error("No session or user ID provided"); })());
-
-      const message = {
-        version: "v0.9",
-        updateComponents: {
-          surfaceId: params.surfaceId as string,
-          components: params.components,
-        },
-      };
 
       await canvasManager.sendA2UIMessage(sessionId, "a2ui:updateComponents", {
         surfaceId: params.surfaceId as string,
@@ -174,15 +195,6 @@ export function createA2UIUpdateDataModelTool(_config: Config): Tool {
         ? (rawSessionId.startsWith("canvas:") ? rawSessionId : `canvas:${rawSessionId}`)
         : (userId ? `canvas:${userId}` : (() => { throw new Error("No session or user ID provided"); })());
 
-      const message = {
-        version: "v0.9",
-        updateDataModel: {
-          surfaceId: params.surfaceId as string,
-          path: params.path as string | undefined,
-          value: params.value,
-        },
-      };
-
       await canvasManager.sendA2UIMessage(sessionId, "a2ui:updateDataModel", {
         surfaceId: params.surfaceId as string,
         path: params.path as string | undefined,
@@ -225,13 +237,6 @@ export function createA2UIDeleteSurfaceTool(_config: Config): Tool {
       const sessionId = rawSessionId
         ? (rawSessionId.startsWith("canvas:") ? rawSessionId : `canvas:${rawSessionId}`)
         : (userId ? `canvas:${userId}` : (() => { throw new Error("No session or user ID provided"); })());
-
-      const message = {
-        version: "v0.9",
-        deleteSurface: {
-          surfaceId: params.surfaceId as string,
-        },
-      };
 
       await canvasManager.sendA2UIMessage(sessionId, "a2ui:deleteSurface", {
         surfaceId: params.surfaceId as string,
