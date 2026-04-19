@@ -2,6 +2,7 @@
 
 Protocolo open-source de Google para interfaces declarativas generadas por agentes.
 Spec oficial: https://a2ui.org/specification/v0.9-a2ui/
+Catálogo: https://a2ui.org/specification/v0_9/basic_catalog.json
 
 ---
 
@@ -108,8 +109,8 @@ Los componentes se envían como **lista plana** con referencias por ID. El rende
 
 ```json
 [
-  { "id": "root", "component": "Column", "children": { "explicitList": ["header", "body"] } },
-  { "id": "header", "component": "Text", "text": "Hola", "usageHint": "h1" },
+  { "id": "root", "component": "Column", "children": ["header", "body"] },
+  { "id": "header", "component": "Text", "text": "Hola", "variant": "h1" },
   { "id": "body", "component": "Card", "child": "content" },
   { "id": "content", "component": "Text", "text": { "path": "/user/name" } }
 ]
@@ -125,12 +126,12 @@ Los componentes se envían como **lista plana** con referencias por ID. El rende
 
 | Formato | Spec | Descripción |
 |---------|------|-------------|
-| `{ "explicitList": ["id1", "id2"] }` | v0.9 oficial | Lista estática de hijos |
-| `{ "array": ["id1", "id2"] }` | legacy Hive | Equivalente, soportado |
-| `{ "template": { "dataBinding": "/items", "componentId": "item_tmpl" } }` | v0.9 oficial | Itera sobre array del data model |
-| `{ "path": "/items", "componentId": "item_tmpl" }` | legacy Hive | Equivalente, soportado |
+| `["id1", "id2"]` | **v0.9 oficial** | Array crudo — formato principal |
+| `{ "path": "/items", "componentId": "item_tmpl" }` | **v0.9 oficial** | Template — itera sobre array del data model |
+| `{ "explicitList": ["id1", "id2"] }` | alias Hive | Equivalente al array crudo, soportado |
+| `{ "array": ["id1", "id2"] }` | alias Hive | Equivalente, soportado |
+| `{ "template": { "dataBinding": "/items", "componentId": "tmpl" } }` | alias Hive | Equivalente al template oficial, soportado |
 | `"hijo_id"` | ambos | String directo = único hijo |
-| `["id1", "id2"]` | fallback | Array crudo, soportado |
 
 ---
 
@@ -148,7 +149,7 @@ Los paths usan **JSON Pointer** (RFC 6901): `/segmento/subsegmento`.
 
 ### Two-way binding (inputs)
 
-`TextField`, `CheckBox`, `ChoicePicker`, `Slider`, `DateTimeInput` actualizan el data model local en tiempo real usando el path especificado en `value` o `selections`.
+`TextField`, `CheckBox`, `ChoicePicker`, `Slider`, `DateTimeInput` actualizan el data model local en tiempo real usando el path especificado en `value`.
 
 ---
 
@@ -158,50 +159,56 @@ Los paths usan **JSON Pointer** (RFC 6901): `/segmento/subsegmento`.
 
 | Componente | Props clave | Notas |
 |------------|-------------|-------|
-| `Column` | `children`, `distribution`, `alignment`, `weight` | Flex vertical |
-| `Row` | `children`, `distribution`, `alignment`, `weight` | Flex horizontal |
+| `Column` | `children`, `justify`, `align`, `weight` | Flex vertical |
+| `Row` | `children`, `justify`, `align`, `weight` | Flex horizontal |
 | `Card` | `child`, `weight` | Un único hijo |
-| `List` | `children` (template), `weight` | Ideal para arrays |
-| `Tabs` | `tabItems: [{title, child}]`, `weight` | Navegación por pestañas |
-| `Modal` | `entryPointChild`, `contentChild` | Dialog overlay |
+| `List` | `children` (template `{path, componentId}`), `direction`, `align` | Ideal para arrays |
+| `Tabs` | `tabs: [{title, child}]`, `weight` | Navegación por pestañas — `title` es string plano |
+| `Modal` | `trigger`, `content` | Dialog overlay |
 | `Divider` | `axis` (`horizontal`/`vertical`) | Separador |
+
+**`justify`** (Row/Column): `start` · `center` · `end` · `spaceBetween` · `spaceAround` · `spaceEvenly` · `stretch`
+**`align`** (Row/Column): `start` · `center` · `end` · `stretch`
 
 ### Display
 
 | Componente | Props clave | Notas |
 |------------|-------------|-------|
-| `Text` | `text`, `usageHint` | usageHint: `h1`–`h5`, `body`, `caption`, `code` |
-| `Image` | `url`, `fit`, `alt`, `width`, `height` | |
-| `Icon` | `name` | Ver catálogo de iconos |
-| `Video` | `src`, `width`, `height` | |
-| `AudioPlayer` | `src` | |
+| `Text` | `text`, `variant` | variant: `h1`–`h5`, `body`, `caption`, `code` |
+| `Image` | `url`, `description`, `fit`, `variant` | fit: contain/cover/fill/none/scaleDown |
+| `Icon` | `name` | Nombre de icono del catálogo |
+| `Video` | `url` | |
+| `AudioPlayer` | `url`, `description` | |
 
 ### Inputs interactivos
 
 | Componente | Props clave | Cuándo dispara acción |
 |------------|-------------|----------------------|
-| `Button` | `child`/`text`, `variant`, `action`, `checks` | Al hacer click |
-| `TextField` | `label`, `value`, `textFieldType`, `checks`, `action` | Al perder foco o presionar Enter |
-| `CheckBox` | `label`, `value` | Al cambiar estado |
-| `ChoicePicker` | `options`, `selections`, `variant`, `maxAllowedSelections`, `action` | Al seleccionar/deseleccionar |
-| `Slider` | `value`, `minValue`, `maxValue`, `step`, `action` | Al soltar el slider |
-| `DateTimeInput` | `value`, `enableDate`, `enableTime` | Al cambiar valor |
+| `Button` | `child`, `variant`, `action` | Al hacer click |
+| `TextField` | `label`, `value`, `variant`, `validationRegexp`, `action` | Al perder foco o presionar Enter |
+| `CheckBox` | `label`, `value` (DynamicBoolean) | Solo two-way binding |
+| `ChoicePicker` | `options`, `value` (DynamicStringList), `variant`, `displayStyle`, `filterable`, `action` | Inmediatamente al seleccionar |
+| `Slider` | `label`, `value`, `min`, `max`, `step`, `action` | Al soltar el slider |
+| `DateTimeInput` | `value`, `enableDate`, `enableTime`, `min`, `max`, `label` | Solo two-way binding |
 
-#### Variantes de Button
-- `"primary"` — sólido azul
-- `"secondary"` — fondo sutil
+#### Variantes de Button (`variant`)
+- `"primary"` — sólido (acción principal)
+- `"default"` — estilo neutro
 - `"borderless"` — sin borde
 
-#### Variantes de TextField
-- `"shortText"` — input de línea
+#### Variantes de TextField (`variant`)
+- `"shortText"` — input de línea (default)
 - `"longText"` — textarea
 - `"number"` — numérico
 - `"obscured"` — password
-- `"code"` — monospace
 
-#### Variantes de ChoicePicker
-- `"mutuallyExclusive"` — selección única (radio)
-- omitir — selección múltiple (checkbox)
+#### Variantes de ChoicePicker (`variant`)
+- `"mutuallyExclusive"` — selección única (default)
+- `"multipleSelection"` — selección múltiple
+
+#### `displayStyle` de ChoicePicker
+- `"checkbox"` — lista con checkboxes (default)
+- `"chips"` — chips horizontales
 
 ---
 
@@ -209,7 +216,7 @@ Los paths usan **JSON Pointer** (RFC 6901): `/segmento/subsegmento`.
 
 Las acciones conectan la interacción del usuario con el agente.
 
-### Formato en el componente
+### Formato oficial (spec v0.9)
 
 ```json
 "action": {
@@ -223,7 +230,7 @@ Las acciones conectan la interacción del usuario con el agente.
 }
 ```
 
-**El renderer también acepta** el formato compacto (sin wrapper `event`):
+El renderer también acepta el formato compacto (sin wrapper `event`) como alias:
 ```json
 "action": {
   "name": "submit_form",
@@ -242,9 +249,19 @@ El agente procesa este mensaje y puede responder con `a2ui_update_data_model`, `
 
 ---
 
-## Validación (checks)
+## Validación
 
-Para `TextField` y `Button` (deshabilitar si inválido):
+### `validationRegexp` (spec oficial — TextField)
+
+```json
+{ "id": "email_field", "component": "TextField", "label": "Email",
+  "value": { "path": "/form/email" },
+  "validationRegexp": "^[^@]+@[^@]+\\.[^@]+$" }
+```
+
+### `checks[]` (extensión Hive — TextField y Button)
+
+Permite múltiples reglas con mensajes personalizados. También deshabilita el Button si alguna falla.
 
 ```json
 "checks": [
@@ -278,7 +295,7 @@ Las superficies A2UI se muestran en el tab **"A2UI"** del Canvas, separado del t
 
 ---
 
-## Ejemplo completo: Formulario con respuesta del agente
+## Ejemplo completo: Formulario de reserva
 
 ```json
 // 1. Crear superficie
@@ -290,21 +307,21 @@ a2ui_create_surface(
 
 // 2. Enviar componentes
 a2ui_update_components(surfaceId: "reserva_form", components: [
-  { "id": "root", "component": "Column", "children": { "explicitList": ["title", "service_picker", "date_field", "submit_btn"] } },
-  { "id": "title", "component": "Text", "text": "Nueva Reserva", "usageHint": "h2" },
+  { "id": "root", "component": "Column", "children": ["title", "service_picker", "date_field", "submit_btn"] },
+  { "id": "title", "component": "Text", "text": "Nueva Reserva", "variant": "h2" },
   { "id": "service_picker", "component": "ChoicePicker",
     "variant": "mutuallyExclusive",
-    "selections": { "path": "/form/service" },
+    "value": { "path": "/form/service" },
     "options": [
       { "label": "Consulta General", "value": "general" },
       { "label": "Especialista", "value": "specialist" }
     ],
-    "action": { "name": "service_selected", "context": { "service": { "path": "/form/service" } } }
+    "action": { "event": { "name": "service_selected", "context": { "service": { "path": "/form/service" } } } }
   },
   { "id": "date_field", "component": "DateTimeInput", "value": { "path": "/form/date" }, "enableDate": true, "enableTime": false },
   { "id": "submit_label", "component": "Text", "text": "Confirmar Reserva" },
   { "id": "submit_btn", "component": "Button", "child": "submit_label", "variant": "primary",
-    "action": { "name": "confirm_booking", "context": { "service": { "path": "/form/service" }, "date": { "path": "/form/date" } } }
+    "action": { "event": { "name": "confirm_booking", "context": { "service": { "path": "/form/service" }, "date": { "path": "/form/date" } } } }
   }
 ])
 
@@ -338,6 +355,9 @@ El `sessionId` se auto-resuelve del contexto del usuario si no se especifica.
 |---------|-------|----------|
 | Superficie aparece vacía ("Sin contenido") | No hay componente `id:"root"` o no es hijo raíz | El renderer auto-detecta el root, pero conviene usar `id:"root"` explícito |
 | Superficie no aparece | Canvas no estaba abierto cuando el agente envió los mensajes | Se hace replay automático al abrir el canvas |
-| "Unknown component: Text项" | LLM agrega caracteres chinos al tipo | El renderer los limpia automáticamente |
-| Botón no dispara acción | `action.name` faltante | Usar `action: { name: "...", context: {...} }` o `action: { event: { name: "...", context: {...} } }` |
-| ChoicePicker no hace two-way binding | Se usa `value` en lugar de `selections` | Usar `selections: { path: "/ruta" }` para binding de selecciones |
+| "Unknown component: Text项" | LLM agrega caracteres no-ASCII al tipo | El renderer los limpia automáticamente |
+| Botón no dispara acción | `action.event.name` faltante | Usar `action: { event: { name: "...", context: {...} } }` |
+| ChoicePicker no hace two-way binding | Path no definido en `value` | Usar `value: { path: "/ruta" }` (DynamicStringList) |
+| Tabs no muestra pestañas | Se usa `tabItems` en lugar de `tabs` | Usar `tabs: [{title: "string", child: "id"}]` |
+| Modal no abre | Se usa `entryPointChild`/`contentChild` | Usar `trigger` y `content` (nombres del spec) |
+| Slider no muestra rango | Se usa `minValue`/`maxValue` | Usar `min` y `max` (nombres del spec) |

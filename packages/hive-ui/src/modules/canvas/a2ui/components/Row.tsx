@@ -12,8 +12,9 @@ const JUSTIFY_MAP: Record<string, string> = {
 };
 
 export function A2UIRow({ def, ctx }: { def: ComponentDef; ctx: RenderCtx }) {
-  const justify = JUSTIFY_MAP[def.distribution ?? "start"] ?? "flex-start";
-  const align = def.alignment === "center" ? "center" : def.alignment === "end" ? "flex-end" : def.alignment === "stretch" ? "stretch" : "flex-start";
+  // spec: "justify"/"align" | ours: "distribution"/"alignment" (aliases)
+  const justify = JUSTIFY_MAP[(def.justify ?? def.distribution) ?? "start"] ?? "flex-start";
+  const align = (() => { const a = def.align ?? def.alignment; return a === "center" ? "center" : a === "end" ? "flex-end" : a === "stretch" ? "stretch" : "flex-start"; })();
 
   return (
     <div

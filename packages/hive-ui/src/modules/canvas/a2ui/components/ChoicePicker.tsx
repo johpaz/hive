@@ -6,7 +6,8 @@ import { resolveDynamicString, resolveDynamicStringList } from "../dataBinding";
 export function A2UIChoicePicker({ def, ctx }: { def: ComponentDef; ctx: RenderCtx }) {
   const variant = def.variant === "mutuallyExclusive" ? "single" : "multi";
   const maxSel = def.maxAllowedSelections ?? (variant === "single" ? 1 : 5);
-  const currentSelections = resolveDynamicStringList(def.selections as any, ctx.dataModel, ctx.scopeData);
+  // spec: "value" (DynamicStringList) | ours: "selections" (alias)
+  const currentSelections = resolveDynamicStringList((def.selections ?? def.value) as any, ctx.dataModel, ctx.scopeData);
   const [localSelections, setLocalSelections] = useState<string[]>(currentSelections);
   const options = def.options ?? [];
 
@@ -26,8 +27,9 @@ export function A2UIChoicePicker({ def, ctx }: { def: ComponentDef; ctx: RenderC
       }
 
       // Two-way binding
-      if (typeof def.selections === "object" && def.selections !== null && "path" in (def.selections as any)) {
-        const path = (def.selections as any).path as string;
+      const bindingSource = def.selections ?? def.value;
+      if (typeof bindingSource === "object" && bindingSource !== null && "path" in (bindingSource as any)) {
+        const path = (bindingSource as any).path as string;
         ctx.setDataModel((prevModel) => {
           const nextModel = structuredClone(prevModel);
           const parts = path.replace(/^\//, "").split("/");

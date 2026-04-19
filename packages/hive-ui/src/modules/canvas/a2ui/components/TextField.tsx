@@ -13,12 +13,20 @@ export function A2UITextField({ def, ctx }: { def: ComponentDef; ctx: RenderCtx 
   const [localValue, setLocalValue] = useState(valueFromModel);
   const label = resolveDynamicString(def.label, ctx.dataModel, ctx.scopeData);
   const placeholder = resolveDynamicString(def.placeholder, ctx.dataModel, ctx.scopeData);
-  const variant = def.textFieldType ?? "shortText";
+  // spec: "variant" | ours: "textFieldType" (alias)
+  const variant = def.variant ?? def.textFieldType ?? "shortText";
   const isCode = variant === "code" || variant === "multiline_code";
   const isLong = variant === "longText" || isCode || variant === "multiline";
 
-  // Run validation checks
-  const validation = def.checks ? runChecks(def.checks, ctx.dataModel, ctx.scopeData) : { valid: true, errors: [] };
+  // Validation: spec uses "validationRegexp", ours uses "checks[]"
+  const validation = (() => {
+    if (def.checks) return runChecks(def.checks, ctx.dataModel, ctx.scopeData);
+    if (def.validationRegexp && localValue) {
+      const ok = new RegExp(def.validationRegexp as string).test(localValue as string);
+      return ok ? { valid: true, errors: [] } : { valid: false, errors: [{ message: "Formato inválido" }] };
+    }
+    return { valid: true, errors: [] };
+  })();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setLocalValue(e.target.value);

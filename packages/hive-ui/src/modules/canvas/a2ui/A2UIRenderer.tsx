@@ -181,14 +181,14 @@ export function renderChildren(
     return [<RenderComponent key={children} {...ctx} id={children} weight={ctx.compMap.get(children)?.weight} />];
   }
 
-  // Raw array — LLM may omit the wrapper object
+  // spec oficial: raw array ["id1", "id2"]
   if (Array.isArray(children)) {
     return (children as string[]).map((childId) => (
       <RenderComponent key={childId} {...ctx} id={childId} weight={ctx.compMap.get(childId)?.weight} />
     ));
   }
 
-  // Array of IDs — spec oficial v0.9: "explicitList" | legacy: "array"
+  // wrapper objects: { explicitList } | { array } (aliases no-spec aceptados)
   if ("explicitList" in children || "array" in children) {
     const arr = "explicitList" in children
       ? (children as ChildListExplicit).explicitList
@@ -198,10 +198,10 @@ export function renderChildren(
     ));
   }
 
-  // Template — spec oficial v0.9: { template: { dataBinding, componentId } }
-  if ("template" in children) {
-    const tmpl = (children as ChildListTemplate).template;
-    const data = resolvePath(tmpl.dataBinding, ctx.dataModel, ctx.scopeData);
+  // spec oficial: template { path, componentId }
+  if ("path" in children && "componentId" in children) {
+    const tmpl = children as ChildListTemplateLegacy;
+    const data = resolvePath(tmpl.path, ctx.dataModel, ctx.scopeData);
     if (!Array.isArray(data)) return [];
     return data.map((item, index) => {
       const scopeData = typeof item === "object" && item !== null ? item as Record<string, unknown> : { value: item, index };
@@ -216,10 +216,10 @@ export function renderChildren(
     });
   }
 
-  // Template legacy: { path, componentId }
-  if ("path" in children && "componentId" in children) {
-    const tmpl = children as ChildListTemplateLegacy;
-    const data = resolvePath(tmpl.path, ctx.dataModel, ctx.scopeData);
+  // alias no-spec: { template: { dataBinding, componentId } }
+  if ("template" in children) {
+    const tmpl = (children as ChildListTemplate).template;
+    const data = resolvePath(tmpl.dataBinding, ctx.dataModel, ctx.scopeData);
     if (!Array.isArray(data)) return [];
     return data.map((item, index) => {
       const scopeData = typeof item === "object" && item !== null ? item as Record<string, unknown> : { value: item, index };

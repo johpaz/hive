@@ -6,7 +6,8 @@ import { RenderComponent } from "../A2UIRenderer";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export function A2UITabs({ def, ctx }: { def: ComponentDef; ctx: RenderCtx }) {
-  const tabItems = def.tabItems ?? [];
+  // spec: "tabs" | ours: "tabItems" (alias)
+  const tabItems = def.tabs ?? def.tabItems ?? [];
   const defaultTab = tabItems[0]?.title ? resolveDynamicString(tabItems[0].title, ctx.dataModel, ctx.scopeData) : "";
 
   return (

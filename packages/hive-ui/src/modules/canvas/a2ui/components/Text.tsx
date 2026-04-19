@@ -16,7 +16,8 @@ const VARIANT_MAP: Record<string, string> = {
 
 export function A2UIText({ def, ctx }: { def: ComponentDef; ctx: RenderCtx }) {
   const text = resolveDynamicString(def.text, ctx.dataModel, ctx.scopeData);
-  const variant: string = def.usageHint ?? "body";
+  // spec: "variant" | ours: "usageHint" (alias)
+  const variant: string = def.variant ?? def.usageHint ?? "body";
   const className = VARIANT_MAP[variant] ?? VARIANT_MAP.body;
 
   // Simple markdown: **bold**, *italic*, `code`, \n

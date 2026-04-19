@@ -85,34 +85,36 @@ export function createA2UIUpdateComponentsTool(_config: Config): Tool {
     name: "a2ui_update_components",
     description: `Send A2UI v0.9 components to an existing surface. Components are a FLAT list with ID references (adjacency list).
 
-CHILDREN FORMAT (use explicitList, NOT 'array'):
-  Column/Row: "children": {"explicitList": ["id1", "id2"]}
-  List template: "children": {"template": {"dataBinding": "/items", "componentId": "item_tmpl"}}
-  Single child (Card): "child": "child_id"
+CHILDREN (spec oficial A2UI v0.9):
+  Static: "children": ["id1", "id2"]  ← array crudo, formato oficial
+  Template: "children": {"path": "/items", "componentId": "item_tmpl"}  ← formato oficial
+  Single child (Card/Modal): "child": "child_id"
 
-COMPONENT PROPS:
-  Text: text (string or {path:"/..."}), usageHint (h1-h5, body, caption, code)
-  Button: child (text component id), variant (primary|secondary|borderless), action
-  TextField: label, value: {path:"/..."}, textFieldType (shortText|longText|number|obscured|code), checks[], action
+COMPONENT PROPS (nombres oficiales del spec):
+  Text: text (string|{path}), variant ("h1"|"h2"|"h3"|"h4"|"h5"|"body"|"caption"|"code")
+  Button: child (id del texto), variant ("default"|"primary"|"borderless"), action (required)
+  TextField: label, value: {path:"/..."}, variant ("shortText"|"longText"|"number"|"obscured"), validationRegexp, action
     - action fires on blur or Enter key
-  ChoicePicker: options [{label, value}], selections: {path:"/..."} (NOT 'value'), variant (mutuallyExclusive=radio, omit=multi), action
-    - action fires immediately on each toggle; two-way binding uses 'selections' NOT 'value'
-  Slider: value: {path:"/..."}, minValue, maxValue, step, action (fires on release)
-  CheckBox: label, value: {path:"/..."} (two-way binding, no action event)
-  DateTimeInput: value: {path:"/..."}, enableDate, enableTime (two-way binding, no action event)
-  Tabs: tabItems: [{title: "plain string", child: "id"}]  — title must be a plain string, NOT {literalString:...}
-  Modal: entryPointChild (trigger id), contentChild (dialog id)
-  Card: child (single child id), weight
-  Row/Column: children, distribution, alignment, weight
-  List: children (template), weight
+  ChoicePicker: options [{label, value}], value: {path:"/..."}, variant ("mutuallyExclusive"|"multipleSelection"), displayStyle ("checkbox"|"chips"), filterable, action
+    - value es DynamicStringList; two-way binding con value; action fires inmediatamente
+  Slider: label, value: {path:"/..."}, min, max, step, action (fires on release)
+  CheckBox: label, value: {path:"/..."} (DynamicBoolean, two-way binding)
+  DateTimeInput: value: {path:"/..."}, enableDate, enableTime, min, max, label
+  Tabs: tabs: [{title: "string plano", child: "id"}]  ← title es string, NO {literalString:...}
+  Modal: trigger (id del botón), content (id del dialog)
+  Card: child (único hijo), weight
+  Row: children, justify ("start"|"center"|"end"|"spaceBetween"|"spaceAround"|"spaceEvenly"), align ("start"|"center"|"end"|"stretch"), weight
+  Column: children, justify, align, weight
+  List: children (con template path), direction ("vertical"|"horizontal"), align, weight
+  Image: url, description, fit ("contain"|"cover"|"fill"|"none"|"scaleDown"), variant ("icon"|"avatar"|"smallFeature"|"mediumFeature"|"largeFeature"|"header")
+  Divider: axis ("horizontal"|"vertical")
 
-ACTION FORMAT (both are valid):
-  {name: "action_name", context: {key: {path: "/data/key"}}}
+ACTION FORMAT (oficial: con wrapper event):
   {event: {name: "action_name", context: {key: {path: "/data/key"}}}}
 
-DATA BINDING: "text": "literal" | {path: "/json/pointer"} | {call: "fn", args: {...}}
+DATA BINDING: "prop": "literal" | {path: "/json/pointer"} | {call: "fn", args: {...}}
 
-Root component: use id="root" explicitly.`,
+Root component: usar id="root" explícito.`,
     parameters: {
       type: "object",
       properties: {

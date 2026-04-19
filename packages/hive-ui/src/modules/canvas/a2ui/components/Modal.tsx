@@ -10,15 +10,17 @@ export function A2UIModal({ def, ctx }: { def: ComponentDef; ctx: RenderCtx }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      {def.entryPointChild && (
+      {(def.trigger ?? def.entryPointChild) && (
         <DialogTrigger asChild>
           <div className="cursor-pointer">
-            <RenderComponent {...ctx} id={def.entryPointChild} />
+            <RenderComponent {...ctx} id={def.trigger ?? def.entryPointChild} />
           </div>
         </DialogTrigger>
       )}
       <DialogContent>
-        {def.contentChild && <RenderComponent {...ctx} id={def.contentChild} />}
+        {(def.content ?? def.contentChild) && (
+          <RenderComponent {...ctx} id={def.content ?? def.contentChild} />
+        )}
       </DialogContent>
     </Dialog>
   );
