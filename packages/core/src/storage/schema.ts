@@ -285,44 +285,30 @@ export const SCHEMA = `
     created_at     INTEGER NOT NULL DEFAULT (unixepoch())
   );
 
-  -- CRON JOBS: scheduled tasks with notification channel
-  -- notify_channel_id: which channel to send notifications to when task runs
-  -- max_runs: NULL = unlimited; auto-disables when run_count reaches max_runs
-  -- expires_at: NULL = never expires; auto-disables after this UTC timestamp
-  CREATE TABLE IF NOT EXISTS cron_jobs (
-    id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-    user_id         TEXT REFERENCES users(id) ON DELETE CASCADE,
-    project_id      TEXT REFERENCES projects(id) ON DELETE SET NULL,
-    name            TEXT NOT NULL,
-    cron_expression TEXT NOT NULL,
-    task_type       TEXT NOT NULL DEFAULT 'message',
-    task_config     TEXT,
-    notify_channel_id TEXT,
-    enabled         INTEGER NOT NULL DEFAULT 1,
-    max_runs        INTEGER,
-    run_count       INTEGER NOT NULL DEFAULT 0,
-    expires_at      INTEGER,
-    last_run        INTEGER,
-    next_run        INTEGER,
-    created_at      INTEGER NOT NULL DEFAULT (unixepoch())
-  );
-
-  -- SCHEDULER: New Croner-based scheduled tasks (replaces cron_jobs)
+  -- ═══════════════════════════════════════════════════════════════════
+  -- CRON JOBS — Tareas programadas (Croner v10.0.1)
+  -- ═══════════════════════════════════════════════════════════════════
   -- task_type: 'recurring' (uses cron_expression) or 'one_shot' (uses fire_at)
+  -- task: REQUIRED instruction the agent reads when the job triggers (natural language)
   -- cron_expression: stored in user's local time, not UTC
-  -- fire_at: ISO 8601 format in user's local time (e.g., "2026-04-01T09:00:00")
-  -- timezone: IANA timezone string (e.g., "America/Bogota") inherited from users.timezone
+  -- fire_at: ISO 8601 in user's local time (e.g., "2026-04-01T09:00:00")
+  -- start_at / stop_at: ISO 8601 datetime window (Croner: startAt / stopAt)
+  -- dom_and_dow: 0 = OR (default), 1 = AND logic for day-of-month + day-of-week (Croner: domAndDow)
+  -- timezone: IANA timezone (e.g., "America/Bogota") inherited from users.timezone
   -- protect: overrun protection (1 = enabled, 0 = disabled)
-  -- payload: JSON string with at least { prompt: string } or { message: string }
-  -- CHECK constraint: recurring requires cron_expression, one_shot requires fire_at
-  CREATE TABLE IF NOT EXISTS scheduled_tasks (
+  -- payload: JSON string, at minimum { prompt: string } or { message: string }
+  -- CHECK: recurring requires cron_expression, one_shot requires fire_at
+  CREATE TABLE IF NOT EXISTS cron_jobs (
     id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
     name            TEXT NOT NULL,
-    description     TEXT DEFAULT '',
+    task            TEXT NOT NULL,
     task_type       TEXT NOT NULL CHECK(task_type IN ('recurring', 'one_shot')),
     cron_expression TEXT,
     fire_at         TEXT,
     timezone        TEXT NOT NULL DEFAULT 'UTC',
+    start_at        TEXT,
+    stop_at         TEXT,
+    dom_and_dow     INTEGER NOT NULL DEFAULT 0,
     max_runs        INTEGER,
     protect         INTEGER NOT NULL DEFAULT 1,
     interval_sec    INTEGER,
@@ -345,11 +331,10 @@ export const SCHEMA = `
     )
   );
 
-  -- SCHEDULER: Task execution history
-  -- Stores results of each task execution for debugging and auditing
+  -- Task execution history
   CREATE TABLE IF NOT EXISTS task_runs (
     id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-    task_id         TEXT NOT NULL REFERENCES scheduled_tasks(id) ON DELETE CASCADE,
+    task_id         TEXT NOT NULL REFERENCES cron_jobs(id) ON DELETE CASCADE,
     status          TEXT NOT NULL CHECK(status IN ('running', 'success', 'failed', 'timeout')),
     started_at      TEXT NOT NULL,
     finished_at     TEXT,
@@ -359,22 +344,22 @@ export const SCHEMA = `
     agent_response  TEXT
   );
 
-  -- INDICES for scheduled_tasks
-  CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_status ON scheduled_tasks(status);
-  CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_type ON scheduled_tasks(task_type);
-  CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run ON scheduled_tasks(next_run_at);
-  CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_agent ON scheduled_tasks(agent_id);
+  -- INDICES for cron_jobs
+  CREATE INDEX IF NOT EXISTS idx_cron_jobs_status ON cron_jobs(status);
+  CREATE INDEX IF NOT EXISTS idx_cron_jobs_type ON cron_jobs(task_type);
+  CREATE INDEX IF NOT EXISTS idx_cron_jobs_next_run ON cron_jobs(next_run_at);
+  CREATE INDEX IF NOT EXISTS idx_cron_jobs_agent ON cron_jobs(agent_id);
 
   -- INDICES for task_runs
   CREATE INDEX IF NOT EXISTS idx_task_runs_task ON task_runs(task_id);
   CREATE INDEX IF NOT EXISTS idx_task_runs_started ON task_runs(started_at);
   CREATE INDEX IF NOT EXISTS idx_task_runs_status ON task_runs(status);
 
-  -- TRIGGER: Update updated_at on scheduled_tasks UPDATE
-  CREATE TRIGGER IF NOT EXISTS update_scheduled_tasks_updated_at
-    AFTER UPDATE ON scheduled_tasks
+  -- TRIGGER: Update updated_at on cron_jobs UPDATE
+  CREATE TRIGGER IF NOT EXISTS update_cron_jobs_updated_at
+    AFTER UPDATE ON cron_jobs
     BEGIN
-      UPDATE scheduled_tasks SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = NEW.id;
+      UPDATE cron_jobs SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = NEW.id;
     END;
 
   -- INDICES
@@ -390,9 +375,7 @@ export const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_usage_provider_model ON usage_records(provider, model);
   CREATE INDEX IF NOT EXISTS idx_usage_created_at ON usage_records(created_at);
   CREATE INDEX IF NOT EXISTS idx_code_bridge_config_user ON code_bridge_config(user_id);
-  CREATE INDEX IF NOT EXISTS idx_cron_jobs_user ON cron_jobs(user_id);
-  CREATE INDEX IF NOT EXISTS idx_cron_jobs_enabled ON cron_jobs(enabled);
-  CREATE INDEX IF NOT EXISTS idx_cron_jobs_next_run ON cron_jobs(next_run);
+  
 `;
 
 export const PROJECTS_SCHEMA = `
@@ -620,6 +603,12 @@ export const CONTEXT_ENGINE_SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_playbook_active      ON playbook(active);
   CREATE INDEX IF NOT EXISTS idx_playbook_category    ON playbook(category);
   CREATE INDEX IF NOT EXISTS idx_tool_cache_tool      ON tool_cache(tool_id);
+
+  -- Schema migrations: idempotent version tracking (runs every startup)
+  CREATE TABLE IF NOT EXISTS schema_migrations (
+    version    TEXT PRIMARY KEY,
+    applied_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
 
 
 `;

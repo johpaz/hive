@@ -308,6 +308,15 @@ export async function handleCompleteSetup(
 
   const body = await req.json().catch(() => ({}))
 
+  // Re-check after the async boundary — a concurrent request may have
+  // completed setup while we were awaiting the request body.
+  if (!isSetupMode()) {
+    return addCorsHeaders(Response.json({
+      success: false,
+      error: "Setup already completed. Use config endpoints to modify settings.",
+    }, { status: 400 }), req)
+  }
+
   try {
     // Clean up any partial setup state (user created but setup didn't finish)
     try {
@@ -401,7 +410,7 @@ export async function handleCompleteSetup(
     const hiveDir = getHiveDir()
     const envContent = [
       "# Hive configuration — auto-generated during setup",
-      `HIVE_HOST=${process.env.HIVE_HOST || "0.0.0.0"}`,
+      `HIVE_HOST=${process.env.HIVE_HOST || "127.0.0.1"}`,
       `HIVE_PORT=${process.env.HIVE_PORT || "18790"}`,
       `HIVE_LOG_LEVEL=${process.env.HIVE_LOG_LEVEL || "info"}`,
       `HIVE_AUTH_TOKEN=${authToken}`,

@@ -2,39 +2,26 @@
  * Hive SDK - Cron Module
  *
  * Exposes the scheduler and cron job management functions.
- * Includes both legacy cron tools and new Croner-based schedule tools.
+ * Uses Croner v10.0.1 for scheduling.
  *
  * @example
  * import {
- *   scheduleCreateTool,
- *   scheduleListTool,
- *   initCronScheduler,
+ *   cronCreateTool,
+ *   createCronTools,
+ *   setSchedulerInstance,
  * } from "@johpaz/hive-agents-sdk/cron";
  */
 
-// New schedule tools (scheduled_tasks table - Croner-based)
-export {
-  scheduleCreateTool,
-  scheduleListTool,
-  schedulePauseTool,
-  scheduleResumeTool,
-  scheduleDeleteTool,
-  scheduleTriggerTool,
-  scheduleHistoryTool,
-  createTools as createScheduleTools,
-  setSchedulerInstance,
-} from "@johpaz/hive-agents-core/tools/schedule";
-
-// Legacy cron tools (cron_jobs table) - re-export for backward compatibility
-// Note: These are also available via @johpaz/hive-agents-sdk/tools
 export {
   cronCreateTool,
   cronListTool,
+  cronUpdateTool,
   cronPauseTool,
   cronResumeTool,
   cronDeleteTool,
   cronTriggerTool,
   cronHistoryTool,
   createTools as createCronTools,
+  setSchedulerInstance,
   resolveBestChannel,
 } from "@johpaz/hive-agents-core/tools/cron";

@@ -8,7 +8,7 @@ export interface ScratchpadNote {
     updated_at: number;
 }
 
-// ── New scheduler types (scheduled_tasks table) ─────────────────────────────
+// ── Scheduler types (cron API) ─────────────────────────────────────────────
 
 export type TaskType = 'recurring' | 'one_shot';
 export type TaskStatus = 'active' | 'paused' | 'completed' | 'failed' | 'cancelled';
@@ -17,7 +17,7 @@ export type TaskRunStatus = 'running' | 'success' | 'failed' | 'timeout';
 export interface ScheduledTask {
     id: string;
     name: string;
-    description: string;
+    task: string;
     task_type: TaskType;
     cron_expression: string | null;
     fire_at: string | null;
@@ -38,6 +38,9 @@ export interface ScheduledTask {
     last_run_at: string | null;
     next_run_at: string | null;
     completed_at: string | null;
+    start_at: string | null;
+    stop_at: string | null;
+    dom_and_dow: number;
 }
 
 export interface TaskRun {
@@ -50,24 +53,6 @@ export interface TaskRun {
     error_message: string | null;
     payload_snapshot: string | null;
     agent_response: string | null;
-}
-
-// ── Legacy types (kept for backward compatibility) ───────────────────────────
-
-export interface CronJob {
-    id: string;
-    name: string;
-    cron_expression: string;
-    task_type: string;
-    task_config?: string;
-    enabled: boolean | number;
-    user_id: string;
-    notify_channel_id?: string;
-    max_runs?: number | null;
-    expires_at?: number | null;
-    last_run?: number | null;
-    next_run?: number | null;
-    created_at: number;
 }
 
 export interface CronChannel {

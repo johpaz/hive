@@ -43,7 +43,7 @@
     "./tools/web/index": "./packages/core/src/tools/web/index.ts",
     "./tools/projects/index": "./packages/core/src/tools/projects/index.ts",
     "./tools/cron/index": "./packages/core/src/tools/cron/index.ts",
-    "./tools/schedule": "./packages/core/src/tools/schedule.ts",
+    
     "./tools/cli/index": "./packages/core/src/tools/cli/index.ts",
     "./tools/canvas/index": "./packages/core/src/tools/canvas/index.ts",
     "./tools/codebridge/index": "./packages/core/src/tools/codebridge/index.ts",

@@ -8,7 +8,7 @@ import { syncToolsToFTS, syncSkillsToFTS, syncPlaybookToFTS } from "../agent/con
 import { AgentService, createAgentService } from "../agent/service";
 import { mkdirSync, existsSync } from "node:fs";
 import * as path from "node:path";
-import { resolveAgentId } from "../storage/onboarding";
+import { resolveAgentId, runStartupMigrations } from "../storage/onboarding";
 import { createMCPManager, type MCPClientManager } from "@johpaz/hive-agents-mcp";
 import { setMCPManager } from "../mcp/singleton";
 import { startMCPHotReload } from "../mcp/hot-reload";
@@ -227,6 +227,9 @@ export async function initializeGateway(
     // 2. Escribir archivo PID (no crítico)
     await writePidFile(pidFile);
 
+    // 3a. Startup migrations (idempotent, version-keyed)
+    runStartupMigrations();
+
     // 3. Cargar configuración del agente desde DB
     const { provider, model } = await loadAgentConfigFromDB(config);
 
@@ -252,17 +255,16 @@ export async function initializeGateway(
     let browserAvailable = false;
 
     try {
-      log.info("Initializing Chrome browser (Bun.WebView)...");
+      log.info("Detecting browser (lazy launch — will open on first agent use)...");
 
       const browserService = initializeBrowserService(config);
       browserAvailable = await browserService.start();
 
       if (browserAvailable) {
-        log.info("✅ Chrome abierto en modo visible — el usuario verá las acciones del agente");
         activateBrowserTools();
       } else {
-        log.warn("⚠️  Chrome no pudo iniciarse - browser tools desactivadas");
-        log.warn("   Linux: sudo apt install chromium  |  macOS: brew install --cask google-chrome");
+        log.warn("⚠️  No se encontró Chrome/Chromium - browser tools desactivadas");
+        log.warn("   Linux: sudo dnf install chromium  |  macOS: brew install --cask google-chrome");
       }
     } catch (error) {
       log.warn(`Browser Service initialization skipped: ${(error as Error).message}`);

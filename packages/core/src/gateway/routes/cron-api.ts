@@ -1,7 +1,7 @@
 /**
- * REST API Endpoints for Scheduled Tasks
+ * REST API Endpoints for Cron Jobs
  * 
- * Endpoints for the dashboard to manage scheduled tasks.
+ * Endpoints for the dashboard to manage cron jobs.
  * These endpoints delegate to the CronScheduler instance.
  */
 
@@ -20,10 +20,10 @@ export function getSchedulerInstance(): CronScheduler | null {
 }
 
 /**
- * GET /api/scheduled-tasks
+ * GET /api/cron
  * List all scheduled tasks
  */
-export async function handleGetScheduledTasks(
+export async function handleGetCronJobs(
   req: Request,
   addCorsHeaders: (r: Response, req: Request) => Response
 ): Promise<Response> {
@@ -37,7 +37,7 @@ export async function handleGetScheduledTasks(
     } else {
       // Fallback: direct DB query
       const db = getDb();
-      let query = "SELECT * FROM scheduled_tasks WHERE 1=1";
+      let query = "SELECT * FROM cron_jobs WHERE 1=1";
       const args: any[] = [];
 
       if (status) {
@@ -59,10 +59,10 @@ export async function handleGetScheduledTasks(
 }
 
 /**
- * GET /api/scheduled-tasks/:id
+ * GET /api/cron/:id
  * Get a single scheduled task by ID
  */
-export async function handleGetScheduledTask(
+export async function handleGetCronJob(
   req: Request,
   addCorsHeaders: (r: Response, req: Request) => Response,
   taskId: string
@@ -81,7 +81,7 @@ export async function handleGetScheduledTask(
     } else {
       // Fallback: direct DB query
       const db = getDb();
-      const task = db.query("SELECT * FROM scheduled_tasks WHERE id = ?").get(taskId);
+      const task = db.query("SELECT * FROM cron_jobs WHERE id = ?").get(taskId);
       if (task) {
         return addCorsHeaders(Response.json({ task }), req);
       } else {
@@ -100,10 +100,10 @@ export async function handleGetScheduledTask(
 }
 
 /**
- * POST /api/scheduled-tasks
- * Create a new scheduled task
+ * POST /api/cron
+ * Create a new cron job
  */
-export async function handleCreateScheduledTask(
+export async function handleCreateCronJob(
   req: Request,
   addCorsHeaders: (r: Response, req: Request) => Response
 ): Promise<Response> {
@@ -112,6 +112,7 @@ export async function handleCreateScheduledTask(
 
     const {
       name,
+      task,
       task_type,
       cron_expression,
       fire_at,
@@ -120,14 +121,16 @@ export async function handleCreateScheduledTask(
       tool_name,
       max_runs,
       channel,
-      description,
+      start_at,
+      stop_at,
+      dom_and_dow,
       protect,
       interval_sec,
     } = body;
 
-    if (!name || !task_type) {
+    if (!name || !task_type || !task) {
       return addCorsHeaders(
-        Response.json({ error: "Missing required fields: name, task_type" }, { status: 400 }),
+        Response.json({ error: "Missing required fields: name, task, task_type" }, { status: 400 }),
         req
       );
     }
@@ -140,16 +143,19 @@ export async function handleCreateScheduledTask(
     if (_scheduler) {
       const result = _scheduler.create({
         name,
-        description: description || "",
+        task,
         task_type,
         cron_expression,
         fire_at,
         timezone,
-        payload: payload || { prompt: `Execute scheduled task: ${name}` },
+        payload: payload || { prompt: task },
         agent_id: agent_id || null,
         tool_name: tool_name || null,
         max_runs: max_runs || null,
         channel: channel || "system",
+        start_at: start_at || undefined,
+        stop_at: stop_at || undefined,
+        dom_and_dow: dom_and_dow || false,
         protect: protect !== false,
         interval_sec: interval_sec || null,
       });
@@ -165,14 +171,16 @@ export async function handleCreateScheduledTask(
       const now = new Date().toISOString();
 
       db.query(`
-        INSERT INTO scheduled_tasks (
-          id, name, description, task_type, cron_expression, fire_at, timezone,
+        INSERT INTO cron_jobs (
+          id, name, task, task_type, cron_expression, fire_at, timezone,
+          start_at, stop_at, dom_and_dow,
           payload, agent_id, tool_name, max_runs, channel, protect, interval_sec,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        id, name, description || "", task_type, cron_expression || null, fire_at || null,
-        timezone, JSON.stringify(payload || {}), agent_id || null, tool_name || null,
+        id, name, task, task_type, cron_expression || null, fire_at || null, timezone,
+        start_at || null, stop_at || null, dom_and_dow ? 1 : 0,
+        JSON.stringify(payload || {}), agent_id || null, tool_name || null,
         max_runs || null, channel || "system", protect !== false ? 1 : 0,
         interval_sec || null, now, now
       );
@@ -184,17 +192,17 @@ export async function handleCreateScheduledTask(
     }
   } catch (err) {
     return addCorsHeaders(
-      Response.json({ error: `Failed to create task: ${(err as Error).message}` }, { status: 500 }),
+      Response.json({ error: `Failed to create job: ${(err as Error).message}` }, { status: 500 }),
       req
     );
   }
 }
 
 /**
- * PATCH /api/scheduled-tasks/:id
- * Update a scheduled task
+ * PATCH /api/cron/:id
+ * Update a cron job
  */
-export async function handleUpdateScheduledTask(
+export async function handleUpdateCronJob(
   req: Request,
   addCorsHeaders: (r: Response, req: Request) => Response,
   taskId: string
@@ -208,7 +216,7 @@ export async function handleUpdateScheduledTask(
         return addCorsHeaders(Response.json({ ok: true }), req);
       } else {
         return addCorsHeaders(
-          Response.json({ error: "Task not found" }, { status: 404 }),
+          Response.json({ error: "Job not found" }, { status: 404 }),
           req
         );
       }
@@ -222,9 +230,9 @@ export async function handleUpdateScheduledTask(
         fields.push("name = ?");
         values.push(body.name);
       }
-      if (body.description !== undefined) {
-        fields.push("description = ?");
-        values.push(body.description);
+      if (body.task !== undefined) {
+        fields.push("task = ?");
+        values.push(body.task);
       }
       if (body.cron_expression !== undefined) {
         fields.push("cron_expression = ?");
@@ -233,6 +241,18 @@ export async function handleUpdateScheduledTask(
       if (body.fire_at !== undefined) {
         fields.push("fire_at = ?");
         values.push(body.fire_at);
+      }
+      if (body.start_at !== undefined) {
+        fields.push("start_at = ?");
+        values.push(body.start_at);
+      }
+      if (body.stop_at !== undefined) {
+        fields.push("stop_at = ?");
+        values.push(body.stop_at);
+      }
+      if (body.dom_and_dow !== undefined) {
+        fields.push("dom_and_dow = ?");
+        values.push(body.dom_and_dow ? 1 : 0);
       }
       if (body.payload !== undefined) {
         fields.push("payload = ?");
@@ -252,7 +272,7 @@ export async function handleUpdateScheduledTask(
       }
 
       values.push(taskId);
-      const result = db.query(`UPDATE scheduled_tasks SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+      const result = db.query(`UPDATE cron_jobs SET ${fields.join(", ")} WHERE id = ?`).run(...values);
 
       if (result.changes > 0) {
         return addCorsHeaders(Response.json({ ok: true }), req);
@@ -272,10 +292,10 @@ export async function handleUpdateScheduledTask(
 }
 
 /**
- * DELETE /api/scheduled-tasks/:id
+ * DELETE /api/cron/:id
  * Delete a scheduled task
  */
-export async function handleDeleteScheduledTask(
+export async function handleDeleteCronJob(
   req: Request,
   addCorsHeaders: (r: Response, req: Request) => Response,
   taskId: string
@@ -294,7 +314,7 @@ export async function handleDeleteScheduledTask(
     } else {
       // Fallback: direct delete
       const db = getDb();
-      const result = db.query("DELETE FROM scheduled_tasks WHERE id = ?").run(taskId);
+      const result = db.query("DELETE FROM cron_jobs WHERE id = ?").run(taskId);
 
       if (result.changes > 0) {
         return addCorsHeaders(Response.json({ ok: true }), req);
@@ -314,10 +334,10 @@ export async function handleDeleteScheduledTask(
 }
 
 /**
- * POST /api/scheduled-tasks/:id/pause
+ * POST /api/cron/:id/pause
  * Pause a scheduled task
  */
-export async function handlePauseScheduledTask(
+export async function handlePauseCronJob(
   req: Request,
   addCorsHeaders: (r: Response, req: Request) => Response,
   taskId: string
@@ -336,7 +356,7 @@ export async function handlePauseScheduledTask(
     } else {
       // Fallback: direct update
       const db = getDb();
-      const result = db.query("UPDATE scheduled_tasks SET status = 'paused' WHERE id = ?").run(taskId);
+      const result = db.query("UPDATE cron_jobs SET status = 'paused' WHERE id = ?").run(taskId);
 
       if (result.changes > 0) {
         return addCorsHeaders(Response.json({ ok: true }), req);
@@ -356,10 +376,10 @@ export async function handlePauseScheduledTask(
 }
 
 /**
- * POST /api/scheduled-tasks/:id/resume
+ * POST /api/cron/:id/resume
  * Resume a paused scheduled task
  */
-export async function handleResumeScheduledTask(
+export async function handleResumeCronJob(
   req: Request,
   addCorsHeaders: (r: Response, req: Request) => Response,
   taskId: string
@@ -378,7 +398,7 @@ export async function handleResumeScheduledTask(
     } else {
       // Fallback: direct update
       const db = getDb();
-      const result = db.query("UPDATE scheduled_tasks SET status = 'active' WHERE id = ?").run(taskId);
+      const result = db.query("UPDATE cron_jobs SET status = 'active' WHERE id = ?").run(taskId);
 
       if (result.changes > 0) {
         return addCorsHeaders(Response.json({ ok: true }), req);
@@ -398,10 +418,10 @@ export async function handleResumeScheduledTask(
 }
 
 /**
- * POST /api/scheduled-tasks/:id/trigger
+ * POST /api/cron/:id/trigger
  * Manually trigger a scheduled task
  */
-export async function handleTriggerScheduledTask(
+export async function handleTriggerCronJob(
   req: Request,
   addCorsHeaders: (r: Response, req: Request) => Response,
   taskId: string
@@ -432,10 +452,10 @@ export async function handleTriggerScheduledTask(
 }
 
 /**
- * GET /api/scheduled-tasks/:id/history
+ * GET /api/cron/:id/history
  * Get execution history for a scheduled task
  */
-export async function handleGetTaskHistory(
+export async function handleGetCronJobHistory(
   req: Request,
   addCorsHeaders: (r: Response, req: Request) => Response,
   taskId: string
@@ -462,10 +482,10 @@ export async function handleGetTaskHistory(
 }
 
 /**
- * GET /api/scheduled-tasks/status
+ * GET /api/cron/status
  * Get scheduler status (all tasks with their runtime status)
  */
-export async function handleGetSchedulerStatus(
+export async function handleGetCronStatus(
   req: Request,
   addCorsHeaders: (r: Response, req: Request) => Response
 ): Promise<Response> {
@@ -481,5 +501,44 @@ export async function handleGetSchedulerStatus(
       Response.json({ error: `Failed to get status: ${(err as Error).message}` }, { status: 500 }),
       req
     );
+  }
+}
+
+/**
+ * GET /api/cron/channels
+ * Get available notification channels for cron jobs
+ */
+export async function handleGetCronChannels(
+  req: Request,
+  addCorsHeaders: (r: Response, req: Request) => Response
+): Promise<Response> {
+  try {
+    const db = getDb();
+    const user = db.query("SELECT id FROM users LIMIT 1").get() as { id: string } | undefined;
+    const userId = user?.id || "";
+
+    const channels = db.query(`
+      SELECT c.id, c.type, c.active, c.status
+      FROM channels c
+      INNER JOIN user_identities ui ON ui.channel = c.id
+      WHERE ui.user_id = ? AND c.active = 1
+    `).all(userId) as Array<{ id: string; type: string; active: number; status: string }>;
+
+    const recommended = ["telegram", "discord", "slack", "whatsapp", "webchat"];
+    const formatted = channels.map(ch => ({
+      id: ch.id,
+      type: ch.type || ch.id,
+      active: ch.active === 1,
+      recommended: recommended.includes(ch.type || ch.id),
+    }));
+
+    if (formatted.length === 0) {
+      formatted.push({ id: "webchat", type: "webchat", active: true, recommended: true });
+    }
+
+    return addCorsHeaders(Response.json({ channels: formatted }), req);
+  } catch (err) {
+    // Non-critical — return empty channels
+    return addCorsHeaders(Response.json({ channels: [{ id: "webchat", type: "webchat", active: true, recommended: true }] }), req);
   }
 }

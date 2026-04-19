@@ -57,11 +57,12 @@ export const SEED_DATA: SeedData = {
     { id: "task_update", name: "task_update", category: "projects", description: "Actualizar estado de tarea (pendiente, en_progreso, hecho). Sinónimos: actualizar tarea, marcar completa, en progreso" },
     { id: "task_evaluate", name: "task_evaluate", category: "projects", description: "Evaluar resultado de tarea contra criterios de aceptación. Sinónimos: validar resultado, criterios de aceptación, revisar tarea" },
 
-    // ─────────────────────────────────────────
-    // 4. CRON — Tareas programadas (Croner-based, ≠ tareas de proyecto)
-    // ─────────────────────────────────────────
-    { id: "cron.create", name: "cron.create", category: "cron", description: "Crear tarea programada: recurrente (expresión cron) o única (fire_at). Sinónimos: programar tarea, crear recordatorio, agendar, automatizar horario, tarea recurrente, una vez" },
+// ─────────────────────────────────────────
+// 4. CRON — Tareas programadas (Croner-based)
+// ─────────────────────────────────────────
+    { id: "cron.create", name: "cron.create", category: "cron", description: "Crear tarea programada: recurrente (expresión cron) o única (fire_at). Requiere campo 'task' con instrucción para el agente. Sinónimos: programar tarea, crear recordatorio, agendar, automatizar horario, tarea recurrente, una vez" },
     { id: "cron.list", name: "cron.list", category: "cron", description: "Listar todas las tareas programadas con próximos horarios de ejecución. Sinónimos: ver tareas programadas, listar cronograma, próximas ejecuciones" },
+    { id: "cron.update", name: "cron.update", category: "cron", description: "Actualizar tarea programada existente: cambiar expresión, instrucción, canal, ventana temporal. Sinónimos: modificar cron, editar recordatorio, cambiar horario, actualizar tarea" },
     { id: "cron.pause", name: "cron.pause", category: "cron", description: "Pausar temporalmente una tarea programada sin eliminarla. Sinónimos: pausar tarea programada, detener temporalmente, suspender recordatorio" },
     { id: "cron.resume", name: "cron.resume", category: "cron", description: "Reanudar una tarea programada previamente pausada. Sinónimos: reanudar tarea, continuar tarea pausada, activar recordatorio" },
     { id: "cron.delete", name: "cron.delete", category: "cron", description: "Eliminar una tarea programada permanentemente. Sinónimos: eliminar tarea programada, borrar recordatorio, cancelar tarea" },
@@ -401,102 +402,93 @@ const INITIAL_PLAYBOOK_RULES = [
   },
 ]
 
-export function seedAllData(): void {
-  const db = getDb()
+/**
+ * Re-seeds tools and skills from scratch, preserving all other user data.
+ * Used both on first install (via seedAllData) and on upgrades (via runStartupMigrations).
+ * - Wipes tools + tools_fts and re-inserts from SEED_DATA
+ * - Wipes skills + skills_fts (via triggers) and re-inserts from SkillLoader bundled files
+ */
+export function reseedToolsAndSkills(): void {
+  const db = getDb();
 
-  log.info("[seed] 🌱 Iniciando seed de datos predeterminados...")
-
-  // 0️⃣ Crear tabla FTS5 para skills (no se puede usar IF NOT EXISTS en VIRTUAL TABLES)
+  // Ensure FTS5 table and triggers exist
   try {
     db.run(`CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(id, name, category, tools, triggers, body)`);
-    log.info("[seed] ✅ skills_fts table created/verified");
   } catch (err) {
-    if ((err as Error).message.includes("already exists")) {
-      log.debug("[seed] skills_fts already exists, skipping creation");
-    } else {
-      throw err;
-    }
+    if (!(err as Error).message.includes("already exists")) throw err;
   }
 
-  // Crear triggers para sincronización FTS5
   db.run(`DROP TRIGGER IF EXISTS skills_ai`);
   db.run(`DROP TRIGGER IF EXISTS skills_au`);
   db.run(`DROP TRIGGER IF EXISTS skills_ad`);
-
   db.run(`CREATE TRIGGER skills_ai AFTER INSERT ON skills BEGIN
     INSERT INTO skills_fts(id, name, category, tools, triggers, body)
     VALUES (new.id, new.name, new.category, new.tools, new.triggers, new.body);
   END`);
-
   db.run(`CREATE TRIGGER skills_au AFTER UPDATE ON skills BEGIN
     DELETE FROM skills_fts WHERE id = old.id;
     INSERT INTO skills_fts(id, name, category, tools, triggers, body)
     VALUES (new.id, new.name, new.category, new.tools, new.triggers, new.body);
   END`);
-
   db.run(`CREATE TRIGGER skills_ad AFTER DELETE ON skills BEGIN
     DELETE FROM skills_fts WHERE id = old.id;
   END`);
 
-  log.info("[seed] ✅ skills_fts triggers created");
+  // ── Tools: wipe and re-seed ──
+  db.run(`DELETE FROM tools`);
+  try { db.run(`DELETE FROM tools_fts`); } catch { /* FTS may not exist yet */ }
 
-  // 0️⃣ Cargar skills reales con SkillLoader para obtener el contenido (instrucciones)
-  const skillLoader = new SkillLoader({
-    workspacePath: process.env.HIVE_HOME || process.cwd()
-  });
+  let toolCount = 0;
+  const insertToolFts = db.query(`
+    INSERT OR REPLACE INTO tools_fts(tool_name, name, description, category)
+    VALUES (?, ?, ?, ?)
+  `);
+  for (const tool of SEED_DATA.tools) {
+    db.query(`
+      INSERT INTO tools (id, name, description, category, enabled, active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 1, 1, (unixepoch()), (unixepoch()))
+    `).run(tool.id, tool.name, tool.description, tool.category);
+    insertToolFts.run(tool.name, tool.name, tool.description, tool.category);
+    toolCount++;
+  }
+  log.info(`[seed] ✅ ${toolCount} tools re-seeded`);
+
+  // ── Skills: wipe and re-seed ──
+  // DELETE FROM skills fires skills_ad trigger → auto-cleans skills_fts
+  db.run(`DELETE FROM skills`);
+
+  const skillLoader = new SkillLoader({ workspacePath: process.env.HIVE_HOME || process.cwd() });
   const realSkills = skillLoader.loadBundledSkills();
-  log.info(`[seed] 📚 SkillLoader cargó ${realSkills.length} bundled skills con contenido.`);
+  log.info(`[seed] 📚 SkillLoader cargó ${realSkills.length} bundled skills`);
+
+  let skillCount = 0;
+  for (const s of realSkills) {
+    db.query(`
+      INSERT OR REPLACE INTO skills (
+        id, name, category, tools, triggers, body, version, active,
+        created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1, (unixepoch()), (unixepoch()))
+    `).run(
+      s.name, s.name, s.category || "",
+      (s.tools || []).join(","),
+      (s.triggers || []).join(","),
+      s.content || "",
+      s.version || 1
+    );
+    skillCount++;
+  }
+  log.info(`[seed] ✅ ${skillCount} skills re-seeded (skills_fts auto-synced via triggers)`);
+}
+
+export function seedAllData(): void {
+  const db = getDb()
+
+  log.info("[seed] 🌱 Iniciando seed de datos predeterminados...")
+
+  reseedToolsAndSkills();
 
   try {
-    // 1️⃣ Tools (globales, sin user_id)
-    let toolCount = 0;
-    for (const tool of SEED_DATA.tools) {
-      db.query(`
-        INSERT INTO tools (id, name, description, category, enabled, active, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 1, 1, (unixepoch()), (unixepoch()))
-        ON CONFLICT(id) DO UPDATE SET description = excluded.description, updated_at = (unixepoch())
-      `).run(tool.id, tool.name, tool.description, tool.category)
-      toolCount++;
-    }
-    log.info(`[seed] ✅ ${toolCount} tools procesadas`);
-
-    const insertToolFts = db.query(`
-      INSERT OR REPLACE INTO tools_fts(tool_name, name, description, category)
-      VALUES (?, ?, ?, ?)
-    `);
-    for (const tool of SEED_DATA.tools) {
-      insertToolFts.run(tool.name, tool.name, tool.description, tool.category);
-    }
-    log.info(`[seed] ✅ ${toolCount} tools sincronizadas a tools_fts`);
-
-    // 2️⃣ Skills (cargadas desde archivos .md del paquete skills)
-    // Simplified schema: id, name, category, tools, triggers, body, version, active
-    let skillCount = 0;
-    for (const s of realSkills) {
-      // Convert tools array to comma-separated string
-      const toolsStr = (s.tools || []).join(",");
-
-      // Convert triggers array to comma-separated string
-      const triggersStr = (s.triggers || []).join(",");
-
-      // Use content as body (markdown content)
-      const body = s.content || "";
-
-      db.query(`
-        INSERT OR REPLACE INTO skills (
-          id, name, category, tools, triggers, body, version, active,
-          created_at, updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1, (unixepoch()), (unixepoch()))
-      `).run(
-        s.name, s.name, s.category || "", toolsStr, triggersStr, body, s.version || 1
-      );
-      skillCount++;
-    }
-    log.info(`[seed] ✅ ${skillCount} skills procesadas (schema simplificado)`);
-
-    // Los triggers se encargan de sincronizar skills_fts automáticamente
-    log.info(`[seed] ✅ skills_fts sincronizada vía triggers`);
 
     // 3️⃣ Ethics templates (globales)
     let ethicsCount = 0;

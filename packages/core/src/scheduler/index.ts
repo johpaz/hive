@@ -2,20 +2,21 @@
  * Hive Scheduler Module
  * 
  * Croner-based scheduling system for Hive.
- * Supports recurring and one-shot tasks with SQLite persistence.
+ * Supports recurring and one-shot cron jobs with SQLite persistence.
  */
 
 export { CronScheduler } from "./CronScheduler";
 export { executeScheduledTask, createTaskHandler, notifyTaskCompletion, setSchedulerForCleanup } from "./integration";
 export type {
-  ScheduledTask,
+  CronJob,
   TaskRun,
-  CreateTaskInput,
-  UpdateTaskInput,
-  TaskSchedulerStatus,
-  TaskExecutionHandler,
-  TaskExecutionResult,
+  CreateCronJobInput,
+  UpdateCronJobInput,
+  CronJobStatus,
+  CronJobExecutionHandler,
+  CronJobExecutionResult,
   TaskType,
   TaskStatus,
   TaskRunStatus,
+  CronerOptions,
 } from "./types";

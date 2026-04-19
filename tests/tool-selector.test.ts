@@ -34,8 +34,8 @@ beforeAll(() => {
 describe("Tool Selector Module", () => {
 
     describe("CORE_TOOL_CATALOG", () => {
-        test("should have 49 tools defined", () => {
-            expect(CORE_TOOL_CATALOG.length).toBe(49)
+        test("should have 50 tools defined", () => {
+            expect(CORE_TOOL_CATALOG.length).toBe(50)
         })
 
         test("should have unique tool names", () => {
@@ -203,7 +203,7 @@ describe("Tool Selector Module", () => {
 
         test("should have scheduling tools", () => {
             const tools = getToolsByCategory("scheduling")
-            expect(tools.length).toBeGreaterThanOrEqual(4)  // cron_add, cron_list, cron_remove, cron_edit
+            expect(tools.length).toBeGreaterThanOrEqual(4)  // cron.create, cron.list, cron.delete, cron.update
         })
 
         test("should have project management tools", () => {
@@ -377,9 +377,9 @@ describe("Tool Selector Module", () => {
             expect(result).toEqual([])
         })
 
-        test("2. crea una tarea cron → [cron_add] exists in catalog", () => {
-            // Verify cron_add exists in the catalog
-            const cronTool = getToolByName("cron_add")
+        test("2. crea una tarea cron → [cron.create] exists in catalog", () => {
+            // Verify cron.create exists in the catalog
+            const cronTool = getToolByName("cron.create")
             expect(cronTool).toBeDefined()
             expect(cronTool?.category).toBe("scheduling")
         })

@@ -2,6 +2,7 @@
  * Hive Scheduler - Type Definitions
  * 
  * Type interfaces for the Croner-based scheduling system.
+ * All names use "CronJob" terminology (formerly ScheduledTask).
  */
 
 import type { Database } from "bun:sqlite";
@@ -23,22 +24,25 @@ export type TaskStatus = "active" | "paused" | "completed" | "failed" | "cancell
 export type TaskRunStatus = "running" | "success" | "failed" | "timeout";
 
 /**
- * Scheduled task as stored in SQLite
+ * CronJob as stored in SQLite (cron_jobs table)
  */
-export interface ScheduledTask {
+export interface CronJob {
   id: string;
   name: string;
-  description: string;
+  task: string;
   task_type: TaskType;
   cron_expression: string | null;
   fire_at: string | null;
   timezone: string;
+  start_at: string | null;
+  stop_at: string | null;
+  dom_and_dow: number;
   max_runs: number | null;
   protect: number;
   interval_sec: number | null;
   agent_id: string | null;
   channel: string;
-  payload: string; // JSON string
+  payload: string;
   tool_name: string | null;
   status: TaskStatus;
   run_count: number;
@@ -67,15 +71,18 @@ export interface TaskRun {
 }
 
 /**
- * Input for creating a new scheduled task
+ * Input for creating a new cron job
  */
-export interface CreateTaskInput {
+export interface CreateCronJobInput {
   name: string;
-  description?: string;
+  task: string;
   task_type: TaskType;
   cron_expression?: string;
   fire_at?: string;
   timezone: string;
+  start_at?: string;
+  stop_at?: string;
+  dom_and_dow?: boolean;
   agent_id?: string | null;
   channel?: string;
   payload?: Record<string, unknown>;
@@ -86,15 +93,18 @@ export interface CreateTaskInput {
 }
 
 /**
- * Input for updating a scheduled task
+ * Input for updating an existing cron job
  */
-export interface UpdateTaskInput {
+export interface UpdateCronJobInput {
   name?: string;
-  description?: string;
+  task?: string;
   task_type?: TaskType;
   cron_expression?: string | null;
   fire_at?: string | null;
   timezone?: string;
+  start_at?: string | null;
+  stop_at?: string | null;
+  dom_and_dow?: boolean;
   agent_id?: string | null;
   channel?: string;
   payload?: Record<string, unknown>;
@@ -106,9 +116,9 @@ export interface UpdateTaskInput {
 }
 
 /**
- * Scheduler status for a task
+ * Scheduler status for a cron job
  */
-export interface TaskSchedulerStatus {
+export interface CronJobStatus {
   id: string;
   name: string;
   nextRun: Date | null;
@@ -117,14 +127,14 @@ export interface TaskSchedulerStatus {
 }
 
 /**
- * Handler function type for executing tasks
+ * Handler function type for executing cron jobs
  */
-export type TaskExecutionHandler = (task: ScheduledTask) => Promise<TaskExecutionResult>;
+export type CronJobExecutionHandler = (job: CronJob) => Promise<CronJobExecutionResult>;
 
 /**
- * Result of task execution
+ * Result of cron job execution
  */
-export interface TaskExecutionResult {
+export interface CronJobExecutionResult {
   success: boolean;
   response?: string;
   error?: string;
@@ -133,8 +143,8 @@ export interface TaskExecutionResult {
 /**
  * Internal job wrapper holding Croner instance and metadata
  */
-export interface ScheduledJob {
-  task: ScheduledTask;
+export interface CronJobEntry {
+  job: CronJob;
   cron: Cron;
 }
 
@@ -148,4 +158,7 @@ export interface CronerOptions {
   name: string;
   maxRuns?: number;
   interval?: number;
+  startAt?: string;
+  stopAt?: string;
+  domAndDow?: boolean;
 }

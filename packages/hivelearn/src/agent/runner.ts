@@ -20,6 +20,11 @@ export async function runHiveLearnAgent(opts: {
   systemPrompt: string
   tools: Tool[]
   threadId: string
+  validationContext?: {
+    rangoEdad?: string
+    tema?: string
+    nodoId?: string
+  }
 }): Promise<string> {
   const db = getDb()
 
@@ -42,5 +47,9 @@ export async function runHiveLearnAgent(opts: {
     providerConfig,
     maxTokens: 2048,
     temperature: 0.3,
+    validationContext: opts.validationContext ? {
+      agenteId: opts.agentId,
+      ...opts.validationContext,
+    } : undefined,
   })
 }

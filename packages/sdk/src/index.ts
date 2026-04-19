@@ -178,16 +178,16 @@ export type {
 
 // Cron
 export {
-  scheduleCreateTool,
-  scheduleListTool,
-  schedulePauseTool,
-  scheduleResumeTool,
-  scheduleDeleteTool,
-  scheduleTriggerTool,
-  scheduleHistoryTool,
-  createScheduleTools,
-  setSchedulerInstance,
+  cronCreateTool,
+  cronListTool,
+  cronUpdateTool,
+  cronPauseTool,
+  cronResumeTool,
+  cronDeleteTool,
+  cronTriggerTool,
+  cronHistoryTool,
   createCronTools,
+  setSchedulerInstance,
 } from "./cron/index";
 
 // Ethics

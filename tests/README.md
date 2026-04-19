@@ -29,10 +29,10 @@ bun test tests/cron.test.ts --timeout 10000
 | Categoría | Tests |
 |-----------|-------|
 | 🔀 `resolveBestChannel` | Canal explícito, preferencia usuario, auto-detect por prioridad, fallback webchat |
-| ➕ `cron_add` | Creación en DB, canal auto, canal explícito, maxRuns, expiresAt, nextRun futuro |
-| 📋 `cron_list` | Lista vacía, campos correctos, timezone/timestamps locales, tipo booleano |
-| ❌ `cron_remove` | Eliminación de DB, error job inexistente |
-| ✏️ `cron_edit` | Nombre, expresión+recalc, enable/disable, canal, maxRuns, quitar expiresAt |
+| ➕ `cron.create` | Creación en DB, canal auto, canal explícito, maxRuns, expiresAt, nextRun futuro |
+| 📋 `cron.list` | Lista vacía, campos correctos, timezone/timestamps locales, tipo booleano |
+| ❌ `cron.delete` | Eliminación de DB, error job inexistente |
+| ✏️ `cron.update` | Nombre, expresión+recalc, enable/disable, canal, maxRuns, quitar expiresAt |
 | 🔄 `initCronScheduler` | DB vacía, omite expirados, omite max_runs alcanzado, omite disabled |
 | ⚡ Trigger real | onTrigger llamado, argumentos correctos, run_count+last_run en DB |
 | 🛑 Auto-disable | max_runs=1 → disabled, expiresAt futuro → disabled al disparar |

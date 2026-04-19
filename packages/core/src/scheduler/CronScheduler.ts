@@ -2,7 +2,7 @@
  * Hive CronScheduler
  * 
  * Croner-based scheduler for Hive with SQLite persistence.
- * Manages recurring and one-shot tasks that execute through the agent pipeline.
+ * Manages recurring and one-shot cron jobs that execute through the agent pipeline.
  */
 
 import { Cron } from "croner";
@@ -10,13 +10,12 @@ import type { Database } from "bun:sqlite";
 import { logger } from "../utils/logger";
 import { notifyTaskCompletion } from "./integration";
 import type {
-  ScheduledTask,
+  CronJob,
   TaskRun,
-  CreateTaskInput,
-  UpdateTaskInput,
-  TaskSchedulerStatus,
-  TaskExecutionHandler,
-  TaskExecutionResult,
+  CreateCronJobInput,
+  UpdateCronJobInput,
+  CronJobStatus,
+  CronJobExecutionHandler,
 } from "./types";
 
 const log = logger.child("CronScheduler");
@@ -24,37 +23,35 @@ const log = logger.child("CronScheduler");
 export class CronScheduler {
   private jobs: Map<string, Cron> = new Map();
   private db: Database;
-  private handler: TaskExecutionHandler;
+  private handler: CronJobExecutionHandler;
   private cleanupTaskId: string | null = null;
 
-  constructor(db: Database, handler: TaskExecutionHandler) {
+  constructor(db: Database, handler: CronJobExecutionHandler) {
     this.db = db;
     this.handler = handler;
   }
 
   /**
-   * Boot the scheduler - load all active tasks from DB and activate them
+   * Boot the scheduler - load all active jobs from DB and activate them
    */
   boot(): void {
     const tasks = this.db.query(`
-      SELECT * FROM scheduled_tasks WHERE status = 'active'
-    `).all() as ScheduledTask[];
+      SELECT * FROM cron_jobs WHERE status = 'active'
+    `).all() as CronJob[];
 
     for (const task of tasks) {
       this.activate(task);
     }
 
-    log.info(`[boot] Loaded ${tasks.length} active task(s)`);
+    log.info(`[boot] Loaded ${tasks.length} active job(s)`);
 
-    // Ensure cleanup task exists
     this.ensureCleanupTask();
   }
 
   /**
-   * Activate a task - create or recreate its Croner instance
+   * Activate a cron job - create or recreate its Croner instance
    */
-  activate(task: ScheduledTask): void {
-    // Stop existing job if any
+  activate(task: CronJob): void {
     const existingJob = this.jobs.get(task.id);
     if (existingJob) {
       existingJob.stop();
@@ -62,44 +59,50 @@ export class CronScheduler {
       log.debug(`[activate] Stopped existing job for task "${task.name}" (${task.id})`);
     }
 
-    // Skip if paused or completed
     if (task.status === "paused" || task.status === "completed" || task.status === "cancelled") {
-      log.debug(`[activate] Skipping task "${task.name}" (${task.id}) - status: ${task.status}`);
+      log.debug(`[activate] Skipping job "${task.name}" (${task.id}) - status: ${task.status}`);
+      return;
+    }
+
+    // Fix 2A: auto-pause jobs that exceeded the error threshold
+    const MAX_ERRORS = 5;
+    if (task.error_count >= MAX_ERRORS) {
+      this.db.query(
+        "UPDATE cron_jobs SET status = 'paused', last_error = ?, updated_at = ? WHERE id = ?"
+      ).run(`Auto-paused after ${MAX_ERRORS} consecutive errors`, new Date().toISOString(), task.id);
+      log.warn(`[activate] Job "${task.name}" (${task.id}) auto-paused (error_count=${task.error_count})`);
       return;
     }
 
     try {
-      // Determine pattern based on task type
       let pattern: string;
       if (task.task_type === "recurring") {
         if (!task.cron_expression) {
-          log.error(`[activate] Task "${task.name}" (${task.id}) is recurring but has no cron_expression`);
+          log.error(`[activate] Job "${task.name}" (${task.id}) is recurring but has no cron_expression`);
           return;
         }
         pattern = task.cron_expression;
       } else {
-        // one_shot
         if (!task.fire_at) {
-          log.error(`[activate] Task "${task.name}" (${task.id}) is one_shot but has no fire_at`);
+          log.error(`[activate] Job "${task.name}" (${task.id}) is one_shot but has no fire_at`);
           return;
         }
         pattern = task.fire_at;
       }
 
-      // Validate pattern before creating Cron instance
       try {
         new Cron(pattern);
       } catch (err) {
-        log.error(`[activate] Invalid cron pattern "${pattern}" for task "${task.name}": ${(err as Error).message}`);
+        log.error(`[activate] Invalid cron pattern "${pattern}" for job "${task.name}": ${(err as Error).message}`);
         return;
       }
 
-      // Build options
       const options: any = {
         timezone: task.timezone,
         protect: task.protect === 1,
         catch: (error: Error) => this.handleError(task, error),
         name: task.name,
+        domAndDow: task.dom_and_dow === 1,
       };
 
       if (task.max_runs !== null && task.max_runs !== undefined) {
@@ -110,42 +113,56 @@ export class CronScheduler {
         options.interval = task.interval_sec;
       }
 
-      // Create Cron instance
+      if (task.start_at) {
+        options.startAt = task.start_at;
+      }
+
+      if (task.stop_at) {
+        options.stopAt = task.stop_at;
+      }
+
+      // Fix 1: pass only the ID so execute always reads fresh data from DB
       const cron = new Cron(
         pattern,
         options,
-        () => this.execute(task)
+        () => this.execute(task.id)
       );
 
       this.jobs.set(task.id, cron);
 
-      // Calculate and persist next_run_at
       const nextRun = cron.nextRun();
       if (nextRun) {
         const nextRunIso = nextRun.toISOString();
+        // Fix 4: also update updated_at when writing next_run_at
         this.db.query(
-          "UPDATE scheduled_tasks SET next_run_at = ? WHERE id = ?"
-        ).run(nextRunIso, task.id);
-        log.info(`[activate] Task "${task.name}" (${task.id}) scheduled - next: ${nextRunIso}`);
+          "UPDATE cron_jobs SET next_run_at = ?, updated_at = ? WHERE id = ?"
+        ).run(nextRunIso, new Date().toISOString(), task.id);
+        log.info(`[activate] Job "${task.name}" (${task.id}) scheduled - next: ${nextRunIso}`);
       } else {
-        log.warn(`[activate] Task "${task.name}" (${task.id}) has no next run date`);
+        log.warn(`[activate] Job "${task.name}" (${task.id}) has no next run date`);
       }
     } catch (err) {
-      log.error(`[activate] Failed to activate task "${task.name}" (${task.id}): ${(err as Error).message}`);
+      log.error(`[activate] Failed to activate job "${task.name}" (${task.id}): ${(err as Error).message}`);
     }
   }
 
   /**
-   * Execute a task - run it through the agent pipeline
+   * Execute a cron job - run it through the agent pipeline
    */
-  private async execute(task: ScheduledTask): Promise<void> {
+  private async execute(taskId: string): Promise<void> {
+    // Fix 1: read fresh task data from DB to avoid stale closure snapshots
+    const task = this.db.query("SELECT * FROM cron_jobs WHERE id = ?").get(taskId) as CronJob | null;
+    if (!task) {
+      log.warn(`[execute] Job "${taskId}" not found in DB — skipping`);
+      return;
+    }
+
     const runId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
     const startedAt = new Date().toISOString();
     const startTime = performance.now();
 
-    log.info(`[execute] Starting task "${task.name}" (${task.id}) run #${runId}`);
+    log.info(`[execute] Starting job "${task.name}" (${task.id}) run #${runId}`);
 
-    // Create run record
     try {
       this.db.query(`
         INSERT INTO task_runs (id, task_id, status, started_at, payload_snapshot)
@@ -156,53 +173,47 @@ export class CronScheduler {
     }
 
     try {
-      // Execute via handler
       const result = await this.handler(task);
       const duration = performance.now() - startTime;
       const finishedAt = new Date().toISOString();
 
       if (result.success) {
-        // Success
         this.db.query(`
           UPDATE task_runs 
           SET status = 'success', finished_at = ?, duration_ms = ?, agent_response = ?
           WHERE id = ?
         `).run(finishedAt, Math.round(duration), result.response?.slice(0, 1000) || null, runId);
 
-        // Update task stats
         this.db.query(`
-          UPDATE scheduled_tasks 
+          UPDATE cron_jobs 
           SET run_count = run_count + 1, last_run_at = ?, last_error = NULL
           WHERE id = ?
         `).run(finishedAt, task.id);
 
-        // Recalculate next_run_at
         const job = this.jobs.get(task.id);
         if (job) {
           const nextRun = job.nextRun();
           if (nextRun) {
             this.db.query(
-              "UPDATE scheduled_tasks SET next_run_at = ? WHERE id = ?"
+              "UPDATE cron_jobs SET next_run_at = ? WHERE id = ?"
             ).run(nextRun.toISOString(), task.id);
           }
         }
 
         await notifyTaskCompletion(task.id, task.name, true, result.response);
 
-        // Handle one_shot completion
         if (task.task_type === "one_shot") {
           this.db.query(`
-            UPDATE scheduled_tasks
+            UPDATE cron_jobs
             SET status = 'completed', completed_at = ?
             WHERE id = ?
           `).run(finishedAt, task.id);
           this.deactivate(task.id);
-          log.info(`[execute] One-shot task "${task.name}" (${task.id}) completed`);
+          log.info(`[execute] One-shot job "${task.name}" (${task.id}) completed`);
         } else {
-          log.info(`[execute] Task "${task.name}" (${task.id}) completed in ${Math.round(duration)}ms`);
+          log.info(`[execute] Job "${task.name}" (${task.id}) completed in ${Math.round(duration)}ms`);
         }
       } else {
-        // Handler reported failure
         throw new Error(result.error || "Handler reported failure");
       }
     } catch (err) {
@@ -210,21 +221,34 @@ export class CronScheduler {
       const finishedAt = new Date().toISOString();
       const errorMessage = (err as Error).message;
 
-      // Update task_run record
       this.db.query(`
         UPDATE task_runs 
         SET status = 'failed', finished_at = ?, duration_ms = ?, error_message = ?
         WHERE id = ?
       `).run(finishedAt, Math.round(duration), errorMessage, runId);
 
-      // Update task stats
       this.db.query(`
-        UPDATE scheduled_tasks 
+        UPDATE cron_jobs
         SET error_count = error_count + 1, last_error = ?
         WHERE id = ?
       `).run(errorMessage, task.id);
 
-      log.error(`[execute] Task "${task.name}" (${task.id}) failed: ${errorMessage}`);
+      log.error(`[execute] Job "${task.name}" (${task.id}) failed: ${errorMessage}`);
+
+      // Fix 2B: auto-pause if error threshold reached
+      const MAX_ERRORS = 5;
+      const updated = this.db.query(
+        "SELECT error_count FROM cron_jobs WHERE id = ?"
+      ).get(task.id) as { error_count: number } | null;
+
+      if (updated && updated.error_count >= MAX_ERRORS) {
+        this.db.query(
+          "UPDATE cron_jobs SET status = 'paused', updated_at = ? WHERE id = ?"
+        ).run(new Date().toISOString(), task.id);
+        this.deactivate(task.id);
+        log.warn(`[execute] Job "${task.name}" (${task.id}) auto-paused after ${MAX_ERRORS} errors`);
+      }
+
       await notifyTaskCompletion(task.id, task.name, false, undefined, errorMessage);
     }
   }
@@ -232,18 +256,30 @@ export class CronScheduler {
   /**
    * Handle errors from Croner
    */
-  private handleError(task: ScheduledTask, error: Error): void {
-    log.error(`[error] Task "${task.name}" (${task.id}) error: ${error.message}`);
-    
+  private handleError(task: CronJob, error: Error): void {
+    log.error(`[error] Job "${task.name}" (${task.id}) error: ${error.message}`);
+
+    // Fix 3: record Croner-level errors in task_runs for full history
+    const runId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+    const now = new Date().toISOString();
+    try {
+      this.db.query(`
+        INSERT INTO task_runs (id, task_id, status, started_at, finished_at, duration_ms, error_message)
+        VALUES (?, ?, 'failed', ?, ?, 0, ?)
+      `).run(runId, task.id, now, now, error.message);
+    } catch (e) {
+      log.warn(`[handleError] Failed to insert task_run: ${(e as Error).message}`);
+    }
+
     this.db.query(`
-      UPDATE scheduled_tasks 
+      UPDATE cron_jobs
       SET error_count = error_count + 1, last_error = ?
       WHERE id = ?
     `).run(error.message, task.id);
   }
 
   /**
-   * Pause a task
+   * Pause a cron job
    */
   pause(taskId: string): boolean {
     const job = this.jobs.get(taskId);
@@ -252,79 +288,78 @@ export class CronScheduler {
     }
 
     const result = this.db.query(
-      "UPDATE scheduled_tasks SET status = 'paused' WHERE id = ?"
+      "UPDATE cron_jobs SET status = 'paused' WHERE id = ?"
     ).run(taskId);
 
     if (result.changes > 0) {
-      log.info(`[pause] Task "${taskId}" paused`);
+      log.info(`[pause] Job "${taskId}" paused`);
       return true;
     }
 
-    log.warn(`[pause] Task "${taskId}" not found`);
+    log.warn(`[pause] Job "${taskId}" not found`);
     return false;
   }
 
   /**
-   * Resume a paused task
+   * Resume a paused cron job
    */
   resume(taskId: string): boolean {
     const task = this.db.query(
-      "SELECT * FROM scheduled_tasks WHERE id = ?"
-    ).get(taskId) as ScheduledTask | undefined;
+      "SELECT * FROM cron_jobs WHERE id = ?"
+    ).get(taskId) as CronJob | undefined;
 
     if (!task) {
-      log.warn(`[resume] Task "${taskId}" not found`);
+      log.warn(`[resume] Job "${taskId}" not found`);
       return false;
     }
 
     this.db.query(
-      "UPDATE scheduled_tasks SET status = 'active' WHERE id = ?"
+      "UPDATE cron_jobs SET status = 'active' WHERE id = ?"
     ).run(taskId);
 
     this.activate(task);
-    log.info(`[resume] Task "${taskId}" resumed`);
+    log.info(`[resume] Job "${taskId}" resumed`);
     return true;
   }
 
   /**
-   * Deactivate a task - stop Croner instance but keep in DB
+   * Deactivate a cron job - stop Croner instance but keep in DB
    */
   deactivate(taskId: string): void {
     const job = this.jobs.get(taskId);
     if (job) {
       job.stop();
       this.jobs.delete(taskId);
-      log.debug(`[deactivate] Task "${taskId}" deactivated`);
+      log.debug(`[deactivate] Job "${taskId}" deactivated`);
     }
   }
 
   /**
-   * Delete a task - deactivate and remove from DB
+   * Delete a cron job - deactivate and remove from DB
    */
   delete(taskId: string): boolean {
     this.deactivate(taskId);
 
     const result = this.db.query(
-      "DELETE FROM scheduled_tasks WHERE id = ?"
+      "DELETE FROM cron_jobs WHERE id = ?"
     ).run(taskId);
 
     if (result.changes > 0) {
-      log.info(`[delete] Task "${taskId}" deleted`);
+      log.info(`[delete] Job "${taskId}" deleted`);
       return true;
     }
 
-    log.warn(`[delete] Task "${taskId}" not found`);
+    log.warn(`[delete] Job "${taskId}" not found`);
     return false;
   }
 
   /**
-   * Create a new scheduled task
+   * Create a new cron job
    */
-  create(input: CreateTaskInput): { id: string; nextRun?: string } {
+  create(input: CreateCronJobInput): { id: string; nextRun?: string } {
     const id = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
     const now = new Date().toISOString();
 
-    // Validate cron expression if recurring
     if (input.task_type === "recurring") {
       if (!input.cron_expression) {
         throw new Error("recurring task requires cron_expression");
@@ -336,7 +371,6 @@ export class CronScheduler {
       }
     }
 
-    // Validate fire_at if one_shot
     if (input.task_type === "one_shot") {
       if (!input.fire_at) {
         throw new Error("one_shot task requires fire_at");
@@ -347,14 +381,12 @@ export class CronScheduler {
       }
     }
 
-    // Validate timezone
     try {
       new Intl.DateTimeFormat(undefined, { timeZone: input.timezone });
     } catch (err) {
       throw new Error(`Invalid timezone: ${input.timezone}`);
     }
 
-    // Validate payload is valid JSON
     const payloadJson = input.payload ? JSON.stringify(input.payload) : "{}";
     try {
       JSON.parse(payloadJson);
@@ -362,21 +394,24 @@ export class CronScheduler {
       throw new Error("Invalid payload JSON");
     }
 
-    // Insert task
     this.db.query(`
-      INSERT INTO scheduled_tasks (
-        id, name, description, task_type, cron_expression, fire_at, timezone,
+      INSERT INTO cron_jobs (
+        id, name, task, task_type, cron_expression, fire_at, timezone,
+        start_at, stop_at, dom_and_dow,
         max_runs, protect, interval_sec, agent_id, channel, payload, tool_name,
         status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
     `).run(
       id,
       input.name,
-      input.description || "",
+      input.task,
       input.task_type,
       input.cron_expression || null,
       input.fire_at || null,
       input.timezone,
+      input.start_at || null,
+      input.stop_at || null,
+      input.dom_and_dow ? 1 : 0,
       input.max_runs || null,
       input.protect !== false ? 1 : 0,
       input.interval_sec || null,
@@ -388,32 +423,30 @@ export class CronScheduler {
       now
     );
 
-    // Read back and activate
     const task = this.db.query(
-      "SELECT * FROM scheduled_tasks WHERE id = ?"
-    ).get(id) as ScheduledTask;
+      "SELECT * FROM cron_jobs WHERE id = ?"
+    ).get(id) as CronJob;
 
     this.activate(task);
 
-    // Get next run
     const job = this.jobs.get(id);
     const nextRun = job?.nextRun()?.toISOString();
 
-    log.info(`[create] Task "${input.name}" (${id}) created`);
+    log.info(`[create] Job "${input.name}" (${id}) created`);
 
     return { id, nextRun };
   }
 
   /**
-   * Update an existing task
+   * Update an existing cron job
    */
-  update(taskId: string, changes: UpdateTaskInput): boolean {
+  update(taskId: string, changes: UpdateCronJobInput): boolean {
     const task = this.db.query(
-      "SELECT * FROM scheduled_tasks WHERE id = ?"
-    ).get(taskId) as ScheduledTask | undefined;
+      "SELECT * FROM cron_jobs WHERE id = ?"
+    ).get(taskId) as CronJob | undefined;
 
     if (!task) {
-      log.warn(`[update] Task "${taskId}" not found`);
+      log.warn(`[update] Job "${taskId}" not found`);
       return false;
     }
 
@@ -424,9 +457,9 @@ export class CronScheduler {
       fields.push("name = ?");
       values.push(changes.name);
     }
-    if (changes.description !== undefined) {
-      fields.push("description = ?");
-      values.push(changes.description);
+    if (changes.task !== undefined) {
+      fields.push("task = ?");
+      values.push(changes.task);
     }
     if (changes.task_type !== undefined) {
       fields.push("task_type = ?");
@@ -443,6 +476,18 @@ export class CronScheduler {
     if (changes.timezone !== undefined) {
       fields.push("timezone = ?");
       values.push(changes.timezone);
+    }
+    if (changes.start_at !== undefined) {
+      fields.push("start_at = ?");
+      values.push(changes.start_at);
+    }
+    if (changes.stop_at !== undefined) {
+      fields.push("stop_at = ?");
+      values.push(changes.stop_at);
+    }
+    if (changes.dom_and_dow !== undefined) {
+      fields.push("dom_and_dow = ?");
+      values.push(changes.dom_and_dow ? 1 : 0);
     }
     if (changes.agent_id !== undefined) {
       fields.push("agent_id = ?");
@@ -478,29 +523,28 @@ export class CronScheduler {
     }
 
     if (fields.length === 0) {
-      return true; // No changes
+      return true;
     }
 
     values.push(taskId);
-    this.db.query(`UPDATE scheduled_tasks SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+    this.db.query(`UPDATE cron_jobs SET ${fields.join(", ")} WHERE id = ?`).run(...values);
 
-    // Reload and reactivate
     const updatedTask = this.db.query(
-      "SELECT * FROM scheduled_tasks WHERE id = ?"
-    ).get(taskId) as ScheduledTask;
+      "SELECT * FROM cron_jobs WHERE id = ?"
+    ).get(taskId) as CronJob;
 
     this.activate(updatedTask);
 
-    log.info(`[update] Task "${taskId}" updated`);
+    log.info(`[update] Job "${taskId}" updated`);
     return true;
   }
 
   /**
-   * Get status of all scheduled tasks
+   * Get status of all cron jobs
    */
-  getStatus(): TaskSchedulerStatus[] {
+  getStatus(): CronJobStatus[] {
     const tasks = this.db.query(
-      "SELECT id, name, status FROM scheduled_tasks ORDER BY id"
+      "SELECT id, name, status FROM cron_jobs ORDER BY id"
     ).all() as Array<{ id: string; name: string; status: string }>;
 
     return tasks.map((task) => {
@@ -516,27 +560,26 @@ export class CronScheduler {
   }
 
   /**
-   * Manually trigger a task execution
+   * Manually trigger a cron job execution
    */
   trigger(taskId: string): boolean {
     const task = this.db.query(
-      "SELECT * FROM scheduled_tasks WHERE id = ?"
-    ).get(taskId) as ScheduledTask | undefined;
+      "SELECT * FROM cron_jobs WHERE id = ?"
+    ).get(taskId) as CronJob | undefined;
 
     if (!task) {
-      log.warn(`[trigger] Task "${taskId}" not found`);
+      log.warn(`[trigger] Job "${taskId}" not found`);
       return false;
     }
 
     const job = this.jobs.get(taskId);
     if (!job) {
-      log.warn(`[trigger] Task "${taskId}" has no active job`);
+      log.warn(`[trigger] Job "${taskId}" has no active job`);
       return false;
     }
 
-    // Trigger immediate execution
     job.trigger();
-    log.info(`[trigger] Task "${taskId}" manually triggered`);
+    log.info(`[trigger] Job "${taskId}" manually triggered`);
     return true;
   }
 
@@ -552,59 +595,54 @@ export class CronScheduler {
   }
 
   /**
-   * Ensure the cleanup task exists
+   * Ensure the cleanup job exists
    */
   private ensureCleanupTask(): void {
     const existing = this.db.query(
-      "SELECT id FROM scheduled_tasks WHERE name = '_hive_cleanup_runs'"
+      "SELECT id FROM cron_jobs WHERE name = '_hive_cleanup_runs'"
     ).get() as { id: string } | undefined;
 
     if (existing) {
       this.cleanupTaskId = existing.id;
-      log.debug("[ensureCleanupTask] Cleanup task already exists");
+      log.debug("[ensureCleanupTask] Cleanup job already exists");
       return;
     }
 
     try {
       const result = this.create({
         name: "_hive_cleanup_runs",
-        description: "Automatic cleanup of old task_runs and completed one_shot tasks",
+        task: "Automatic cleanup of old task_runs and completed one_shot jobs",
         task_type: "recurring",
-        cron_expression: "0 4 * * *", // 4 AM UTC daily
+        cron_expression: "0 4 * * *",
         timezone: "UTC",
         payload: { _internal: true, action: "cleanup" },
         protect: true,
       });
 
       this.cleanupTaskId = result.id;
-      log.info("[ensureCleanupTask] Cleanup task created");
+      log.info("[ensureCleanupTask] Cleanup job created");
     } catch (err) {
-      log.error(`[ensureCleanupTask] Failed to create cleanup task: ${(err as Error).message}`);
+      log.error(`[ensureCleanupTask] Failed to create cleanup job: ${(err as Error).message}`);
     }
   }
 
   /**
-   * Run cleanup - called by the internal cleanup task
+   * Run cleanup - called by the internal cleanup job
    */
   runCleanup(): void {
-    const now = new Date().toISOString();
-
-    // Delete task_runs older than 30 days with status success or failed
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     this.db.query(`
       DELETE FROM task_runs 
       WHERE status IN ('success', 'failed') AND started_at < ?
     `).run(thirtyDaysAgo);
 
-    // Mark old completed one_shot tasks as cancelled (older than 7 days)
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     this.db.query(`
-      UPDATE scheduled_tasks 
+      UPDATE cron_jobs 
       SET status = 'cancelled' 
       WHERE task_type = 'one_shot' AND status = 'completed' AND completed_at < ?
     `).run(sevenDaysAgo);
 
-    // Limit task_runs to 1000 per task
     const tasks = this.db.query(`
       SELECT DISTINCT task_id FROM task_runs
     `).all() as { task_id: string }[];
@@ -637,25 +675,25 @@ export class CronScheduler {
   }
 
   /**
-   * Get a single task by ID
+   * Get a single cron job by ID
    */
-  getTask(taskId: string): ScheduledTask | null {
+  getTask(taskId: string): CronJob | null {
     return this.db.query(
-      "SELECT * FROM scheduled_tasks WHERE id = ?"
-    ).get(taskId) as ScheduledTask | null;
+      "SELECT * FROM cron_jobs WHERE id = ?"
+    ).get(taskId) as CronJob | null;
   }
 
   /**
-   * List all tasks
+   * List all cron jobs
    */
-  listTasks(status?: string): ScheduledTask[] {
+  listTasks(status?: string): CronJob[] {
     if (status) {
       return this.db.query(
-        "SELECT * FROM scheduled_tasks WHERE status = ? ORDER BY next_run_at"
-      ).all(status) as ScheduledTask[];
+        "SELECT * FROM cron_jobs WHERE status = ? ORDER BY next_run_at"
+      ).all(status) as CronJob[];
     }
     return this.db.query(
-      "SELECT * FROM scheduled_tasks ORDER BY next_run_at"
-    ).all() as ScheduledTask[];
+      "SELECT * FROM cron_jobs ORDER BY next_run_at"
+    ).all() as CronJob[];
   }
 }

@@ -1,7 +1,7 @@
 import { logger } from "../utils/logger.ts";
 import { getDb, initializeDatabase } from "./sqlite";
 import { encryptApiKey, encryptConfig, decryptApiKey, decryptConfig } from "./crypto";
-import { seedAllData } from "./seed";
+import { seedAllData, reseedToolsAndSkills } from "./seed";
 
 export interface OnboardingSection {
   step: "user" | "skills" | "ethics" | "tools" | "provider" | "model" | "channel" | "codebridge" | "mcp" | "agent" | "complete";
@@ -1820,5 +1820,31 @@ export function getAgentConfig(agentId: string): {
   } catch (e) {
     log.warn("[getAgentConfig] ⚠️ Error getting agent config:", (e as Error).message);
     return null;
+  }
+}
+
+/**
+ * Idempotent startup migrations. Runs on every gateway start.
+ * Each migration is guarded by the schema_migrations table — once applied, it never re-runs.
+ */
+export function runStartupMigrations(): void {
+  try {
+    const db = getDb();
+
+    const applied = (v: string) =>
+      !!db.query("SELECT 1 FROM schema_migrations WHERE version = ?").get(v);
+    const markApplied = (v: string) =>
+      db.query("INSERT OR IGNORE INTO schema_migrations(version) VALUES(?)").run(v);
+
+    // v0.0.27 — full tools + skills reseed
+    // Wipes the entire tools and skills catalog and re-seeds from the current version's
+    // SEED_DATA and bundled SKILL.md files. Preserves all user data (agents, conversations, etc.)
+    if (!applied("v0.0.27")) {
+      reseedToolsAndSkills();
+      markApplied("v0.0.27");
+      log.info("✅ Migration v0.0.27: tools and skills re-seeded from current version");
+    }
+  } catch (e) {
+    log.error("⚠️ runStartupMigrations failed:", { error: (e as Error).message });
   }
 }

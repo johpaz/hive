@@ -8,7 +8,7 @@ category: web
 permissions:
   - browser_control
 dependencies: []
-tools: [browser_navigate, browser_screenshot, browser_fetch]
+tools: [browser_navigate, browser_screenshot, web_fetch]
 
 # Structured skill fields
 triggers:
@@ -39,7 +39,7 @@ steps:
     output: screenshot
 
   - step: 3
-    action: browser_fetch
+    action: web_fetch
     instruction: "Extract text content from rendered page as markdown"
     output: extracted_content
 
@@ -87,13 +87,13 @@ Esta skill se activa para sitios web dinámicos que requieren JavaScript renderi
 |------|----------|---------------|
 | `browser_navigate` | Navega y renderiza página completa | Sitios con JavaScript/SPA |
 | `browser_screenshot` | Captura estado visual | Evidencia de contenido renderizado |
-| `browser_fetch` | Extrae texto como markdown | Contenido textual de página renderizada |
+| `web_fetch` | Extrae texto como markdown | Contenido textual de página renderizada |
 
 ## Workflow
 
 1. **Navegar** → `browser_navigate({ url })` + esperar renderizado JS
 2. **Capturar visual** → `browser_screenshot()`
-3. **Extraer texto** → `browser_fetch()`
+3. **Extraer texto** → `web_fetch()`
 4. **Combinar** → screenshot + texto para scrape completo
 
 ## Mejores Prácticas

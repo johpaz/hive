@@ -67,7 +67,7 @@ rules:
   - "Compare content systematically — identify additions, removals, modifications"
   - "Notify only if meaningful changes detected (ignore timestamps, ads)"
   - "Store timestamp with each baseline for tracking frequency"
-  - "For recurring monitors, use cron_manager to schedule automatic checks"
+  - "For recurring monitors, use cron.create to schedule automatic checks"
 
 output_format:
   structure: markdown
@@ -118,7 +118,7 @@ Esta skill se activa cuando el usuario necesita:
 
 - Ignorar cambios menores (timestamps, ads, contenido dinámico irrelevante)
 - Notificar solo cambios significativos
-- Para monitoreo periódico, combinar con `cron_manager`
+- Para monitoreo periódico, combinar con `cron.create`
 
 ## Errores a Evitar
 

@@ -3,10 +3,11 @@ import type { Tool } from '../../types/tool'
 /**
  * Tool del Coordinador para registrar su revisión pedagógica del LessonProgram.
  * Es una structured-output tool — los args son el resultado final.
+ * Incluye redistribución de XP, validación pedagógica avanzada y logging detallado.
  */
 export const revisarProgramaTool: Tool = {
   name: 'revisar_programa',
-  description: 'Registra la revisión pedagógica del LessonProgram generado por el enjambre',
+  description: 'Registra la revisión pedagógica del LessonProgram generado por el enjambre. Incluye redistribución de XP, validación avanzada y logging detallado.',
   parameters: {
     type: 'object',
     properties: {
@@ -32,6 +33,58 @@ export const revisarProgramaTool: Tool = {
         type: 'array',
         items: { type: 'string' },
         description: 'Lista de task IDs que deben re-ejecutarse porque el contenido está vacío, es incoherente o falló. Usa los IDs exactos: "content-nodo-0", "visual-nodo-2", etc. Máximo 3 retries.',
+      },
+      xpRedistribuido: {
+        type: 'object',
+        description: 'Mapa de nodeId -> XP redistribuido para totalizar exactamente 100 puntos. Ejemplo: {"nodo-0": 5, "nodo-1": 15, "nodo-2": 20}',
+        additionalProperties: true,
+      },
+      validacionPedagogica: {
+        type: 'object',
+        description: 'Métricas avanzadas de validación pedagógica por nodo',
+        properties: {
+          claridad: { type: 'number', description: 'Puntuación claridad 0-100' },
+          adecuacionEdad: { type: 'number', description: 'Puntuación adecuación a edad 0-100' },
+          ejemplosConcretos: { type: 'number', description: 'Puntuación ejemplos concretos 0-100' },
+          progresionLogica: { type: 'number', description: 'Puntuación progresión lógica 0-100' },
+          engagement: { type: 'number', description: 'Puntuación engagement 0-100' },
+          coberturaTemática: { type: 'number', description: 'Puntuación cobertura temática 0-100' },
+          detalles: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                nodoId: { type: 'string' },
+                criterios: {
+                  type: 'object',
+                  properties: {
+                    claridad: { type: 'boolean' },
+                    adecuacionEdad: { type: 'boolean' },
+                    ejemplosConcretos: { type: 'boolean' },
+                    progresionLogica: { type: 'boolean' },
+                    engagement: { type: 'boolean' },
+                    coberturaTemática: { type: 'boolean' },
+                  }
+                },
+                observaciones: { type: 'string' }
+              }
+            }
+          }
+        }
+      },
+      loggingDetallado: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            timestamp: { type: 'string', description: 'ISO timestamp' },
+            agente: { type: 'string', description: 'ID del agente' },
+            accion: { type: 'string', description: 'Acción realizada' },
+            resultado: { type: 'string', description: 'Resultado de la acción' },
+            metricas: { type: 'object', description: 'Métricas relevantes' }
+          }
+        },
+        description: 'Logging detallado de decisiones y validaciones'
       },
       mensaje: {
         type: 'string',

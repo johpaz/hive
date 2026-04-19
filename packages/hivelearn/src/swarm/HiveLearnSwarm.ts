@@ -202,6 +202,9 @@ ${JSON.stringify({
         issues?: string[]
         correcciones?: Record<string, Partial<{ titulo: string; xpRecompensa: number; concepto: string }>>
         suggestedRetries?: string[]
+        xpRedistribuido?: Record<string, number>
+        validacionPedagogica?: any
+        loggingDetallado?: any[]
         mensaje?: string
       }>(raw, {})
 
@@ -269,6 +272,7 @@ ${JSON.stringify({
           meta,
           sessionId,
           perfil: program.perfilAdaptacion,
+          xpRedistribuido: revision.xpRedistribuido,
         })
 
         // Aplicar correcciones sobre el programa actualizado
@@ -276,7 +280,25 @@ ${JSON.stringify({
       }
 
       // ── Sin retries: solo correcciones menores ───────────────────────────
-      return this.applyCorrecciones(program, revision.correcciones)
+      let finalProgram = this.applyCorrecciones(program, revision.correcciones)
+      
+      // Aplicar redistribución de XP si existe
+      if (revision.xpRedistribuido && Object.keys(revision.xpRedistribuido).length > 0) {
+        log.info(`[coordinator] applying XP redistribution to ${Object.keys(revision.xpRedistribuido).length} nodes`)
+        finalProgram = {
+          ...finalProgram,
+          nodos: finalProgram.nodos.map(nodo => {
+            const xpNuevo = revision.xpRedistribuido![nodo.id]
+            if (xpNuevo !== undefined) {
+              log.info(`[coordinator] XP redistribution: nodo ${nodo.id}: ${nodo.xpRecompensa} → ${xpNuevo}`)
+              return { ...nodo, xpRecompensa: xpNuevo }
+            }
+            return nodo
+          })
+        }
+      }
+      
+      return finalProgram
     } catch (err) {
       // La revisión no es crítica — si falla, devolver el programa sin cambios
       log.warn(`[coordinator] review skipped: ${(err as Error).message}`)

@@ -107,9 +107,9 @@ function searchPlaybook(query: string, limit: number = 10) {
 
 // Tests con queries que el agente suele enviar
 const testQueries = [
-    { type: "tools", query: "cron_list" },
-    { type: "tools", query: "cron_edit" },
-    { type: "tools", query: "cron_add" },
+    { type: "tools", query: "cron.list" },
+    { type: "tools", query: "cron.update" },
+    { type: "tools", query: "cron.create" },
     { type: "tools", query: "cron" },
     { type: "tools", query: "editar tarea" },
     { type: "tools", query: "web_search" },
@@ -143,14 +143,14 @@ for (const test of testQueries) {
 
 // Test específico para cron_tools
 console.log("\n=== Verificación cron_tools ===");
-const cronTools = db.query("SELECT name, enabled, active FROM tools WHERE name LIKE 'cron_%'").all() as any[];
+const cronTools = db.query("SELECT name, enabled, active FROM tools WHERE name LIKE 'cron.%'").all() as any[];
 console.log("Tools en DB:");
 cronTools.forEach(t => {
     const status = t.enabled === 1 && t.active === 1 ? "✅" : t.enabled === 1 ? "⚠️ active=0" : "❌ enabled=0";
     console.log(`  ${status} ${t.name}`);
 });
 
-const cronFts = db.query("SELECT tool_name FROM tools_fts WHERE tool_name LIKE 'cron_%'").all() as any[];
+const cronFts = db.query("SELECT tool_name FROM tools_fts WHERE tool_name LIKE 'cron.%'").all() as any[];
 console.log("\nTools en FTS5:");
 cronFts.forEach(t => console.log(`  ✅ ${t.tool_name}`));
 

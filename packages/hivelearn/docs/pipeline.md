@@ -35,11 +35,18 @@ POST (revisión sincrónica)
 ┌─────────────────────────────────────────────────────────┐
 │ Coordinator Review                                       │
 │  - recibe LessonProgram ensamblado + raw outputs        │
-│  - valida coherencia pedagógica                         │
+│  - valida coherencia pedagógica avanzada:               │
+│    • Claridad, adecuación a edad, ejemplos concretos    │
+│    • Progresión lógica, engagement, cobertura temática  │
+│  - redistribuye XP para totalizar exactamente 100 pts   │
+│    • Retos/evaluaciones: 20-30 XP                       │
+│    • Conceptos/ejercicios: 10-20 XP                     │
+│    • Bienvenida/milestones: 5-10 XP                     │
 │  - aplica correcciones menores (títulos, XP)            │
 │  - suggestedRetries: re-ejecuta nodos con contenido     │
 │    vacío o incoherente (máx 3, vía HiveLearnExecutor)  │
 │  - re-ensambla el programa si hubo retries              │
+│  - logging detallado de decisiones y validaciones       │
 └─────────────────────────────────────────────────────────┘
 ```
 

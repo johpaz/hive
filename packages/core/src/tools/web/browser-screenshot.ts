@@ -50,7 +50,8 @@ export const browserScreenshotTool: Tool = {
     log.info(`Taking screenshot${url ? ` of: ${url}` : ""}${selector ? ` (element: ${selector})` : ""}`);
 
     try {
-      const view = browserService.getView()!;
+      const view = await browserService.getView();
+      if (!view) return { ok: false, error: "Browser automation not available. Install Chrome/Chromium." };
 
       if (url) {
         await view.navigate(url);

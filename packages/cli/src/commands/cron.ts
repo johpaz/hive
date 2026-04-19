@@ -88,8 +88,8 @@ Commands:
   status                  Show scheduler status
 
 Examples:
-  hive cron add --name "daily-report" --type recurring --cron "0 9 * * *" --payload '{"prompt":"Generate daily report"}'
-  hive cron add --name "reminder" --type one_shot --fire-at "2026-04-01T09:00:00" --agent "work-agent"
+  hive cron add --name "daily-report" --task "Generate daily report" --type recurring --cron "0 9 * * *" --payload '{"prompt":"Generate daily report"}'
+  hive cron add --name "reminder" --task "Send reminder" --type one_shot --fire-at "2026-04-01T09:00:00" --agent "work-agent"
   hive cron list --status active
   hive cron pause daily-report
   hive cron trigger daily-report
@@ -103,7 +103,7 @@ async function listCron(args: string[]): Promise<void> {
   const typeFilter = args.find((a) => a.startsWith("--type="))?.split("=")[1];
 
   try {
-    let path = "/scheduled-tasks";
+    let path = "/api/cron";
     const params = new URLSearchParams();
     if (statusFilter) params.append("status", statusFilter);
     if (typeFilter) params.append("task_type", typeFilter);
@@ -174,6 +174,10 @@ async function addCron(args: string[]): Promise<void> {
   const tz = parseArg("tz");
   const maxRuns = parseArg("max-runs");
   const interval = parseArg("interval");
+  const task = parseArg("task");
+  const startAt = parseArg("start-at");
+  const stopAt = parseArg("stop-at");
+  const domAndDow = parseArg("dom-and-dow");
 
   // Interactive mode if missing required args
   if (!name) {
@@ -189,6 +193,22 @@ async function addCron(args: string[]): Promise<void> {
     }
 
     args.push(`--name=${nameValue}`);
+    return addCron(args);
+  }
+
+  if (!task) {
+    const taskValue = await p.text({
+      message: "Task instruction (what should the cron do):",
+      placeholder: "Generate daily report",
+      validate: (v) => (!v ? "Task is required" : undefined),
+    });
+
+    if (p.isCancel(taskValue)) {
+      p.cancel("Cancelled");
+      return;
+    }
+
+    args.push(`--task=${taskValue}`);
     return addCron(args);
   }
 
@@ -293,8 +313,12 @@ async function addCron(args: string[]): Promise<void> {
     if (tool) body.tool_name = tool;
     if (maxRuns) body.max_runs = parseInt(maxRuns, 10);
     if (interval) body.interval_sec = parseInt(interval, 10);
+    if (startAt) body.start_at = startAt;
+    if (stopAt) body.stop_at = stopAt;
+    if (domAndDow) body.dom_and_dow = parseInt(domAndDow, 10);
+    body.task = task;
 
-    const result = await apiRequest("/scheduled-tasks", {
+    const result = await apiRequest("/api/cron", {
       method: "POST",
       body: JSON.stringify(body),
     });
@@ -318,11 +342,11 @@ async function cronAction(action: string, id: string | undefined): Promise<void>
     // First try to find by ID, then by name
     let taskId = id;
     try {
-      const result = await apiRequest(`/scheduled-tasks/${id}`);
+      const result = await apiRequest(`/api/cron/${id}`);
       taskId = result.task.id;
     } catch {
       // Not found by ID, try by name
-      const listResult = await apiRequest("/scheduled-tasks");
+      const listResult = await apiRequest("/api/cron");
       const task = listResult.tasks.find((t: any) => t.name === id);
       if (!task) {
         console.error(`❌ Task not found: ${id}`);
@@ -331,7 +355,7 @@ async function cronAction(action: string, id: string | undefined): Promise<void>
       taskId = task.id;
     }
 
-    let path = `/scheduled-tasks/${taskId}`;
+    let path = `/api/cron/${taskId}`;
     let method = "POST";
 
     if (action === "trigger") {
@@ -360,10 +384,10 @@ async function cronHistory(id: string | undefined): Promise<void> {
     // Find task by ID or name
     let taskId = id;
     try {
-      const result = await apiRequest(`/scheduled-tasks/${id}`);
+      const result = await apiRequest(`/api/cron/${id}`);
       taskId = result.task.id;
     } catch {
-      const listResult = await apiRequest("/scheduled-tasks");
+      const listResult = await apiRequest("/api/cron");
       const task = listResult.tasks.find((t: any) => t.name === id);
       if (!task) {
         console.error(`❌ Task not found: ${id}`);
@@ -372,7 +396,7 @@ async function cronHistory(id: string | undefined): Promise<void> {
       taskId = task.id;
     }
 
-    const result = await apiRequest(`/scheduled-tasks/${taskId}/history?limit=20`);
+    const result = await apiRequest(`/api/cron/${taskId}/history?limit=20`);
 
     if (!result.history || result.history.length === 0) {
       console.log("No execution history found");
@@ -403,7 +427,7 @@ async function cronHistory(id: string | undefined): Promise<void> {
 
 async function cronStatus(): Promise<void> {
   try {
-    const result = await apiRequest("/scheduled-tasks/status");
+    const result = await apiRequest("/api/cron/status");
 
     if (!result.status || result.status.length === 0) {
       console.log("No active scheduler tasks");

@@ -1,11 +1,11 @@
 /**
  * Hive Scheduler - Pipeline Integration
  * 
- * Integrates scheduled tasks with the Hive agent pipeline.
- * Converts scheduled tasks into system messages that flow through the agent system.
+ * Integrates cron jobs with the Hive agent pipeline.
+ * Converts cron jobs into system messages that flow through the agent system.
  */
 
-import type { ScheduledTask, TaskExecutionResult } from "./types";
+import type { CronJob, CronJobExecutionResult } from "./types";
 import { logger } from "../utils/logger";
 import { getDb } from "../storage/sqlite";
 import { buildAgentLoop } from "../agent/agent-loop";
@@ -16,7 +16,6 @@ import { resolveBestChannel } from "../tools/cron/index";
 
 const log = logger.child("SchedulerIntegration");
 
-// Scheduler instance for internal tasks (e.g., cleanup)
 let _scheduler: { runCleanup(): void } | null = null;
 
 export function setSchedulerForCleanup(scheduler: { runCleanup(): void }): void {
@@ -24,66 +23,60 @@ export function setSchedulerForCleanup(scheduler: { runCleanup(): void }): void 
 }
 
 /**
- * Execute a scheduled task through the agent pipeline
+ * Execute a cron job through the agent pipeline
  * 
  * This handler:
- * 1. Parses the task payload
- * 2. Builds a system message with metadata
+ * 1. Parses the job payload
+ * 2. Builds a system message with metadata including the `task` field as instruction
  * 3. Routes to the target agent (or Coordinator if none specified)
  * 4. Executes the tool if tool_name is specified
  * 5. Returns the agent response
  */
-export async function executeScheduledTask(task: ScheduledTask): Promise<TaskExecutionResult> {
-  log.info(`[execute] Processing task "${task.name}" (${task.id})`);
+export async function executeScheduledTask(job: CronJob): Promise<CronJobExecutionResult> {
+  log.info(`[execute] Processing job "${job.name}" (${job.id})`);
 
   try {
-    // Parse payload
     let payload: Record<string, unknown>;
     try {
-      payload = JSON.parse(task.payload);
+      payload = JSON.parse(job.payload);
     } catch (err) {
-      log.error(`[execute] Invalid payload JSON for task "${task.id}": ${(err as Error).message}`);
+      log.error(`[execute] Invalid payload JSON for job "${job.id}": ${(err as Error).message}`);
       return { success: false, error: "Invalid payload JSON" };
     }
 
-    // Extract prompt/message from payload
     const prompt = (payload.prompt || payload.message) as string | undefined;
-    if (!prompt && !payload._internal) {
-      log.error(`[execute] Task "${task.id}" has no prompt or message in payload`);
-      return { success: false, error: "Missing prompt or message in payload" };
+    if (!prompt && !payload._internal && !job.task) {
+      log.error(`[execute] Job "${job.id}" has no prompt, message, or task instruction`);
+      return { success: false, error: "Missing prompt, message, or task instruction" };
     }
 
-    // Handle internal cleanup task
     if (payload._internal === true && (payload as any).action === "cleanup") {
       if (_scheduler) {
         _scheduler.runCleanup();
       } else {
-        log.warn("[execute] Cleanup task fired but scheduler instance not available");
+        log.warn("[execute] Cleanup job fired but scheduler instance not available");
       }
-      log.info("[execute] Cleanup task executed");
+      log.info("[execute] Cleanup job executed");
       return { success: true, response: "Cleanup completed" };
     }
 
     // Build message metadata
     const metadata = {
       source: "scheduler" as const,
-      task_id: task.id,
-      task_name: task.name,
-      channel: task.channel,
+      task_id: job.id,
+      task_name: job.name,
+      channel: job.channel,
       scheduled: true,
-      tool_name: task.tool_name || undefined,
+      tool_name: job.tool_name || undefined,
     };
 
-    // Determine target agent
-    let targetAgentId: string | null = task.agent_id || null;
+    let targetAgentId: string | null = job.agent_id || null;
     
-    // If no agent specified, route to Coordinator
     if (!targetAgentId) {
       targetAgentId = resolveAgentId(null);
       log.debug(`[execute] No agent specified, routing to Coordinator: ${targetAgentId}`);
     }
 
-    // Get user timezone for context
     const db = getDb();
     const user = db.query("SELECT id, timezone, language FROM users LIMIT 1").get() as {
       id: string;
@@ -94,7 +87,6 @@ export async function executeScheduledTask(task: ScheduledTask): Promise<TaskExe
     const userTimezone = user?.timezone || "UTC";
     const userLanguage = user?.language || "en";
 
-    // Build context with current datetime in user's timezone
     const now = new Date();
     const dateOptions: Intl.DateTimeFormatOptions = {
       timeZone: userTimezone,
@@ -114,29 +106,26 @@ export async function executeScheduledTask(task: ScheduledTask): Promise<TaskExe
     const fecha_usuario = new Intl.DateTimeFormat(userLanguage === "es" ? "es-ES" : "en-US", dateOptions).format(now);
     const hora_usuario = new Intl.DateTimeFormat(userLanguage === "es" ? "es-ES" : "en-US", timeOptions).format(now);
 
-    // Build the full prompt with context
+    // Build the full prompt with the `task` field as the primary instruction
     const contextPrompt = `[SCHEDULED TASK]
-Task: ${task.name}
-Type: ${task.task_type}
+Name: ${job.name}
+Instruction: ${job.task}
+Type: ${job.task_type}
 Triggered at: ${hora_usuario} on ${fecha_usuario} (${userTimezone})
 
-${prompt || `Execute tool: ${task.tool_name}`}`;
+${prompt || `Execute tool: ${job.tool_name}`}`;
 
     log.debug(`[execute] Sending to agent ${targetAgentId}: "${contextPrompt.slice(0, 100)}..."`);
 
-    // Build agent loop and execute
     try {
       const agentLoop = buildAgentLoop({ mcpManager: undefined });
       
-      // Create a synthetic session ID for this scheduled task
-      const sessionId = `sched_${task.id}_${Date.now()}`;
+      const sessionId = `sched_${job.id}_${Date.now()}`;
 
-      // Resolve "system" to a real channel so report_progress/notify tools work correctly
-      const agentChannel = (task.channel && task.channel !== "system")
-        ? task.channel
+      const agentChannel = (job.channel && job.channel !== "system")
+        ? job.channel
         : resolveBestChannel(user?.id || "");
 
-      // Execute through agent loop stream
       const messages = [{ role: "user", content: contextPrompt }];
       const stream = agentLoop.stream({ messages }, {
         configurable: {
@@ -149,7 +138,6 @@ ${prompt || `Execute tool: ${task.tool_name}`}`;
         },
       });
 
-      // Collect the response from the stream
       let response = "";
       let hasError = false;
       
@@ -161,7 +149,6 @@ ${prompt || `Execute tool: ${task.tool_name}`}`;
           }
         }
         if (chunk.tools?.messages) {
-          // Check for tool errors
           for (const msg of chunk.tools.messages) {
             if (msg.content?.error) {
               hasError = true;
@@ -175,7 +162,7 @@ ${prompt || `Execute tool: ${task.tool_name}`}`;
         throw new Error("Agent execution returned errors");
       }
 
-      log.info(`[execute] Agent response received for task "${task.name}"`);
+      log.info(`[execute] Agent response received for job "${job.name}"`);
 
       return {
         success: true,
@@ -189,7 +176,7 @@ ${prompt || `Execute tool: ${task.tool_name}`}`;
       };
     }
   } catch (err) {
-    log.error(`[execute] Task execution failed: ${(err as Error).message}`);
+    log.error(`[execute] Job execution failed: ${(err as Error).message}`);
     return {
       success: false,
       error: (err as Error).message,
@@ -198,10 +185,7 @@ ${prompt || `Execute tool: ${task.tool_name}`}`;
 }
 
 /**
- * Send notification to user's channel after task execution
- * 
- * This is called after a task completes to notify the user
- * via their preferred channel (if not system).
+ * Send notification to user's channel after job execution
  */
 export async function notifyTaskCompletion(
   taskId: string,
@@ -212,47 +196,21 @@ export async function notifyTaskCompletion(
 ): Promise<void> {
   const db = getDb();
 
-  // Get task details
   const task = db.query(
-    "SELECT channel, agent_id FROM scheduled_tasks WHERE id = ?"
+    "SELECT channel, agent_id FROM cron_jobs WHERE id = ?"
   ).get(taskId) as { channel: string; agent_id: string | null } | undefined;
 
   if (!task) {
-    log.warn(`[notify] Task "${taskId}" not found`);
+    log.warn(`[notify] Job "${taskId}" not found`);
     return;
   }
 
-  // Get real user ID from users table
   const userRow = db.query("SELECT id FROM users LIMIT 1").get() as { id: string } | undefined;
   const userId = userRow?.id || "";
 
-  // Get channels that have a user identity AND are currently active/connected
-  const activeChannels = db.query(`
-    SELECT ui.channel FROM user_identities ui
-    JOIN channels c ON c.id = ui.channel
-    WHERE ui.user_id = ? AND c.active = 1 AND c.status = 'connected'
-  `).all(userId) as { channel: string }[];
+  const explicitChannel = task.channel && task.channel !== "system" ? task.channel : undefined;
+  const notifyChannel = resolveBestChannel(userId, explicitChannel) || "webchat";
 
-  // Fallback: if no active channels found (e.g. all disconnected), use any identity
-  const identities = activeChannels.length > 0
-    ? activeChannels
-    : db.query("SELECT channel FROM user_identities WHERE user_id = ?").all(userId) as { channel: string }[];
-
-  // Determine best channel — "system" is internal-only, always resolve to a real channel
-  const preferred = ["telegram", "discord", "slack", "whatsapp", "webchat"];
-  let notifyChannel = (task.channel && task.channel !== "system") ? task.channel : "";
-  if (!notifyChannel || !identities.some((i) => i.channel === notifyChannel)) {
-    for (const p of preferred) {
-      if (identities.some((i) => i.channel === p)) {
-        notifyChannel = p;
-        break;
-      }
-    }
-  }
-  // Final fallback if no identities registered at all
-  if (!notifyChannel || notifyChannel === "system") notifyChannel = "webchat";
-
-  // Build notification message
   const status = success ? "✅" : "❌";
   const message = success
     ? `${status} Scheduled task "${taskName}" completed\n${response || ""}`
@@ -260,20 +218,18 @@ export async function notifyTaskCompletion(
 
   log.info(`[notify] Sending notification to ${notifyChannel}: "${message.slice(0, 50)}..."`);
 
-  // Persist to conversation history so the message is visible even if WS is disconnected
   try {
     addMessage(userId, "assistant", message, { channel: notifyChannel });
   } catch (e) {
     log.warn(`[notify] Failed to persist notification to DB: ${(e as Error).message}`);
   }
 
-  // Also push via live channel (WS/Telegram/etc.) if connected
   await sendToUserChannel(notifyChannel, userId, message);
   log.info(`[notify] Notification sent to ${notifyChannel}`);
 }
 
 /**
- * Create the task execution handler for CronScheduler
+ * Create the job execution handler for CronScheduler
  */
 export function createTaskHandler() {
   return executeScheduledTask;

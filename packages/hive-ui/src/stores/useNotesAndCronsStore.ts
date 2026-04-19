@@ -6,7 +6,7 @@ interface NotesAndCronsState {
     // Notes
     notes: ScratchpadNote[];
 
-    // Scheduled tasks (new /api/scheduled-tasks system)
+    // Scheduled tasks (cron /api/cron system)
     scheduledTasks: ScheduledTask[];
     taskHistory: Record<string, TaskRun[]>; // taskId → runs
 
@@ -63,8 +63,8 @@ export const useNotesAndCronsStore = create<NotesAndCronsState>((set, get) => ({
         set({ isLoading: true, error: null });
         try {
             const path = status
-                ? `/api/scheduled-tasks?status=${status}`
-                : '/api/scheduled-tasks';
+                ? `/api/cron?status=${status}`
+                : '/api/cron';
             const data = await apiClient<{ tasks: ScheduledTask[]; count: number }>(path);
             set({ scheduledTasks: data.tasks ?? [], isLoading: false });
         } catch (err) {
@@ -74,7 +74,7 @@ export const useNotesAndCronsStore = create<NotesAndCronsState>((set, get) => ({
 
     pauseTask: async (id: string) => {
         try {
-            await apiClient(`/api/scheduled-tasks/${id}/pause`, { method: 'POST' });
+            await apiClient(`/api/cron/${id}/pause`, { method: 'POST' });
             set((state) => ({
                 scheduledTasks: state.scheduledTasks.map((t) =>
                     t.id === id ? { ...t, status: 'paused' as const } : t
@@ -87,7 +87,7 @@ export const useNotesAndCronsStore = create<NotesAndCronsState>((set, get) => ({
 
     resumeTask: async (id: string) => {
         try {
-            await apiClient(`/api/scheduled-tasks/${id}/resume`, { method: 'POST' });
+            await apiClient(`/api/cron/${id}/resume`, { method: 'POST' });
             set((state) => ({
                 scheduledTasks: state.scheduledTasks.map((t) =>
                     t.id === id ? { ...t, status: 'active' as const } : t
@@ -100,7 +100,7 @@ export const useNotesAndCronsStore = create<NotesAndCronsState>((set, get) => ({
 
     deleteTask: async (id: string) => {
         try {
-            await apiClient(`/api/scheduled-tasks/${id}`, { method: 'DELETE' });
+            await apiClient(`/api/cron/${id}`, { method: 'DELETE' });
             set((state) => ({
                 scheduledTasks: state.scheduledTasks.filter((t) => t.id !== id),
             }));
@@ -111,7 +111,7 @@ export const useNotesAndCronsStore = create<NotesAndCronsState>((set, get) => ({
 
     triggerTask: async (id: string) => {
         try {
-            await apiClient(`/api/scheduled-tasks/${id}/trigger`, { method: 'POST' });
+            await apiClient(`/api/cron/${id}/trigger`, { method: 'POST' });
         } catch (err) {
             set({ error: (err as Error).message });
         }
@@ -120,7 +120,7 @@ export const useNotesAndCronsStore = create<NotesAndCronsState>((set, get) => ({
     fetchTaskHistory: async (id: string, limit = 10) => {
         try {
             const data = await apiClient<{ history: TaskRun[]; count: number }>(
-                `/api/scheduled-tasks/${id}/history?limit=${limit}`
+                `/api/cron/${id}/history?limit=${limit}`
             );
             set((state) => ({
                 taskHistory: { ...state.taskHistory, [id]: data.history ?? [] },
@@ -134,7 +134,7 @@ export const useNotesAndCronsStore = create<NotesAndCronsState>((set, get) => ({
 
     fetchCronChannels: async () => {
         try {
-            const data = await apiClient<{ channels: string[] | CronChannel[] }>('/api/cron-jobs/channels');
+            const data = await apiClient<{ channels: string[] | CronChannel[] }>('/api/cron/channels');
             let channels: CronChannel[] = [];
             if (Array.isArray(data.channels)) {
                 channels = data.channels.map((ch) => {

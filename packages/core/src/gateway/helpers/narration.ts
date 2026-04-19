@@ -13,6 +13,7 @@ export const TOOL_NARRATIONS: Record<string, string> = {
   // Cron
   "cron.create": "Programando tarea...",
   "cron.list": "Consultando tareas programadas...",
+  "cron.update": "Actualizando tarea programada...",
   "cron.delete": "Eliminando tarea programada...",
   "cron.pause": "Pausando tarea programada...",
   "cron.resume": "Reanudando tarea programada...",

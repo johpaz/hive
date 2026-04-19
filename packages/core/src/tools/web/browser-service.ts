@@ -88,6 +88,7 @@ export class CDPClient {
   get url(): string { return this._url; }
   get title(): string { return ""; }
   get loading(): boolean { return false; }
+  get isConnected(): boolean { return this.ws !== null && this.ws.readyState === WebSocket.OPEN; }
 
   // ── Launch ──────────────────────────────────────────────────────────────────
 
@@ -377,7 +378,9 @@ export class CDPClient {
 export type BrowserView = CDPClient;
 
 let _client: CDPClient | null = null;
+let _spec: LaunchSpec | undefined = undefined;
 let _available = false;
+let _launching = false;
 
 export class BrowserService {
   private static instance: BrowserService | null = null;
@@ -391,9 +394,13 @@ export class BrowserService {
     return BrowserService.instance;
   }
 
+  /**
+   * Probe-only: detect if a browser is installed and mark tools as available.
+   * Does NOT launch the browser — that happens lazily on first tool use.
+   */
   async start(): Promise<boolean> {
-    const spec = detectBrowser();
-    if (!spec) {
+    _spec = detectBrowser();
+    if (!_spec) {
       log.warn("Ningún browser Chromium encontrado.");
       log.warn("  Linux nativo: sudo dnf install chromium");
       log.warn("  Flatpak:      flatpak install flathub com.google.Chrome");
@@ -401,31 +408,63 @@ export class BrowserService {
       _available = false;
       return false;
     }
+    _available = true;
+    log.info(`✅ Browser detectado (${_spec.kind === "native" ? _spec.path : _spec.appId}) — se abrirá al primer uso`);
+    return true;
+  }
 
+  /**
+   * Lazy launch: called by getView() on first tool use.
+   */
+  private async _ensureLaunched(): Promise<boolean> {
+    if (_client) return true;
+    if (!_spec) return false;
+    if (_launching) {
+      // Wait up to 10s for concurrent launch to finish
+      const deadline = Date.now() + 10000;
+      while (_launching && Date.now() < deadline) await new Promise(r => setTimeout(r, 100));
+      return !!_client;
+    }
+    _launching = true;
     try {
       _client = new CDPClient();
-      await _client.launch(spec);
-      _available = true;
-      log.info("✅ Browser abierto en modo visible — el usuario verá las acciones del agente");
+      await _client.launch(_spec);
+      log.info("✅ Browser abierto — el usuario verá las acciones del agente");
       return true;
     } catch (err) {
       log.warn(`Browser no pudo iniciarse: ${(err as Error).message}`);
       _client = null;
       _available = false;
       return false;
+    } finally {
+      _launching = false;
     }
   }
 
-  getView(): CDPClient | null {
+  async getView(): Promise<CDPClient | null> {
+    if (!_available) return null;
+
+    // Health-check: if Chrome was closed by the user or crashed, relaunch on next call
+    if (_client && !_client.isConnected) {
+      log.warn("Browser connection lost — relaunching on next tool call");
+      _client = null;
+    }
+
+    await this._ensureLaunched();
+    return _client;
+  }
+
+  /** Sync version — returns existing client only (no launch). Use getView() in tools. */
+  getViewSync(): CDPClient | null {
     return _client;
   }
 
   async getPage(): Promise<CDPClient | null> {
-    return _client;
+    return this.getView();
   }
 
   isAvailable(): boolean {
-    return _available && _client !== null;
+    return _available;
   }
 
   isRunning(): boolean {

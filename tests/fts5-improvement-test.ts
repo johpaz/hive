@@ -126,7 +126,7 @@ const TOOL_TEST_CASES: TestCase[] = [
   {
     message: "crear una tarea programada",
     expectedSkills: [],
-    expectedTools: ["hive.schedule.create"],
+    expectedTools: ["cron.create"],
     description: "Schedule create"
   },
   {

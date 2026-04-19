@@ -50,7 +50,8 @@ export const browserScriptTool: Tool = {
     log.info(`Executing script${url ? ` on ${url}` : ""} (${script.length} chars)`);
 
     try {
-      const view = browserService.getView()!;
+      const view = await browserService.getView();
+      if (!view) return { ok: false, error: "Browser automation not available. Install Chrome/Chromium." };
 
       if (url) {
         await view.navigate(url);

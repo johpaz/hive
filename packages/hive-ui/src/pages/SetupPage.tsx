@@ -27,7 +27,7 @@ import { useLoaderStore } from "@/stores/useLoaderStore";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/api";
 import { getApiBaseUrl } from "@/lib/gateway-url";
-import { swal } from "@/lib/swal";
+
 
 const PROVIDER_LOGOS: Record<string, string> = {
   gemini: "🔵", anthropic: "🟠", openai: "🟢", groq: "🔴",

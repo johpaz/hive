@@ -113,7 +113,6 @@ Hive es un **Gateway de IA Orquestado** con arquitectura de enjambre (swarm) de 
 | **cron-parser** | v5.5.0 | Parsing de expresiones cron |
 | **croner** | v10.0.1 | Task scheduling engine |
 | **async-mutex** | v0.5.0 | Mutex para concurrencia |
-| **puppeteer-core** | v24.0.0 | Browser automation |
 | **react-markdown** | v10.1.0 | Markdown rendering en UI |
 | **@clack/prompts** | v0.5.0 | CLI prompts interactivos |
 | **qrcode-terminal** | latest | QR codes en terminal |

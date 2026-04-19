@@ -50,7 +50,7 @@ function createMockView(overrides: Partial<MockView> = {}): MockView {
 
 function createMockService(view: MockView | null = null) {
   return {
-    getView: () => view,
+    getView: async () => view,
     getPage: async () => view,
     isAvailable: () => view !== null,
     isRunning: () => view !== null,

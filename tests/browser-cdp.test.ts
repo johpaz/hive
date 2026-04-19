@@ -483,7 +483,7 @@ describe.skipIf(!RUN)("Herramientas del agente — integración real", () => {
     );
     const svc = initializeBrowserService({} as any);
     // Inyectamos el client existente en el singleton via duck-typing
-    (svc as any).getView = () => client;
+    (svc as any).getView = async () => client;
     (svc as any).isAvailable = () => true;
     (svc as any).isRunning = () => true;
   });

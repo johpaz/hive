@@ -50,7 +50,8 @@ export const browserNavigateTool: Tool = {
     log.info(`Navigating: ${url}${waitFor ? ` (waiting for: ${waitFor})` : ""}`);
 
     try {
-      const view = browserService.getView()!;
+      const view = await browserService.getView();
+      if (!view) return { ok: false, error: "Browser automation not available. Install Chrome/Chromium." };
 
       await view.navigate(url);
 

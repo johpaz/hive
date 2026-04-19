@@ -50,7 +50,8 @@ export const browserClickTool: Tool = {
     log.info(`Clicking: ${selector}${url ? ` on ${url}` : ""}`);
 
     try {
-      const view = browserService.getView()!;
+      const view = await browserService.getView();
+      if (!view) return { ok: false, error: "Browser automation not available. Install Chrome/Chromium." };
 
       if (url) {
         await view.navigate(url);

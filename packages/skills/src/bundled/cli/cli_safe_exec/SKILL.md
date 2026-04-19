@@ -54,7 +54,7 @@ steps:
     output: error_handling
 
 rules:
-  - "NEVER use for scheduled tasks — use cron_add instead"
+  - "NEVER use for scheduled tasks — use cron.create instead"
   - "Prefer read-only commands when possible"
   - "Confirm before destructive operations (rm, DROP, DELETE, --force)"
   - "Set appropriate timeout: 30s simple, 120s builds, 300s heavy"
@@ -97,7 +97,7 @@ Para ejecutar comandos de shell de forma segura con manejo de errores y timeouts
 
 ## ⚠️ ADVERTENCIA CRÍTICA
 
-**NUNCA usar para tareas programadas** — usar `cron_add` en su lugar.
+**NUNCA usar para tareas programadas** — usar `cron.create` en su lugar.
 
 ## Workflow
 
@@ -119,7 +119,7 @@ Para ejecutar comandos de shell de forma segura con manejo de errores y timeouts
 
 ## Errores a Evitar
 
-- ❌ Usar para cron (usar cron_add)
+- ❌ Usar para cron (usar cron.create)
 - ❌ Sin timeout apropiado
 - ❌ Ignorar exitCode
 - ❌ Comandos destructivos sin confirmar

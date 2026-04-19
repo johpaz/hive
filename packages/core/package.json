@@ -84,7 +84,6 @@
     "./tools/projects": "./src/tools/projects/index.ts",
     "./tools/voice": "./src/tools/voice/index.ts",
     "./tools/web": "./src/tools/web/index.ts",
-    "./tools/schedule": "./src/tools/schedule.ts",
     "./integrations": "./src/integrations/index.ts",
     "./integrations/catalog": "./src/integrations/catalog.ts",
     "./integrations/env": "./src/integrations/env.ts",

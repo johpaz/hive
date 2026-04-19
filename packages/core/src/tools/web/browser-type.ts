@@ -60,7 +60,8 @@ export const browserTypeTool: Tool = {
     log.info(`Typing into: ${selector}${url ? ` on ${url}` : ""} (${text.length} chars)`);
 
     try {
-      const view = browserService.getView()!;
+      const view = await browserService.getView();
+      if (!view) return { ok: false, error: "Browser automation not available. Install Chrome/Chromium." };
 
       if (url) {
         await view.navigate(url);

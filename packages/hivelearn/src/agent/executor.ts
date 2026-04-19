@@ -21,6 +21,24 @@ function extractCacheKey(taskDesc: string): { conceptoSlug: string; nivel: strin
   return { conceptoSlug, nivel, rangoEdad }
 }
 
+/** Extrae contexto de validación del taskDescription */
+function extractValidationContext(taskDesc: string): {
+  rangoEdad?: string
+  tema?: string
+  nodoId?: string
+} {
+  const rangoEdad = taskDesc.match(/Rango edad: (\S+)/)?.[1]?.replace('.', '')
+  const tema = taskDesc.match(/Meta: "([^"]+)"/)?.[1] || 
+               taskDesc.match(/Tema: "([^"]+)"/)?.[1]
+  const nodoId = taskDesc.match(/Nodo: "([^"]+)"/)?.[1]
+  
+  return {
+    rangoEdad,
+    tema,
+    nodoId,
+  }
+}
+
 export class HiveLearnExecutor {
   private persistence: LessonPersistence
 
@@ -60,12 +78,16 @@ export class HiveLearnExecutor {
     let status: 'ok' | 'failed' = 'ok'
 
     try {
+      // Extraer contexto de validación del taskDescription
+      const validationContext = extractValidationContext(node.taskDescription)
+      
       output = await runHiveLearnAgent({
         agentId: node.agentId,
         taskDescription: node.taskDescription + contextBlock,
         systemPrompt,
         tools,
         threadId,
+        validationContext,
       })
     } catch (err) {
       status = 'failed'

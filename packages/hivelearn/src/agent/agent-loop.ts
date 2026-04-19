@@ -16,6 +16,7 @@ import { callLLM } from '@johpaz/hive-agents-core/agent/llm-client'
 import type { LLMMessage, LLMToolDef, LLMCallOptions } from '@johpaz/hive-agents-core/agent/llm-client'
 import type { Tool } from '../types/tool'
 import { logger } from '../utils/logger'
+import { validatePedagogicalContent } from './validation/pedagogical-validation'
 
 const log = logger.child('hl-agent-loop')
 
@@ -33,6 +34,13 @@ export interface AgentLoopOptions {
   maxIterations?: number
   maxTokens?: number
   temperature?: number
+  /** Contexto para validación pedagógica */
+  validationContext?: {
+    agenteId: string
+    rangoEdad?: string
+    tema?: string
+    nodoId?: string
+  }
 }
 
 /** Convierte un Tool local a LLMToolDef para pasarlo al LLM */
@@ -105,6 +113,27 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<string> {
 
     // Con execute() → ejecutar la tool
     const execResult = await tool.execute(parsedArgs)
+
+    // Validación pedagógica después de ejecutar la tool
+    if (opts.validationContext) {
+      try {
+        const validationResult = validatePedagogicalContent(parsedArgs, {
+          agenteId: opts.validationContext.agenteId,
+          rangoEdad: opts.validationContext.rangoEdad || 'adulto',
+          tema: opts.validationContext.tema || '',
+          tipoContenido: toolCall.function.name,
+        })
+        
+        log.info(`[agent-loop] validation for ${toolCall.function.name}: approved=${validationResult.aprobado}`)
+        
+        // Si la validación falla, registrar observaciones
+        if (!validationResult.aprobado) {
+          log.warn(`[agent-loop] validation failed for ${toolCall.function.name}: ${validationResult.observaciones.join(', ')}`)
+        }
+      } catch (validationError) {
+        log.warn(`[agent-loop] validation error for ${toolCall.function.name}: ${(validationError as Error).message}`)
+      }
+    }
 
     // Passthrough: execute solo eco de params → args son el output estructurado final
     if (isPassthrough(execResult, parsedArgs)) {

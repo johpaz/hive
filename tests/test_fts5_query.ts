@@ -16,7 +16,7 @@ const db = new Database(dbPath, { readonly: true });
 console.log("=== 1. Tools activas en DB ===");
 const activeTools = db.query("SELECT name, category FROM tools WHERE enabled = 1 AND active = 1").all() as any[];
 console.log(`  Total: ${activeTools.length}`);
-const cronTools = activeTools.filter(t => t.name.startsWith('cron_'));
+const cronTools = activeTools.filter(t => t.name.startsWith('cron.'));
 console.log(`  Cron tools: ${cronTools.length}`);
 cronTools.forEach(t => console.log(`    → ${t.name}`));
 
@@ -24,16 +24,16 @@ console.log("\n=== 2. Tools en FTS5 ===");
 const ftsCount = db.query("SELECT COUNT(*) as n FROM tools_fts").get() as any;
 console.log(`  Total en tools_fts: ${ftsCount.n}`);
 
-// Verificar contenido de tools_fts para cron_edit
+// Verificar contenido de tools_fts para cron.update
 console.log("\n=== 3. Contenido de tools_fts para cron_* ===");
-const cronFts = db.query("SELECT tool_name, name, category FROM tools_fts WHERE tool_name LIKE 'cron_%'").all() as any[];
+const cronFts = db.query("SELECT tool_name, name, category FROM tools_fts WHERE tool_name LIKE 'cron.%'").all() as any[];
 console.log(`  Cron tools en FTS5: ${cronFts.length}`);
 cronFts.forEach(t => console.log(`    → ${t.tool_name} [${t.category}]`));
 
 // Test de queries
 const testQueries = [
-    "cron_edit",
-    "cron_list",
+    "cron.update",
+    "cron.list",
     "cron",
     "editar tarea programada",
     "listar tareas",
@@ -110,7 +110,7 @@ console.log(`  enabled=1 AND active=1: ${bothTools.n}`);
 
 // Verificar cron_tools específicas
 console.log("\n=== 6. Estado de cron_tools ===");
-const cronToolsDetail = db.query("SELECT name, enabled, active FROM tools WHERE name LIKE 'cron_%'").all() as any[];
+const cronToolsDetail = db.query("SELECT name, enabled, active FROM tools WHERE name LIKE 'cron.%'").all() as any[];
 cronToolsDetail.forEach(t => {
     const status = t.enabled === 1 && t.active === 1 ? "✅" : t.enabled === 1 ? "⚠️ active=0" : "❌ enabled=0";
     console.log(`  ${status} ${t.name} (enabled=${t.enabled}, active=${t.active})`);

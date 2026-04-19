@@ -50,7 +50,25 @@ import { handleGetTools, handleActivateTool, handleUpdateTool } from "./routes/t
 import { handleGetProjects, handleGetActiveProject, handleCreateProject, handleUpdateProject, handleGetProjectHistory, handleGetProjectDetail, handleGetProjectTasks } from "./routes/projects";
 import { handleGetTasks, handleUpdateTask } from "./routes/tasks";
 import { setChannelSendFn } from "./channel-notify";
-import { handleGetCronJobs, handleGetCronChannels, handleUpdateCronJob } from "./routes/cron";
+import { CronScheduler } from "../scheduler/CronScheduler";
+import { DAGScheduler, ParallelStrategy } from "../scheduler/dag/index";
+import { createTaskHandler, setSchedulerForCleanup } from "../scheduler/integration";
+
+import { setSchedulerInstance as setScheduleToolsInstance } from "../tools/cron/index.ts";
+import { setSchedulerInstance as setCronApiInstance } from "./routes/cron-api";
+import {
+  handleGetCronJobs,
+  handleGetCronJob,
+  handleCreateCronJob,
+  handleUpdateCronJob,
+  handleDeleteCronJob,
+  handlePauseCronJob,
+  handleResumeCronJob,
+  handleTriggerCronJob,
+  handleGetCronJobHistory,
+  handleGetCronStatus,
+  handleGetCronChannels,
+} from "./routes/cron-api";
 import { handleGetChannels, handleGetChannelConfig, handleActivateChannel, handleDeactivateChannel, handleCreateChannel, handleGetChannelAccount, handleUpdateChannelAccount, handleDeleteChannelAccount, handleChannelAction, handleUpdateChannelSettings, handleToggleChannel, handleGetChannelStatus, handleReconnectChannel } from "./routes/channels";
 import { handleGetMcpServers, handleGetMcpServerDetail, handleCreateMcpServer, handleUpdateMcpServer, handleDeleteMcpServer, handleToggleMcpServer, handleGetMCPServerTools } from "./routes/mcp";
 import { handleGetModels, handleCreateModel, handleToggleModel, handleGetModelsConfig, handleUpdateModelsConfig, handleDeleteModel, handleUpdateModel } from "./routes/models";
@@ -60,24 +78,8 @@ import { handleGetChatHistory, handleGetCanvas, handleGetNotes, handleUpdateNote
 import { handleChat as handlePostChat } from "./routes/chat";
 import { handleGetConfig } from "./routes/config";
 import { handleGetWorkspace, handleUpdateWorkspace, handleValidateWorkspace, handleCreateWorkspace, handleOpenWorkspace } from "./routes/workspace";
-import { getNarration, expandPath, addCorsHeaders, redactConfig, CORS_ORIGINS } from "./helpers";
-import { CronScheduler } from "../scheduler/CronScheduler";
-import { DAGScheduler, ParallelStrategy } from "../scheduler/dag/index";
-import { createTaskHandler, setSchedulerForCleanup } from "../scheduler/integration";
-import { setSchedulerInstance as setScheduleToolsInstance } from "../tools/cron/index.ts";
-import { setSchedulerInstance as setScheduledTasksRoutesInstance } from "./routes/scheduled-tasks";
-import {
-  handleGetScheduledTasks,
-  handleGetScheduledTask,
-  handleCreateScheduledTask,
-  handleUpdateScheduledTask,
-  handleDeleteScheduledTask,
-  handlePauseScheduledTask,
-  handleResumeScheduledTask,
-  handleTriggerScheduledTask,
-  handleGetTaskHistory,
-  handleGetSchedulerStatus,
-} from "./routes/scheduled-tasks";
+import { getNarration, expandPath, addCorsHeaders, CORS_ORIGINS } from "./helpers";
+import { redactConfig } from "./helpers";
 
 const logSubscribers = new Set<string>();
 
@@ -220,7 +222,7 @@ export async function startGateway(config: Config): Promise<void> {
 
         // Register scheduler globally for tools, routes, and internal cleanup
         setScheduleToolsInstance(scheduler);
-        setScheduledTasksRoutesInstance(scheduler);
+        setCronApiInstance(scheduler);
         setSchedulerForCleanup(scheduler);
 
         log.info(`📅 CronScheduler initialized with ${scheduler.getStatus().length} task(s)`);
@@ -1966,64 +1968,54 @@ export async function startGateway(config: Config): Promise<void> {
           return await handleGetNotes(req, addCorsHeaders)
         }
 
-        // ── Cron Jobs API (legacy) ───────────────────────────────────────────
-        if (url.pathname === "/api/cron-jobs" && req.method === "GET") {
-          return await handleGetCronJobs(req, addCorsHeaders)
-        }
-
-        if (url.pathname === "/api/cron-jobs/channels" && req.method === "GET") {
-          return await handleGetCronChannels(req, addCorsHeaders)
-        }
-
-        if (url.pathname.match(/^\/api\/cron-jobs\/[^/]+\/toggle$/) && req.method === "PATCH") {
-          return await handleUpdateCronJob(req, addCorsHeaders)
-        }
-
-        // ── Scheduled Tasks API (new Croner-based) ──────────────────────────
-        const scheduledTasksMatch = url.pathname.match(/^\/api\/scheduled-tasks(\/[^/]+)?(\/[^/]+)?$/);
-        if (scheduledTasksMatch && req.method === "GET" && !scheduledTasksMatch[2]) {
-          if (scheduledTasksMatch[1] === "/status") {
-            return await handleGetSchedulerStatus(req, addCorsHeaders);
+        // ── Cron Jobs API ──────────────────────────────────────────────────
+        const cronMatch = url.pathname.match(/^\/api\/cron(\/[^/]+)?(\/[^/]+)?$/);
+        if (cronMatch && req.method === "GET" && !cronMatch[2]) {
+          if (cronMatch[1] === "/status") {
+            return await handleGetCronStatus(req, addCorsHeaders);
           }
-          if (scheduledTasksMatch[1]) {
-            const taskId = scheduledTasksMatch[1].slice(1);
-            return await handleGetScheduledTask(req, addCorsHeaders, taskId);
+          if (cronMatch[1] === "/channels") {
+            return await handleGetCronChannels(req, addCorsHeaders);
           }
-          return await handleGetScheduledTasks(req, addCorsHeaders);
+          if (cronMatch[1]) {
+            const taskId = cronMatch[1].slice(1);
+            return await handleGetCronJob(req, addCorsHeaders, taskId);
+          }
+          return await handleGetCronJobs(req, addCorsHeaders);
         }
 
-        if (scheduledTasksMatch && req.method === "POST" && !scheduledTasksMatch[2]) {
-          return await handleCreateScheduledTask(req, addCorsHeaders);
+        if (cronMatch && req.method === "POST" && !cronMatch[2]) {
+          return await handleCreateCronJob(req, addCorsHeaders);
         }
 
-        if (scheduledTasksMatch && req.method === "GET" && scheduledTasksMatch[2] === "/history") {
-          const taskId = scheduledTasksMatch[1]?.slice(1);
-          return await handleGetTaskHistory(req, addCorsHeaders, taskId || "");
+        if (cronMatch && req.method === "GET" && cronMatch[2] === "/history") {
+          const taskId = cronMatch[1]?.slice(1);
+          return await handleGetCronJobHistory(req, addCorsHeaders, taskId || "");
         }
 
-        if (scheduledTasksMatch && req.method === "POST" && scheduledTasksMatch[2] === "/pause") {
-          const taskId = scheduledTasksMatch[1]?.slice(1);
-          return await handlePauseScheduledTask(req, addCorsHeaders, taskId || "");
+        if (cronMatch && req.method === "POST" && cronMatch[2] === "/pause") {
+          const taskId = cronMatch[1]?.slice(1);
+          return await handlePauseCronJob(req, addCorsHeaders, taskId || "");
         }
 
-        if (scheduledTasksMatch && req.method === "POST" && scheduledTasksMatch[2] === "/resume") {
-          const taskId = scheduledTasksMatch[1]?.slice(1);
-          return await handleResumeScheduledTask(req, addCorsHeaders, taskId || "");
+        if (cronMatch && req.method === "POST" && cronMatch[2] === "/resume") {
+          const taskId = cronMatch[1]?.slice(1);
+          return await handleResumeCronJob(req, addCorsHeaders, taskId || "");
         }
 
-        if (scheduledTasksMatch && req.method === "POST" && scheduledTasksMatch[2] === "/trigger") {
-          const taskId = scheduledTasksMatch[1]?.slice(1);
-          return await handleTriggerScheduledTask(req, addCorsHeaders, taskId || "");
+        if (cronMatch && req.method === "POST" && cronMatch[2] === "/trigger") {
+          const taskId = cronMatch[1]?.slice(1);
+          return await handleTriggerCronJob(req, addCorsHeaders, taskId || "");
         }
 
-        if (scheduledTasksMatch && req.method === "PATCH" && scheduledTasksMatch[1] && !scheduledTasksMatch[2]) {
-          const taskId = scheduledTasksMatch[1].slice(1);
-          return await handleUpdateScheduledTask(req, addCorsHeaders, taskId);
+        if (cronMatch && req.method === "PATCH" && cronMatch[1] && !cronMatch[2]) {
+          const taskId = cronMatch[1].slice(1);
+          return await handleUpdateCronJob(req, addCorsHeaders, taskId);
         }
 
-        if (scheduledTasksMatch && req.method === "DELETE" && scheduledTasksMatch[1] && !scheduledTasksMatch[2]) {
-          const taskId = scheduledTasksMatch[1].slice(1);
-          return await handleDeleteScheduledTask(req, addCorsHeaders, taskId);
+        if (cronMatch && req.method === "DELETE" && cronMatch[1] && !cronMatch[2]) {
+          const taskId = cronMatch[1].slice(1);
+          return await handleDeleteCronJob(req, addCorsHeaders, taskId);
         }
 
         return addCorsHeaders(new Response("Not Found", { status: 404 }), req)

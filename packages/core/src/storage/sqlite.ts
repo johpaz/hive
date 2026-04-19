@@ -33,6 +33,50 @@ export function initializeDatabase(): Database {
 
     _db = new Database(dbPath, { create: true });
 
+    // ── Pre-schema migration: drop legacy cron tables before SCHEMA exec ──
+    // This must happen BEFORE SCHEMA runs, because CREATE TABLE IF NOT EXISTS
+    // will skip if the old table exists, leaving us with the wrong schema.
+    try {
+        const cronJobsCols = _db.query(`PRAGMA table_info(cron_jobs)`).all() as any[];
+        if (cronJobsCols.length > 0) {
+            const cronColNames = cronJobsCols.map((c: any) => c.name);
+            const needsMigration = cronColNames.includes("enabled")
+                || cronColNames.includes("user_id")
+                || !cronColNames.includes("status")
+                || !cronColNames.includes("task");
+
+            if (needsMigration) {
+                logger.info("🛠️  Dropping legacy cron_jobs table for schema rebuild...");
+                // Drop FK references first
+                try { _db.exec(`DROP TRIGGER IF EXISTS update_cron_jobs_updated_at`); } catch {}
+                try { _db.exec(`DROP TRIGGER IF EXISTS update_scheduled_tasks_updated_at`); } catch {}
+                try { _db.exec(`DROP TABLE IF EXISTS task_runs`); } catch {}
+                _db.exec(`DROP TABLE cron_jobs`);
+                logger.info("✅ Legacy cron_jobs table dropped — will be recreated by SCHEMA");
+            }
+        }
+
+        // Also drop scheduled_tasks if it exists (will be recreated with new name)
+        const stCheck = _db.query(`SELECT name FROM sqlite_master WHERE type='table' AND name='scheduled_tasks'`).all() as any[];
+        if (stCheck.length > 0) {
+            logger.info("🛠️  Dropping legacy scheduled_tasks table...");
+            try { _db.exec(`DROP TRIGGER IF EXISTS update_scheduled_tasks_updated_at`); } catch {}
+            _db.exec(`DROP TABLE scheduled_tasks`);
+            logger.info("✅ Legacy scheduled_tasks table dropped");
+        }
+
+        // Drop old indexes that reference legacy columns
+        try { _db.exec(`DROP INDEX IF EXISTS idx_cron_jobs_user`); } catch {}
+        try { _db.exec(`DROP INDEX IF EXISTS idx_cron_jobs_enabled`); } catch {}
+        try { _db.exec(`DROP INDEX IF EXISTS idx_cron_jobs_next_run`); } catch {}
+        try { _db.exec(`DROP INDEX IF EXISTS idx_scheduled_tasks_status`); } catch {}
+        try { _db.exec(`DROP INDEX IF EXISTS idx_scheduled_tasks_type`); } catch {}
+        try { _db.exec(`DROP INDEX IF EXISTS idx_scheduled_tasks_next_run`); } catch {}
+        try { _db.exec(`DROP INDEX IF EXISTS idx_scheduled_tasks_agent`); } catch {}
+    } catch (preSchemaErr) {
+        logger.warn("⚠️  Pre-schema migration check failed:", { error: (preSchemaErr as Error).message });
+    }
+
     // Use type assertion to avoid deprecated signature with bindings
     (_db as any).exec(SCHEMA);
     (_db as any).exec(PROJECTS_SCHEMA);
@@ -107,10 +151,32 @@ function ensureSchemaSync(): void {
     ensureColumnExists("skills", "created_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
     ensureColumnExists("skills", "updated_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
 
-    // Sync cron_jobs
-    ensureColumnExists("cron_jobs", "max_runs", "INTEGER");
-    ensureColumnExists("cron_jobs", "run_count", "INTEGER NOT NULL DEFAULT 0");
-    ensureColumnExists("cron_jobs", "expires_at", "INTEGER");
+// ── Cron Jobs: ensure triggers and columns are correct ──
+    // Triggers: clean up old references and recreate
+    try {
+        _db.exec(`DROP TRIGGER IF EXISTS update_scheduled_tasks_updated_at`);
+        _db.exec(`DROP TRIGGER IF EXISTS update_cron_jobs_updated_at`);
+        _db.exec(`CREATE TRIGGER IF NOT EXISTS update_cron_jobs_updated_at
+            AFTER UPDATE ON cron_jobs
+            BEGIN
+                UPDATE cron_jobs SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = NEW.id;
+            END`);
+    } catch (triggerErr) {
+        logger.warn("⚠️  Failed to recreate trigger:", { error: (triggerErr as Error).message });
+    }
+
+    // Ensure new columns exist (for incremental upgrades)
+    ensureColumnExists("cron_jobs", "task", "TEXT NOT NULL DEFAULT ''");
+    ensureColumnExists("cron_jobs", "status", "TEXT NOT NULL DEFAULT 'active'");
+    ensureColumnExists("cron_jobs", "task_type", "TEXT NOT NULL DEFAULT 'recurring'");
+    ensureColumnExists("cron_jobs", "start_at", "TEXT");
+    ensureColumnExists("cron_jobs", "stop_at", "TEXT");
+    ensureColumnExists("cron_jobs", "dom_and_dow", "INTEGER NOT NULL DEFAULT 0");
+    ensureColumnExists("cron_jobs", "fire_at", "TEXT");
+    ensureColumnExists("cron_jobs", "protect", "INTEGER NOT NULL DEFAULT 1");
+    ensureColumnExists("cron_jobs", "interval_sec", "INTEGER");
+    ensureColumnExists("cron_jobs", "agent_id", "TEXT");
+    ensureColumnExists("cron_jobs", "completed_at", "TEXT");
 
     // Context Engine tables — ensure created_at/updated_at columns exist
     ensureColumnExists("conversations", "created_at", "INTEGER NOT NULL DEFAULT (unixepoch())");

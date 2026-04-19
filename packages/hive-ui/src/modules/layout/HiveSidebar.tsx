@@ -55,7 +55,7 @@ const navItems = [
   { title: "Providers", url: "/providers", icon: Brain },
   { title: "Canvas", url: "/canvas", icon: Layers },
   { title: "Bridge", url: "/bridge", icon: Cable },
-  { title: "Logs", url: "/logs", icon: ScrollText },
+
 ];
 
 const configGroups = [
@@ -84,10 +84,10 @@ const cognitiveItems = [
 ];
 
 const hiveLearnSubItems = [
-  { id: "learn",    label: "Aprender",      url: "/hivelearn",          icon: BookOpen },
-  { id: "sessions", label: "Sesiones",      url: "/hivelearn/sessions", icon: History },
-  { id: "swarm",    label: "Enjambre",      url: "/hivelearn/swarm",    icon: Network },
-  { id: "config",   label: "Configuración", url: "/hivelearn/config",   icon: Settings2 },
+  { id: "learn", label: "Aprender", url: "/hivelearn", icon: BookOpen },
+  { id: "sessions", label: "Sesiones", url: "/hivelearn/sessions", icon: History },
+  { id: "swarm", label: "Enjambre", url: "/hivelearn/swarm", icon: Network },
+  { id: "config", label: "Configuración", url: "/hivelearn/config", icon: Settings2 },
 ];
 
 export function AppSidebar() {

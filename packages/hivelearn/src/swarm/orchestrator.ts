@@ -140,14 +140,36 @@ function enriquecerNodos(
   })
 }
 
+/** Aplica redistribución de XP del coordinador a los nodos */
+export function aplicarRedistribucionXP(
+  nodos: NodoLesson[],
+  xpRedistribuido?: Record<string, number>
+): NodoLesson[] {
+  if (!xpRedistribuido || Object.keys(xpRedistribuido).length === 0) {
+    return nodos
+  }
+
+  log.info(`[aplicarRedistribucionXP] aplicando redistribución a ${Object.keys(xpRedistribuido).length} nodos`)
+  
+  return nodos.map(nodo => {
+    const xpNuevo = xpRedistribuido[nodo.id]
+    if (xpNuevo !== undefined) {
+      log.info(`[aplicarRedistribucionXP] nodo ${nodo.id}: ${nodo.xpRecompensa} → ${xpNuevo}`)
+      return { ...nodo, xpRecompensa: xpNuevo }
+    }
+    return nodo
+  })
+}
+
 export function buildLessonProgram(opts: {
   dagResult: DAGResult
   alumnoId: string
   meta: string
   sessionId: string
   perfil: PerfilAdaptacion
+  xpRedistribuido?: Record<string, number>
 }): LessonProgram {
-  const { dagResult, alumnoId, meta, sessionId, perfil } = opts
+  const { dagResult, alumnoId, meta, sessionId, perfil, xpRedistribuido } = opts
 
   const resultMap = new Map<string, string>()
   for (const n of [...dagResult.completed, ...dagResult.failed]) {
@@ -158,7 +180,12 @@ export function buildLessonProgram(opts: {
   const structureRaw = resultMap.get('structure') ?? '{}'
   const nodosBase = buildNodosBase(structureRaw, perfil)
   const nodosEnriquecidos = enriquecerNodos(nodosBase, dagResult)
-  const nodos = calcularPosiciones(nodosEnriquecidos)
+  let nodos = calcularPosiciones(nodosEnriquecidos)
+
+  // Aplicar redistribución de XP del coordinador si existe
+  if (xpRedistribuido) {
+    nodos = aplicarRedistribucionXP(nodos, xpRedistribuido)
+  }
 
   // Gamificación — puede ser JSON libre (sin tool) o passthrough wrapper
   const gamRaw = resultMap.get('gamification') ?? '{}'
