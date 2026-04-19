@@ -119,16 +119,16 @@ describe("waitForCondition", () => {
 });
 
 describe("screenshotElement", () => {
-  it("retorna base64 del CDP cuando el elemento existe", async () => {
+  it("retorna base64 del screenshot cuando el elemento existe", async () => {
     const { screenshotElement } = await import("../packages/core/src/tools/web/browser-service.ts");
     const view = createMockView({
       evaluate: mock(async () => ({ x: 10, y: 20, width: 100, height: 50 })),
-      cdp: mock(async () => ({ data: "elementbase64==" })),
+      screenshot: mock(async () => "elementbase64=="),
     });
 
     const result = await screenshotElement(view as any, "#logo");
     expect(result).toBe("elementbase64==");
-    expect(view.cdp).toHaveBeenCalledWith("Page.captureScreenshot", expect.objectContaining({
+    expect(view.screenshot).toHaveBeenCalledWith(expect.objectContaining({
       clip: { x: 10, y: 20, width: 100, height: 50, scale: 1 },
     }));
   });
@@ -355,13 +355,13 @@ describe("browser_screenshot", () => {
     spy.mockRestore();
   });
 
-  it("usa screenshotElement via CDP cuando se pasa selector", async () => {
+  it("usa screenshotElement cuando se pasa selector", async () => {
     const mod = await import("../packages/core/src/tools/web/browser-screenshot.ts");
     const browserServiceMod = await import("../packages/core/src/tools/web/browser-service.ts");
 
     const view = createMockView({
       evaluate: mock(async () => ({ x: 0, y: 0, width: 200, height: 100 })),
-      cdp: mock(async () => ({ data: "elementshot==" })),
+      screenshot: mock(async () => "elementshot=="),
     });
     const service = createMockService(view);
     const spy = spyOn(browserServiceMod, "getBrowserService").mockReturnValue(service as any);
