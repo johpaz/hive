@@ -1,8 +1,6 @@
 /**
  * browser_screenshot - Take screenshot of current browser page
  *
- * Uses Puppeteer + Chromium. Returns screenshot as base64 PNG.
- *
  * @category web
  * @seedId browser_screenshot
  * @spanish captura de pantalla, screenshot, imagen de página
@@ -10,7 +8,7 @@
 
 import type { Tool } from "../types.ts";
 import { logger } from "../../utils/logger.ts";
-import { getBrowserService } from "./browser-service.ts";
+import { getBrowserService, screenshotElement } from "./browser-service.ts";
 
 const log = logger.child("browser-screenshot");
 
@@ -41,43 +39,33 @@ export const browserScreenshotTool: Tool = {
     const selector = params.selector as string | undefined;
 
     const browserService = getBrowserService();
-    if (!browserService || !browserService.isAvailable()) {
-      log.warn("Browser not available - Chromium not started");
+    if (!browserService?.isAvailable()) {
+      log.warn("Browser not available");
       return {
         ok: false,
-        error: "Browser automation not available. Chromium must be running.",
+        error: "Browser automation not available. Install Chrome/Chromium.",
       };
     }
 
     log.info(`Taking screenshot${url ? ` of: ${url}` : ""}${selector ? ` (element: ${selector})` : ""}`);
 
     try {
-      const page = await browserService.getPage();
-      if (!page) {
-        throw new Error("Failed to get browser page");
-      }
+      const view = browserService.getView()!;
 
       if (url) {
-        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+        await view.navigate(url);
+        await Bun.sleep(500);
       }
 
       let screenshot: string;
 
       if (selector) {
-        const element = await page.$(selector);
-        if (!element) {
-          throw new Error(`Element not found: ${selector}`);
-        }
-        const data = await element.screenshot({ encoding: "base64", type: "png" });
-        screenshot = data as string;
+        screenshot = await screenshotElement(view, selector);
       } else {
-        const data = await page.screenshot({ encoding: "base64", fullPage, type: "png" });
-        screenshot = data as string;
+        screenshot = await view.screenshot({ encoding: "base64", format: "png" });
       }
 
-      const currentUrl = page.url();
-      const viewport = await page.viewport();
-
+      const currentUrl = view.url;
       log.info(`Screenshot captured: ${currentUrl} (${screenshot.length} base64 chars)`);
 
       return {
@@ -88,7 +76,7 @@ export const browserScreenshotTool: Tool = {
         encoding: "base64",
         fullPage,
         selector,
-        viewport: viewport ? { width: viewport.width, height: viewport.height } : null,
+        viewport: { width: 1280, height: 800 },
       };
     } catch (error) {
       log.error(`Screenshot failed: ${(error as Error).message}`);

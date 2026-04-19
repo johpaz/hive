@@ -4,7 +4,8 @@
  * Main service that orchestrates CAPTCHA detection and resolution
  */
 
-import type { Page } from 'puppeteer';
+// TODO: migrar completamente a CDP en Fase 2 (solver usa contentFrame/frame.$ de Puppeteer)
+type Page = any; // Usa Bun.WebView en runtime via cast desde browser-navigate.ts
 import { logger } from "../../../utils/logger.ts";
 import { detectCaptcha, getInstructionFromPage } from './detector.ts';
 import { CaptchaVision } from './vision.ts';

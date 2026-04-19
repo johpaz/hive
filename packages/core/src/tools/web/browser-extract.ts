@@ -1,8 +1,5 @@
 /**
  * browser_extract - Extract data from web page using selectors
- * 
- * Uses Puppeteer Core to connect to Lightpanda via CDP.
- * Extracts text, links, attributes, or structured data using CSS selectors or XPath.
  *
  * @category web
  * @seedId browser_extract
@@ -11,7 +8,7 @@
 
 import type { Tool } from "../types.ts";
 import { logger } from "../../utils/logger.ts";
-import { getBrowserService } from "./browser-service.ts";
+import { getBrowserService, waitForSelector, waitForCondition } from "./browser-service.ts";
 
 const log = logger.child("browser-extract");
 
@@ -52,100 +49,74 @@ export const browserExtractTool: Tool = {
     const timeout = (params.timeout as number) ?? 30000;
 
     const browserService = getBrowserService();
-    if (!browserService || !browserService.isAvailable()) {
-      log.warn("Browser not available - Chromium not running");
+    if (!browserService?.isAvailable()) {
+      log.warn("Browser not available");
       return {
         ok: false,
-        error: "Browser automation not available. Chromium failed to start — run: bunx puppeteer browsers install chrome",
+        error: "Browser automation not available. Install Chrome/Chromium.",
       };
     }
 
     log.info(`Extracting: ${selector}${url ? ` from ${url}` : ""}`);
 
     try {
-      const page = await browserService.getPage();
-      if (!page) {
-        throw new Error("Failed to get browser page");
-      }
+      const view = browserService.getView()!;
 
-      page.setDefaultTimeout(timeout);
-
-      // Navigate to URL if provided
       if (url) {
-        await page.goto(url, {
-          waitUntil: "domcontentloaded",
-          timeout,
-        });
+        await view.navigate(url);
+        await Bun.sleep(500);
       }
 
       const isXPath = selector.startsWith("xpath:");
       const actualSelector = isXPath ? selector.slice(6) : selector;
 
-      // Intentar esperar el elemento — si no aparece, continuar igual
-      // (puede estar en el DOM pero no "visible", o el sitio usa CSS dinámico)
+      // Esperar el elemento — si no aparece, continuar igual
       try {
         if (isXPath) {
-          await page.waitForFunction(
-            (xpath: string) => {
-              const result = document.evaluate(
-                xpath, document, null,
-                XPathResult.FIRST_ORDERED_NODE_TYPE, null
-              );
-              return result.singleNodeValue !== null;
-            },
-            { timeout: Math.min(timeout, 10000) },
-            actualSelector
-          );
+          const xpathExpr = `(() => {
+            const r = document.evaluate(
+              ${JSON.stringify(actualSelector)}, document, null,
+              XPathResult.FIRST_ORDERED_NODE_TYPE, null
+            );
+            return r.singleNodeValue !== null;
+          })()`;
+          await waitForCondition(view, xpathExpr, Math.min(timeout, 10000));
         } else {
-          await page.waitForSelector(actualSelector, { timeout: Math.min(timeout, 10000) });
+          await waitForSelector(view, actualSelector, Math.min(timeout, 10000));
         }
       } catch {
         log.warn(`Selector "${actualSelector}" not found within timeout — attempting extraction anyway`);
       }
 
-      // Extract data
-      const extracted = await page.evaluate(
-        ({ selector, isXPath, attribute, all }) => {
-          const elements: Element[] = [];
+      const extracted = await view.evaluate(`
+        (() => {
+          const isXPath = ${JSON.stringify(isXPath)};
+          const sel = ${JSON.stringify(actualSelector)};
+          const attr = ${JSON.stringify(attribute)};
+          const all = ${JSON.stringify(all)};
+          const elements = [];
 
           if (isXPath) {
-            const result = document.evaluate(
-              selector,
-              document,
-              null,
-              XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
-              null
-            );
+            const result = document.evaluate(sel, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
             for (let i = 0; i < result.snapshotLength; i++) {
               const node = result.snapshotItem(i);
-              if (node.nodeType === Node.ELEMENT_NODE) {
-                elements.push(node as Element);
-              }
+              if (node.nodeType === Node.ELEMENT_NODE) elements.push(node);
             }
           } else {
-            const found = document.querySelectorAll(selector);
-            found.forEach(el => elements.push(el));
+            document.querySelectorAll(sel).forEach(el => elements.push(el));
           }
 
-          if (!all && elements.length > 0) {
-            elements.length = 1;
-          }
+          if (!all && elements.length > 0) elements.length = 1;
 
           return elements.map(el => {
-            if (attribute === "text") {
-              return (el.textContent || "").trim();
-            } else if (attribute === "innerHTML") {
-              return el.innerHTML;
-            } else {
-              return el.getAttribute(attribute) || "";
-            }
+            if (attr === "text") return (el.textContent || "").trim();
+            if (attr === "innerHTML") return el.innerHTML;
+            return el.getAttribute(attr) || "";
           });
-        },
-        { selector: actualSelector, isXPath, attribute, all }
-      );
+        })()
+      `) as string[];
 
-      const currentUrl = page.url();
-
+      const currentUrl = view.url;
       log.info(`Extracted ${extracted.length} element(s) from ${currentUrl}`);
 
       return {

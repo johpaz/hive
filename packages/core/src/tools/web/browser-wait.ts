@@ -1,8 +1,5 @@
 /**
  * browser_wait - Wait for element or condition on page
- * 
- * Uses Puppeteer Core to connect to Lightpanda via CDP.
- * Waits for CSS selector, XPath, or custom condition before continuing.
  *
  * @category web
  * @seedId browser_wait
@@ -11,7 +8,7 @@
 
 import type { Tool } from "../types.ts";
 import { logger } from "../../utils/logger.ts";
-import { getBrowserService } from "./browser-service.ts";
+import { getBrowserService, waitForSelector, waitForCondition } from "./browser-service.ts";
 
 const log = logger.child("browser-wait");
 
@@ -53,11 +50,11 @@ export const browserWaitTool: Tool = {
     const state = (params.state as string) ?? "visible";
 
     const browserService = getBrowserService();
-    if (!browserService || !browserService.isAvailable()) {
-      log.warn("Browser not available - Chromium not running");
+    if (!browserService?.isAvailable()) {
+      log.warn("Browser not available");
       return {
         ok: false,
-        error: "Browser automation not available. Chromium failed to start — run: bunx puppeteer browsers install chrome",
+        error: "Browser automation not available. Install Chrome/Chromium.",
       };
     }
 
@@ -71,23 +68,14 @@ export const browserWaitTool: Tool = {
     log.info(`Waiting${selector ? ` for selector: ${selector}` : ""}${condition ? ` for condition: ${condition}` : ""}${url ? ` on ${url}` : ""}`);
 
     try {
-      const page = await browserService.getPage();
-      if (!page) {
-        throw new Error("Failed to get browser page");
-      }
+      const view = browserService.getView()!;
 
-      page.setDefaultTimeout(timeout);
-
-      // Navigate to URL if provided
       if (url) {
-        await page.goto(url, {
-          waitUntil: "domcontentloaded",
-          timeout,
-        });
+        await view.navigate(url);
+        await Bun.sleep(500);
       }
 
       const startTime = Date.now();
-
       let found = false;
 
       if (selector) {
@@ -96,19 +84,16 @@ export const browserWaitTool: Tool = {
 
         try {
           if (isXPath) {
-            await page.waitForFunction(
-              (xpath: string) => {
-                const result = document.evaluate(
-                  xpath, document, null,
-                  XPathResult.FIRST_ORDERED_NODE_TYPE, null
-                );
-                return result.singleNodeValue !== null;
-              },
-              { timeout },
-              actualSelector
-            );
+            const xpathExpr = `(() => {
+              const r = document.evaluate(
+                ${JSON.stringify(actualSelector)}, document, null,
+                XPathResult.FIRST_ORDERED_NODE_TYPE, null
+              );
+              return r.singleNodeValue !== null;
+            })()`;
+            await waitForCondition(view, xpathExpr, timeout);
           } else {
-            await page.waitForSelector(actualSelector, { timeout });
+            await waitForSelector(view, actualSelector, timeout);
           }
           found = true;
         } catch {
@@ -118,14 +103,7 @@ export const browserWaitTool: Tool = {
 
       if (condition) {
         try {
-          await page.waitForFunction(
-            (conditionCode: string) => {
-              // eslint-disable-next-line no-eval
-              return eval(conditionCode);
-            },
-            { timeout },
-            condition
-          );
+          await waitForCondition(view, condition, timeout);
           found = true;
         } catch {
           log.warn(`Condition not met within ${timeout}ms`);
@@ -133,7 +111,7 @@ export const browserWaitTool: Tool = {
       }
 
       const elapsed = Date.now() - startTime;
-      const currentUrl = page.url();
+      const currentUrl = view.url;
 
       log.info(`Wait completed in ${elapsed}ms on ${currentUrl} (found=${found})`);
 

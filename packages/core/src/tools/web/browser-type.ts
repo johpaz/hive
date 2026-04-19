@@ -1,8 +1,5 @@
 /**
  * browser_type - Type text into a form field
- * 
- * Uses Puppeteer Core to connect to Lightpanda via CDP.
- * Supports typing into input, textarea, and contenteditable elements.
  *
  * @category web
  * @seedId browser_type
@@ -52,56 +49,36 @@ export const browserTypeTool: Tool = {
     const clear = (params.clear as boolean) ?? true;
 
     const browserService = getBrowserService();
-    if (!browserService || !browserService.isAvailable()) {
-      log.warn("Browser not available - Chromium not running");
+    if (!browserService?.isAvailable()) {
+      log.warn("Browser not available");
       return {
         ok: false,
-        error: "Browser automation not available. Chromium failed to start — run: bunx puppeteer browsers install chrome",
+        error: "Browser automation not available. Install Chrome/Chromium.",
       };
     }
 
     log.info(`Typing into: ${selector}${url ? ` on ${url}` : ""} (${text.length} chars)`);
 
     try {
-      const page = await browserService.getPage();
-      if (!page) {
-        throw new Error("Failed to get browser page");
-      }
+      const view = browserService.getView()!;
 
-      page.setDefaultTimeout(timeout);
-
-      // Navigate to URL if provided
       if (url) {
-        await page.goto(url, {
-          waitUntil: "domcontentloaded",
-          timeout,
-        });
+        await view.navigate(url);
+        await Bun.sleep(500);
       }
 
-      // Wait for element to be visible and enabled
-      await page.waitForSelector(selector, {
-        timeout,
-      });
+      // click(selector) waits for actionability then focuses the element
+      await view.click(selector, { timeout });
 
-      const element = await page.$(selector);
-      if (!element) {
-        throw new Error(`Element not found: ${selector}`);
-      }
-
-      // Clear existing text if requested
       if (clear) {
-        await element.click();
-        await page.keyboard.down("Control");
-        await page.keyboard.press("a");
-        await page.keyboard.up("Control");
-        await page.keyboard.press("Backspace");
+        // Ctrl+A → Backspace to clear existing content
+        await view.press("a", { modifiers: ["Control"] });
+        await view.press("Backspace");
       }
 
-      // Type the text
-      await element.type(text, { delay: 10 });
+      await view.type(text);
 
-      const currentUrl = page.url();
-
+      const currentUrl = view.url;
       log.info(`Type successful: "${text.substring(0, 50)}${text.length > 50 ? "..." : ""}" into ${selector}`);
 
       return {

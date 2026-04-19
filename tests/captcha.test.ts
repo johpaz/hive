@@ -5,7 +5,6 @@
  */
 
 import { detectCaptcha } from '../packages/core/src/tools/web/captcha/detector.ts';
-import type { Page } from 'puppeteer';
 
 async function testCaptchaDetection() {
   console.log('Testing CAPTCHA detection...\n');

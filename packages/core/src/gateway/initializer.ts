@@ -248,25 +248,21 @@ export async function initializeGateway(
     const agent = createAgentService();
     await agent.initialize();
 
-    // 5b. Initialize Browser Service (Chromium via puppeteer)
-    // Puppeteer gestiona su propio Chromium automáticamente
+    // 5b. Initialize Browser Service (Chrome via Bun.WebView nativo)
     let browserAvailable = false;
-    
+
     try {
-      log.info("Initializing Chromium browser (puppeteer)...");
-      
+      log.info("Initializing Chrome browser (Bun.WebView)...");
+
       const browserService = initializeBrowserService(config);
-      
-      // Iniciar Chromium via puppeteer
       browserAvailable = await browserService.start();
 
       if (browserAvailable) {
-        log.info("✅ Chromium connected - browser tools enabled");
-        // Activate browser tools in database
+        log.info("✅ Chrome abierto en modo visible — el usuario verá las acciones del agente");
         activateBrowserTools();
       } else {
-        log.warn("⚠️  Chromium no pudo iniciarse - browser tools desactivadas");
-        log.warn("   Verifica que puppeteer esté instalado: bun add puppeteer");
+        log.warn("⚠️  Chrome no pudo iniciarse - browser tools desactivadas");
+        log.warn("   Linux: sudo apt install chromium  |  macOS: brew install --cask google-chrome");
       }
     } catch (error) {
       log.warn(`Browser Service initialization skipped: ${(error as Error).message}`);

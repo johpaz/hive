@@ -1,8 +1,5 @@
 /**
  * browser_click - Click on a web page element
- * 
- * Uses Puppeteer Core to connect to Lightpanda via CDP.
- * Supports CSS selectors and XPath.
  *
  * @category web
  * @seedId browser_click
@@ -42,42 +39,28 @@ export const browserClickTool: Tool = {
     const timeout = (params.timeout as number) ?? 30000;
 
     const browserService = getBrowserService();
-    if (!browserService || !browserService.isAvailable()) {
-      log.warn("Browser not available - Chromium not running");
+    if (!browserService?.isAvailable()) {
+      log.warn("Browser not available");
       return {
         ok: false,
-        error: "Browser automation not available. Chromium failed to start — run: bunx puppeteer browsers install chrome",
+        error: "Browser automation not available. Install Chrome/Chromium.",
       };
     }
 
     log.info(`Clicking: ${selector}${url ? ` on ${url}` : ""}`);
 
     try {
-      const page = await browserService.getPage();
-      if (!page) {
-        throw new Error("Failed to get browser page");
-      }
+      const view = browserService.getView()!;
 
-      page.setDefaultTimeout(timeout);
-
-      // Navigate to URL if provided
       if (url) {
-        await page.goto(url, {
-          waitUntil: "domcontentloaded",
-          timeout,
-        });
+        await view.navigate(url);
+        await Bun.sleep(500);
       }
 
-      // Wait for element to be visible
-      await page.waitForSelector(selector, {
-        timeout,
-      });
+      // click(selector) already waits for element actionability
+      await view.click(selector, { timeout });
 
-      // Click the element
-      await page.click(selector);
-
-      const currentUrl = page.url();
-
+      const currentUrl = view.url;
       log.info(`Click successful: ${selector} on ${currentUrl}`);
 
       return {

@@ -13,20 +13,20 @@ import { createSolver, type CaptchaSolver } from './solver.ts';
 import { detectCaptcha, isCaptchaChallengeActive } from './detector.ts';
 import type { CaptchaConfig, CaptchaResult } from './types.ts';
 
-export type { Page } from 'puppeteer';
+type WebViewLike = { url: string; evaluate: (script: string) => Promise<unknown> };
 
 export async function solveCaptcha(
-  page: import('puppeteer').Page,
+  view: WebViewLike,
   config: CaptchaConfig
 ): Promise<CaptchaResult> {
   const solver = createSolver(config);
-  return solver.detectAndSolve(page);
+  return solver.detectAndSolve(view as any);
 }
 
 export async function checkForCaptcha(
-  page: import('puppeteer').Page
+  view: WebViewLike
 ): Promise<boolean> {
-  const challenge = await detectCaptcha(page);
+  const challenge = await detectCaptcha(view);
   return challenge !== null;
 }
 

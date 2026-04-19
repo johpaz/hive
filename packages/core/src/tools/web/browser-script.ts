@@ -1,8 +1,5 @@
 /**
  * browser_script - Execute arbitrary JavaScript in page context
- * 
- * Uses Puppeteer Core to connect to Lightpanda via CDP.
- * Runs JavaScript code in the browser context and returns the result.
  *
  * @category web
  * @seedId browser_script
@@ -33,10 +30,6 @@ export const browserScriptTool: Tool = {
         type: "number",
         description: "Timeout in milliseconds (default: 30000)",
       },
-      awaitPromise: {
-        type: "boolean",
-        description: "Wait for promise resolution if script returns one (default: true)",
-      },
     },
     required: ["script"],
   },
@@ -44,64 +37,36 @@ export const browserScriptTool: Tool = {
     const url = params.url as string | undefined;
     const script = params.script as string;
     const timeout = (params.timeout as number) ?? 30000;
-    const awaitPromise = (params.awaitPromise as boolean) ?? true;
 
     const browserService = getBrowserService();
-    if (!browserService || !browserService.isAvailable()) {
-      log.warn("Browser not available - Chromium not running");
+    if (!browserService?.isAvailable()) {
+      log.warn("Browser not available");
       return {
         ok: false,
-        error: "Browser automation not available. Chromium failed to start — run: bunx puppeteer browsers install chrome",
+        error: "Browser automation not available. Install Chrome/Chromium.",
       };
     }
 
     log.info(`Executing script${url ? ` on ${url}` : ""} (${script.length} chars)`);
 
     try {
-      const page = await browserService.getPage();
-      if (!page) {
-        throw new Error("Failed to get browser page");
-      }
+      const view = browserService.getView()!;
 
-      page.setDefaultTimeout(timeout);
-
-      // Navigate to URL if provided
       if (url) {
-        await page.goto(url, {
-          waitUntil: "domcontentloaded",
-          timeout,
-        });
+        await view.navigate(url);
+        await Bun.sleep(500);
       }
 
-      // Execute the script
-      const result = await page.evaluate((scriptCode: string) => {
-        // Execute in async context to support both sync and async scripts
-        return (async () => {
-          try {
-            // Use eval to execute the script code
-            // eslint-disable-next-line no-eval
-            const result = eval(scriptCode);
-            // If it's a promise and awaitPromise is true, wait for it
-            if (result instanceof Promise) {
-              return await result;
-            }
-            return result;
-          } catch (e) {
-            throw new Error(`Script execution error: ${e instanceof Error ? e.message : String(e)}`);
-          }
-        })();
-      }, script);
+      const wrappedScript = `(async () => { try { return await (async () => { ${script} })(); } catch(e) { throw new Error('Script error: ' + e.message); } })()`;
+      const result = await view.evaluate(wrappedScript);
 
-      const currentUrl = page.url();
-
+      const currentUrl = view.url;
       log.info(`Script executed successfully on ${currentUrl}`);
 
-      // Serialize result to JSON-safe format
       let serializedResult;
       try {
         serializedResult = JSON.parse(JSON.stringify(result));
       } catch {
-        // If result is not JSON-serializable, convert to string
         serializedResult = String(result);
       }
 
