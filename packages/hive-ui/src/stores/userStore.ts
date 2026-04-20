@@ -56,13 +56,9 @@ export const useUserStore = create<UserState>((set, get) => ({
 
         set({ isLoading: true, error: null });
         try {
-            const data = await apiClient<{ message?: string; error?: string }>("/api/users", {
-                method: "POST",
-                body: {
-                    ...currentUser,
-                    ...updates,
-                    id: currentUser.id, // Ensure ID is preserved
-                },
+            const data = await apiClient<{ message?: string; error?: string }>(`/api/user/settings?userId=${currentUser.id}`, {
+                method: "PATCH",
+                body: updates,
             });
 
             // Refresh local state

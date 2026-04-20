@@ -72,6 +72,10 @@ export async function handleUpdateUserSettings(req: Request, addCorsHeaders: (r:
     updates.push("notes = ?")
     params.push(body.notes)
   }
+  if (body.preferred_cron_channel !== undefined) {
+    updates.push("preferred_cron_channel = ?")
+    params.push(body.preferred_cron_channel)
+  }
 
   if (updates.length > 0) {
     params.push(userId)

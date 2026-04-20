@@ -22,13 +22,12 @@ const _pkgVersion = (() => {
     const pkgPath = path.join(import.meta.dir, "../../../package.json");
     return JSON.parse(readFileSync(pkgPath, "utf-8")).version as string;
   } catch {
-    return "2.0.3";
+    return "0.0.27";
   }
 })();
 import { cpus as osCpus } from "node:os";
 import { getDb, getDbPathLazy, initializeDatabase } from "../storage/sqlite";
 import { seedAllData } from "../storage/seed";
-import { getRecentMessages } from "../agent/conversation-store";
 import { canvasManager } from "../canvas/canvas-manager.ts";
 import { subscribeCanvas, unsubscribeCanvas, emitCanvas, getCanvasSnapshot, removeCanvasComponent } from "../canvas/emitter";
 import { subscribeBridge, unsubscribeBridge } from "../tools/bridge-events";
@@ -107,7 +106,6 @@ export async function startGateway(config: Config): Promise<void> {
   let lastCpuSample = process.cpuUsage();
   let lastCpuSampleTime = Date.now();
   const log = logger.child("gateway");
-  const mcpLog = logger.child("mcp:api");
 
   log.info(`Starting gateway on ${host}:${port}`);
 
@@ -137,7 +135,6 @@ export async function startGateway(config: Config): Promise<void> {
   let channelManager: ChannelManager;
   let dbProvider: string;
   let dbModel: string;
-  const agentList = config.agents?.list ?? [];
 
   // ── HiveLearn live events WS client registry ─────────────────────────────
   const hlLiveClients = new Map<string, () => void>(); // sessionId → cleanup fn
@@ -695,8 +692,8 @@ export async function startGateway(config: Config): Promise<void> {
           const uiDirFromCwd = path.join(process.cwd(), "packages/hive-ui/dist");
           const uiDir = uiDirFromEnv
             || (existsSync(path.join(uiDirFromHive, "index.html")) ? uiDirFromHive
-            : uiDirFromDist && existsSync(path.join(uiDirFromDist, "index.html")) ? uiDirFromDist
-            : uiDirFromCwd);
+              : uiDirFromDist && existsSync(path.join(uiDirFromDist, "index.html")) ? uiDirFromDist
+                : uiDirFromCwd);
           let subPath = url.pathname;
 
           // En setup mode: / y /ui redirigen a /setup
@@ -962,12 +959,12 @@ export async function startGateway(config: Config): Promise<void> {
           }, 8_000);
 
           // Subscribe to hlSwarmEmitter (emitted by DAGScheduler inside hivelearn)
-          const h1 = (data: any) => send("agent_started",   { agentId: data.workerId, agentName: data.workerName });
+          const h1 = (data: any) => send("agent_started", { agentId: data.workerId, agentName: data.workerName });
           const h2 = (data: any) => send("agent_completed", { agentId: data.workerId, agentName: data.workerName });
-          const h3 = (data: any) => send("agent_failed",    { agentId: data.workerId, agentName: data.workerName, error: data.error });
-          hlSwarmEmitter.subscribe("worker:task_started",   h1);
+          const h3 = (data: any) => send("agent_failed", { agentId: data.workerId, agentName: data.workerName, error: data.error });
+          hlSwarmEmitter.subscribe("worker:task_started", h1);
           hlSwarmEmitter.subscribe("worker:task_completed", h2);
-          hlSwarmEmitter.subscribe("worker:task_failed",    h3);
+          hlSwarmEmitter.subscribe("worker:task_failed", h3);
 
           (async () => {
             try {
@@ -987,9 +984,9 @@ export async function startGateway(config: Config): Promise<void> {
               send("error", { message: (e as Error).message });
             } finally {
               clearInterval(keepAlive);
-              hlSwarmEmitter.unsubscribe("worker:task_started",   h1);
+              hlSwarmEmitter.unsubscribe("worker:task_started", h1);
               hlSwarmEmitter.unsubscribe("worker:task_completed", h2);
-              hlSwarmEmitter.unsubscribe("worker:task_failed",    h3);
+              hlSwarmEmitter.unsubscribe("worker:task_failed", h3);
               try { ctrl.close(); } catch { /* already closed */ }
             }
           })();
@@ -1031,7 +1028,7 @@ export async function startGateway(config: Config): Promise<void> {
             } catch {
               const match = (typeof result === 'string' ? result : '').match(/\{[\s\S]*\}/);
               if (match) {
-                try { const p = JSON.parse(match[0]); feedback = { correcto: p.correcto ?? false, mensajePrincipal: p.mensaje ?? "¡Buen intento!", xpGanado: p.xp_ganado ?? 5, razonamiento: p.razonamiento }; } catch {}
+                try { const p = JSON.parse(match[0]); feedback = { correcto: p.correcto ?? false, mensajePrincipal: p.mensaje ?? "¡Buen intento!", xpGanado: p.xp_ganado ?? 5, razonamiento: p.razonamiento }; } catch { }
               }
             }
             // Persistir respuesta del alumno si hay sessionId
@@ -1078,7 +1075,7 @@ export async function startGateway(config: Config): Promise<void> {
             try {
               const m = (typeof result === 'string' ? result : '').match(/\{[\s\S]*\}/);
               if (m) parsed = JSON.parse(m[0]);
-            } catch {}
+            } catch { }
             return addCorsHeaders(new Response(JSON.stringify(parsed), {
               status: 200,
               headers: { "Content-Type": "application/json" },
@@ -2056,29 +2053,29 @@ export async function startGateway(config: Config): Promise<void> {
             try {
               const { hlSwarmEmitter } = await import("@johpaz/hivelearn");
               const sendWs = (type: string, payload: Record<string, unknown> = {}) => {
-                try { ws.send(JSON.stringify({ type, ...payload })); } catch {}
+                try { ws.send(JSON.stringify({ type, ...payload })); } catch { }
               };
-              const h1 = (d: any) => sendWs("agent_started",   { agentId: d.workerId, agentName: d.workerName });
+              const h1 = (d: any) => sendWs("agent_started", { agentId: d.workerId, agentName: d.workerName });
               const h2 = (d: any) => sendWs("agent_completed", { agentId: d.workerId, agentName: d.workerName });
-              const h3 = (d: any) => sendWs("agent_failed",    { agentId: d.workerId, agentName: d.workerName, error: d.error });
-              const h4 = (d: any) => sendWs("swarm_started",   { swarmId: d.swarmId, totalTasks: d.totalTasks });
+              const h3 = (d: any) => sendWs("agent_failed", { agentId: d.workerId, agentName: d.workerName, error: d.error });
+              const h4 = (d: any) => sendWs("swarm_started", { swarmId: d.swarmId, totalTasks: d.totalTasks });
               const h5 = (d: any) => sendWs("swarm_completed", { swarmId: d.swarmId, success: d.success });
-              hlSwarmEmitter.subscribe("worker:task_started",   h1);
+              hlSwarmEmitter.subscribe("worker:task_started", h1);
               hlSwarmEmitter.subscribe("worker:task_completed", h2);
-              hlSwarmEmitter.subscribe("worker:task_failed",    h3);
-              hlSwarmEmitter.subscribe("swarm:started",         h4);
-              hlSwarmEmitter.subscribe("swarm:completed",       h5);
+              hlSwarmEmitter.subscribe("worker:task_failed", h3);
+              hlSwarmEmitter.subscribe("swarm:started", h4);
+              hlSwarmEmitter.subscribe("swarm:completed", h5);
               // Server-side heartbeat: ping every 30s
               const heartbeatTimer = setInterval(() => {
                 try { ws.send(JSON.stringify({ type: "ping" })); } catch { clearInterval(heartbeatTimer); }
               }, 30_000);
               hlLiveClients.set(data.sessionId, () => {
                 clearInterval(heartbeatTimer);
-                hlSwarmEmitter.unsubscribe("worker:task_started",   h1);
+                hlSwarmEmitter.unsubscribe("worker:task_started", h1);
                 hlSwarmEmitter.unsubscribe("worker:task_completed", h2);
-                hlSwarmEmitter.unsubscribe("worker:task_failed",    h3);
-                hlSwarmEmitter.unsubscribe("swarm:started",         h4);
-                hlSwarmEmitter.unsubscribe("swarm:completed",       h5);
+                hlSwarmEmitter.unsubscribe("worker:task_failed", h3);
+                hlSwarmEmitter.unsubscribe("swarm:started", h4);
+                hlSwarmEmitter.unsubscribe("swarm:completed", h5);
               });
               sendWs("hl:connected");
               log.info(`HiveLearn live client connected: ${data.sessionId}`);

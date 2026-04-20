@@ -1,4 +1,5 @@
 import { AgentCard } from "./AgentCard";
+import { HoneycombGrid } from "./HoneycombGrid";
 import type { Agent } from "@/types";
 
 interface AgentListProps {
@@ -20,10 +21,18 @@ export function AgentList({ agents, onEdit }: AgentListProps) {
   }
 
   return (
-    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 pb-20">
-      {agents.map((agent) => (
-        <AgentCard key={agent.id} agent={agent} onEdit={onEdit} />
-      ))}
-    </div>
+    <>
+      {/* Honeycomb view — desktop */}
+      <div className="hidden md:block">
+        <HoneycombGrid agents={agents} onEdit={onEdit} />
+      </div>
+
+      {/* Card grid — mobile */}
+      <div className="grid gap-6 sm:grid-cols-2 pb-20 md:hidden">
+        {agents.map((agent) => (
+          <AgentCard key={agent.id} agent={agent} onEdit={onEdit} />
+        ))}
+      </div>
+    </>
   );
 }

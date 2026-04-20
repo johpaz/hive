@@ -48,10 +48,10 @@ export function initializeDatabase(): Database {
             if (needsMigration) {
                 logger.info("🛠️  Dropping legacy cron_jobs table for schema rebuild...");
                 // Drop FK references first
-                try { _db.exec(`DROP TRIGGER IF EXISTS update_cron_jobs_updated_at`); } catch {}
-                try { _db.exec(`DROP TRIGGER IF EXISTS update_scheduled_tasks_updated_at`); } catch {}
-                try { _db.exec(`DROP TABLE IF EXISTS task_runs`); } catch {}
-                _db.exec(`DROP TABLE cron_jobs`);
+                try { _db.run(`DROP TRIGGER IF EXISTS update_cron_jobs_updated_at`); } catch {}
+                try { _db.run(`DROP TRIGGER IF EXISTS update_scheduled_tasks_updated_at`); } catch {}
+                try { _db.run(`DROP TABLE IF EXISTS task_runs`); } catch {}
+                _db.run(`DROP TABLE cron_jobs`);
                 logger.info("✅ Legacy cron_jobs table dropped — will be recreated by SCHEMA");
             }
         }
@@ -60,27 +60,26 @@ export function initializeDatabase(): Database {
         const stCheck = _db.query(`SELECT name FROM sqlite_master WHERE type='table' AND name='scheduled_tasks'`).all() as any[];
         if (stCheck.length > 0) {
             logger.info("🛠️  Dropping legacy scheduled_tasks table...");
-            try { _db.exec(`DROP TRIGGER IF EXISTS update_scheduled_tasks_updated_at`); } catch {}
-            _db.exec(`DROP TABLE scheduled_tasks`);
+            try { _db.run(`DROP TRIGGER IF EXISTS update_scheduled_tasks_updated_at`); } catch {}
+            _db.run(`DROP TABLE scheduled_tasks`);
             logger.info("✅ Legacy scheduled_tasks table dropped");
         }
 
         // Drop old indexes that reference legacy columns
-        try { _db.exec(`DROP INDEX IF EXISTS idx_cron_jobs_user`); } catch {}
-        try { _db.exec(`DROP INDEX IF EXISTS idx_cron_jobs_enabled`); } catch {}
-        try { _db.exec(`DROP INDEX IF EXISTS idx_cron_jobs_next_run`); } catch {}
-        try { _db.exec(`DROP INDEX IF EXISTS idx_scheduled_tasks_status`); } catch {}
-        try { _db.exec(`DROP INDEX IF EXISTS idx_scheduled_tasks_type`); } catch {}
-        try { _db.exec(`DROP INDEX IF EXISTS idx_scheduled_tasks_next_run`); } catch {}
-        try { _db.exec(`DROP INDEX IF EXISTS idx_scheduled_tasks_agent`); } catch {}
+        try { _db.run(`DROP INDEX IF EXISTS idx_cron_jobs_user`); } catch {}
+        try { _db.run(`DROP INDEX IF EXISTS idx_cron_jobs_enabled`); } catch {}
+        try { _db.run(`DROP INDEX IF EXISTS idx_cron_jobs_next_run`); } catch {}
+        try { _db.run(`DROP INDEX IF EXISTS idx_scheduled_tasks_status`); } catch {}
+        try { _db.run(`DROP INDEX IF EXISTS idx_scheduled_tasks_type`); } catch {}
+        try { _db.run(`DROP INDEX IF EXISTS idx_scheduled_tasks_next_run`); } catch {}
+        try { _db.run(`DROP INDEX IF EXISTS idx_scheduled_tasks_agent`); } catch {}
     } catch (preSchemaErr) {
         logger.warn("⚠️  Pre-schema migration check failed:", { error: (preSchemaErr as Error).message });
     }
 
-    // Use type assertion to avoid deprecated signature with bindings
-    (_db as any).exec(SCHEMA);
-    (_db as any).exec(PROJECTS_SCHEMA);
-    (_db as any).exec(CONTEXT_ENGINE_SCHEMA);
+    _db.run(SCHEMA);
+    _db.run(PROJECTS_SCHEMA);
+    _db.run(CONTEXT_ENGINE_SCHEMA);
 
     ensureSchemaSync();
 
@@ -95,7 +94,7 @@ function ensureColumnExists(tableName: string, columnName: string, columnDefinit
 
         if (!exists) {
             logger.info(`🛠️  Añadiendo columna faltante '${columnName}' a la tabla '${tableName}'`);
-            _db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`);
+            _db.run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`);
         }
     } catch (err) {
         logger.warn(`⚠️  No se pudo verificar/añadir la columna '${columnName}' en '${tableName}':`, { error: (err as Error).message });
@@ -154,9 +153,9 @@ function ensureSchemaSync(): void {
 // ── Cron Jobs: ensure triggers and columns are correct ──
     // Triggers: clean up old references and recreate
     try {
-        _db.exec(`DROP TRIGGER IF EXISTS update_scheduled_tasks_updated_at`);
-        _db.exec(`DROP TRIGGER IF EXISTS update_cron_jobs_updated_at`);
-        _db.exec(`CREATE TRIGGER IF NOT EXISTS update_cron_jobs_updated_at
+        _db.run(`DROP TRIGGER IF EXISTS update_scheduled_tasks_updated_at`);
+        _db.run(`DROP TRIGGER IF EXISTS update_cron_jobs_updated_at`);
+        _db.run(`CREATE TRIGGER IF NOT EXISTS update_cron_jobs_updated_at
             AFTER UPDATE ON cron_jobs
             BEGIN
                 UPDATE cron_jobs SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = NEW.id;
