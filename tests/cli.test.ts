@@ -7,7 +7,7 @@ import {
 } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as yaml from "js-yaml";
+import { YAML } from "bun";
 
 interface MockStdin {
   lines: string[];
@@ -226,7 +226,7 @@ describe("🖥️ CLI Test Suite", () => {
           list: [{ id: "bee", name: "Bee", default: true }],
         },
       };
-      fs.writeFileSync(testConfigPath, yaml.dump(testConfig));
+      fs.writeFileSync(testConfigPath, YAML.stringify(testConfig));
     });
 
     afterEach(() => {
@@ -239,7 +239,7 @@ describe("🖥️ CLI Test Suite", () => {
       console.log("\n📌 Testing config reading...");
 
       const content = fs.readFileSync(testConfigPath, "utf-8");
-      const config = yaml.load(content) as Record<string, unknown>;
+      const config = YAML.parse(content) as Record<string, unknown>;
 
       expect(config).not.toBeNull();
       expect((config as any).user.id).toBe("test-user");
@@ -256,9 +256,9 @@ describe("🖥️ CLI Test Suite", () => {
       };
 
       const newPath = "/tmp/test-hive-write-cli.yaml";
-      fs.writeFileSync(newPath, yaml.dump(newConfig));
+      fs.writeFileSync(newPath, YAML.stringify(newConfig));
 
-      const readBack = yaml.load(fs.readFileSync(newPath, "utf-8")) as Record<string, unknown>;
+      const readBack = YAML.parse(fs.readFileSync(newPath, "utf-8")) as Record<string, unknown>;
       expect((readBack as any).testKey).toBe("testValue");
 
       fs.unlinkSync(newPath);
@@ -560,7 +560,7 @@ models:
       const configPath = path.join(testDir, "imported-config.yaml");
       fs.writeFileSync(configPath, configContent);
 
-      const imported = yaml.load(fs.readFileSync(configPath, "utf-8")) as any;
+      const imported = YAML.parse(fs.readFileSync(configPath, "utf-8")) as any;
       expect(imported.user.id).toBe("imported-user");
 
       console.log(`   ✅ Config import works`);

@@ -9,7 +9,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as yaml from "js-yaml";
+import { YAML } from "bun";
 
 const BUNDLED_DIR = path.join(import.meta.dir, "../src/bundled");
 const OUTPUT_FILE = path.join(import.meta.dir, "../src/bundled-data.generated.ts");
@@ -28,7 +28,7 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, unknow
   const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
   if (!match) return { frontmatter: {}, body: content };
   try {
-    const frontmatter = yaml.load(match[1]!) as Record<string, unknown>;
+    const frontmatter = YAML.parse(match[1]!) as Record<string, unknown>;
     return { frontmatter, body: match[2]! };
   } catch {
     return { frontmatter: {}, body: content };

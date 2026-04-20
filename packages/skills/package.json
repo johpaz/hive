@@ -11,9 +11,6 @@
   "scripts": {
     "test": "bun test"
   },
-  "dependencies": {
-    "js-yaml": "latest"
-  },
   "devDependencies": {
     "typescript": "6.0.2",
     "@types/bun": "latest"

@@ -41,8 +41,8 @@ export function SkillsTab() {
 
   useEffect(() => { fetchSkills(); }, [fetchSkills]);
 
-  const categories = useMemo(() => {
-    const cats = new Set(skills.map(s => (s.category || "GENERAL").toUpperCase()));
+  const categories = useMemo<string[]>(() => {
+    const cats = new Set<string>(skills.map(s => (s.category || "GENERAL").toUpperCase()));
     return ["TODOS", ...Array.from(cats).sort()];
   }, [skills]);
 
