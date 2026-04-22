@@ -29,6 +29,13 @@ interface WebSocketStore {
     setSessionId: (sessionId: string) => void;
 }
 
+function getBackoffDelay(retryCount: number): number {
+    const baseDelay = 1000;
+    const maxDelay = 30000;
+    const delay = Math.min(baseDelay * Math.pow(2, retryCount), maxDelay);
+    return delay + Math.random() * 1000;
+}
+
 export const useWebSocketStore = create<WebSocketStore>((set, get) => {
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
@@ -58,7 +65,6 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
             let wsUrl = state.url;
             try {
                 const urlObj = new URL(wsUrl);
-                // Always send the auth token — server validates it as an alternative to ?session=
                 const token = typeof localStorage !== "undefined" ? localStorage.getItem("hive-auth-token") : null;
                 if (sessionId) urlObj.searchParams.set("session", sessionId);
                 if (token) urlObj.searchParams.set("token", token);
@@ -76,10 +82,8 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
                     console.log("[WS-GLOBAL] Connected to", wsUrl);
                     set({ status: "connected", retryCount: 0, ws });
 
-                    // Subscribe to canvas events on this session
                     ws.send(JSON.stringify({ type: "canvas_subscribe" }));
 
-                    // Heartbeat every 30s to keep the connection alive
                     if (heartbeatInterval) clearInterval(heartbeatInterval);
                     heartbeatInterval = setInterval(() => {
                         if (ws.readyState === WebSocket.OPEN) {
@@ -93,12 +97,13 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
                     if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
                     set({ status: "disconnected", ws: null });
 
-                    // Auto-reconnect after 3 seconds if not intentionally closed
                     if (event.code !== 1000 && event.code !== 1001) {
+                        const currentRetryCount = get().retryCount;
+                        const delay = getBackoffDelay(currentRetryCount);
+                        set((s) => ({ retryCount: s.retryCount + 1 }));
                         reconnectTimeout = setTimeout(() => {
-                            set((s) => ({ retryCount: s.retryCount + 1 }));
                             get().connect(sessionId);
-                        }, 3000);
+                        }, delay);
                     }
                 };
 
@@ -113,10 +118,8 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
                         const data = JSON.parse(event.data);
                         const type = data.type;
 
-                        // Ignore pong responses — keepalive only
                         if (type === "pong") return;
 
-                        // Handle welcome message - set sessionId and show welcome dialog
                         if (type === "welcome" && data.sessionId) {
                             set({ sessionId: data.sessionId });
                             useWelcomeStore.getState().show(data as WelcomeData);
@@ -124,10 +127,10 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
 
                         const handlers = get().handlers.get(type);
                         if (handlers) {
-                            handlers.forEach(handler => handler(data));
+                            handlers.forEach((handler) => handler(data));
                         }
-                    } catch (e) {
-                        // Ignorar mensajes mal formateados
+                    } catch {
+                        // Ignore malformed messages
                     }
                 };
             } catch (e) {
@@ -141,7 +144,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
             if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
             if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
             ws?.close(1000);
-            set({ ws: null, status: "disconnected" });
+            set({ ws: null, status: "disconnected", retryCount: 0 });
         },
 
         send: (message: any) => {

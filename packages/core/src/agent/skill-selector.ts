@@ -39,11 +39,14 @@ export const MINIMAL_SKILL_NAMES = new Set([
 export interface SkillDescriptor {
     id: string
     name: string
+    description: string
     category: string
     tools: string
     triggers: string
+    preferred_agents: string
     body: string
-    version: number
+    version: string
+    version_num: number
     active: number
 }
 
@@ -52,6 +55,7 @@ export interface SelectedSkill {
     name: string
     score: number
     category: string
+    description: string
     body: string
 }
 
@@ -85,6 +89,7 @@ const STOPWORDS = new Set([
     "más", "mas", "ya", "yo", "tu", "te", "ti", "mi", "me",
     "hola", "hi", "hello", "hey", "gracias", "thank", "please",
     "ok", "okay", "yes", "si", "no", "bien", "good", "great",
+    "puedes", "necesito", "quiero", "podés", "necesitás", "querés",
 ])
 
 /** Conversational patterns that should return empty skill list */
@@ -204,7 +209,7 @@ export function selectSkills(userMessage: string): SkillDescriptor[] {
     // Step 2: Check explicit triggers first (high priority)
     const db = getDb()
     const allSkills = db.query(`
-        SELECT id, name, category, tools, triggers, body, version, active
+        SELECT id, name, description, category, tools, triggers, preferred_agents, body, version, version_num, active
         FROM skills
         WHERE active = 1
     `).all() as SkillDescriptor[]
@@ -228,11 +233,11 @@ export function selectSkills(userMessage: string): SkillDescriptor[] {
 
     // Step 4: Execute FTS5 query with bm25 scoring
     // Use bm25() with column weights for relevance scoring
-    // FTS5 table columns: id, name, category, tools, triggers, body
-    // Weights: id=1.0, name=3.0, category=1.0, tools=1.0, triggers=5.0, body=1.0
-    // Higher weight on triggers (5.0) and name (3.0) for better matching
+    // FTS5 table columns: id, name, description, category, tools, triggers, body
+    // Weights: id=1.0, name=4.0, description=5.0, category=1.0, tools=1.0, triggers=5.0, body=2.0
+    // Higher weight on description (5.0) and triggers (5.0) for best semantic matching
     const ftsResults = db.query(`
-        SELECT id, bm25(skills_fts, 1.0, 3.0, 1.0, 1.0, 5.0, 1.0) as bm25_score
+        SELECT id, bm25(skills_fts, 1.0, 4.0, 5.0, 1.0, 1.0, 5.0, 2.0) as bm25_score
         FROM skills_fts
         WHERE skills_fts MATCH ?
         ORDER BY bm25_score ASC
@@ -262,7 +267,7 @@ export function selectSkills(userMessage: string): SkillDescriptor[] {
     try {
         const db = getDb()
         dbSkills = db.query(`
-            SELECT id, name, category, tools, triggers, body, version, active
+            SELECT id, name, description, category, tools, triggers, preferred_agents, body, version, version_num, active
             FROM skills
             WHERE id IN (${skillIds.map(() => '?').join(',')})
             AND active = 1
@@ -284,6 +289,7 @@ export function selectSkills(userMessage: string): SkillDescriptor[] {
                 name: skill.name,
                 score: result.bm25_score,
                 category: skill.category,
+                description: skill.description || "",
                 body: skill.body,
             })
         }
@@ -321,7 +327,7 @@ export function getMinimalSkills(): SkillDescriptor[] {
     try {
         const placeholders = Array.from(MINIMAL_SKILL_NAMES).map(() => "?").join(",")
         const skills = db.query(`
-            SELECT id, name, category, tools, triggers, body, version, active
+            SELECT id, name, description, category, tools, triggers, preferred_agents, body, version, version_num, active
             FROM skills
             WHERE name IN (${placeholders})
             AND active = 1
@@ -340,20 +346,21 @@ export function getMinimalSkills(): SkillDescriptor[] {
 /**
  * Sync all enabled skills from database to FTS5
  * Should be called on initialization from gateway/initializer.ts
- * The skills_fts table is created by seed.ts
+ * The skills_fts table is created by schema.ts (v0.0.28 includes description)
  */
 export async function syncSkillsToFTS(): Promise<void> {
     const db = getDb()
 
     try {
-        // Step 1: Get all enabled skills from database (simplified schema)
+        // Step 1: Get all enabled skills from database (v0.0.28 schema with description)
         const dbSkills = db.query(`
-            SELECT id, name, category, tools, triggers, body
+            SELECT id, name, description, category, tools, triggers, body
             FROM skills
             WHERE active = 1
         `).all() as Array<{
             id: string
             name: string
+            description: string
             category: string
             tools: string
             triggers: string
@@ -375,10 +382,10 @@ export async function syncSkillsToFTS(): Promise<void> {
             // A: Clear existing data
             db.run("DELETE FROM skills_fts")
 
-            // B: Prepare insertion (simplified schema matching new skills table)
+            // B: Prepare insertion (v0.0.28 schema with description)
             const insert = db.prepare(`
-                INSERT INTO skills_fts(id, name, category, tools, triggers, body)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO skills_fts(id, name, description, category, tools, triggers, body)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             `)
 
             // C: Re-populate
@@ -386,6 +393,7 @@ export async function syncSkillsToFTS(): Promise<void> {
                 insert.run(
                     skill.id,
                     skill.name,
+                    skill.description || "",
                     skill.category,
                     skill.tools,
                     skill.triggers,
@@ -425,7 +433,7 @@ export function getAllSkillsFromDB(): SkillDescriptor[] {
     try {
         const db = getDb()
         return db.query(`
-            SELECT id, name, category, tools, triggers, body, version, active
+            SELECT id, name, description, category, tools, triggers, preferred_agents, body, version, version_num, active
             FROM skills
             WHERE active = 1
         `).all() as SkillDescriptor[]
@@ -442,7 +450,7 @@ export function getSkillByName(name: string): SkillDescriptor | undefined {
     try {
         const db = getDb()
         return db.query(`
-            SELECT id, name, category, tools, triggers, body, version, active
+            SELECT id, name, description, category, tools, triggers, preferred_agents, body, version, version_num, active
             FROM skills
             WHERE name = ? AND active = 1
         `).get(name) as SkillDescriptor | undefined
@@ -459,7 +467,7 @@ export function getSkillsByCategory(category: string): SkillDescriptor[] {
     try {
         const db = getDb()
         return db.query(`
-            SELECT id, name, category, tools, triggers, body, version, active
+            SELECT id, name, description, category, tools, triggers, preferred_agents, body, version, version_num, active
             FROM skills
             WHERE category = ? AND active = 1
         `).all(category) as SkillDescriptor[]

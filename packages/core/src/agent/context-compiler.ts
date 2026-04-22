@@ -34,6 +34,7 @@ import { buildSystemPromptWithProjects } from "./prompt-builder"
 import { createAllTools } from "../tools/index.ts"
 import { resolveUserId } from "../storage/onboarding"
 import { getMCPManager as getSingletonMCPManager } from "../mcp/singleton"
+import { syncMCPToolsToDB, syncMCPToolsToFTS } from "../mcp/tool-sync"
 import { getUserDate, getUserTime } from "../utils/date"
 
 const log = logger.child("context-compiler")
@@ -51,12 +52,12 @@ const MINIMAL_TOOLS = new Set([
   "search_knowledge",
 ])
 
-// MINIMAL SKILL SET — fixed always-available skills (associated with MINIMAL_TOOLS)
-// The agent discovers the rest via selectSkills FTS5 search
+// MINIMAL SKILL SET — fixed always-available skills
+// These skills are ALWAYS in context - the agent uses them to discover everything else
 const MINIMAL_SKILL_NAMES = [
-  "memory_manager",      // Associated with save_note
-  "canvas_report",       // Associated with report_progress
-  "task_orchestrator",   // Associated with notify and agent coordination
+  "busqueda_fts5",   // Core: how to find tools, skills, MCP, playbook via search_knowledge
+  "canvas_report",  // Display results to users with charts, tables, cards
+  "memory_manager", // Persistent notes that survive context compression
 ]
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -189,6 +190,25 @@ export async function compileContext(opts: {
       }
 
       log.info(`[context-compiler] [STEP-3c] ✅ Loaded ${mcpToolExecutors.length} MCP tools`)
+
+      // Persist MCP tool definitions to DB for search_knowledge and FTS5 search
+      if (mcpToolExecutors.length > 0) {
+        try {
+          for (const server of dbServers) {
+            let serverTools = effectiveMcpManager!.getServerTools(server.id)
+            if (!serverTools || serverTools.length === 0) {
+              serverTools = effectiveMcpManager!.getServerTools(server.name)
+            }
+if (serverTools && serverTools.length > 0) {
+            syncMCPToolsToDB(server.id || server.name, server.name, serverTools)
+          }
+        }
+        await syncMCPToolsToFTS();
+        log.info(`[context-compiler] [STEP-3c] ✅ Persisted MCP tools to DB + FTS5`)
+        } catch (syncErr) {
+          log.warn(`[context-compiler] [STEP-3c] ⚠️ Failed to persist MCP tools to DB: ${(syncErr as Error).message}`)
+        }
+      }
     } catch (err) {
       log.error(`[context-compiler] [STEP-3c] ❌ Failed: ${(err as Error).message}`)
     }
@@ -211,21 +231,10 @@ export async function compileContext(opts: {
 
   const allTools = [...nativeTools, ...mcpToolExecutors]
 
-  // Filter to minimal tool set for NATIVE tools only
-  // MCP tools are ALWAYS included directly (no search needed)
+  // Only native minimal tools in LLM context
+  // MCP tools are discovered dynamically via search_knowledge(type="mcp")
   const filteredNativeTools: ContextTool[] = nativeTools.filter(t => MINIMAL_TOOLS.has(t.name))
   
-  // MCP tools: include ALL of them directly (user configured, always available)
-  const mcpToolsForLLM: LLMToolDef[] = mcpToolExecutors.map(t => ({
-    type: "function" as const,
-    function: {
-      name: t.name,
-      description: t.description,
-      parameters: t.parameters,
-    },
-  }))
-  
-  // Native minimal tools
   const nativeToolsForLLM: LLMToolDef[] = filteredNativeTools.map(t => ({
     type: "function" as const,
     function: {
@@ -235,12 +244,11 @@ export async function compileContext(opts: {
     },
   }))
   
-  // Combine: native minimal + ALL MCP tools
-  const toolsForLLM: LLMToolDef[] = [...nativeToolsForLLM, ...mcpToolsForLLM]
+  const toolsForLLM: LLMToolDef[] = nativeToolsForLLM
   
   log.info(`[context-compiler] [STEP-4] Minimal native tool set: ${filteredNativeTools.length} tools`)
-  log.info(`[context-compiler] [STEP-4b] MCP tools (direct): ${mcpToolsForLLM.length} tools`)
-  log.info(`[context-compiler] [STEP-8] ✅ Combined tools: ${allTools.length} total, ${toolsForLLM.length} selected`)
+  log.info(`[context-compiler] [STEP-4b] MCP tools available via search_knowledge: ${mcpToolExecutors.length} (not injected)`)
+  log.info(`[context-compiler] [STEP-8] ✅ Combined tools: ${allTools.length} total executors, ${toolsForLLM.length} in LLM context`)
 
   // [STEP-8b] STRATEGY 2: SELECT — Skill Loadout (minimal + discovered)
   log.info(`[context-compiler] [STEP-8b] Building skill loadout...`)
@@ -396,16 +404,19 @@ export async function compileContext(opts: {
       `Estas 4 herramientas nativas están SIEMPRE disponibles en tu contexto y tienen prioridad sobre MCP:\n\n` +
       `${minimalToolsDocs}\n\n` +
       `**REGLAS DE USO:**\n` +
-      `1. Si necesitas una herramienta que no esté en la lista arriba → USA primero \`search_knowledge(type="tools", query="<qué necesitas>")\`\n` +
+      `1. Si necesitas una herramienta que no esté en la lista arriba → USA \`search_knowledge\` para encontrarla:\n` +
+      `   - Herramientas nativas: \`search_knowledge(type="tools", query="<qué necesitas>")\`\n` +
+      `   - Herramientas MCP (externas): \`search_knowledge(type="mcp", query="<qué necesitas>")\`\n` +
+      `   - Todo junto: \`search_knowledge(type="all", query="<qué necesitas>")\`\n` +
       `2. NUNCA uses una herramienta MCP si existe una nativa equivalente en el catálogo\n` +
-      `3. Las MCP son fallback: úsalas SOLO cuando \`search_knowledge\` NO encuentre una nativa para la tarea\n\n` +
+      `3. Las herramientas MCP se activan dinámicamente vía search_knowledge — NO están en tu contexto por defecto\n\n` +
       `# CATÁLOGO DE HERRAMIENTAS\n` +
-      `Tienes herramientas nativas y MCP directamente disponibles.\n` +
-      `Usá \`search_knowledge\` solo para:\n` +
+      `Usá \`search_knowledge\` para descubrir:\n` +
       `- Skills (instrucciones de tareas complejas): type="skills"\n` +
       `- Playbook (buenas prácticas): type="playbook"\n` +
-      `- Herramientas nativas específicas: type="tools"\n` +
-      `Las herramientas MCP ya están disponibles - no necesitas buscarlas.\n` +
+      `- Herramientas nativas: type="tools"\n` +
+      `- Herramientas MCP (externas): type="mcp"\n` +
+      `- Todo: type="all"\n` +
       `\n## REGLA CRÍTICA — Delegación a workers\n` +
       `Los workers arrancan con herramientas mínimas (save_note, notify, report_progress, search_knowledge).\n` +
       `**ANTES de crear o delegar a un worker**, SIEMPRE debes:\n` +
@@ -416,16 +427,16 @@ export async function compileContext(opts: {
       `3. El worker con esa instrucción usará \`search_knowledge\` para activar las tools por nombre.\n` +
       `Ejemplo: si el worker debe investigar en internet → busca "web search herramienta internet" → obtienes "web_search" → dile al worker que use web_search.\n`
 
-    // Inject available skills (minimal + discovered)
+// Inject available skills (minimal + discovered)
     if (allSkills.length > 0) {
-      let skillsSection = `\n\n# SKILLS DISPONIBLES (Instrucciones de Tareas)\n`
-      skillsSection += `Estas skills están activas para esta conversación. Usalas como guía cuando sea relevante:\n\n`
+      let skillsSection = `\n\n# SKILLS ACTIVAS\n`
+      skillsSection += `Usá estas skills como guía cuando sea relevante:\n\n`
 
       for (const skill of allSkills) {
         const isMinimal = MINIMAL_SKILL_NAMES.includes(skill.name)
         const badge = isMinimal ? "[SIEMPRE]" : "[DISCOVERED]"
-        skillsSection += `## ${skill.name} ${badge}\n`
-        skillsSection += `${skill.body.substring(0, 500)}${skill.body.length > 500 ? '...' : ''}\n\n`
+        const desc = skill.description ? ` — ${skill.description}` : ""
+        skillsSection += `- **${skill.name}** ${badge}${desc}\n`
       }
 
       systemPrompt += skillsSection

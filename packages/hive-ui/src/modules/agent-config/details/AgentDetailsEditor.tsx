@@ -170,14 +170,39 @@ export function AgentDetailsEditor({ agentId }: AgentDetailsEditorProps) {
         );
     }
 
-    // Providers disponibles: enabled=1 Y active=1
-    const activeProviders = providers.filter(p => p.enabled && p.active);
+    const hasApiKey = (p: typeof providers[number]) => {
+        if (p.id === "ollama") return true;
+        const baseUrl = p.base_url || p.baseUrl || "";
+        if (baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1")) return true;
+        return !!p.has_api_key;
+    };
 
-    // Modelos del provider seleccionado que estén enabled=1 Y active=1
-    const availableModels = models.filter(m => {
+    const isLocalProvider = (p: typeof providers[number]) => {
+        if (p.id === "ollama") return true;
+        const baseUrl = p.base_url || p.baseUrl || "";
+        return baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1");
+    };
+
+    // Dropdown options: only active providers with API key
+    const providerOptions = providers.filter(p => (p.enabled || p.active) && hasApiKey(p));
+
+    // Dropdown options: only active models for selected provider
+    const modelOptions = models.filter(m => {
         const pid = m.provider_id || m.providerId;
-        return pid === formData.provider_id && m.active && m.enabled;
+        return pid === formData.provider_id && (m.enabled || m.active);
     });
+
+    // Configured provider (even if inactive) for display in trigger
+    const configuredProvider = providers.find(p => p.id === formData.provider_id);
+    const isProviderInactive = !!configuredProvider && !providerOptions.some(p => p.id === configuredProvider.id);
+
+    // Configured model (even if inactive) for display in trigger
+    const allModelsForProvider = models.filter(m => {
+        const pid = m.provider_id || m.providerId;
+        return pid === formData.provider_id;
+    });
+    const configuredModel = allModelsForProvider.find(m => m.id === formData.model_id);
+    const isModelInactive = !!configuredModel && !modelOptions.some(m => m.id === configuredModel.id);
 
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -432,7 +457,7 @@ export function AgentDetailsEditor({ agentId }: AgentDetailsEditorProps) {
                                 <div className="space-y-2">
                                     <div className="flex items-center justify-between pl-1">
                                         <Label className="text-xs text-white/40 uppercase tracking-widest">Proveedor</Label>
-                                        {activeProviders.length === 0 && (
+                                        {providerOptions.length === 0 && (
                                             <span className="text-[10px] text-amber-400/80">Sin providers activos</span>
                                         )}
                                     </div>
@@ -441,17 +466,32 @@ export function AgentDetailsEditor({ agentId }: AgentDetailsEditorProps) {
                                         onValueChange={(val) => setFormData(prev => ({ ...prev, provider_id: val, model_id: "" }))}
                                     >
                                         <SelectTrigger className="bg-white/5 border-white/10 rounded-xl h-11">
-                                            <SelectValue placeholder="Seleccionar proveedor" />
+                                            <SelectValue placeholder="Seleccionar proveedor">
+                                                {formData.provider_id && configuredProvider ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <span>{configuredProvider.name}</span>
+                                                        {isProviderInactive && (
+                                                            <span className="text-[10px] text-amber-400/80">(inactivo)</span>
+                                                        )}
+                                                        {isLocalProvider(configuredProvider) ? (
+                                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400">LOCAL</span>
+                                                        ) : (
+                                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">API</span>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    "Seleccionar proveedor"
+                                                )}
+                                            </SelectValue>
                                         </SelectTrigger>
                                         <SelectContent className="bg-zinc-900 border-white/10 text-white">
-                                            {activeProviders.length === 0 && (
+                                            {providerOptions.length === 0 && (
                                                 <div className="px-3 py-4 text-center text-xs text-white/30">
-                                                    Activa al menos un provider en la sección de Providers
+                                                    Activa al menos un provider con API key en la sección de Providers
                                                 </div>
                                             )}
-                                            {activeProviders.map(p => {
-                                                const baseUrl = p.base_url || p.baseUrl || "";
-                                                const isLocal = p.id === "ollama" || baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1");
+                                            {providerOptions.map(p => {
+                                                const isLocal = isLocalProvider(p);
                                                 return (
                                                     <SelectItem key={p.id} value={p.id}>
                                                         <div className="flex items-center gap-2">
@@ -468,38 +508,57 @@ export function AgentDetailsEditor({ agentId }: AgentDetailsEditorProps) {
                                             })}
                                         </SelectContent>
                                     </Select>
+                                    {isProviderInactive && configuredProvider && (
+                                        <p className="text-[10px] text-amber-400/80 pl-1">
+                                            El proveedor "{configuredProvider.name}" está inactivo. Selecciona uno activo para cambiar.
+                                        </p>
+                                    )}
                                 </div>
 
                                 {/* Model selector */}
                                 <div className="space-y-2">
                                     <div className="flex items-center justify-between pl-1">
                                         <Label className="text-xs text-white/40 uppercase tracking-widest">Modelo</Label>
-                                        {formData.provider_id && availableModels.length === 0 && (
+                                        {formData.provider_id && modelOptions.length === 0 && (
                                             <span className="text-[10px] text-amber-400/80">Sin modelos activos</span>
                                         )}
                                     </div>
                                     <Select
                                         value={formData.model_id}
                                         onValueChange={(val) => setFormData(prev => ({ ...prev, model_id: val }))}
-                                        disabled={!formData.provider_id || availableModels.length === 0}
+                                        disabled={!formData.provider_id || modelOptions.length === 0}
                                     >
                                         <SelectTrigger className="bg-white/5 border-white/10 rounded-xl h-11 disabled:opacity-50">
                                             <SelectValue placeholder={
                                                 !formData.provider_id
                                                     ? "Primero selecciona un proveedor"
-                                                    : availableModels.length === 0
+                                                    : modelOptions.length === 0
                                                         ? "Activa modelos en el provider"
                                                         : "Seleccionar modelo"
-                                            } />
+                                            }>
+                                                {formData.model_id && configuredModel ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-mono text-sm">{configuredModel.name}</span>
+                                                        {isModelInactive && (
+                                                            <span className="text-[10px] text-amber-400/80">(inactivo)</span>
+                                                        )}
+                                                    </div>
+                                                ) : undefined}
+                                            </SelectValue>
                                         </SelectTrigger>
                                         <SelectContent className="bg-zinc-900 border-white/10 text-white">
-                                            {availableModels.map(m => (
+                                            {modelOptions.map(m => (
                                                 <SelectItem key={m.id} value={m.id}>
                                                     <span className="font-mono text-sm">{m.name}</span>
                                                 </SelectItem>
                                             ))}
                                         </SelectContent>
                                     </Select>
+                                    {isModelInactive && configuredModel && (
+                                        <p className="text-[10px] text-amber-400/80 pl-1">
+                                            El modelo "{configuredModel.name}" está inactivo. Selecciona uno activo para cambiar.
+                                        </p>
+                                    )}
                                 </div>
                             </div>
                         </div>

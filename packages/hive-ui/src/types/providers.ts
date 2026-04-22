@@ -8,7 +8,8 @@ export type ProviderType =
   | "deepseek"
   | "mistral"
   | "groq"
-  | "cohere";
+  | "cohere"
+  | "nvidia";
 
 export type ProviderStatus = "active" | "fallback" | "error" | "disabled";
 

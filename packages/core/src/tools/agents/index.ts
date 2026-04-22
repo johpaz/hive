@@ -203,6 +203,7 @@ export const agentCreateTool: Tool = {
     const modelId = params.modelId as string;
     const tone = (params.tone as string) ?? "friendly";
     const maxIterations = (params.max_iterations as number) ?? 10;
+    const parentWorkspace = config?.configurable?.workspace ?? null;
 
     // Validar que providerId y modelId sean obligatorios
     if (!providerId || !modelId) {
@@ -253,10 +254,23 @@ export const agentCreateTool: Tool = {
     try {
       const agentId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 
-      db.query(`
-        INSERT INTO agents (id, user_id, name, description, system_prompt, tools_json, role, status, parent_id, provider_id, model_id, tone, max_iterations, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'worker', 'idle', ?, ?, ?, ?, ?, unixepoch(), unixepoch())
-      `).run(agentId, userId, name, description, systemPrompt, toolsJson, parentId, providerId, modelId, tone, maxIterations);
+db.query(`
+        INSERT INTO agents (id, user_id, name, description, system_prompt, tools_json, role, status, parent_id, provider_id, model_id, tone, max_iterations, workspace)
+        VALUES (?, ?, ?, ?, ?, ?, 'worker', 'idle', ?, ?, ?, ?, ?, ?)
+      `).run(
+        agentId,
+        userId,
+        name,
+        description,
+        systemPrompt,
+        toolsJson,
+        parentId,
+        providerId,
+        modelId,
+        tone,
+        maxIterations,
+        parentWorkspace
+      );
 
       return { 
         ok: true, 
@@ -264,6 +278,7 @@ export const agentCreateTool: Tool = {
         name, 
         providerId, 
         modelId,
+        workspace: parentWorkspace,
         message: "Agente creado exitosamente." 
       };
     } catch (error) {

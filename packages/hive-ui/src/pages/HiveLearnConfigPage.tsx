@@ -44,9 +44,8 @@ export function HiveLearnConfigPage() {
           apiClient<AgentResponse>("/api/hivelearn/agents", { showError: false }),
         ]);
 
-        // Filter to only active/enabled providers: enabled=1 Y active=1
         const activeProviders: ProviderOption[] = (providersData.providers ?? [])
-          .filter((p: any) => p.enabled && p.active)
+          .filter((p: any) => p.enabled || p.active)
           .map((p: any) => ({
             id: p.id,
             name: p.name,
@@ -55,9 +54,8 @@ export function HiveLearnConfigPage() {
             isLocal: p.isLocal ?? false,
           }));
 
-        // Filter to only active/enabled models: enabled=1 Y active=1
         const activeModels: ModelOption[] = (modelsData.models ?? [])
-          .filter((m: any) => m.enabled && m.active)
+          .filter((m: any) => m.enabled || m.active)
           .map((m: any) => ({
             id: m.id,
             name: m.name,

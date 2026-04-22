@@ -6,10 +6,8 @@ export function WebChatPage() {
   const activeSession = currentUser?.id || "default";
 
   return (
-    <div className="h-full bg-zinc-950 overflow-hidden mt-10">
-      <div className="max-w-4xl mx-auto h-full flex flex-col border-x border-white/5">
-        <ChatContainer agentId="main" sessionId={activeSession} />
-      </div>
+    <div className="h-full bg-zinc-950 overflow-hidden">
+      <ChatContainer agentId="main" sessionId={activeSession} />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { buildAgentLoop } from "../agent/agent-loop";
 import { AgentRunner } from "../agent/providers/index";
 import { ChannelManager } from "../channels/manager";
 import { syncToolsToFTS, syncSkillsToFTS, syncPlaybookToFTS } from "../agent/context-compiler";
+import { syncMCPToolsToFTS } from "../mcp/tool-sync";
 import { AgentService, createAgentService } from "../agent/service";
 import { mkdirSync, existsSync } from "node:fs";
 import * as path from "node:path";
@@ -233,15 +234,16 @@ export async function initializeGateway(
     // 3. Cargar configuración del agente desde DB
     const { provider, model } = await loadAgentConfigFromDB(config);
 
-    // 4. Sync FTS5 indexes (tools + skills + playbook)
+    // 4. Sync FTS5 indexes (tools + skills + playbook + mcp_tools)
     log.info("[initialize] Syncing FTS5 indexes (asynchronous & transactional)...")
     try {
       await Promise.all([
         syncToolsToFTS(),
         syncSkillsToFTS(),
-        syncPlaybookToFTS()
+        syncPlaybookToFTS(),
+        syncMCPToolsToFTS()
       ]);
-      log.info("[initialize] ✅ FTS5 indexes synced (tools, skills, playbook)")
+      log.info("[initialize] ✅ FTS5 indexes synced (tools, skills, playbook, mcp_tools)")
     } catch (err) {
       log.error(`[initialize] FTS5 sync failed during startup: ${(err as Error).message}`);
       // Consider if we should throw or continue. For now, continue but log error.

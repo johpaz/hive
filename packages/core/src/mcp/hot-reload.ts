@@ -10,8 +10,9 @@
 
 import { getDb } from "../storage/sqlite";
 import { logger } from "../utils/logger";
-import type { MCPClientManager } from "@johpaz/hive-agents-mcp";
 import { decryptConfig } from "../storage/crypto";
+import { syncMCPToolsToDB, syncMCPToolsToFTS, clearMCPToolsFromDB } from "./tool-sync";
+import type { MCPClientManager } from "@johpaz/hive-agents-mcp";
 
 const log = logger.child("mcp:hot-reload");
 
@@ -102,6 +103,11 @@ async function syncMCPServers(mcpManager: MCPClientManager): Promise<void> {
           const tools = mcpManager.getServerTools(serverName) || [];
           db.query(`UPDATE mcp_servers SET status = ?, tools_count = ? WHERE id = ?`).run("connected", tools.length, serverName);
 
+          // Persist MCP tool definitions to DB and FTS5
+          // Use server.name (human-readable) for mcpToolId consistency with context-compiler
+          syncMCPToolsToDB(server.id || server.name, server.name || serverName, tools);
+          await syncMCPToolsToFTS();
+
           log.info(`MCP server ${serverName} connected: ${tools.length} tools available`);
         } catch (err) {
           log.error(`Failed to connect MCP server ${serverName}: ${(err as Error).message}`);
@@ -120,6 +126,9 @@ async function syncMCPServers(mcpManager: MCPClientManager): Promise<void> {
           const currentConfig = (mcpManager as any).config || { servers: {} };
           delete currentConfig.servers[oldServerName];
           await mcpManager.updateConfig(currentConfig);
+
+          // Delete MCP tool definitions from DB and FTS5
+          clearMCPToolsFromDB(oldServerName);
 
           // Update DB status
           db.query(`UPDATE mcp_servers SET status = ?, tools_count = 0 WHERE id = ?`).run("disconnected", oldServerName);

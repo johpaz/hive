@@ -181,6 +181,7 @@ export const SEED_DATA: SeedData = {
     { id: "local-llama", name: "Local LLM (llama-server)", baseUrl: "http://localhost:8080/v1" },
     { id: "elevenlabs", name: "ElevenLabs", baseUrl: "https://api.elevenlabs.io/v1" },
     { id: "qwen", name: "Qwen (Alibaba)", baseUrl: "https://dashscope.aliyuncs.com/api/v1" },
+    { id: "nvidia", name: "NVIDIA NIM", baseUrl: "https://integrate.api.nvidia.com/v1" },
   ],
 
   models: [
@@ -299,6 +300,20 @@ export const SEED_DATA: SeedData = {
     { id: "qwen3-tts-instruct-flash", providerId: "qwen", name: "Qwen TTS Instruct Flash", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
     { id: "qwen3-tts-flash", providerId: "qwen", name: "Qwen TTS Flash", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
     { id: "qwen-tts", providerId: "qwen", name: "Qwen TTS", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
+
+    // ── NVIDIA NIM (fuente: build.nvidia.com — modelos con endpoint gratuito) ──
+    { id: "meta/llama-3.3-70b-instruct", providerId: "nvidia", name: "Llama 3.3 70B (NVIDIA)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
+    { id: "meta/llama-4-maverick-17b-128e-instruct", providerId: "nvidia", name: "Llama 4 Maverick (NVIDIA)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
+    { id: "nvidia/llama-3.1-nemotron-ultra-253b-v1", providerId: "nvidia", name: "Nemotron Ultra 253B", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "reasoning"]) },
+    { id: "nvidia/llama-3.1-nemotron-70b-instruct", providerId: "nvidia", name: "Nemotron 70B", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
+    { id: "deepseek-ai/deepseek-v3.2", providerId: "nvidia", name: "DeepSeek V3.2 (NVIDIA)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "code"]) },
+    { id: "qwen/qwen3-coder-480b-a35b-instruct", providerId: "nvidia", name: "Qwen3 Coder 480B (NVIDIA)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "code"]) },
+    { id: "qwen/qwen3.5-397b-a17b", providerId: "nvidia", name: "Qwen3.5 397B (NVIDIA)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
+    { id: "moonshotai/kimi-k2-thinking", providerId: "nvidia", name: "Kimi K2 Thinking (NVIDIA)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "reasoning", "function_calling", "streaming"]) },
+    { id: "mistralai/mistral-large-3-675b-instruct-2512", providerId: "nvidia", name: "Mistral Large 3 (NVIDIA)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
+    { id: "google/gemma-4-31b-it", providerId: "nvidia", name: "Gemma 4 31B (NVIDIA)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
+    { id: "google/gemma-3-27b-it", providerId: "nvidia", name: "Gemma 3 27B (NVIDIA)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
+    { id: "z-ai/glm-5.1", providerId: "nvidia", name: "GLM 5.1 (NVIDIA)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
   ],
 
 
@@ -411,9 +426,9 @@ const INITIAL_PLAYBOOK_RULES = [
 export function reseedToolsAndSkills(): void {
   const db = getDb();
 
-  // Ensure FTS5 table and triggers exist
+  // Ensure FTS5 table and triggers exist (v0.0.28 schema with description)
   try {
-    db.run(`CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(id, name, category, tools, triggers, body)`);
+    db.run(`CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(id, name, description, category, tools, triggers, body)`);
   } catch (err) {
     if (!(err as Error).message.includes("already exists")) throw err;
   }
@@ -422,13 +437,13 @@ export function reseedToolsAndSkills(): void {
   db.run(`DROP TRIGGER IF EXISTS skills_au`);
   db.run(`DROP TRIGGER IF EXISTS skills_ad`);
   db.run(`CREATE TRIGGER skills_ai AFTER INSERT ON skills BEGIN
-    INSERT INTO skills_fts(id, name, category, tools, triggers, body)
-    VALUES (new.id, new.name, new.category, new.tools, new.triggers, new.body);
+    INSERT INTO skills_fts(id, name, description, category, tools, triggers, body)
+    VALUES (new.id, new.name, new.description, new.category, new.tools, new.triggers, new.body);
   END`);
   db.run(`CREATE TRIGGER skills_au AFTER UPDATE ON skills BEGIN
     DELETE FROM skills_fts WHERE id = old.id;
-    INSERT INTO skills_fts(id, name, category, tools, triggers, body)
-    VALUES (new.id, new.name, new.category, new.tools, new.triggers, new.body);
+    INSERT INTO skills_fts(id, name, description, category, tools, triggers, body)
+    VALUES (new.id, new.name, new.description, new.category, new.tools, new.triggers, new.body);
   END`);
   db.run(`CREATE TRIGGER skills_ad AFTER DELETE ON skills BEGIN
     DELETE FROM skills_fts WHERE id = old.id;
@@ -453,7 +468,7 @@ export function reseedToolsAndSkills(): void {
   }
   log.info(`[seed] ✅ ${toolCount} tools re-seeded`);
 
-  // ── Skills: wipe and re-seed ──
+  // ── Skills: wipe and re-seed with full v0.0.28 schema ──
   // DELETE FROM skills fires skills_ad trigger → auto-cleans skills_fts
   db.run(`DELETE FROM skills`);
 
@@ -465,20 +480,88 @@ export function reseedToolsAndSkills(): void {
   for (const s of realSkills) {
     db.query(`
       INSERT OR REPLACE INTO skills (
-        id, name, category, tools, triggers, body, version, active,
-        created_at, updated_at
+        id, name, description, version, author, icon, category,
+        permissions, dependencies, tools, triggers, preferred_agents,
+        body, version_num, active, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1, (unixepoch()), (unixepoch()))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, (unixepoch()), (unixepoch()))
     `).run(
-      s.name, s.name, s.category || "",
+      s.name,
+      s.name,
+      s.description || "",
+      typeof s.version === 'string' ? s.version : String(s.version || '0.0.1'),
+      s.author || "Anonymous",
+      s.icon || "🧩",
+      s.category || "general",
+      JSON.stringify(s.permissions || []),
+      JSON.stringify(s.dependencies || []),
       (s.tools || []).join(","),
       (s.triggers || []).join(","),
+      JSON.stringify(s.preferred_agents || []),
       s.content || "",
-      s.version || 1
+      parseInt(String(s.version || '0.0.1').split(".")[0]) || 1
     );
     skillCount++;
   }
   log.info(`[seed] ✅ ${skillCount} skills re-seeded (skills_fts auto-synced via triggers)`);
+}
+
+/**
+ * v0.0.28 migration: re-seed skills with expanded schema (description, author, icon, etc.)
+ * Called from onboarding.ts after DROP + CREATE of the new skills table.
+ */
+export function reseedSkillsV0_28(): void {
+  const db = getDb();
+
+  // Re-create triggers for the new schema (with description column)
+  db.run(`DROP TRIGGER IF EXISTS skills_ai`);
+  db.run(`DROP TRIGGER IF EXISTS skills_au`);
+  db.run(`DROP TRIGGER IF EXISTS skills_ad`);
+  db.run(`CREATE TRIGGER skills_ai AFTER INSERT ON skills BEGIN
+    INSERT INTO skills_fts(id, name, description, category, tools, triggers, body)
+    VALUES (new.id, new.name, new.description, new.category, new.tools, new.triggers, new.body);
+  END`);
+  db.run(`CREATE TRIGGER skills_au AFTER UPDATE ON skills BEGIN
+    DELETE FROM skills_fts WHERE id = old.id;
+    INSERT INTO skills_fts(id, name, description, category, tools, triggers, body)
+    VALUES (new.id, new.name, new.description, new.category, new.tools, new.triggers, new.body);
+  END`);
+  db.run(`CREATE TRIGGER skills_ad AFTER DELETE ON skills BEGIN
+    DELETE FROM skills_fts WHERE id = old.id;
+  END`);
+
+  const skillLoader = new SkillLoader({ workspacePath: process.env.HIVE_HOME || process.cwd() });
+  const realSkills = skillLoader.loadBundledSkills();
+  log.info(`[migration v0.0.28] 📚 SkillLoader cargó ${realSkills.length} bundled skills`);
+
+  let skillCount = 0;
+  for (const s of realSkills) {
+    db.query(`
+      INSERT OR REPLACE INTO skills (
+        id, name, description, version, author, icon, category,
+        permissions, dependencies, tools, triggers, preferred_agents,
+        body, version_num, active, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, (unixepoch()), (unixepoch()))
+    `).run(
+      s.name,
+      s.name,
+      s.description || "",
+      typeof s.version === 'string' ? s.version : String(s.version || '0.0.1'),
+      s.author || "Anonymous",
+      s.icon || "🧩",
+      s.category || "general",
+      JSON.stringify(s.permissions || []),
+      JSON.stringify(s.dependencies || []),
+      (s.tools || []).join(","),
+      (s.triggers || []).join(","),
+      JSON.stringify(s.preferred_agents || []),
+      s.content || "",
+      parseInt(String(s.version || '0.0.1').split(".")[0]) || 1
+    );
+    skillCount++;
+  }
+  log.info(`[migration v0.0.28] ✅ ${skillCount} skills re-seeded with expanded schema`);
 }
 
 export function seedAllData(): void {

@@ -52,7 +52,7 @@ function reloadEnvToProcess(hiveDir: string): void {
   }
 }
 
-const VERSION = "0.0.27";
+const VERSION = "0.0.28";
 
 const DEFAULT_MODELS: Record<string, string> = {
   anthropic: "claude-sonnet-4-6",
@@ -63,6 +63,7 @@ const DEFAULT_MODELS: Record<string, string> = {
   kimi: "kimi-k2.5",
   openrouter: "meta-llama/llama-3.3-70b-instruct",
   ollama: "llama3.3:8b",
+  nvidia: "meta/llama-3.3-70b-instruct",
 };
 
 const PROVIDER_BASE_URLS: Record<string, string> = {
@@ -74,6 +75,7 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
   kimi: "https://api.moonshot.cn",
   openrouter: "https://openrouter.ai/api",
   ollama: "http://localhost:11434",
+  nvidia: "https://integrate.api.nvidia.com/v1",
 };
 
 const API_KEY_PLACEHOLDERS: Record<string, string> = {
@@ -85,6 +87,7 @@ const API_KEY_PLACEHOLDERS: Record<string, string> = {
   kimi: "sk-...",
   openrouter: "sk-or-...",
   ollama: "",
+  nvidia: "nvapi-...",
 };
 
 const API_KEY_LINKS: Record<string, string> = {
@@ -96,6 +99,7 @@ const API_KEY_LINKS: Record<string, string> = {
   kimi: "https://platform.moonshot.cn/console/api-keys",
   openrouter: "https://openrouter.ai/keys",
   ollama: "",
+  nvidia: "https://build.nvidia.com/",
 };
 
 const AVAILABLE_MODELS: Record<string, Array<{ value: string; label: string; hint?: string }>> = {
@@ -143,6 +147,14 @@ const AVAILABLE_MODELS: Record<string, Array<{ value: string; label: string; hin
     { value: "qwen2.5:7b", label: "Qwen 2.5 7B", hint: "Multilingual, código, ~4.5GB RAM" },
     { value: "mistral:7b", label: "Mistral 7B", hint: "Rápido, ~4GB RAM" },
     { value: "phi4:14b", label: "Phi-4 14B", hint: "Mejor calidad, ~8GB RAM" },
+  ],
+  nvidia: [
+    { value: "meta/llama-3.3-70b-instruct", label: "Llama 3.3 70B", hint: "General — 128K contexto" },
+    { value: "nvidia/llama-3.1-nemotron-ultra-253b-v1", label: "Nemotron Ultra 253B", hint: "NVIDIA flagship — reasoning" },
+    { value: "deepseek-ai/deepseek-v3.2", label: "DeepSeek V3.2", hint: "Multimodal, código — 128K" },
+    { value: "qwen/qwen3-coder-480b-a35b-instruct", label: "Qwen3 Coder 480B", hint: "Especializado en código" },
+    { value: "google/gemma-4-31b-it", label: "Gemma 4 31B", hint: "Multimodal — 256K contexto" },
+    { value: "moonshotai/kimi-k2-thinking", label: "Kimi K2 Thinking", hint: "Razonamiento profundo — 256K" },
   ],
 };
 
@@ -369,6 +381,22 @@ async function testLLMConnection(provider: string, apiKey: string, model: string
       return response.ok;
     }
 
+    if (provider === "nvidia") {
+      const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: model,
+          max_tokens: 10,
+          messages: testMessages,
+        }),
+      });
+      return response.ok;
+    }
+
     return false;
   } catch {
     return false;
@@ -518,6 +546,7 @@ async function runUpdateWizard(existing: ExistingConfig): Promise<void> {
         { value: "mistral", label: "Mistral AI", hint: "Mistral Large" },
         { value: "deepseek", label: "DeepSeek", hint: "Muy económico" },
         { value: "kimi", label: "Kimi (Moonshot AI)", hint: "Contexto largo" },
+        { value: "nvidia", label: "NVIDIA NIM", hint: "Modelos gratuitos" },
         { value: "openrouter", label: "OpenRouter", hint: "Multi-modelo" },
         { value: "ollama", label: "Ollama (local)", hint: "Sin costo" },
       ],
@@ -690,6 +719,7 @@ async function runUpdateWizard(existing: ExistingConfig): Promise<void> {
     deepseek: "https://api.deepseek.com/v1",
     kimi: "https://api.moonshot.cn/v1",
     ollama: "http://localhost:11434/api",
+    nvidia: "https://integrate.api.nvidia.com/v1",
   };
 
   const providersConfig: Record<string, Record<string, unknown>> = {};
@@ -1034,6 +1064,7 @@ async function runFullWizard(): Promise<void> {
             { value: "anthropic", label: "Anthropic Claude", hint: "Premium — mejor calidad" },
             { value: "openai", label: "OpenAI", hint: "Estándar de la industria" },
             { value: "ollama", label: "Ollama (Local)", hint: "Gratis, corre localmente" },
+            { value: "nvidia", label: "NVIDIA NIM", hint: "Modelos gratuitos en build.nvidia.com" },
             { value: "openrouter", label: "OpenRouter", hint: "Múltiples proveedores" },
           ],
           initialValue: state.provider,

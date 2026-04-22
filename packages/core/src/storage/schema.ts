@@ -157,18 +157,25 @@ export const SCHEMA = `
   -- and made available directly via context-compiler (Direct Connection architecture)
 
   -- Skills: can be global (system) or user-specific
-  -- Simplified schema with body field for markdown content
+  -- v0.0.28: expanded schema with description, author, icon, permissions, dependencies, preferred_agents
   CREATE TABLE IF NOT EXISTS skills (
-    id          TEXT PRIMARY KEY,        -- 'web_research'
-    name        TEXT NOT NULL,           -- 'Web Research'
-    category    TEXT NOT NULL,           -- 'web'
-    tools       TEXT NOT NULL,           -- 'web_search,web_fetch'
-    triggers    TEXT NOT NULL,           -- 'investiga,busca,research'
-    body        TEXT NOT NULL,           -- Markdown completo
-    version     INTEGER DEFAULT 1,
-    active      INTEGER DEFAULT 1,       -- 1=activo, 0=desactivado
-    created_at  TEXT DEFAULT (datetime('now')),
-    updated_at  TEXT DEFAULT (datetime('now'))
+    id               TEXT PRIMARY KEY,
+    name             TEXT NOT NULL,
+    description      TEXT,
+    version          TEXT DEFAULT '0.0.1',
+    author           TEXT DEFAULT 'Anonymous',
+    icon             TEXT DEFAULT '🧩',
+    category         TEXT NOT NULL,
+    permissions      TEXT,
+    dependencies     TEXT,
+    tools            TEXT NOT NULL,
+    triggers         TEXT NOT NULL,
+    preferred_agents TEXT,
+    body             TEXT NOT NULL,
+    version_num      INTEGER DEFAULT 1,
+    active           INTEGER DEFAULT 1,
+    created_at       TEXT DEFAULT (datetime('now')),
+    updated_at       TEXT DEFAULT (datetime('now'))
   );
 
   -- Índices para filtros directos
@@ -556,8 +563,35 @@ export const CONTEXT_ENGINE_SCHEMA = `
   );
 
   -- FTS5: skills catalog search (populated by syncSkillsToFTS from gateway/initializer.ts)
-  -- Simplified schema - standalone FTS5 table (no content table sync)
-  -- Note: FTS5 tables are created programmatically in seed.ts to avoid "already exists" errors
+  -- v0.0.28: includes description column for better semantic matching
+  CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(
+    id, name, description, category, tools, triggers, body
+  );
+
+  -- MCP Tools: tool definitions discovered from connected MCP servers
+  -- Persisted for FTS5 search and offline availability
+  -- Synced from MCPClientManager at runtime via hot-reload
+  -- Deleted when server disconnects (active management by hot-reload)
+  CREATE TABLE IF NOT EXISTS mcp_tools (
+    id              TEXT PRIMARY KEY,
+    server_id       TEXT NOT NULL,
+    server_name     TEXT NOT NULL,
+    tool_name       TEXT NOT NULL,
+    description     TEXT,
+    category        TEXT DEFAULT 'mcp',
+    active          INTEGER NOT NULL DEFAULT 1,
+    created_at      INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at      INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_mcp_tools_server ON mcp_tools(server_id);
+  CREATE INDEX IF NOT EXISTS idx_mcp_tools_active ON mcp_tools(active);
+
+  -- FTS5: MCP tools catalog search (populated by syncMCPToolsToFTS from mcp/tool-sync.ts)
+  -- Separate from tools_fts to avoid polluting native tool search with MCP tools
+  CREATE VIRTUAL TABLE IF NOT EXISTS mcp_tools_fts USING fts5(
+    id, server_name, tool_name, description, category
+  );
 
   -- REFRESH TOKENS: JWT refresh token storage (hash-based for security)
   -- Stores hashed refresh tokens with expiry and user linkage

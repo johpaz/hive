@@ -1624,10 +1624,10 @@ export async function startGateway(config: Config): Promise<void> {
 
         if (url.pathname === "/api/skills" && req.method === "POST") {
           const body = await req.json().catch(() => ({}))
-          const { name, category, tools, triggers, body: bodyContent } = body
+          const { name, description, category, tools, triggers, preferred_agents, body: bodyContent } = body
           if (!name) return addCorsHeaders(new Response("Missing name", { status: 400 }), req)
           const id = randomUUID()
-          getDb().query(`INSERT INTO skills(id, name, category, tools, triggers, body, version, active) VALUES(?, ?, ?, ?, ?, ?, 1, 1)`).run(id, name, category || "", tools || "", triggers || "", bodyContent || "")
+          getDb().query(`INSERT INTO skills(id, name, description, category, tools, triggers, preferred_agents, body, version, version_num, active) VALUES(?, ?, ?, ?, ?, ?, ?, ?, '0.0.1', 1, 1)`).run(id, name, description || "", category || "", tools || "", triggers || "", typeof preferred_agents === 'object' ? JSON.stringify(preferred_agents || []) : (preferred_agents || "[]"), bodyContent || "")
           return addCorsHeaders(Response.json({ success: true, id }), req)
         }
 
@@ -2444,25 +2444,51 @@ export async function startGateway(config: Config): Promise<void> {
                       isStep: false,
                     } as OutboundMessage));
                   },
-                  onStep: async (step) => {
-                    if (signal.aborted) return;
-                    if (step.type === "tool_result" && step.message) {
-                      try {
-                        const result = JSON.parse(step.message);
-                        if (result._sendToUser || result.status) {
-                          const userMessage = result.message || result.status || step.message;
-                          ws.send(JSON.stringify({
-                            type: "message",
-                            sessionId: unifiedSessionId,
-                            content: `📊 ${userMessage}`,
-                            isStep: true,
-                          } as unknown as OutboundMessage));
-                          return;
-                        }
-                      } catch { }
-                    }
-                    log.debug(`[TOOL] ${step.type}: ${step.toolName || ""}`);
-                  },
+onStep: async (step) => {
+                     if (signal.aborted) return;
+
+                     // "text" = el agente narra lo que esta pensando/haciendo
+                     if (step.type === "text" && step.message) {
+                       const trimmedMessage = (typeof step.message === "string" ? step.message : "").trim();
+                       if (trimmedMessage) {
+                         ws.send(JSON.stringify({
+                           type: "progress",
+                           sessionId: unifiedSessionId,
+                           content: trimmedMessage,
+                         } as OutboundMessage));
+                       }
+                       return;
+                     }
+
+                     // "tool_call" = el agente va a ejecutar una herramienta → narrar al usuario
+                     if (step.type === "tool_call" && step.toolName) {
+                       const narration = getNarration(step.toolName);
+                       ws.send(JSON.stringify({
+                         type: "progress",
+                         sessionId: unifiedSessionId,
+                         content: narration,
+                       } as OutboundMessage));
+                       return;
+                     }
+
+                     // "tool_result" = resultado de herramienta → solo si pide enviarse al usuario
+                     if (step.type === "tool_result" && step.message) {
+                       try {
+                         const result = JSON.parse(step.message);
+                         if (result._sendToUser || result.status) {
+                           const userMessage = result.message || result.status || "";
+                           if (userMessage) {
+                             ws.send(JSON.stringify({
+                               type: "progress",
+                               sessionId: unifiedSessionId,
+                               content: userMessage,
+                             } as OutboundMessage));
+                           }
+                           return;
+                         }
+                       } catch { }
+                     }
+                   },
                 });
 
                 // Use streamed content from onToken, fallback to response.content
@@ -2591,31 +2617,52 @@ export async function startGateway(config: Config): Promise<void> {
                     isStep: false,
                   } as OutboundMessage));
                 },
-                onStep: async (step) => {
-                  if (signal.aborted) return;
+onStep: async (step) => {
+                    if (signal.aborted) return;
 
-                  // Para tool_result, verificar si es un mensaje de progreso
-                  if (step.type === "tool_result" && step.message) {
-                    try {
-                      const result = JSON.parse(step.message);
-                      if (result._sendToUser || result.status) {
-                        const userMessage = result.message || result.status || step.message;
+                    // "text" = el agente narra lo que esta pensando/haciendo
+                    if (step.type === "text" && step.message) {
+                      const trimmedMessage = (typeof step.message === "string" ? step.message : "").trim();
+                      if (trimmedMessage) {
                         ws.send(JSON.stringify({
-                          type: "message",
+                          type: "progress",
                           sessionId: unifiedSessionId,
-                          content: `📊 ${userMessage}`,
-                          isStep: true,
-                        } as unknown as OutboundMessage));
-                        return;
+                          content: trimmedMessage,
+                        } as OutboundMessage));
                       }
-                    } catch {
-                      // No es JSON de progreso
+                      return;
                     }
-                  }
 
-                  log.debug(`[TOOL] ${step.type}: ${step.toolName || ""}`);
-                },
-              });
+                    // "tool_call" = el agente va a ejecutar una herramienta → narrar al usuario
+                    if (step.type === "tool_call" && step.toolName) {
+                      const narration = getNarration(step.toolName);
+                      ws.send(JSON.stringify({
+                        type: "progress",
+                        sessionId: unifiedSessionId,
+                        content: narration,
+                      } as OutboundMessage));
+                      return;
+                    }
+
+                    // "tool_result" = resultado de herramienta → solo si pide enviarse al usuario
+                    if (step.type === "tool_result" && step.message) {
+                      try {
+                        const result = JSON.parse(step.message);
+                        if (result._sendToUser || result.status) {
+                          const userMessage = result.message || result.status || "";
+                          if (userMessage) {
+                            ws.send(JSON.stringify({
+                              type: "progress",
+                              sessionId: unifiedSessionId,
+                              content: userMessage,
+                            } as OutboundMessage));
+                          }
+                          return;
+                        }
+                      } catch { }
+                    }
+                  },
+                });
 
               // Use streamed content from onToken, fallback to response.content
               const content = streamedContent || response.content?.trim() || "";
@@ -2802,18 +2849,46 @@ export async function startGateway(config: Config): Promise<void> {
   }
   if (!gatewaySetupMode) log.info(`Channels: ${channelManager.listChannels().map((c) => c.name).join(", ") || "none"}`);
 
-  // FIX 7 — SIGTERM desconecta MCP limpiamente antes de cerrar
+  // FIX 7 — SIGTERM: graceful shutdown with full cleanup
   process.on("SIGTERM", async () => {
     log.info("Received SIGTERM, shutting down gracefully...");
     watchers.forEach((close) => close());
+
     const mcp = agent?.getMCPManager();
     if (mcp) {
       log.info("Disconnecting MCP servers...");
       await mcp.disconnectAll().catch(() => { });
     }
-    if (channelManager) await channelManager.stopAll();
+
+    if (channelManager) {
+      log.info("Stopping channels...");
+      await channelManager.stopAll();
+    }
+
+    // BrowserService — kill any running browser processes
+    try {
+      const mod = await import("../tools/web/browser-service");
+      mod.CDPClient.closeAll();
+      log.info("Browser processes cleaned up");
+    } catch { }
+
+    // CanvasManager — stop heartbeat intervals
+    try {
+      canvasManager.clearAll();
+      log.info("Canvas sessions cleaned up");
+    } catch { }
+
+    // MCP hot-reload — stop polling interval
+    try {
+      const { stopMCPHotReload } = await import("../mcp/hot-reload");
+      stopMCPHotReload();
+      log.info("MCP hot-reload stopped");
+    } catch { }
+
     server.stop();
+
     try { unlinkSync(pidFile); } catch { }
+    log.info("Gateway shutdown complete");
     process.exit(0);
   });
 

@@ -11,7 +11,7 @@ import { getDb } from "../../storage/sqlite.ts"
 import { getAgentLoop } from "../agent-loop"
 import { resolveUserId, resolveAgentId } from "../../storage/onboarding"
 
-export type Provider = "openai" | "anthropic" | "gemini" | "mistral" | "kimi" | "ollama" | "openrouter" | "deepseek"
+export type Provider = "openai" | "anthropic" | "gemini" | "mistral" | "kimi" | "ollama" | "openrouter" | "deepseek" | "nvidia"
 
 export interface StepEvent {
   type: "text" | "plan" | "tool_call" | "tool_result"

@@ -87,7 +87,7 @@ export async function handleChat(
     const messageContent = `[Timestamp: ${exactTime} (${userTimezone})]\n${message}`;
 
     // Get recent conversation history
-    const history = getRecentMessages(threadId, 50);
+    const history = getRecentMessages(threadId, 15);
     const messages = [
       ...history.map((row) => ({
         role: row.role as "user" | "assistant" | "system",
@@ -200,11 +200,11 @@ export async function handleChat(
 export async function handleGetChatHistory(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const url = new URL(req.url)
   const threadId = url.searchParams.get("sessionId") || url.searchParams.get("threadId") || "default"
-  const limit = parseInt(url.searchParams.get("limit") || "50")
+  const limit = parseInt(url.searchParams.get("limit") || "15")
 
   const messages = getDb().query(`
-    SELECT * FROM conversations
-    WHERE thread_id = ?
+    SELECT id, thread_id, channel, role, content, tool_calls_json, tool_call_id, reasoning_content, token_count, created_at, updated_at FROM conversations
+    WHERE thread_id = ? AND role IN ('user', 'assistant')
     ORDER BY created_at DESC
     LIMIT ?
   `).all(threadId, limit) as Record<string, unknown>[]

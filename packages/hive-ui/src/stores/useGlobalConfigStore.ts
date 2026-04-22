@@ -25,7 +25,7 @@ const createProvidersSlice = () => ({
       const providers = response.providers;
       return {
         providers,
-        activeProviders: providers.filter(p => p.enabled && p.active),
+        activeProviders: providers.filter(p => p.enabled || p.active),
       };
     } catch (error) {
       console.error("Failed to fetch providers:", error);
@@ -48,7 +48,7 @@ const createProvidersSlice = () => ({
       );
       useGlobalConfigStore.setState({
         providers: updatedProviders,
-        activeProviders: updatedProviders.filter(p => p.enabled && p.active),
+        activeProviders: updatedProviders.filter(p => p.enabled || p.active),
       });
     } catch (error) {
       console.error("Failed to toggle provider:", error);
@@ -73,7 +73,7 @@ const createProvidersSlice = () => ({
         );
         useGlobalConfigStore.setState({
           providers: updatedProviders,
-          activeProviders: updatedProviders.filter(p => p.enabled && p.active),
+          activeProviders: updatedProviders.filter(p => p.enabled || p.active),
         });
       }
     } catch (error) {

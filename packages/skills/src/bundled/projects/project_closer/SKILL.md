@@ -52,7 +52,7 @@ steps:
     instruction: "Close project with executive summary or failure analysis"
     params:
       projectId: "project ID"
-      summary: "for done" or reason: "for fail"
+      summary: "for done OR reason for fail"
     output: project_closed
 
 rules:

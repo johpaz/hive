@@ -103,13 +103,39 @@ export function AgentConfigDialog({
     });
   }, [open, agentData]);
 
-  const filteredModels = models.filter(m => {
-    const pid = m.provider_id ?? m.providerId;
-    return pid === formData.providerId && (m.active || m.enabled);
+  const hasApiKey = (p: Provider) => {
+    if (p.id === "ollama") return true;
+    const baseUrl = p.base_url || p.baseUrl || "";
+    if (baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1")) return true;
+    return !!(p.has_api_key || p.hasApiKey || p.config?.apiKey || p.api_key);
+  };
+
+  const isLocalProvider = (p: Provider) => {
+    if (p.id === "ollama") return true;
+    const baseUrl = p.base_url || p.baseUrl || "";
+    return baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1");
+  };
+
+  // Dropdown options: only active providers with API key
+  const providerOptions = providers.filter(p => (p.enabled || p.active) && hasApiKey(p));
+
+  // Dropdown options: only active models for selected provider
+  const modelOptions = models.filter(m => {
+    const pid = m.provider_id;
+    return pid === formData.providerId && (m.enabled || m.active);
   });
 
-  // Providers disponibles: enabled O active debe ser true (al menos uno en 1)
-  const availableProviders = providers.filter(p => p.enabled && p.active);
+  // Configured provider (even if inactive) for display in trigger
+  const configuredProvider = providers.find(p => p.id === formData.providerId);
+  const isProviderInactive = !!configuredProvider && !providerOptions.some(p => p.id === configuredProvider.id);
+
+  // Configured model (even if inactive) for display in trigger
+  const allModelsForProvider = models.filter(m => {
+    const pid = m.provider_id;
+    return pid === formData.providerId;
+  });
+  const configuredModel = allModelsForProvider.find(m => m.id === formData.modelId);
+  const isModelInactive = !!configuredModel && !modelOptions.some(m => m.id === configuredModel.id);
 
   const handleSave = async () => {
     setSaving(true);
@@ -180,16 +206,32 @@ export function AgentConfigDialog({
                 </Label>
                 <Select value={formData.providerId} onValueChange={v => setFormData(f => ({ ...f, providerId: v, modelId: "" }))}>
                   <SelectTrigger className="bg-[#060e20] border-white/[0.08] text-white">
-                    <SelectValue placeholder="Seleccionar..." />
+                    <SelectValue placeholder="Seleccionar...">
+                      {formData.providerId && configuredProvider ? (
+                        <div className="flex items-center gap-2">
+                          <span>{configuredProvider.name}</span>
+                          {isProviderInactive && (
+                            <span className="text-[10px] text-amber-400/80">(inactivo)</span>
+                          )}
+                        </div>
+                      ) : (
+                        "Seleccionar..."
+                      )}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="bg-[#131b2e] border-white/[0.08]">
-                    {availableProviders.map(p => (
+                    {providerOptions.map(p => (
                       <SelectItem key={p.id} value={p.id} className="text-white hover:bg-white/10">
                         {p.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {isProviderInactive && configuredProvider && (
+                  <p className="text-[10px] text-amber-400/80">
+                    El proveedor "{configuredProvider.name}" está inactivo.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -198,16 +240,32 @@ export function AgentConfigDialog({
                 </Label>
                 <Select value={formData.modelId} onValueChange={v => setFormData(f => ({ ...f, modelId: v }))}>
                   <SelectTrigger className="bg-[#060e20] border-white/[0.08] text-white">
-                    <SelectValue placeholder="Seleccionar..." />
+                    <SelectValue placeholder="Seleccionar...">
+                      {formData.modelId && configuredModel ? (
+                        <div className="flex items-center gap-2">
+                          <span>{configuredModel.name}</span>
+                          {isModelInactive && (
+                            <span className="text-[10px] text-amber-400/80">(inactivo)</span>
+                          )}
+                        </div>
+                      ) : (
+                        "Seleccionar..."
+                      )}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="bg-[#131b2e] border-white/[0.08]">
-                    {filteredModels.map(m => (
+                    {modelOptions.map(m => (
                       <SelectItem key={m.id} value={m.id} className="text-white hover:bg-white/10">
                         {m.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {isModelInactive && configuredModel && (
+                  <p className="text-[10px] text-amber-400/80">
+                    El modelo "{configuredModel.name}" está inactivo.
+                  </p>
+                )}
               </div>
             </div>
 

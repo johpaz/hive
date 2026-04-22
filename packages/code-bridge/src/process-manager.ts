@@ -183,6 +183,15 @@ export class ProcessManager {
         return true;
     }
 
+    killAll() {
+        for (const [taskId, record] of this.agents) {
+            try {
+                record.proc.kill();
+            } catch { }
+        }
+        this.agents.clear();
+    }
+
     // ── Status snapshot ──────────────────────────────────────────────────────
 
     status(): TelemetryEvent {

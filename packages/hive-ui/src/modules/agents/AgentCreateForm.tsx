@@ -55,7 +55,13 @@ export function AgentCreateForm({ initialData, onSuccess, onCancel }: AgentCreat
   });
 
   useEffect(() => {
-    if (initialData) setFormData({ ...initialData });
+    if (initialData) {
+      setFormData({
+        ...initialData,
+        provider_id: initialData.provider_id || initialData.providerId || "",
+        model_id: initialData.model_id || initialData.modelId || "",
+      });
+    }
   }, [initialData]);
 
   const validateWorkspace = async (path: string) => {

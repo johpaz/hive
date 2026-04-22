@@ -36,7 +36,7 @@ export function selectPlaybookRules(message: string): PlaybookRule[] {
     const db = getDb()
     const startTime = performance.now()
 
-    // Clean query
+    // Clean query — use prefix matching for consistency with skill-selector and tool-selector
     const keywords = message
         .toLowerCase()
         // Keep only letters, numbers, spaces (strips ALL FTS5 special syntax)
@@ -47,7 +47,8 @@ export function selectPlaybookRules(message: string): PlaybookRule[] {
 
     if (keywords.length === 0) return []
 
-    const ftsQuery = keywords.join(" OR ")
+    // Use prefix matching for better recall (e.g., "program*" matches "programar", "programación")
+    const ftsQuery = keywords.map(w => `${w}*`).join(" OR ")
 
     try {
         // Query FTS table

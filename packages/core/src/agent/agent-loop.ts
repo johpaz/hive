@@ -296,19 +296,19 @@ export async function* runAgent(
         })
       }
 
-      // Dynamic tool injection: when search_knowledge finds NATIVE tools, add them to ctx.tools
-      // Note: MCP tools are already available directly, no injection needed
+      // Dynamic tool injection: when search_knowledge finds tools (native or MCP), add them to ctx.tools
       if (toolName === "search_knowledge") {
         // Use JS object directly (no parse needed)
         try {
           const result = toolResultJS as any
           const foundTools: Array<{ name: string }> = result?.tools ?? []
+          const foundMcpTools: Array<{ tool_name: string }> = result?.toolsmcp ?? []
           const currentToolNames = new Set(ctx.tools.map((t: any) => t.function?.name))
 
           // Track which tools were injected for skill lookup
           const injectedTools: string[] = []
 
-          // Inject native tools only (MCP tools already available)
+          // Inject native tools
           for (const found of foundTools) {
             if (!currentToolNames.has(found.name)) {
               const nativeTool = ctx.allTools.find(t => t.name === found.name)
@@ -324,6 +324,26 @@ export async function* runAgent(
                 log.info(`[agent-loop] Injected discovered native tool into loadout: ${nativeTool.name}`)
                 currentToolNames.add(found.name)
                 injectedTools.push(nativeTool.name)
+              }
+            }
+          }
+
+          // Inject MCP tools discovered via search_knowledge(type="mcp")
+          for (const found of foundMcpTools) {
+            const mcpFullName = found.full_name || found.tool_name
+            if (!currentToolNames.has(mcpFullName)) {
+              const mcpTool = ctx.allTools.find(t => t.name === mcpFullName)
+              if (mcpTool) {
+                ctx.tools.push({
+                  type: "function",
+                  function: {
+                    name: mcpTool.name,
+                    description: (mcpTool as any).description ?? "",
+                    parameters: (mcpTool as any).parameters ?? { type: "object", properties: {} },
+                  },
+                })
+                log.info(`[agent-loop] Injected discovered MCP tool into loadout: ${mcpTool.name}`)
+                currentToolNames.add(mcpFullName)
               }
             }
           }

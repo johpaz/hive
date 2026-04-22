@@ -78,12 +78,12 @@ const MAX_TOOLS_PER_TURN = 12
  *
  * CRITICAL: bm25() returns NEGATIVE scores where closer to 0 = more relevant.
  * - Score of -5 is MORE relevant than -20
- * - We use -100 as threshold to allow all reasonable matches (scores are typically -1 to -15)
+ * - We use -30 as threshold to filter noise while allowing valid matches
  *
- * Previous value: -25 (too strict for some tool names)
- * New value: -100 (allows all valid matches, filtering done by FTS5 MATCH)
+ * Previous values: -25 (too strict), -100 (too permissive)
+ * New value: -30 (balanced filtering, FTS5 MATCH handles the heavy lifting)
  */
-const MIN_RELEVANCE_THRESHOLD = -100  // Increased from -25 to allow more matches
+const MIN_RELEVANCE_THRESHOLD = -30
 
 /** Stopwords to filter out before FTS5 query construction */
 const STOPWORDS = new Set([
