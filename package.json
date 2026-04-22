@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-agents",
-  "version": "0.0.26",
+  "version": "0.0.27",
   "description": "Tu colmena de agentes IA. Local-first. Multi-canal. Open source. Construido desde Colombia para el mundo.",
   "private": false,
   "bin": {
@@ -43,7 +43,6 @@
     "./tools/web/index": "./packages/core/src/tools/web/index.ts",
     "./tools/projects/index": "./packages/core/src/tools/projects/index.ts",
     "./tools/cron/index": "./packages/core/src/tools/cron/index.ts",
-    
     "./tools/cli/index": "./packages/core/src/tools/cli/index.ts",
     "./tools/canvas/index": "./packages/core/src/tools/canvas/index.ts",
     "./tools/codebridge/index": "./packages/core/src/tools/codebridge/index.ts",
