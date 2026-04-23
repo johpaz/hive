@@ -118,8 +118,9 @@ export class OllamaProvider implements LLMProvider {
 
       // If the model runner crashed (likely OOM) and tools were sent, retry without tools.
       // The model can still answer conversationally — tools will be unavailable this turn.
+      // Match by error message string OR HTTP 500 with tools (resilient to Ollama message changes).
       if (
-        error.message?.includes("model runner has unexpectedly stopped") &&
+        (error.message?.includes("model runner has unexpectedly stopped") || error.status === 500) &&
         tools?.length
       ) {
         log.warn(`[llm-client] OOM with tools — retrying without tools (num_ctx=${runtimeOptions.num_ctx})`)

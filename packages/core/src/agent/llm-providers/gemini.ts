@@ -112,6 +112,10 @@ export class GeminiProvider implements LLMProvider {
       }
     }
 
+    if (safetyLimit <= 0) {
+      log.error(`[llm-client] Gemini: constraint enforcement loop exhausted — message history may still violate Gemini constraints`)
+    }
+
     const config: any = {}
     if (systemText) config.systemInstruction = systemText
     if (options.maxTokens) config.maxOutputTokens = options.maxTokens
@@ -131,6 +135,20 @@ export class GeminiProvider implements LLMProvider {
     const response = await ai.models.generateContent({ model: options.model, contents, config })
 
     const candidate = response.candidates?.[0]
+
+    // Handle safety blocks explicitly
+    if (candidate?.finishReason === "SAFETY") {
+      log.warn(`[llm-client] Gemini: response blocked by safety filters (model=${options.model})`)
+      return {
+        content: "[Response blocked by Gemini safety filters]",
+        stop_reason: "stop",
+        usage: response.usageMetadata ? {
+          input_tokens: response.usageMetadata.promptTokenCount ?? 0,
+          output_tokens: 0,
+        } : undefined,
+      }
+    }
+
     const parts: any[] = candidate?.content?.parts ?? []
 
     let content = ""
@@ -153,13 +171,15 @@ export class GeminiProvider implements LLMProvider {
         : candidate?.finishReason === "MAX_TOKENS" ? "max_tokens"
           : "stop"
 
+    const usageMeta = response.usageMetadata
     return {
       content,
       tool_calls: tool_calls.length ? tool_calls : undefined,
       stop_reason,
-      usage: response.usageMetadata ? {
-        input_tokens: response.usageMetadata.promptTokenCount ?? 0,
-        output_tokens: response.usageMetadata.candidatesTokenCount ?? 0,
+      usage: usageMeta ? {
+        input_tokens: usageMeta.promptTokenCount ?? 0,
+        output_tokens: usageMeta.candidatesTokenCount ?? 0,
+        thinking_tokens: (usageMeta as any).thoughtsTokenCount ?? 0,
       } : undefined,
     }
   }

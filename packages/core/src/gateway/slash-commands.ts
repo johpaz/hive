@@ -4,7 +4,7 @@ import { laneQueue } from "./lane-queue.ts";
 import { logger } from "../utils/logger.ts";
 
 export interface InboundMessage {
-  type: "message" | "command" | "ping" | "join" | "canvas_subscribe" | "canvas_unsubscribe" | "logs_subscribe" | "logs_unsubscribe" | "audio" | "canvas:interact" | "a2ui:action";
+  type: "message" | "command" | "ping" | "join" | "canvas_subscribe" | "canvas_unsubscribe" | "logs_subscribe" | "logs_unsubscribe" | "audio" | "canvas:interact" | "a2ui:action" | "stop";
   sessionId: string;
   content?: string;
   audio?: string;
@@ -17,7 +17,7 @@ export interface InboundMessage {
 }
 
 export interface OutboundMessage {
-  type: "message" | "stream" | "status" | "error" | "pong" | "command_result" | "joined" | "typing" | "audio" | "welcome";
+  type: "message" | "stream" | "status" | "error" | "pong" | "command_result" | "joined" | "typing" | "audio" | "welcome" | "progress";
   sessionId: string;
   id?: string; // Message ID for streaming
   content?: string;

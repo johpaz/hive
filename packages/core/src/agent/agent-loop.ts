@@ -73,6 +73,8 @@ export interface AgentLoopOptions {
   onStep?: (step: StepEvent) => Promise<void>
   /** User ID for context propagation */
   userId?: string
+  /** Abort signal to stop generation mid-execution */
+  signal?: AbortSignal
 }
 
 export interface StepEvent {
@@ -87,6 +89,7 @@ export interface StepEvent {
 export interface StreamChunk {
   agent?: { messages: any[] }
   tools?: { messages: any[] }
+  usage?: { input_tokens: number; output_tokens: number }
 }
 
 // ─── Main agent loop ──────────────────────────────────────────────────────────
@@ -166,6 +169,12 @@ export async function* runAgent(
 
   // ── The loop ────────────────────────────────────────────────────────────
   while (iterations < maxIterations) {
+    if (opts.signal?.aborted) {
+      log.info(`[agent-loop] Aborted by signal at iteration ${iterations}`)
+      finalContent = "Generación detenida."
+      break
+    }
+
     iterations++
 
     const response = await callLLM({
@@ -330,7 +339,7 @@ export async function* runAgent(
 
           // Inject MCP tools discovered via search_knowledge(type="mcp")
           for (const found of foundMcpTools) {
-            const mcpFullName = found.full_name || found.tool_name
+            const mcpFullName = found.tool_name
             if (!currentToolNames.has(mcpFullName)) {
               const mcpTool = ctx.allTools.find(t => t.name === mcpFullName)
               if (mcpTool) {
@@ -495,6 +504,11 @@ export async function* runAgent(
     }
   }
 
+  // Emit final usage so consumers (e.g. AgentRunner) can surface real token counts
+  if (totalInputTokens > 0 || totalOutputTokens > 0) {
+    yield { usage: { input_tokens: totalInputTokens, output_tokens: totalOutputTokens } }
+  }
+
   // ── Post-loop ────────────────────────────────────────────────────────────
   const durationMs = Math.round(performance.now() - t0)
 
@@ -582,6 +596,7 @@ export class AgentLoop {
         channel?: string
         raw_user_message?: string
       }
+      signal?: AbortSignal
     }
   ): AsyncIterable<StreamChunk> {
     // Resolve from database with priority: explicit param → DB lookup → single user/agent
@@ -623,6 +638,7 @@ export class AgentLoop {
       systemPromptOverride,
       mcpManager: this.mcpManager,
       userId,
+      signal: config.signal,
     })
   }
 

@@ -35,6 +35,7 @@ export interface ModelOptions {
   userId?: string
   channel?: string
   rawUserMessage?: string
+  signal?: AbortSignal
 }
 
 export interface ModelResponse {
@@ -79,6 +80,8 @@ export class AgentRunner {
     let lastAgentContent = ""
     let accumulatedAgentContent = ""  // Accumulate content from all agent chunks
     let toolCalls: ModelResponse["toolCalls"] = []
+    let totalInputTokens = 0
+    let totalOutputTokens = 0
 
     try {
       const stream = agentLoop.stream(
@@ -92,6 +95,7 @@ export class AgentRunner {
             channel: options.channel,
             raw_user_message: options.rawUserMessage,
           },
+          signal: options.signal,
         }
       )
 
@@ -159,6 +163,11 @@ export class AgentRunner {
             })
           }
         }
+
+        if (chunk.usage) {
+          totalInputTokens += chunk.usage.input_tokens
+          totalOutputTokens += chunk.usage.output_tokens
+        }
       }
 
       logger.debug(`[STREAM] done. totalChunks=${chunkCount} lastAgentContent length=${lastAgentContent.length}, accumulated length=${accumulatedAgentContent.length}`)
@@ -171,7 +180,11 @@ export class AgentRunner {
       return {
         content: finalContent,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        usage: {
+          promptTokens: totalInputTokens,
+          completionTokens: totalOutputTokens,
+          totalTokens: totalInputTokens + totalOutputTokens,
+        },
         finishReason: "stop",
       }
     } catch (error) {

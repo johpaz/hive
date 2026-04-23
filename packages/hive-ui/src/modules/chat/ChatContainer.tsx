@@ -240,6 +240,9 @@ export function ChatContainer({ agentId = "agent_id", sessionId = "user_id" }: C
       <div className="shrink-0 bg-zinc-950">
         <ChatInput
           onSendMessage={handleSendMessage}
+          onStop={() => {
+            if (isConnected) send({ type: "stop", sessionId });
+          }}
           disabled={!isConnected && !isConnecting}
           isStreaming={isLoading}
         />

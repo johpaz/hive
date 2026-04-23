@@ -4,11 +4,12 @@ import { SendHorizontal, Mic, Square } from "lucide-react";
 
 interface ChatInputProps {
   onSendMessage: (content: string, audioBase64?: string) => void;
+  onStop?: () => void;
   disabled?: boolean;
   isStreaming?: boolean;
 }
 
-export function ChatInput({ onSendMessage, disabled = false, isStreaming = false }: ChatInputProps) {
+export function ChatInput({ onSendMessage, onStop, disabled = false, isStreaming = false }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -113,13 +114,23 @@ export function ChatInput({ onSendMessage, disabled = false, isStreaming = false
             className="flex-1 min-h-[36px] max-h-[160px] resize-none bg-transparent text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none leading-relaxed py-1.5"
             style={{ overflow: "auto" }}
           />
-          <button
-            onClick={handleSend}
-            disabled={!message.trim() || disabled}
-            className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0 mb-0.5 transition-all disabled:opacity-30 disabled:cursor-not-allowed bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 text-white shadow shadow-blue-600/20"
-          >
-            <SendHorizontal className="h-3.5 w-3.5" />
-          </button>
+          {isStreaming && onStop ? (
+            <button
+              onClick={onStop}
+              className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0 mb-0.5 transition-all bg-red-600 hover:bg-red-500 text-white shadow shadow-red-600/20"
+              title="Detener generación"
+            >
+              <Square className="h-3.5 w-3.5 fill-current" />
+            </button>
+          ) : (
+            <button
+              onClick={handleSend}
+              disabled={!message.trim() || disabled}
+              className="h-8 w-8 rounded-xl flex items-center justify-center shrink-0 mb-0.5 transition-all disabled:opacity-30 disabled:cursor-not-allowed bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 text-white shadow shadow-blue-600/20"
+            >
+              <SendHorizontal className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
         <p className="text-[10px] text-zinc-700 mt-1.5 text-center">
           {isRecording

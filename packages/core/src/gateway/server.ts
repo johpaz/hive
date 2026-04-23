@@ -2362,6 +2362,25 @@ export async function startGateway(config: Config): Promise<void> {
           return;
         }
 
+        // Stop generation (like ChatGPT/Claude stop button)
+        if (msg.type === "stop") {
+          const cancelled = laneQueue.cancel(msg.sessionId);
+          log.info(`[stop] Session ${msg.sessionId} — cancelled: ${cancelled}`);
+          ws.send(JSON.stringify({
+            type: "typing",
+            isTyping: false,
+            sessionId: msg.sessionId,
+          } as OutboundMessage));
+          if (cancelled) {
+            ws.send(JSON.stringify({
+              type: "status",
+              sessionId: msg.sessionId,
+              status: { state: "cancelled" },
+            } as OutboundMessage));
+          }
+          return;
+        }
+
         // Handle audio messages from WebChat
         let webchatPreferAudio = false;
         if (msg.type === "audio" && msg.audio) {
@@ -2616,6 +2635,7 @@ onStep: async (step) => {
                 maxSteps: 15,
                 threadId: unifiedSessionId,
                 userId,
+                signal,
                 onToken: async (token: string) => {
                   if (signal.aborted) return;
                   streamedContent += token;

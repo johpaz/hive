@@ -59,25 +59,35 @@ export interface LLMCallOptions {
   maxTokens?: number
   numGpu?: number
   onToken?: (token: string) => void
+  signal?: AbortSignal
+  /** Enable extended thinking for supported models (Anthropic Claude 3.7+). */
+  thinking?: { enabled: boolean; budget_tokens?: number }
 }
 
 export interface LLMResponse {
   content: string
   tool_calls?: LLMToolCall[]
   stop_reason: "stop" | "tool_calls" | "max_tokens" | "error"
-  usage?: { input_tokens: number; output_tokens: number }
-  /** Kimi K2 thinking mode — must be round-tripped in assistant messages. */
+  usage?: { input_tokens: number; output_tokens: number; thinking_tokens?: number }
+  /** Kimi K2 / DeepSeek thinking mode — must be round-tripped in assistant messages. */
   reasoning_content?: string
+  /** Anthropic extended thinking content (not sent to LLM, for display only). */
+  thinking_content?: string
 }
 
 // ─── Provider factory ─────────────────────────────────────────────────────────
 
 const GEMINI_PROVIDERS = new Set(["gemini", "google"])
 
+const KNOWN_PROVIDERS = new Set(["anthropic", "gemini", "google", "ollama", "openai", "groq", "mistral", "openrouter", "deepseek", "kimi", "local-llama", "nvidia"])
+
 function getProvider(provider: string): LLMProvider {
   if (GEMINI_PROVIDERS.has(provider)) return new GeminiProvider()
   if (provider === "anthropic") return new AnthropicProvider()
   if (provider === "ollama") return new OllamaProvider()
+  if (!KNOWN_PROVIDERS.has(provider)) {
+    log.warn(`[llm-client] Unknown provider "${provider}" — falling back to OpenAI-compatible endpoint`)
+  }
   return new OpenAICompatProvider()
 }
 
@@ -92,7 +102,7 @@ export async function callLLM(options: LLMCallOptions): Promise<LLMResponse> {
   } catch (err) {
     const msg = (err as Error).message
     const cleanModel = options.model.replace(new RegExp(`^${options.provider}\\/`), "")
-    log.error(`[llm-client] Error calling ${options.provider}/${cleanModel}: ${msg}`)
+    log.error(`[llm-client] Error calling ${options.provider}/${cleanModel}: ${msg}`, err)
     return { content: `[LLM Error] ${msg}`, stop_reason: "error" }
   }
 }
