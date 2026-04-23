@@ -364,10 +364,14 @@ export async function startGateway(config: Config): Promise<void> {
             const trimmedMessage = (typeof step.message === "string" ? step.message : "").trim();
             if (trimmedMessage) {
               log.debug(`[NARRATION] ${trimmedMessage.substring(0, 100)}`);
-              await channelManager.send(message.channel, routingSessionId, {
-                content: trimmedMessage,
-                type: "progress",
-              });
+              try {
+                await channelManager.send(message.channel, routingSessionId, {
+                  content: trimmedMessage,
+                  type: "progress",
+                });
+              } catch (err) {
+                log.warn(`[onStep] Narration send failed: ${(err as Error).message}`);
+              }
             }
             return;
           }
@@ -376,10 +380,14 @@ export async function startGateway(config: Config): Promise<void> {
           if (step.type === "tool_call" && step.toolName) {
             const narration = getNarration(step.toolName);
             log.debug(`[TOOL] ${step.toolName} → "${narration}"`);
-            await channelManager.send(message.channel, routingSessionId, {
-              content: narration,
-              type: "progress",
-            });
+            try {
+              await channelManager.send(message.channel, routingSessionId, {
+                content: narration,
+                type: "progress",
+              });
+            } catch (err) {
+              log.warn(`[onStep] Tool narration send failed: ${(err as Error).message}`);
+            }
             return;
           }
 
@@ -390,10 +398,14 @@ export async function startGateway(config: Config): Promise<void> {
               const result = JSON.parse(step.message);
               if (result._sendToUser) {
                 const userMessage = result.message || result.status || step.message;
-                await channelManager.send(message.channel, routingSessionId, {
-                  content: userMessage,
-                  type: "progress",
-                });
+                try {
+                  await channelManager.send(message.channel, routingSessionId, {
+                    content: userMessage,
+                    type: "progress",
+                  });
+                } catch (err) {
+                  log.warn(`[onStep] Tool result send failed: ${(err as Error).message}`);
+                }
               }
             } catch {
               // No es JSON estructurado — no enviamos resultados crudos al usuario

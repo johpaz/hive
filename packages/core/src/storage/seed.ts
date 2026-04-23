@@ -417,13 +417,7 @@ const INITIAL_PLAYBOOK_RULES = [
   },
 ]
 
-/**
- * Re-seeds tools and skills from scratch, preserving all other user data.
- * Used both on first install (via seedAllData) and on upgrades (via runStartupMigrations).
- * - Wipes tools + tools_fts and re-inserts from SEED_DATA
- * - Wipes skills + skills_fts (via triggers) and re-inserts from SkillLoader bundled files
- */
-export function reseedToolsAndSkills(): void {
+function reseedToolsAndSkills(): void {
   const db = getDb();
 
   // Ensure FTS5 table and triggers exist (v0.0.28 schema with description)
@@ -506,63 +500,6 @@ export function reseedToolsAndSkills(): void {
   log.info(`[seed] ✅ ${skillCount} skills re-seeded (skills_fts auto-synced via triggers)`);
 }
 
-/**
- * v0.0.28 migration: re-seed skills with expanded schema (description, author, icon, etc.)
- * Called from onboarding.ts after DROP + CREATE of the new skills table.
- */
-export function reseedSkillsV0_28(): void {
-  const db = getDb();
-
-  // Re-create triggers for the new schema (with description column)
-  db.run(`DROP TRIGGER IF EXISTS skills_ai`);
-  db.run(`DROP TRIGGER IF EXISTS skills_au`);
-  db.run(`DROP TRIGGER IF EXISTS skills_ad`);
-  db.run(`CREATE TRIGGER skills_ai AFTER INSERT ON skills BEGIN
-    INSERT INTO skills_fts(id, name, description, category, tools, triggers, body)
-    VALUES (new.id, new.name, new.description, new.category, new.tools, new.triggers, new.body);
-  END`);
-  db.run(`CREATE TRIGGER skills_au AFTER UPDATE ON skills BEGIN
-    DELETE FROM skills_fts WHERE id = old.id;
-    INSERT INTO skills_fts(id, name, description, category, tools, triggers, body)
-    VALUES (new.id, new.name, new.description, new.category, new.tools, new.triggers, new.body);
-  END`);
-  db.run(`CREATE TRIGGER skills_ad AFTER DELETE ON skills BEGIN
-    DELETE FROM skills_fts WHERE id = old.id;
-  END`);
-
-  const skillLoader = new SkillLoader({ workspacePath: process.env.HIVE_HOME || process.cwd() });
-  const realSkills = skillLoader.loadBundledSkills();
-  log.info(`[migration v0.0.28] 📚 SkillLoader cargó ${realSkills.length} bundled skills`);
-
-  let skillCount = 0;
-  for (const s of realSkills) {
-    db.query(`
-      INSERT OR REPLACE INTO skills (
-        id, name, description, version, author, icon, category,
-        permissions, dependencies, tools, triggers, preferred_agents,
-        body, version_num, active, created_at, updated_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, (unixepoch()), (unixepoch()))
-    `).run(
-      s.name,
-      s.name,
-      s.description || "",
-      typeof s.version === 'string' ? s.version : String(s.version || '0.0.1'),
-      s.author || "Anonymous",
-      s.icon || "🧩",
-      s.category || "general",
-      JSON.stringify(s.permissions || []),
-      JSON.stringify(s.dependencies || []),
-      (s.tools || []).join(","),
-      (s.triggers || []).join(","),
-      JSON.stringify(s.preferred_agents || []),
-      s.content || "",
-      parseInt(String(s.version || '0.0.1').split(".")[0]) || 1
-    );
-    skillCount++;
-  }
-  log.info(`[migration v0.0.28] ✅ ${skillCount} skills re-seeded with expanded schema`);
-}
 
 export function seedAllData(): void {
   const db = getDb()

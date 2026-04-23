@@ -1,7 +1,7 @@
 import { logger } from "../utils/logger.ts";
 import { getDb, initializeDatabase } from "./sqlite";
 import { encryptApiKey, encryptConfig, decryptApiKey, decryptConfig } from "./crypto";
-import { seedAllData, reseedToolsAndSkills, reseedSkillsV0_28, SEED_DATA } from "./seed";
+import { seedAllData, SEED_DATA } from "./seed";
 import { SkillLoader } from "@johpaz/hive-agents-skills";
 
 export interface OnboardingSection {
@@ -1361,26 +1361,30 @@ export function runStartupMigrations(): void {
     const markApplied = (v: string) =>
       db.query("INSERT OR IGNORE INTO schema_migrations(version) VALUES(?)").run(v);
 
-    // v0.0.27 — full tools + skills reseed
-    // Wipes the entire tools and skills catalog and re-seeds from the current version's
-    // SEED_DATA and bundled SKILL.md files. Preserves all user data (agents, conversations, etc.)
-    if (!applied("v0.0.27")) {
-      reseedToolsAndSkills();
-      markApplied("v0.0.27");
-      log.info("✅ Migration v0.0.27: tools and skills re-seeded from current version");
-    }
-
-    // v0.0.28 — expand skills schema + FTS5 with description
-    // Drops old skills table (missing description, author, icon, etc.)
-    // and recreates with full schema. Skills are system-managed so data loss is acceptable.
-    // FTS5 index is also recreated with the new description column.
-    if (!applied("v0.0.28")) {
+    // v0.0.29 — consolidate tools + skills: drop and recreate tables with current schema, reseed
+    if (!applied("v0.0.29")) {
       const db = getDb();
-      log.info("[migration v0.0.28] Dropping old skills and skills_fts tables...");
+      log.info("[migration v0.0.29] Dropping and recreating tools + skills tables...");
+
       db.run("DROP TABLE IF EXISTS skills_fts");
       db.run("DROP TABLE IF EXISTS skills");
-      log.info("[migration v0.0.28] Creating new skills table with expanded schema...");
-      db.run(`CREATE TABLE IF NOT EXISTS skills (
+      db.run("DROP TABLE IF EXISTS tools_fts");
+      db.run("DROP TABLE IF EXISTS tools");
+
+      db.run(`CREATE TABLE tools (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL UNIQUE,
+        description TEXT,
+        category    TEXT,
+        enabled     INTEGER NOT NULL DEFAULT 1,
+        active      INTEGER NOT NULL DEFAULT 1,
+        created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
+      )`);
+
+      db.run(`CREATE VIRTUAL TABLE tools_fts USING fts5(tool_name, name, description, category)`);
+
+      db.run(`CREATE TABLE skills (
         id               TEXT PRIMARY KEY,
         name             TEXT NOT NULL,
         description      TEXT,
@@ -1399,37 +1403,72 @@ export function runStartupMigrations(): void {
         created_at       TEXT DEFAULT (datetime('now')),
         updated_at       TEXT DEFAULT (datetime('now'))
       )`);
+
+      db.run(`CREATE VIRTUAL TABLE skills_fts USING fts5(id, name, description, category, tools, triggers, body)`);
+
       db.run("CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category)");
       db.run("CREATE INDEX IF NOT EXISTS idx_skills_active ON skills(active)");
-      log.info("[migration v0.0.28] Creating new skills_fts with description column...");
-      db.run(`CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(id, name, description, category, tools, triggers, body)`);
-      log.info("[migration v0.0.28] Re-seeding skills from SkillLoader...");
-      reseedSkillsV0_28();
-      markApplied("v0.0.28");
-      log.info("✅ Migration v0.0.28: skills schema expanded + FTS5 updated with description");
-    }
 
-    // v0.0.29 — add mcp_tools table + mcp_tools_fts for MCP tool persistence and search
-    // MCP tools are persisted when servers connect and deleted when servers disconnect.
-    if (!applied("v0.0.29")) {
-      const db = getDb();
-      log.info("[migration v0.0.29] Creating mcp_tools table and mcp_tools_fts...");
-      db.run(`CREATE TABLE IF NOT EXISTS mcp_tools (
-        id              TEXT PRIMARY KEY,
-        server_id       TEXT NOT NULL,
-        server_name     TEXT NOT NULL,
-        tool_name       TEXT NOT NULL,
-        description     TEXT,
-        category        TEXT DEFAULT 'mcp',
-        active          INTEGER NOT NULL DEFAULT 1,
-        created_at      INTEGER NOT NULL DEFAULT (unixepoch()),
-        updated_at      INTEGER NOT NULL DEFAULT (unixepoch())
-      )`);
-      db.run("CREATE INDEX IF NOT EXISTS idx_mcp_tools_server ON mcp_tools(server_id)");
-      db.run("CREATE INDEX IF NOT EXISTS idx_mcp_tools_active ON mcp_tools(active)");
-      db.run(`CREATE VIRTUAL TABLE IF NOT EXISTS mcp_tools_fts USING fts5(id, server_name, tool_name, description, category)`);
+      db.run(`DROP TRIGGER IF EXISTS skills_ai`);
+      db.run(`DROP TRIGGER IF EXISTS skills_au`);
+      db.run(`DROP TRIGGER IF EXISTS skills_ad`);
+      db.run(`CREATE TRIGGER skills_ai AFTER INSERT ON skills BEGIN
+        INSERT INTO skills_fts(id, name, description, category, tools, triggers, body)
+        VALUES (new.id, new.name, new.description, new.category, new.tools, new.triggers, new.body);
+      END`);
+      db.run(`CREATE TRIGGER skills_au AFTER UPDATE ON skills BEGIN
+        DELETE FROM skills_fts WHERE id = old.id;
+        INSERT INTO skills_fts(id, name, description, category, tools, triggers, body)
+        VALUES (new.id, new.name, new.description, new.category, new.tools, new.triggers, new.body);
+      END`);
+      db.run(`CREATE TRIGGER skills_ad AFTER DELETE ON skills BEGIN
+        DELETE FROM skills_fts WHERE id = old.id;
+      END`);
+
+      // Reseed tools
+      const insertToolFts = db.prepare(`INSERT OR REPLACE INTO tools_fts(tool_name, name, description, category) VALUES (?, ?, ?, ?)`);
+      let toolCount = 0;
+      for (const tool of SEED_DATA.tools) {
+        db.query(`INSERT INTO tools (id, name, description, category, enabled, active, created_at, updated_at) VALUES (?, ?, ?, ?, 1, 1, (unixepoch()), (unixepoch()))`)
+          .run(tool.id, tool.name, tool.description, tool.category);
+        insertToolFts.run(tool.name, tool.name, tool.description, tool.category);
+        toolCount++;
+      }
+      log.info(`[migration v0.0.29] ✅ ${toolCount} tools re-seeded`);
+
+      // Reseed skills from SkillLoader
+      const skillLoader = new SkillLoader({ workspacePath: process.env.HIVE_HOME || process.cwd() });
+      const bundledSkills = skillLoader.loadBundledSkills();
+      log.info(`[migration v0.0.29] 📚 SkillLoader loaded ${bundledSkills.length} bundled skills`);
+      let skillCount = 0;
+      for (const s of bundledSkills) {
+        db.query(`
+          INSERT OR REPLACE INTO skills (
+            id, name, description, version, author, icon, category,
+            permissions, dependencies, tools, triggers, preferred_agents,
+            body, version_num, active, created_at, updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, (unixepoch()), (unixepoch()))
+        `).run(
+          s.name, s.name, s.description || "",
+          typeof s.version === "string" ? s.version : String(s.version || "0.0.1"),
+          s.author || "Anonymous",
+          s.icon || "🧩",
+          s.category || "general",
+          JSON.stringify(s.permissions || []),
+          JSON.stringify(s.dependencies || []),
+          (s.tools || []).join(","),
+          (s.triggers || []).join(","),
+          JSON.stringify(s.preferred_agents || []),
+          s.content || "",
+          parseInt(String(s.version || "0.0.1").split(".")[0]) || 1
+        );
+        skillCount++;
+      }
+      log.info(`[migration v0.0.29] ✅ ${skillCount} skills re-seeded (FTS5 auto-synced via triggers)`);
+
       markApplied("v0.0.29");
-      log.info("✅ Migration v0.0.29: mcp_tools + mcp_tools_fts created");
+      log.info("✅ Migration v0.0.29: tools + skills consolidated, dropped and recreated");
     }
 
     // v0.0.30 — add NVIDIA NIM provider + 12 free models (without dropping existing data)
