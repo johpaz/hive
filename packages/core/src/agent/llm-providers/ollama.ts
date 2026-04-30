@@ -1,10 +1,40 @@
 import { logger } from "../../utils/logger"
 import { sanitizeMessages } from "./interface"
 import type { LLMCallOptions, LLMProvider, LLMResponse, LLMToolCall } from "./interface"
+import type { ContentPart, LLMMessage } from "../llm-client"
 
 const log = logger.child("llm-client")
 
 export class OllamaProvider implements LLMProvider {
+  private _convertMessage(msg: LLMMessage): any {
+    if (typeof msg.content === "string") {
+      return { role: msg.role, content: msg.content }
+    }
+
+    let textContent = ""
+    const images: string[] = []
+
+    for (const part of msg.content) {
+      if (part.type === "text") {
+        textContent += part.text
+      } else if (part.type === "image_base64") {
+        images.push(part.base64)
+      } else if (part.type === "document") {
+        textContent += `\n[Document: ${part.fileName || "file"}] (base64 content not displayed)`
+      } else if (part.type === "image_url") {
+        const url = part.image_url.url
+        if (url.startsWith("data:")) {
+          const match = url.match(/^data:([^;]+);base64,(.+)$/)
+          if (match) images.push(match[2])
+        } else {
+          textContent += `\n[Image URL: ${url}]`
+        }
+      }
+    }
+
+    return { role: msg.role, content: textContent.trim(), ...(images.length > 0 ? { images } : {}) }
+  }
+
   async call(options: LLMCallOptions): Promise<LLMResponse> {
     const { Ollama } = await import("ollama")
 
@@ -23,7 +53,7 @@ export class OllamaProvider implements LLMProvider {
       if (m.role === "assistant" && m.tool_calls?.length) {
         return {
           role: "assistant",
-          content: m.content || "",
+          content: typeof m.content === "string" ? m.content : m.content.map(p => (p as any).text || "").join(""),
           tool_calls: m.tool_calls.map((tc) => ({
             function: {
               name: tc.function.name,
@@ -34,8 +64,8 @@ export class OllamaProvider implements LLMProvider {
           })),
         }
       }
-      if (m.role === "tool") return { role: "tool", content: m.content }
-      return { role: m.role, content: m.content }
+      if (m.role === "tool") return { role: "tool", content: typeof m.content === "string" ? m.content : JSON.stringify(m.content) }
+      return this._convertMessage(m)
     })
 
     const tools = options.tools?.map((t) => ({

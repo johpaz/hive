@@ -1,8 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Plus, RefreshCw, Layers, Zap, Info } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Plus, RefreshCw, Layers, Zap, Info } from "lucide-react"; import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useChannels } from "@/hooks/useChannels";
 import { ChannelCard } from "@/modules/channels/shared/ChannelCard";
 import { ChannelConfigDialog } from "@/modules/channels/shared/ChannelConfigDialog";

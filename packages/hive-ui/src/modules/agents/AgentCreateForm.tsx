@@ -355,6 +355,7 @@ export function AgentCreateForm({ initialData, onSuccess, onCancel }: AgentCreat
               }
               onModelChange={(modelId) => setFormData({ ...formData, model_id: modelId })}
               disabled={isLoading}
+              typeFilter="llm"
             />
           </div>
 

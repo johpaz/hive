@@ -98,8 +98,6 @@ export const useBridgeStore = create<BridgeState>((set, get) => ({
 
           // Handle server heartbeat pong
           if (data.type === "pong") {
-            // Server acknowledged our heartbeat - connection is alive
-            console.log("[Bridge] ✅ Heartbeat acknowledged by server");
             return;
           }
 
@@ -166,7 +164,6 @@ export const useBridgeStore = create<BridgeState>((set, get) => ({
         if (_bridgeHeartbeat) clearInterval(_bridgeHeartbeat);
         _bridgeHeartbeat = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
-            console.log("[Bridge] 💓 Sending heartbeat...");
             ws.send(JSON.stringify({ cmd: "ping" }));
           }
         }, 15000);

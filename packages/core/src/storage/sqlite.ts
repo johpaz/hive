@@ -3,7 +3,7 @@ import { logger } from "../utils/logger.ts";
 import * as path from "node:path";
 import { existsSync, mkdirSync } from "node:fs";
 import { getHiveDir } from "../config/loader.ts";
-import { SCHEMA, PROJECTS_SCHEMA, CONTEXT_ENGINE_SCHEMA } from "./schema.ts";
+import { SCHEMA, PROJECTS_SCHEMA, CONTEXT_ENGINE_SCHEMA, MEETING_SCHEMA } from "./schema.ts";
 
 function getDbPath(): string {
     return path.join(getHiveDir(), "data", "hive.db");
@@ -80,6 +80,7 @@ export function initializeDatabase(): Database {
     _db.run(SCHEMA);
     _db.run(PROJECTS_SCHEMA);
     _db.run(CONTEXT_ENGINE_SCHEMA);
+    _db.run(MEETING_SCHEMA);
 
     ensureSchemaSync();
 
@@ -180,6 +181,7 @@ function ensureSchemaSync(): void {
     // Context Engine tables — ensure created_at/updated_at columns exist
     ensureColumnExists("conversations", "created_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
     ensureColumnExists("conversations", "updated_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
+    ensureColumnExists("conversations", "content_multimodal", "TEXT");
     ensureColumnExists("conversations", "reasoning_content", "TEXT"); // Kimi K2 thinking round-trip
     ensureColumnExists("summaries", "created_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
     ensureColumnExists("summaries", "updated_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
@@ -194,9 +196,15 @@ function ensureSchemaSync(): void {
     // hive_capabilities: create if not exists (applied via CONTEXT_ENGINE_SCHEMA IF NOT EXISTS)
     // No column migrations needed — table is seeded fresh each startup via INSERT OR REPLACE
 
-    // Data migrations: fix known bad base_url values from old seeds
-    if (_db) {
-        _db.query(`UPDATE providers SET base_url = 'https://api.groq.com/openai/v1' WHERE id = 'groq' AND base_url = 'https://api.groq.com/v1'`).run();
+  // Data migrations: fix known bad base_url values from old seeds
+  if (_db) {
+    // Sync channels — vision columns for multimodal support
+    ensureColumnExists("channels", "vision_enabled", "INTEGER NOT NULL DEFAULT 0");
+    ensureColumnExists("channels", "ocr_provider", "TEXT");
+    ensureColumnExists("channels", "vision_provider", "TEXT");
+    ensureColumnExists("channels", "vision_model_id", "TEXT");
+
+    _db.query(`UPDATE providers SET base_url = 'https://api.groq.com/openai/v1' WHERE id = 'groq' AND base_url = 'https://api.groq.com/v1'`).run();
         _db.query(`UPDATE providers SET base_url = 'https://api.openai.com/v1' WHERE id = 'openai' AND base_url = 'https://api.openai.com'`).run();
         // Fix Gemini base_url: the @google/genai SDK already knows the correct URL internally.
         // Passing /v1beta as baseUrl causes it to double-append the path → 404.

@@ -123,60 +123,84 @@ export class SlackChannel extends BaseChannel {
 
     const content = event.text?.replace(/<@[A-Z0-9]+>/g, "").trim() || "";
 
-    const audioFile = event.files?.find(f =>
-      f.mimetype?.startsWith("audio/") ||
-      f.name?.endsWith(".mp3") ||
-      f.name?.endsWith(".wav") ||
-      f.name?.endsWith(".ogg") ||
-      f.name?.endsWith(".webm")
-    );
+const audioFile = event.files?.find(f =>
+f.mimetype?.startsWith("audio/") ||
+f.name?.endsWith(".mp3") ||
+f.name?.endsWith(".wav") ||
+f.name?.endsWith(".ogg") ||
+f.name?.endsWith(".webm")
+);
 
-    const incoming: IncomingMessage = {
-      sessionId: this.formatSessionId(event.channel, "group"),
-      channel: "slack",
-      accountId: this.accountId,
-      peerId: event.channel,
-      peerKind: "group",
-      content,
-      audio: audioFile?.url_private ? { url: audioFile.url_private, mimeType: audioFile.mimetype || "audio/webm" } : undefined,
-      metadata: {
-        userId: event.user,
-        timestamp: event.ts,
-        files: event.files,
-      },
-    };
+const imageFile = event.files?.find(f =>
+f.mimetype?.startsWith("image/") ||
+f.name?.endsWith(".jpg") || f.name?.endsWith(".jpeg") ||
+f.name?.endsWith(".png") || f.name?.endsWith(".gif") || f.name?.endsWith(".webp")
+);
 
-    await this.handleMessage(incoming);
-  }
+const docFile = !audioFile && !imageFile
+? event.files?.find(f => f.mimetype?.startsWith("application/") || f.name?.endsWith(".pdf") || f.name?.endsWith(".doc") || f.name?.endsWith(".txt"))
+: undefined;
 
-  private async handleDirectMessage(event: { user?: string; text?: string; channel?: string; ts?: string; files?: Array<{ url_private?: string; mimetype?: string; name?: string }> }): Promise<void> {
-    if (!event.user || !event.channel) return;
-    if (event.text?.startsWith("/")) return;
+const incoming: IncomingMessage = {
+sessionId: this.formatSessionId(event.channel, "group"),
+channel: "slack",
+accountId: this.accountId,
+peerId: event.channel,
+peerKind: "group",
+content,
+audio: audioFile?.url_private ? { url: audioFile.url_private, mimeType: audioFile.mimetype || "audio/webm" } : undefined,
+image: imageFile?.url_private ? { url: imageFile.url_private, mimeType: imageFile.mimetype || "image/png" } : undefined,
+document: docFile?.url_private ? { url: docFile.url_private, mimeType: docFile.mimetype || "application/octet-stream", fileName: docFile.name } : undefined,
+metadata: {
+userId: event.user,
+timestamp: event.ts,
+files: event.files,
+},
+};
 
-    const audioFile = event.files?.find(f =>
-      f.mimetype?.startsWith("audio/") ||
-      f.name?.endsWith(".mp3") ||
-      f.name?.endsWith(".wav") ||
-      f.name?.endsWith(".ogg") ||
-      f.name?.endsWith(".webm")
-    );
+await this.handleMessage(incoming);
+}
 
-    const incoming: IncomingMessage = {
-      sessionId: this.formatSessionId(event.user, "direct"),
-      channel: "slack",
-      accountId: this.accountId,
-      peerId: event.user,
-      peerKind: "direct",
-      content: event.text || "",
-      audio: audioFile?.url_private ? { url: audioFile.url_private, mimeType: audioFile.mimetype || "audio/webm" } : undefined,
-      metadata: {
-        channel: event.channel,
-        timestamp: event.ts,
-        files: event.files,
-      },
-    };
+private async handleDirectMessage(event: { user?: string; text?: string; channel?: string; ts?: string; files?: Array<{ url_private?: string; mimetype?: string; name?: string }> }): Promise<void> {
+if (!event.user || !event.channel) return;
+if (event.text?.startsWith("/")) return;
 
-    await this.handleMessage(incoming);
+const audioFile = event.files?.find(f =>
+f.mimetype?.startsWith("audio/") ||
+f.name?.endsWith(".mp3") ||
+f.name?.endsWith(".wav") ||
+f.name?.endsWith(".ogg") ||
+f.name?.endsWith(".webm")
+);
+
+const imageFile = event.files?.find(f =>
+f.mimetype?.startsWith("image/") ||
+f.name?.endsWith(".jpg") || f.name?.endsWith(".jpeg") ||
+f.name?.endsWith(".png") || f.name?.endsWith(".gif") || f.name?.endsWith(".webp")
+);
+
+const docFile = !audioFile && !imageFile
+? event.files?.find(f => f.mimetype?.startsWith("application/") || f.name?.endsWith(".pdf") || f.name?.endsWith(".doc") || f.name?.endsWith(".txt"))
+: undefined;
+
+const incoming: IncomingMessage = {
+sessionId: this.formatSessionId(event.user, "direct"),
+channel: "slack",
+accountId: this.accountId,
+peerId: event.user,
+peerKind: "direct",
+content: event.text || "",
+audio: audioFile?.url_private ? { url: audioFile.url_private, mimeType: audioFile.mimetype || "audio/webm" } : undefined,
+image: imageFile?.url_private ? { url: imageFile.url_private, mimeType: imageFile.mimetype || "image/png" } : undefined,
+document: docFile?.url_private ? { url: docFile.url_private, mimeType: docFile.mimetype || "application/octet-stream", fileName: docFile.name } : undefined,
+metadata: {
+channel: event.channel,
+timestamp: event.ts,
+files: event.files,
+},
+};
+
+await this.handleMessage(incoming);
   }
 
   private async handleSlashCommand(command: SlashCommand): Promise<void> {

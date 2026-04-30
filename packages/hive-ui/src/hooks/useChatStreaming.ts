@@ -13,6 +13,10 @@ export function useChatStreaming(agentId: string, sessionId: string) {
 
   const handleStreamingChunk = useCallback(
     (data: any) => {
+      const isTranscription = data.content?.startsWith("🎙️ Transcripción:");
+      if (isTranscription) {
+        setLoading(true);
+      }
       const messageId = data.id || streamingMessageIdRef.current || generateId();
       const { messages } = useChatStore.getState();
       const existingMessage = messages.find((m) => m.id === messageId);
@@ -37,6 +41,7 @@ export function useChatStreaming(agentId: string, sessionId: string) {
         updateMessage(messageId, {
           content: data.content || existingMessage.content,
           timestamp: data.timestamp || existingMessage.timestamp,
+          ...(data.audio && { audio: { base64: data.audio, mimeType: data.mimeType } }),
         });
       } else {
         addMessage({
@@ -46,6 +51,7 @@ export function useChatStreaming(agentId: string, sessionId: string) {
           content: data.content || data.message || "",
           agentId,
           timestamp: data.timestamp || new Date().toISOString(),
+          ...(data.audio && { audio: { base64: data.audio, mimeType: data.mimeType } }),
         });
       }
 
@@ -69,7 +75,7 @@ export function useChatStreaming(agentId: string, sessionId: string) {
         content: data.content || "",
         agentId,
         timestamp: data.timestamp || new Date().toISOString(),
-        audio: data.audio ? { base64: data.audio, mimeType: data.mimeType } : undefined,
+        audio: data.audio ? { base64: data.audio, mimeType: data.mimeType || "audio/wav" } : undefined,
       });
       clearSteps();
       setLoading(false);
@@ -80,11 +86,14 @@ export function useChatStreaming(agentId: string, sessionId: string) {
   const handleProgress = useCallback((data: any) => {
     if (data.content) {
       useChatStore.getState().addStep(data.content);
+      useChatStore.getState().setLoading(true);
     }
   }, []);
 
   const handleTyping = useCallback((data: any) => {
-    if (data.isTyping === false) {
+    if (data.isTyping === true) {
+      useChatStore.getState().setLoading(true);
+    } else if (data.isTyping === false) {
       useChatStore.getState().clearSteps();
       useChatStore.getState().setLoading(false);
     }

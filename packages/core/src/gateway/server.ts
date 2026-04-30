@@ -36,6 +36,7 @@ import { randomUUID } from "crypto";
 import { decryptConfig } from "../storage/crypto.ts";
 import { resolveContext } from "./resolver";
 import { voiceService } from "../voice/index";
+import { multimodalService } from "../multimodal/index";
 import { initializeGateway, type GatewayInitializationResult } from "./initializer";
 import { handleSetupStatus, handleVerifyProvider, handleCompleteSetup, handleSetupProviders, handleSetupEthics, handleSetupOllamaModels } from "./routes/setup";
 import { handleAuthStatus, handleLogin, handleSetupCredentials, handleChangePassword, handleRecover, handleDisableAuth, handleRecoveryKey } from "./routes/auth";
@@ -68,10 +69,13 @@ import {
   handleGetCronStatus,
   handleGetCronChannels,
 } from "./routes/cron-api";
-import { handleGetChannels, handleGetChannelConfig, handleActivateChannel, handleDeactivateChannel, handleCreateChannel, handleGetChannelAccount, handleUpdateChannelAccount, handleDeleteChannelAccount, handleChannelAction, handleUpdateChannelSettings, handleToggleChannel, handleGetChannelStatus, handleReconnectChannel } from "./routes/channels";
+import { handleGetChannels, handleGetChannelConfig, handleActivateChannel, handleDeactivateChannel, handleCreateChannel, handleGetChannelAccount, handleUpdateChannelAccount, handleDeleteChannelAccount, handleChannelAction, handleUpdateChannelSettings, handleToggleChannel, handleGetChannelStatus, handleReconnectChannel, handleGetWhatsAppDetails, handleDisconnectWhatsApp, handleUpdateWhatsAppConfig } from "./routes/channels";
 import { handleGetMcpServers, handleGetMcpServerDetail, handleCreateMcpServer, handleUpdateMcpServer, handleDeleteMcpServer, handleToggleMcpServer, handleGetMCPServerTools } from "./routes/mcp";
 import { handleGetModels, handleCreateModel, handleToggleModel, handleGetModelsConfig, handleUpdateModelsConfig, handleDeleteModel, handleUpdateModel } from "./routes/models";
 import { handleGetVoiceProviders, handleGetConfiguredVoiceProviders, handleSaveVoiceProviderKey, handleTestVoice, handleGetChannelVoice, handleUpdateChannelVoice, handleGetVoiceProviderVoices } from "./routes/voice";
+import { handleGetVisionProviders, handleGetChannelVision, handleUpdateChannelVision, handleOcrImage } from "./routes/multimodal";
+import { handleGetLocalTTSStatus, handleGetLocalTTSLogs, handleInstallLocalTTS, handleStartLocalTTS, handleStopLocalTTS, handleSpeakLocalTTS, handleGetAvailableModels, handleGetInstalledVoices, handleDownloadModel, handleGetDownloadLogs } from "./routes/tts-local";
+import { handleCreateMeeting, handleListMeetings, handleGetMeeting, handleAddMeetingSegment, handleStopMeeting } from "./routes/meeting";
 import { handleGetActivityStats, handleGetSystemStats, handleGetUsageStats, handleSystemReload, handleApiReload, handleGetVersion, handleTriggerUpdate } from "./routes/system";
 import { handleGetChatHistory, handleGetCanvas, handleGetNotes, handleUpdateNote } from "./routes/chat";
 import { handleChat as handlePostChat } from "./routes/chat";
@@ -91,6 +95,9 @@ const logSubscribers = new Set<string>();
 interface WebSocketData {
   sessionId: string;
   authenticatedAt: number;
+  providerId?: string;
+  modelId?: string;
+  meetingSessionId?: string;
 }
 
 export async function startGateway(config: Config): Promise<void> {
@@ -135,10 +142,6 @@ export async function startGateway(config: Config): Promise<void> {
   let channelManager: ChannelManager;
   let dbProvider: string;
   let dbModel: string;
-
-  // ── HiveLearn live events WS client registry ─────────────────────────────
-  const hlLiveClients = new Map<string, () => void>(); // sessionId → cleanup fn
-
   // ── Bind port immediately so parent health-check doesn't timeout ──────────
   // The full handler is loaded via server.reload() once initialization finishes
   let server = Bun.serve<WebSocketData>({
@@ -262,11 +265,13 @@ export async function startGateway(config: Config): Promise<void> {
     log.info(`   Session: ${message.sessionId}`);
 
     const voiceConfig = voiceService.getChannelVoiceConfig(message.channel);
+    const visionConfig = multimodalService.getChannelVisionConfig(message.channel);
     let messageContent = message.content;
 
     let preferAudioResponse = false;
-    let inputType: "text" | "audio_transcribed" = "text";
+    let inputType: "text" | "audio_transcribed" | "image" | "document" = "text";
     let sttProviderUsed: string | null = null;
+    let contentParts: import("../multimodal/types").ContentPart[] | undefined;
 
     if (voiceConfig.voiceEnabled && message.audio) {
       log.info(`🎙️ Voice enabled, processing audio...`);
@@ -302,7 +307,68 @@ export async function startGateway(config: Config): Promise<void> {
       }
     }
 
-    log.info(`   Content: ${messageContent.substring(0, 150)}${messageContent.length > 150 ? "..." : ""}`);
+    // ── Multimodal: image/document processing ──
+    if (message.image || message.document) {
+      log.info(`🖼️ Multimodal content detected on channel ${message.channel}`);
+
+      if (message.image) {
+        try {
+          const imageInput = multimodalService.normalizeImageFromChannel(message.channel, message.image);
+          const activeModelId = dbModel;
+          const activeProviderId = dbProvider;
+          const modelHasVision = activeModelId && activeProviderId
+            ? multimodalService.modelSupportsVision(activeProviderId, activeModelId)
+            : false;
+
+          if (visionConfig.visionEnabled && modelHasVision) {
+            contentParts = await multimodalService.processImage(imageInput, visionConfig.visionModelId || undefined);
+            inputType = "image";
+            log.info(`🖼️ Image sent as vision ContentParts (model supports vision)`);
+          } else {
+            const ocrProvider = visionConfig.ocrProvider || "openai";
+            log.info(`🖼️ Model lacks vision, using OCR via ${ocrProvider}...`);
+            const ocrText = await multimodalService.ocrImage(imageInput, ocrProvider);
+            messageContent = ocrText
+              ? `[Imagen adjunta — contenido extraído por OCR]\n${ocrText}\n\n${messageContent || ""}`
+              : messageContent || "";
+            inputType = "image";
+            log.info(`🖼️ OCR result: ${ocrText.substring(0, 100)}...`);
+          }
+        } catch (imgError) {
+          log.error(`❌ Image processing failed: ${(imgError as Error).message}`);
+          await channelManager.send(message.channel, message.sessionId, {
+            content: `⚠️ Error al procesar la imagen: ${(imgError as Error).message}`,
+          });
+        }
+      }
+
+      if (message.document) {
+        try {
+          const docInput = multimodalService.normalizeDocumentFromChannel(message.channel, message.document);
+          const ocrProvider = visionConfig.ocrProvider || "openai";
+          log.info(`📄 Document detected, extracting text via OCR (${ocrProvider})...`);
+          const docImage: import("../multimodal/types").ImageInput = {
+            type: docInput.type,
+            data: docInput.data,
+            mimeType: docInput.mimeType,
+            caption: docInput.fileName,
+          };
+          const ocrText = await multimodalService.ocrImage(docImage, ocrProvider);
+          messageContent = ocrText
+            ? `[Documento adjunto: ${docInput.fileName || "unknown"}]\n${ocrText}\n\n${messageContent || ""}`
+            : messageContent || "";
+          inputType = "document";
+          log.info(`📄 Document OCR result: ${ocrText.substring(0, 100)}...`);
+        } catch (docError) {
+          log.error(`❌ Document processing failed: ${(docError as Error).message}`);
+          await channelManager.send(message.channel, message.sessionId, {
+            content: `⚠️ Error al procesar el documento: ${(docError as Error).message}`,
+          });
+        }
+      }
+    }
+
+    log.info(` Content: ${messageContent.substring(0, 150)}${messageContent.length > 150 ? "..." : ""}`);
 
     const { userId } = resolveContext({
       channel: message.channel,
@@ -323,7 +389,9 @@ export async function startGateway(config: Config): Promise<void> {
 
     const userMetadata = inputType === "audio_transcribed"
       ? { input_type: "audio_transcribed", stt_provider: sttProviderUsed, channel: message.channel }
-      : { input_type: "text", channel: message.channel };
+      : inputType === "image" || inputType === "document"
+        ? { input_type: inputType, ocr_provider: visionConfig.ocrProvider, channel: message.channel }
+        : { input_type: "text", channel: message.channel };
 
     // Obtener la zona horaria del usuario para el timestamp exacto
     const userRow = getDb()
@@ -343,7 +411,9 @@ export async function startGateway(config: Config): Promise<void> {
     }
     const messageContentWithTime = `[Timestamp: ${exactTime} (${userTimezone})]\n${messageContent}`;
 
-    const messages = [{ role: "user" as const, content: messageContentWithTime }];
+    const messages = contentParts
+      ? [{ role: "user" as const, content: [{ type: "text" as const, text: messageContentWithTime }, ...contentParts] as import("../multimodal/types").ContentPart[] }]
+      : [{ role: "user" as const, content: messageContentWithTime }];
 
     try {
       log.info(`🤖 Routing to agent loop...`);
@@ -614,12 +684,18 @@ export async function startGateway(config: Config): Promise<void> {
           return new Response("Bridge events WebSocket upgrade failed", { status: 400 });
         }
 
-        // ── HiveLearn Live Events WebSocket upgrade ────────────────────────────
-        if (url.pathname === "/hivelearn-events" || url.pathname === "/hivelearn-events/") {
-          const sessionId = `hl:${url.searchParams.get("sessionId") ?? crypto.randomUUID()}`;
-          const success = server.upgrade(req, { data: { sessionId, authenticatedAt: Date.now() } });
+
+
+
+        // ── Meeting Stream WebSocket upgrade ───────────────────────────────────
+        if (url.pathname === "/meeting-stream" || url.pathname === "/meeting-stream/") {
+          const meetingSessionId = url.searchParams.get("meetingSessionId") ?? "";
+          const sessionId = `meeting:${meetingSessionId || crypto.randomUUID()}`;
+          const success = server.upgrade(req, {
+            data: { sessionId, meetingSessionId, authenticatedAt: Date.now() },
+          });
           if (success) return undefined;
-          return new Response("HiveLearn events WebSocket upgrade failed", { status: 400 });
+          return new Response("Meeting stream WebSocket upgrade failed", { status: 400 });
         }
 
         // ── Health (must be before UI routing so it works in dev mode too) ───
@@ -933,484 +1009,6 @@ export async function startGateway(config: Config): Promise<void> {
         if (taskDetailMatch && req.method === "PATCH") {
           return await handleUpdateTask(req, addCorsHeaders)
         }
-
-
-
-        // ── HiveLearn API ─────────────────────────────────────────────────────
-        if (url.pathname === "/api/hivelearn/generate" && req.method === "POST") {
-          const { HiveLearnSwarm, updateHiveLearnAgentsProviderModel, LessonPersistence, hlSwarmEmitter } = await import("@johpaz/hivelearn");
-          const { getDb } = await import("../storage/sqlite");
-          const body = await req.json() as { perfil: any; meta: string; providerId: string; modelId: string };
-
-          if (!body.providerId || !body.modelId) {
-            return addCorsHeaders(new Response(JSON.stringify({ error: "providerId y modelId son requeridos" }), {
-              status: 400, headers: { "Content-Type": "application/json" },
-            }), req);
-          }
-
-          const db = getDb();
-          updateHiveLearnAgentsProviderModel(db, body.providerId, body.modelId);
-
-          const persistence = new LessonPersistence();
-          persistence.saveStudentProfile(body.perfil);
-
-          // SSE stream — progress events from hlSwarmEmitter (hivelearn-local, not core agentBus)
-          const encoder = new TextEncoder();
-          let ctrl: ReadableStreamDefaultController<Uint8Array>;
-          const stream = new ReadableStream<Uint8Array>({ start(c) { ctrl = c; } });
-
-          const send = (event: string, data: unknown) => {
-            try { ctrl.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)); }
-            catch { /* stream already closed */ }
-          };
-
-          // Keep-alive: send SSE comment every 8s so the connection stays open
-          const keepAlive = setInterval(() => {
-            try { ctrl.enqueue(encoder.encode(': keep-alive\n\n')); }
-            catch { clearInterval(keepAlive); }
-          }, 8_000);
-
-          // Subscribe to hlSwarmEmitter (emitted by DAGScheduler inside hivelearn)
-          const h1 = (data: any) => send("agent_started", { agentId: data.workerId, agentName: data.workerName });
-          const h2 = (data: any) => send("agent_completed", { agentId: data.workerId, agentName: data.workerName });
-          const h3 = (data: any) => send("agent_failed", { agentId: data.workerId, agentName: data.workerName, error: data.error });
-          hlSwarmEmitter.subscribe("worker:task_started", h1);
-          hlSwarmEmitter.subscribe("worker:task_completed", h2);
-          hlSwarmEmitter.subscribe("worker:task_failed", h3);
-
-          (async () => {
-            try {
-              const swarm = new HiveLearnSwarm({
-                onProgress: (progress: any) => send("progress", progress),
-              });
-              const program = await swarm.run(body.perfil, body.meta);
-
-              const curriculoId = persistence.saveCurriculum(
-                program.sessionId, body.meta, JSON.stringify(program.nodos),
-                program.nodos.length, program.rangoEdad, program.topicSlug,
-              );
-              persistence.createSession(program.sessionId, body.perfil.alumnoId, curriculoId, program.rangoEdad);
-
-              send("complete", { ...program, sessionId: program.sessionId, curriculoId });
-            } catch (e) {
-              send("error", { message: (e as Error).message });
-            } finally {
-              clearInterval(keepAlive);
-              hlSwarmEmitter.unsubscribe("worker:task_started", h1);
-              hlSwarmEmitter.unsubscribe("worker:task_completed", h2);
-              hlSwarmEmitter.unsubscribe("worker:task_failed", h3);
-              try { ctrl.close(); } catch { /* already closed */ }
-            }
-          })();
-
-          return addCorsHeaders(new Response(stream, {
-            status: 200,
-            headers: {
-              "Content-Type": "text/event-stream",
-              "Cache-Control": "no-cache",
-              "Connection": "keep-alive",
-              "X-Accel-Buffering": "no",
-            },
-          }), req);
-        }
-
-        if (url.pathname === "/api/hivelearn/feedback" && req.method === "POST") {
-          try {
-            const { AGENT_IDS, runHiveLearnAgent, AGENT_PROMPTS, calificarRespuestaTool, LessonPersistence } = await import("@johpaz/hivelearn");
-            const body = await req.json() as { sessionId?: string; nodoId: string; concepto: string; respuesta: string; rangoEdad: string; tipoPedagogico: string };
-            const result = await runHiveLearnAgent({
-              agentId: AGENT_IDS.feedback,
-              taskDescription: `Concepto: "${body.concepto}". Tipo pedagógico: ${body.tipoPedagogico}. Rango edad: ${body.rangoEdad}.\nRespuesta del alumno: "${body.respuesta}".\nEvalúa si comprende el concepto (no exactitud literal). Usa la tool calificar_respuesta.`,
-              systemPrompt: AGENT_PROMPTS[AGENT_IDS.feedback] ?? '',
-              tools: [calificarRespuestaTool],
-              threadId: `hl-feedback-${body.nodoId}-${Date.now()}`,
-            });
-            // El tool passthrough devuelve {ok:true, output:{correcto,xp_ganado,mensaje,...}}
-            let feedback: any = { correcto: false, mensajePrincipal: "¡Sigue intentando!", xpGanado: 0 };
-            try {
-              const parsed = typeof result === 'string' ? JSON.parse(result) : result;
-              const out = parsed?.output ?? parsed;
-              feedback = {
-                correcto: out.correcto ?? false,
-                mensajePrincipal: out.mensaje ?? out.mensajePrincipal ?? "¡Buen intento!",
-                xpGanado: out.xp_ganado ?? out.xpGanado ?? 0,
-                razonamiento: out.razonamiento,
-                pistaSiIncorrecto: out.pista_si_incorrecto ?? out.pistaSiIncorrecto,
-              };
-            } catch {
-              const match = (typeof result === 'string' ? result : '').match(/\{[\s\S]*\}/);
-              if (match) {
-                try { const p = JSON.parse(match[0]); feedback = { correcto: p.correcto ?? false, mensajePrincipal: p.mensaje ?? "¡Buen intento!", xpGanado: p.xp_ganado ?? 5, razonamiento: p.razonamiento }; } catch { }
-              }
-            }
-            // Persistir respuesta del alumno si hay sessionId
-            if (body.sessionId) {
-              try {
-                const persistence = new LessonPersistence();
-                persistence.saveStudentResponse(
-                  body.sessionId,
-                  body.nodoId,
-                  body.tipoPedagogico,
-                  body.respuesta,
-                  JSON.stringify(feedback),
-                  feedback.xpGanado,
-                  feedback.correcto,
-                );
-              } catch { /* non-critical */ }
-            }
-
-            return addCorsHeaders(new Response(JSON.stringify(feedback), {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            }), req);
-          } catch (e) {
-            return addCorsHeaders(new Response(JSON.stringify({ correcto: false, mensajePrincipal: "¡Buen intento! Sigue adelante.", xpGanado: 5 }), {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            }), req);
-          }
-        }
-
-        // ── HiveLearn Vision (Gemma 4 atención vía visión multimodal) ──
-        if (url.pathname === "/api/hivelearn/vision" && req.method === "POST") {
-          try {
-            const { runHiveLearnAgent, AGENT_IDS } = await import("@johpaz/hivelearn");
-            const body = await req.json() as { sessionId: string; imageBase64: string };
-            const result = await runHiveLearnAgent({
-              agentId: AGENT_IDS.profile, // Agente ligero para análisis rápido
-              taskDescription: `Analyze this image of a student studying.\nImage: data:image/jpeg;base64,${body.imageBase64}\n\nDetermine if the student is looking at the screen and paying attention.\nRespond ONLY with valid JSON: {"attention":"focused"|"distracted"|"away","score":0-100,"suggestion":"string"}`,
-              systemPrompt: 'You are an attention analysis system. Analyze images and determine student attention level. Respond ONLY with valid JSON, no other text.',
-              tools: [],
-              threadId: `hl-vision-${body.sessionId}-${Date.now()}`,
-            });
-            let parsed: any = { attention: 'focused', score: 80 };
-            try {
-              const m = (typeof result === 'string' ? result : '').match(/\{[\s\S]*\}/);
-              if (m) parsed = JSON.parse(m[0]);
-            } catch { }
-            return addCorsHeaders(new Response(JSON.stringify(parsed), {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            }), req);
-          } catch {
-            return addCorsHeaders(new Response(JSON.stringify({ attention: 'focused', score: 80 }), {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            }), req);
-          }
-        }
-
-        // ── HiveLearn Complete Session ──────────────────────────────────
-        if (url.pathname === "/api/hivelearn/complete-session" && req.method === "POST") {
-          try {
-            const { LessonPersistence } = await import("@johpaz/hivelearn");
-            const body = await req.json() as { sessionId: string; puntajeEvaluacion: number; xpTotal: number; logrosJson: string };
-            const persistence = new LessonPersistence();
-            persistence.completeSession(
-              body.sessionId,
-              body.xpTotal,
-              'Explorador', // nivel calculado por gamificación — se puede mejorar después
-              body.logrosJson,
-              body.puntajeEvaluacion,
-            );
-            return addCorsHeaders(new Response(JSON.stringify({ ok: true }), {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            }), req);
-          } catch (e) {
-            return addCorsHeaders(new Response(JSON.stringify({ error: (e as Error).message }), {
-              status: 500,
-              headers: { "Content-Type": "application/json" },
-            }), req);
-          }
-        }
-
-        // ── HiveLearn Rate (calificación del alumno) ────────────────────
-        if (url.pathname === "/api/hivelearn/rate" && req.method === "POST") {
-          try {
-            const { LessonPersistence } = await import("@johpaz/hivelearn");
-            const body = await req.json() as { sessionId: string; rating: number; comentario?: string };
-            const persistence = new LessonPersistence();
-            persistence.rateSession(body.sessionId, body.rating, body.comentario);
-            return addCorsHeaders(new Response(JSON.stringify({ ok: true }), {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            }), req);
-          } catch (e) {
-            return addCorsHeaders(new Response(JSON.stringify({ error: (e as Error).message }), {
-              status: 500,
-              headers: { "Content-Type": "application/json" },
-            }), req);
-          }
-        }
-
-        // ── HiveLearn Metrics ───────────────────────────────────────────
-        if (url.pathname === "/api/hivelearn/metrics" && req.method === "GET") {
-          try {
-            const { LessonPersistence } = await import("@johpaz/hivelearn");
-            const persistence = new LessonPersistence();
-            const metrics = persistence.getAggregateMetrics();
-            return addCorsHeaders(new Response(JSON.stringify(metrics), {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            }), req);
-          } catch (e) {
-            return addCorsHeaders(new Response(JSON.stringify({ error: (e as Error).message }), {
-              status: 500,
-              headers: { "Content-Type": "application/json" },
-            }), req);
-          }
-        }
-
-        // ── HiveLearn Sessions ────────────────────────────────────────
-        if (url.pathname === "/api/hivelearn/sessions" && req.method === "GET") {
-          try {
-            const { getDb } = await import("../storage/sqlite");
-            const db = getDb();
-            const rows = db.query(`
-              SELECT s.session_id, s.alumno_id, s.curriculo_id, s.xp_total,
-                     s.nivel_alcanzado, s.nodos_completados, s.evaluacion_puntaje,
-                     s.completada, s.created_at,
-                     c.meta_alumno as meta, c.total_nodos, c.rango_edad,
-                     p.nombre
-              FROM hl_sessions s
-              LEFT JOIN hl_curricula c ON s.curriculo_id = c.id
-              LEFT JOIN hl_student_profiles p ON s.alumno_id = p.alumno_id
-              ORDER BY s.created_at DESC
-              LIMIT 50
-            `).all();
-            return addCorsHeaders(Response.json({ sessions: rows }), req);
-          } catch (e) {
-            return addCorsHeaders(Response.json({ sessions: [], error: (e as Error).message }), req);
-          }
-        }
-
-        // ── HiveLearn Session Delete ──────────────────────────────────
-        // ── HiveLearn Session Nodos (debug: nodos_json con contenido) ──────
-        const hlSessionNodosMatch = url.pathname.match(/^\/api\/hivelearn\/sessions\/([^/]+)\/nodos$/);
-        if (hlSessionNodosMatch && req.method === "GET") {
-          try {
-            const { getDb } = await import("../storage/sqlite");
-            const db = getDb();
-            const row = db.query(
-              "SELECT nodos_json FROM hl_curricula WHERE session_id = ?"
-            ).get(hlSessionNodosMatch[1]) as { nodos_json: string } | undefined;
-            if (!row) return addCorsHeaders(Response.json({ error: "Session not found" }, { status: 404 }), req);
-            const nodos = JSON.parse(row.nodos_json || "[]");
-            // Resumen compacto: id, tipo, tieneContenido, claves de contenido
-            const summary = nodos.map((n: any) => ({
-              id: n.id,
-              titulo: n.titulo,
-              tipoPedagogico: n.tipoPedagogico,
-              tipoVisual: n.tipoVisual,
-              contenidoKeys: Object.keys(n.contenido ?? {}),
-              tieneContenido: Object.keys(n.contenido ?? {}).length > 0,
-              contenido: n.contenido,
-            }));
-            return addCorsHeaders(Response.json({ total: nodos.length, nodos: summary }), req);
-          } catch (e) {
-            return addCorsHeaders(Response.json({ error: (e as Error).message }, { status: 500 }), req);
-          }
-        }
-
-        // ── HiveLearn Session Outputs (trazabilidad de agentes) ─────────
-        const hlSessionOutputsMatch = url.pathname.match(/^\/api\/hivelearn\/sessions\/([^/]+)\/outputs$/);
-        if (hlSessionOutputsMatch && req.method === "GET") {
-          try {
-            const { LessonPersistence } = await import("@johpaz/hivelearn");
-            const persistence = new LessonPersistence();
-            const outputs = persistence.getAgentOutputs(hlSessionOutputsMatch[1]);
-            return addCorsHeaders(Response.json(outputs), req);
-          } catch (e) {
-            return addCorsHeaders(Response.json({ error: (e as Error).message }, { status: 500 }), req);
-          }
-        }
-
-        // ── HiveLearn Session Responses (respuestas del alumno) ─────────
-        const hlSessionResponsesMatch = url.pathname.match(/^\/api\/hivelearn\/sessions\/([^/]+)\/responses$/);
-        if (hlSessionResponsesMatch && req.method === "GET") {
-          try {
-            const { getDb } = await import("../storage/sqlite");
-            const db = getDb();
-            const rows = db.query(
-              "SELECT * FROM hl_student_responses WHERE session_id = ? ORDER BY created_at ASC"
-            ).all(hlSessionResponsesMatch[1]);
-            return addCorsHeaders(Response.json(rows), req);
-          } catch (e) {
-            return addCorsHeaders(Response.json({ error: (e as Error).message }, { status: 500 }), req);
-          }
-        }
-
-        const hlSessionMatch = url.pathname.match(/^\/api\/hivelearn\/sessions\/([^/]+)$/);
-        if (hlSessionMatch) {
-          if (req.method === "GET") {
-            try {
-              const { getDb } = await import("../storage/sqlite");
-              const db = getDb();
-              const row = db.query(`
-                SELECT s.*, c.meta_alumno as meta, c.total_nodos, c.rango_edad, c.nodos_json, c.topic_slug,
-                       p.nombre, p.rango_edad as perfil_rango_edad, p.nivel_previo, p.estilo, p.tiempo_sesion
-                FROM hl_sessions s
-                LEFT JOIN hl_curricula c ON s.curriculo_id = c.id
-                LEFT JOIN hl_student_profiles p ON s.alumno_id = p.alumno_id
-                WHERE s.session_id = ?
-              `).get(hlSessionMatch[1]);
-              if (!row) return addCorsHeaders(Response.json({ error: "Session not found" }, { status: 404 }), req);
-              return addCorsHeaders(Response.json(row), req);
-            } catch (e) {
-              return addCorsHeaders(Response.json({ error: (e as Error).message }, { status: 500 }), req);
-            }
-          }
-          if (req.method === "DELETE") {
-            try {
-              const { getDb } = await import("../storage/sqlite");
-              const db = getDb();
-              const sessionId = hlSessionMatch[1];
-              db.run("DELETE FROM hl_sessions WHERE session_id = ?", [sessionId]);
-              return addCorsHeaders(Response.json({ ok: true }), req);
-            } catch (e) {
-              return addCorsHeaders(Response.json({ ok: false, error: (e as Error).message }, { status: 500 }), req);
-            }
-          }
-        }
-
-        // ── HiveLearn Config Check ────────────────────────────────────
-        if (url.pathname === "/api/hivelearn/config" && req.method === "GET") {
-          try {
-            const { LessonPersistence } = await import("@johpaz/hivelearn");
-            const persistence = new LessonPersistence();
-            const providerModel = persistence.getHiveLearnProviderModel();
-            return addCorsHeaders(new Response(JSON.stringify({
-              configured: !!providerModel,
-              providerId: providerModel?.providerId,
-              modelId: providerModel?.modelId,
-            }), {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            }), req);
-          } catch (e) {
-            return addCorsHeaders(new Response(JSON.stringify({ error: (e as Error).message }), {
-              status: 500,
-              headers: { "Content-Type": "application/json" },
-            }), req);
-          }
-        }
-
-        // ── HiveLearn Config Save ─────────────────────────────────────
-        if (url.pathname === "/api/hivelearn/config" && req.method === "POST") {
-          try {
-            const { updateHiveLearnAgentsProviderModel } = await import("@johpaz/hivelearn");
-            const { getDb } = await import("../storage/sqlite");
-            const body = await req.json() as { providerId: string; modelId: string };
-            if (!body.providerId || !body.modelId) {
-              return addCorsHeaders(new Response(JSON.stringify({ error: "providerId y modelId son requeridos" }), {
-                status: 400,
-                headers: { "Content-Type": "application/json" },
-              }), req);
-            }
-            const db = getDb();
-            // updateHiveLearnAgentsProviderModel updates all hl-* agents in the DB
-            // getHiveLearnProviderModel then reads from agents table automatically
-            updateHiveLearnAgentsProviderModel(db, body.providerId, body.modelId);
-            return addCorsHeaders(new Response(JSON.stringify({ ok: true }), {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            }), req);
-          } catch (e) {
-            return addCorsHeaders(new Response(JSON.stringify({ error: (e as Error).message }), {
-              status: 500,
-              headers: { "Content-Type": "application/json" },
-            }), req);
-          }
-        }
-
-        // ── HiveLearn Status (feature flag implícito) ────────────────
-        if (url.pathname === "/api/hivelearn/status" && req.method === "GET") {
-          try {
-            const tableExists = getDb()
-              .query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='hl_agents'")
-              .get();
-            if (!tableExists) return addCorsHeaders(Response.json({ enabled: false }), req);
-            const cnt = (getDb().query("SELECT COUNT(*) as cnt FROM hl_agents").get() as any).cnt;
-            return addCorsHeaders(Response.json({ enabled: cnt > 0 }), req);
-          } catch {
-            return addCorsHeaders(Response.json({ enabled: false }), req);
-          }
-        }
-
-        // ── HiveLearn Activate (post-setup) ──────────────────────────
-        if (url.pathname === "/api/hivelearn/activate" && req.method === "POST") {
-          try {
-            const { initHiveLearnStorage } = await import("../../../hivelearn/src/storage/init.ts");
-            initHiveLearnStorage(getDb());
-            const cnt = (getDb().query("SELECT COUNT(*) as cnt FROM hl_agents").get() as any).cnt;
-            return addCorsHeaders(Response.json({ success: true, agents: cnt }), req);
-          } catch (e) {
-            return addCorsHeaders(Response.json({ success: false, error: (e as Error).message }, { status: 500 }), req);
-          }
-        }
-
-        // ── HiveLearn Agents List ─────────────────────────────────────
-        if (url.pathname === "/api/hivelearn/agents" && req.method === "GET") {
-          try {
-            const rows = getDb().query(`SELECT * FROM hl_agents ORDER BY role DESC, id ASC`).all() as any[];
-            const agents = rows.map(r => ({
-              id: r.id,
-              name: r.name,
-              description: r.description,
-              role: r.role,
-              providerId: r.provider_id,
-              modelId: r.model_id,
-              systemPrompt: r.system_prompt,
-              workspace: r.workspace,
-              tone: r.tone,
-              enabled: r.enabled === 1,
-              maxIterations: r.max_iterations,
-            }));
-            return addCorsHeaders(Response.json(agents), req);
-          } catch {
-            return addCorsHeaders(Response.json([]), req);
-          }
-        }
-
-        // ── HiveLearn Agent Update ────────────────────────────────────
-        const hlAgentMatch = url.pathname.match(/^\/api\/hivelearn\/agents\/([^/]+)$/);
-        if (hlAgentMatch && req.method === "PUT") {
-          const agentId = hlAgentMatch[1];
-          const body = await req.json().catch(() => ({})) as any;
-          try {
-            getDb().query(`
-              UPDATE hl_agents SET
-                system_prompt  = COALESCE(?, system_prompt),
-                provider_id    = COALESCE(?, provider_id),
-                model_id       = COALESCE(?, model_id),
-                workspace      = ?,
-                tone           = ?,
-                enabled        = ?,
-                max_iterations = COALESCE(?, max_iterations),
-                updated_at     = CURRENT_TIMESTAMP
-              WHERE id = ?
-            `).run(
-              body.systemPrompt ?? null,
-              body.providerId ?? null,
-              body.modelId ?? null,
-              body.workspace ?? null,
-              body.tone ?? null,
-              body.enabled === false ? 0 : 1,
-              body.maxIterations ?? null,
-              agentId
-            );
-            return addCorsHeaders(Response.json({ success: true }), req);
-          } catch (e) {
-            return addCorsHeaders(Response.json({ error: (e as Error).message }, { status: 500 }), req);
-          }
-        }
-
-        // ── Channels API ─────────────────────────────────────────────────────
-        if ((url.pathname === "/api/channels" || url.pathname === "/api/channels/") && req.method === "POST") {
-          return await handleCreateChannel(req, addCorsHeaders, channelManager);
-        }
-
         const channelDetailMatch = url.pathname.match(/^\/api\/channels\/([^/]+)\/([^/]+)$/);
         if (channelDetailMatch) {
           const name = channelDetailMatch[1];
@@ -1893,7 +1491,7 @@ export async function startGateway(config: Config): Promise<void> {
 
         // ── Channels API ───────────────────────────────────────────────────
         if (url.pathname === "/api/channels" && req.method === "GET") {
-          return await handleGetChannels(req, addCorsHeaders);
+          return await handleGetChannels(req, addCorsHeaders, channelManager);
         }
 
         // PUT /api/channels/:id - Update channel settings
@@ -1913,6 +1511,25 @@ export async function startGateway(config: Config): Promise<void> {
         // GET /api/channels/:type/:id/status — connection state + QR for WhatsApp
         if (url.pathname.match(/^\/api\/channels\/[^/]+\/[^/]+\/status$/) && req.method === "GET") {
           return await handleGetChannelStatus(req, addCorsHeaders, channelManager);
+        }
+
+        // WhatsApp-specific endpoints
+        // GET /api/channels/whatsapp/:id/details
+        if (url.pathname.match(/^\/api\/channels\/whatsapp\/([^/]+)\/details$/) && req.method === "GET") {
+          const accountId = url.pathname.split("/")[3];
+          return await handleGetWhatsAppDetails(req, addCorsHeaders, accountId, channelManager);
+        }
+
+        // POST /api/channels/whatsapp/:id/disconnect
+        if (url.pathname.match(/^\/api\/channels\/whatsapp\/([^/]+)\/disconnect$/) && req.method === "POST") {
+          const accountId = url.pathname.split("/")[3];
+          return await handleDisconnectWhatsApp(req, addCorsHeaders, accountId, channelManager);
+        }
+
+        // PUT /api/channels/whatsapp/:id/config
+        if (url.pathname.match(/^\/api\/channels\/whatsapp\/([^/]+)\/config$/) && req.method === "PUT") {
+          const accountId = url.pathname.split("/")[3];
+          return await handleUpdateWhatsAppConfig(req, addCorsHeaders, accountId, channelManager);
         }
 
         // POST /api/channels/:id/reconnect — restart channel (with optional new credentials)
@@ -1958,6 +1575,83 @@ export async function startGateway(config: Config): Promise<void> {
         if (channelVoiceMatch && req.method === "PATCH") {
           const channelId = channelVoiceMatch[1]
           return await handleUpdateChannelVoice(req, addCorsHeaders, channelId)
+        }
+
+        // ── Multimodal / Vision API ─────────────────────────────────────────
+        if (url.pathname === "/api/multimodal/vision-providers" && req.method === "GET") {
+          return await handleGetVisionProviders(req, addCorsHeaders)
+        }
+
+        if (url.pathname === "/api/multimodal/ocr" && req.method === "POST") {
+          return await handleOcrImage(req, addCorsHeaders)
+        }
+
+        const channelVisionMatch = url.pathname.match(/^\/api\/channels\/([^/]+)\/vision$/)
+        if (channelVisionMatch && req.method === "GET") {
+          const channelId = channelVisionMatch[1]
+          return await handleGetChannelVision(req, addCorsHeaders, channelId)
+        }
+
+        if (channelVisionMatch && req.method === "PATCH") {
+          const channelId = channelVisionMatch[1]
+          return await handleUpdateChannelVision(req, addCorsHeaders, channelId)
+        }
+
+        // ── Piper TTS Local ──────────────────────────────────────────────────
+        if (url.pathname === "/api/tts-local/status" && req.method === "GET") {
+          return await handleGetLocalTTSStatus(req, addCorsHeaders)
+        }
+        if (url.pathname === "/api/tts-local/logs" && req.method === "GET") {
+          return await handleGetLocalTTSLogs(req, addCorsHeaders)
+        }
+        if (url.pathname === "/api/tts-local/install" && req.method === "POST") {
+          return await handleInstallLocalTTS(req, addCorsHeaders)
+        }
+        if (url.pathname === "/api/tts-local/start" && req.method === "POST") {
+          return await handleStartLocalTTS(req, addCorsHeaders)
+        }
+        if (url.pathname === "/api/tts-local/stop" && req.method === "POST") {
+          return await handleStopLocalTTS(req, addCorsHeaders)
+        }
+        if (url.pathname === "/api/tts-local/speak" && req.method === "POST") {
+          return await handleSpeakLocalTTS(req, addCorsHeaders)
+        }
+        // Modelos
+        if (url.pathname === "/api/tts-local/models" && req.method === "GET") {
+          return await handleGetAvailableModels(req, addCorsHeaders)
+        }
+        if (url.pathname === "/api/tts-local/models/download" && req.method === "POST") {
+          return await handleDownloadModel(req, addCorsHeaders)
+        }
+        if (url.pathname === "/api/tts-local/models/logs" && req.method === "GET") {
+          return await handleGetDownloadLogs(req, addCorsHeaders)
+        }
+        if (url.pathname === "/api/tts-local/voices" && req.method === "GET") {
+          return await handleGetInstalledVoices(req, addCorsHeaders)
+        }
+
+        // ── Meeting Transcription API ────────────────────────────────────────
+        if (url.pathname === "/api/meetings" && req.method === "POST") {
+          return await handleCreateMeeting(req, addCorsHeaders);
+        }
+
+        if (url.pathname === "/api/meetings" && req.method === "GET") {
+          return await handleListMeetings(req, addCorsHeaders);
+        }
+
+        const meetingIdMatch = url.pathname.match(/^\/api\/meetings\/([^/]+)$/);
+        if (meetingIdMatch && req.method === "GET") {
+          return await handleGetMeeting(req, addCorsHeaders, meetingIdMatch[1]);
+        }
+
+        const meetingSegmentMatch = url.pathname.match(/^\/api\/meetings\/([^/]+)\/segments$/);
+        if (meetingSegmentMatch && req.method === "POST") {
+          return await handleAddMeetingSegment(req, addCorsHeaders, meetingSegmentMatch[1]);
+        }
+
+        const meetingStopMatch = url.pathname.match(/^\/api\/meetings\/([^/]+)\/stop$/);
+        if (meetingStopMatch && req.method === "POST") {
+          return await handleStopMeeting(req, addCorsHeaders, meetingStopMatch[1]);
         }
 
         // ── Chat / Canvas / Notes API ───────────────────────────────────────
@@ -2059,42 +1753,10 @@ export async function startGateway(config: Config): Promise<void> {
           return;
         }
 
-        // ── HiveLearn Live Events ──────────────────────────────────────────────
-        if (data.sessionId.startsWith("hl:")) {
-          (async () => {
-            try {
-              const { hlSwarmEmitter } = await import("@johpaz/hivelearn");
-              const sendWs = (type: string, payload: Record<string, unknown> = {}) => {
-                try { ws.send(JSON.stringify({ type, ...payload })); } catch { }
-              };
-              const h1 = (d: any) => sendWs("agent_started", { agentId: d.workerId, agentName: d.workerName });
-              const h2 = (d: any) => sendWs("agent_completed", { agentId: d.workerId, agentName: d.workerName });
-              const h3 = (d: any) => sendWs("agent_failed", { agentId: d.workerId, agentName: d.workerName, error: d.error });
-              const h4 = (d: any) => sendWs("swarm_started", { swarmId: d.swarmId, totalTasks: d.totalTasks });
-              const h5 = (d: any) => sendWs("swarm_completed", { swarmId: d.swarmId, success: d.success });
-              hlSwarmEmitter.subscribe("worker:task_started", h1);
-              hlSwarmEmitter.subscribe("worker:task_completed", h2);
-              hlSwarmEmitter.subscribe("worker:task_failed", h3);
-              hlSwarmEmitter.subscribe("swarm:started", h4);
-              hlSwarmEmitter.subscribe("swarm:completed", h5);
-              // Server-side heartbeat: ping every 30s
-              const heartbeatTimer = setInterval(() => {
-                try { ws.send(JSON.stringify({ type: "ping" })); } catch { clearInterval(heartbeatTimer); }
-              }, 30_000);
-              hlLiveClients.set(data.sessionId, () => {
-                clearInterval(heartbeatTimer);
-                hlSwarmEmitter.unsubscribe("worker:task_started", h1);
-                hlSwarmEmitter.unsubscribe("worker:task_completed", h2);
-                hlSwarmEmitter.unsubscribe("worker:task_failed", h3);
-                hlSwarmEmitter.unsubscribe("swarm:started", h4);
-                hlSwarmEmitter.unsubscribe("swarm:completed", h5);
-              });
-              sendWs("hl:connected");
-              log.info(`HiveLearn live client connected: ${data.sessionId}`);
-            } catch (err) {
-              log.warn(`[hivelearn-events] subscribe failed: ${(err as Error).message}`);
-            }
-          })();
+        // ── Meeting Stream ─────────────────────────────────────────────────────
+        if (data.sessionId.startsWith("meeting:")) {
+          log.info(`Meeting stream client connected: ${data.sessionId}`);
+          ws.send(JSON.stringify({ type: "meeting:connected", sessionId: data.sessionId, meetingSessionId: (data as any).meetingSessionId }));
           return;
         }
 
@@ -2157,14 +1819,70 @@ export async function startGateway(config: Config): Promise<void> {
           return;
         }
 
-        // HiveLearn live clients: read-only, heartbeat only
-        if (data.sessionId.startsWith("hl:")) {
+        // Meeting stream: handle audio chunks and stop commands
+        if (data.sessionId.startsWith("meeting:")) {
           try {
-            const m = JSON.parse(message.toString());
-            if (m?.type === "ping") ws.send(JSON.stringify({ type: "pong" }));
-          } catch { /* ignore */ }
+            const m = JSON.parse(message.toString()) as Record<string, unknown>;
+            if (m?.type === "ping") {
+              ws.send(JSON.stringify({ type: "pong" }));
+              return;
+            }
+            if (m?.type === "audio_chunk") {
+              const meetingSessionId = (data as any).meetingSessionId as string;
+              const audioBase64 = m.audio as string;
+              const speaker = (m.speaker as string) || null;
+              const mimeType = (m.mime_type as string) || "audio/webm";
+              (async () => {
+                try {
+                  const db = getDb();
+                  const session = db.query(
+                    `SELECT id, stt_model, status FROM meeting_sessions WHERE id = ?`
+                  ).get(meetingSessionId) as { id: string; stt_model: string; status: string } | undefined;
+                  if (!session || session.status !== "active") {
+                    ws.send(JSON.stringify({ type: "error", error: "Sesión no activa o no encontrada" }));
+                    return;
+                  }
+                  const transcription = await voiceService.transcribe(
+                    { type: "base64", data: audioBase64, mimeType },
+                    session.stt_model
+                  );
+                  const seqResult = db.query(
+                    `SELECT COALESCE(MAX(seq) + 1, 0) as next_seq FROM meeting_segments WHERE session_id = ?`
+                  ).get(meetingSessionId) as { next_seq: number };
+                  const seq = seqResult.next_seq;
+                  db.query(
+                    `INSERT INTO meeting_segments (session_id, seq, speaker, text) VALUES (?, ?, ?, ?)`
+                  ).run(meetingSessionId, seq, speaker, transcription);
+                  ws.send(JSON.stringify({ type: "transcript_segment", seq, speaker, text: transcription }));
+                } catch (err) {
+                  ws.send(JSON.stringify({ type: "error", error: (err as Error).message }));
+                }
+              })();
+              return;
+            }
+            if (m?.type === "meeting_stop") {
+              const meetingSessionId = (data as any).meetingSessionId as string;
+              try {
+                const db = getDb();
+                db.query(
+                  `UPDATE meeting_sessions SET status = 'stopped', stopped_at = unixepoch() WHERE id = ? AND status = 'active'`
+                ).run(meetingSessionId);
+                const countResult = db.query(
+                  `SELECT COUNT(*) as count FROM meeting_segments WHERE session_id = ?`
+                ).get(meetingSessionId) as { count: number };
+                ws.send(JSON.stringify({ type: "meeting_stopped", session_id: meetingSessionId, segment_count: countResult.count }));
+              } catch (err) {
+                ws.send(JSON.stringify({ type: "error", error: (err as Error).message }));
+              }
+              return;
+            }
+          } catch { /* ignore malformed messages */ }
           return;
         }
+
+
+
+
 
         let msg: InboundMessage;
         try {
@@ -2475,51 +2193,51 @@ export async function startGateway(config: Config): Promise<void> {
                       isStep: false,
                     } as OutboundMessage));
                   },
-onStep: async (step) => {
-                     if (signal.aborted) return;
+                  onStep: async (step) => {
+                    if (signal.aborted) return;
 
-                     // "text" = el agente narra lo que esta pensando/haciendo
-                     if (step.type === "text" && step.message) {
-                       const trimmedMessage = (typeof step.message === "string" ? step.message : "").trim();
-                       if (trimmedMessage) {
-                         ws.send(JSON.stringify({
-                           type: "progress",
-                           sessionId: unifiedSessionId,
-                           content: trimmedMessage,
-                         } as OutboundMessage));
-                       }
-                       return;
-                     }
+                    // "text" = el agente narra lo que esta pensando/haciendo
+                    if (step.type === "text" && step.message) {
+                      const trimmedMessage = (typeof step.message === "string" ? step.message : "").trim();
+                      if (trimmedMessage) {
+                        ws.send(JSON.stringify({
+                          type: "progress",
+                          sessionId: unifiedSessionId,
+                          content: trimmedMessage,
+                        } as OutboundMessage));
+                      }
+                      return;
+                    }
 
-                     // "tool_call" = el agente va a ejecutar una herramienta → narrar al usuario
-                     if (step.type === "tool_call" && step.toolName) {
-                       const narration = getNarration(step.toolName);
-                       ws.send(JSON.stringify({
-                         type: "progress",
-                         sessionId: unifiedSessionId,
-                         content: narration,
-                       } as OutboundMessage));
-                       return;
-                     }
+                    // "tool_call" = el agente va a ejecutar una herramienta → narrar al usuario
+                    if (step.type === "tool_call" && step.toolName) {
+                      const narration = getNarration(step.toolName);
+                      ws.send(JSON.stringify({
+                        type: "progress",
+                        sessionId: unifiedSessionId,
+                        content: narration,
+                      } as OutboundMessage));
+                      return;
+                    }
 
-                     // "tool_result" = resultado de herramienta → solo si pide enviarse al usuario
-                     if (step.type === "tool_result" && step.message) {
-                       try {
-                         const result = JSON.parse(step.message);
-                         if (result._sendToUser || result.status) {
-                           const userMessage = result.message || result.status || "";
-                           if (userMessage) {
-                             ws.send(JSON.stringify({
-                               type: "progress",
-                               sessionId: unifiedSessionId,
-                               content: userMessage,
-                             } as OutboundMessage));
-                           }
-                           return;
-                         }
-                       } catch { }
-                     }
-                   },
+                    // "tool_result" = resultado de herramienta → solo si pide enviarse al usuario
+                    if (step.type === "tool_result" && step.message) {
+                      try {
+                        const result = JSON.parse(step.message);
+                        if (result._sendToUser || result.status) {
+                          const userMessage = result.message || result.status || "";
+                          if (userMessage) {
+                            ws.send(JSON.stringify({
+                              type: "progress",
+                              sessionId: unifiedSessionId,
+                              content: userMessage,
+                            } as OutboundMessage));
+                          }
+                          return;
+                        }
+                      } catch { }
+                    }
+                  },
                 });
 
                 // Use streamed content from onToken, fallback to response.content
@@ -2554,12 +2272,14 @@ onStep: async (step) => {
                         ttsMimeType = audioOutput.mimeType;
                         responseType = "audio";
                         const base64Audio = (audioOutput.data as Buffer).toString("base64");
+                        log.info(`Audio generated: ${base64Audio.length} bytes, mimeType: ${audioOutput.mimeType}`);
                         ws.send(JSON.stringify({
-                          type: "audio",
+                          type: "message",
                           sessionId: unifiedSessionId,
-                          audio: base64Audio,
                           content,
+                          audio: base64Audio,
                           mimeType: audioOutput.mimeType,
+                          isStep: false
                         } as OutboundMessage));
                       } catch (ttsError) {
                         log.error(`TTS failed: ${(ttsError as Error).message}), sending text instead`);
@@ -2568,6 +2288,23 @@ onStep: async (step) => {
                     }
                   } else {
                     ws.send(JSON.stringify({ type: "message", sessionId: unifiedSessionId, content, isStep: false } as OutboundMessage));
+                  }
+                } else if (alreadyStreamed && shouldSpeak && voiceCfg.ttsProvider) {
+                  try {
+                    log.info(`🔊 TTS enabled, synthesizing audio after streaming...`);
+                    const audioOutput = await voiceService.speak(content, voiceCfg.ttsProvider, voiceCfg.ttsVoiceId || undefined);
+                    const base64Audio = (audioOutput.data as Buffer).toString("base64");
+                    log.info(`Audio generated after streaming: ${base64Audio.length} bytes`);
+                    ws.send(JSON.stringify({
+                      type: "message",
+                      sessionId: unifiedSessionId,
+                      content,
+                      audio: base64Audio,
+                      mimeType: audioOutput.mimeType,
+                      isStep: false
+                    } as OutboundMessage));
+                  } catch (ttsError) {
+                    log.error(`TTS after streaming failed: ${(ttsError as Error).message}), skipping audio`);
                   }
                 }
               } catch (error) {
@@ -2615,8 +2352,73 @@ onStep: async (step) => {
 
             try {
               const unifiedSessionId = msg.sessionId;
-              const messages = [{ role: "user" as const, content: msg.content }];
-              log.info(`Generating response for session ${unifiedSessionId}...`);
+
+              // Multimodal: process image/document if present
+              let finalMessageContent = msg.content;
+              let contentParts: any[] | undefined = undefined;
+              const visionConfig = multimodalService.getChannelVisionConfig("webchat");
+
+              if (msg.image || msg.document) {
+                log.info(`🖼️ Multimodal content detected from WebChat session ${unifiedSessionId}`);
+
+                if (msg.image) {
+                  try {
+                    const imageInput = {
+                      type: "base64" as const,
+                      data: msg.image.base64,
+                      mimeType: msg.image.mimeType || "image/jpeg",
+                      caption: msg.image.caption
+                    };
+
+                    const activeModelId = dbModel;
+                    const activeProviderId = dbProvider;
+                    const modelHasVision = activeModelId && activeProviderId
+                      ? multimodalService.modelSupportsVision(activeProviderId, activeModelId)
+                      : false;
+
+                    if (visionConfig.visionEnabled && modelHasVision) {
+                      contentParts = await multimodalService.processImage(imageInput, visionConfig.visionModelId || undefined);
+                      log.info(`🖼️ Image sent as vision ContentParts (model supports vision)`);
+                    } else {
+                      const ocrProvider = visionConfig.ocrProvider || (["openai", "gemini", "anthropic"].includes(dbProvider) ? dbProvider : "openai");
+                      log.info(`🖼️ Model lacks vision or vision disabled, using OCR via ${ocrProvider}...`);
+                      const ocrText = await multimodalService.ocrImage(imageInput, ocrProvider);
+                      finalMessageContent = ocrText
+                        ? `[Imagen adjunta — contenido extraído por OCR]\n${ocrText}\n\n${finalMessageContent || ""}`
+                        : finalMessageContent || "";
+                      log.info(`🖼️ OCR result: ${ocrText.substring(0, 100)}...`);
+                    }
+                  } catch (imgError) {
+                    log.error(`❌ Image processing failed: ${(imgError as Error).message}`);
+                  }
+                }
+
+                if (msg.document) {
+                  try {
+                    const ocrProvider = visionConfig.ocrProvider || (["openai", "gemini", "anthropic"].includes(dbProvider) ? dbProvider : "openai");
+                    log.info(`📄 Document detected from WebChat, extracting text via OCR (${ocrProvider})...`);
+                    const docImage = {
+                      type: "base64" as const,
+                      data: msg.document.base64,
+                      mimeType: msg.document.mimeType || "application/pdf",
+                      caption: (msg.document as any).fileName || (msg.document as any).caption
+                    };
+                    const ocrText = await multimodalService.ocrImage(docImage, ocrProvider);
+                    finalMessageContent = ocrText
+                      ? `[Documento adjunto]\n${ocrText}\n\n${finalMessageContent || ""}`
+                      : finalMessageContent || "";
+                    log.info(`📄 Document OCR result: ${ocrText.substring(0, 100)}...`);
+                  } catch (docError) {
+                    log.error(`❌ Document processing failed: ${(docError as Error).message}`);
+                  }
+                }
+              }
+
+              const messages: any[] = contentParts
+                ? [{ role: "user" as const, content: contentParts }]
+                : [{ role: "user" as const, content: finalMessageContent }];
+
+              log.info(`Generating response for session ${unifiedSessionId} (multimodal: ${!!(msg.image || msg.document)})...`);
 
               const { userId } = resolveContext({
                 channel: "webchat",
@@ -2649,52 +2451,52 @@ onStep: async (step) => {
                     isStep: false,
                   } as OutboundMessage));
                 },
-onStep: async (step) => {
-                    if (signal.aborted) return;
+                onStep: async (step) => {
+                  if (signal.aborted) return;
 
-                    // "text" = el agente narra lo que esta pensando/haciendo
-                    if (step.type === "text" && step.message) {
-                      const trimmedMessage = (typeof step.message === "string" ? step.message : "").trim();
-                      if (trimmedMessage) {
-                        ws.send(JSON.stringify({
-                          type: "progress",
-                          sessionId: unifiedSessionId,
-                          content: trimmedMessage,
-                        } as OutboundMessage));
-                      }
-                      return;
-                    }
-
-                    // "tool_call" = el agente va a ejecutar una herramienta → narrar al usuario
-                    if (step.type === "tool_call" && step.toolName) {
-                      const narration = getNarration(step.toolName);
+                  // "text" = el agente narra lo que esta pensando/haciendo
+                  if (step.type === "text" && step.message) {
+                    const trimmedMessage = (typeof step.message === "string" ? step.message : "").trim();
+                    if (trimmedMessage) {
                       ws.send(JSON.stringify({
                         type: "progress",
                         sessionId: unifiedSessionId,
-                        content: narration,
+                        content: trimmedMessage,
                       } as OutboundMessage));
-                      return;
                     }
+                    return;
+                  }
 
-                    // "tool_result" = resultado de herramienta → solo si pide enviarse al usuario
-                    if (step.type === "tool_result" && step.message) {
-                      try {
-                        const result = JSON.parse(step.message);
-                        if (result._sendToUser || result.status) {
-                          const userMessage = result.message || result.status || "";
-                          if (userMessage) {
-                            ws.send(JSON.stringify({
-                              type: "progress",
-                              sessionId: unifiedSessionId,
-                              content: userMessage,
-                            } as OutboundMessage));
-                          }
-                          return;
+                  // "tool_call" = el agente va a ejecutar una herramienta → narrar al usuario
+                  if (step.type === "tool_call" && step.toolName) {
+                    const narration = getNarration(step.toolName);
+                    ws.send(JSON.stringify({
+                      type: "progress",
+                      sessionId: unifiedSessionId,
+                      content: narration,
+                    } as OutboundMessage));
+                    return;
+                  }
+
+                  // "tool_result" = resultado de herramienta → solo si pide enviarse al usuario
+                  if (step.type === "tool_result" && step.message) {
+                    try {
+                      const result = JSON.parse(step.message);
+                      if (result._sendToUser || result.status) {
+                        const userMessage = result.message || result.status || "";
+                        if (userMessage) {
+                          ws.send(JSON.stringify({
+                            type: "progress",
+                            sessionId: unifiedSessionId,
+                            content: userMessage,
+                          } as OutboundMessage));
                         }
-                      } catch { }
-                    }
-                  },
-                });
+                        return;
+                      }
+                    } catch { }
+                  }
+                },
+              });
 
               // Use streamed content from onToken, fallback to response.content
               const content = streamedContent || response.content?.trim() || "";
@@ -2727,15 +2529,14 @@ onStep: async (step) => {
                       ttsProviderUsed = voiceConfig.ttsProvider;
                       ttsMimeType = audioOutput.mimeType;
                       responseType = "audio";
-
                       const base64Audio = (audioOutput.data as Buffer).toString("base64");
-
                       ws.send(JSON.stringify({
-                        type: "audio",
+                        type: "message",
                         sessionId: unifiedSessionId,
-                        audio: base64Audio,
                         content,
+                        audio: base64Audio,
                         mimeType: audioOutput.mimeType,
+                        isStep: false
                       } as OutboundMessage));
                     } catch (ttsError) {
                       log.error(`TTS failed: ${(ttsError as Error).message}), sending text instead`);
@@ -2744,6 +2545,23 @@ onStep: async (step) => {
                   }
                 } else {
                   ws.send(JSON.stringify({ type: "message", sessionId: unifiedSessionId, content, isStep: false } as OutboundMessage));
+                }
+              } else if (alreadyStreamed && shouldSpeak && voiceConfig.ttsProvider) {
+                try {
+                  log.info(`🔊 TTS enabled, synthesizing audio after streaming...`);
+                  const audioOutput = await voiceService.speak(content, voiceConfig.ttsProvider, voiceConfig.ttsVoiceId || undefined);
+                  const base64Audio = (audioOutput.data as Buffer).toString("base64");
+                  log.info(`Audio generated after streaming: ${base64Audio.length} bytes`);
+                  ws.send(JSON.stringify({
+                    type: "message",
+                    sessionId: unifiedSessionId,
+                    content,
+                    audio: base64Audio,
+                    mimeType: audioOutput.mimeType,
+                    isStep: false
+                  } as OutboundMessage));
+                } catch (ttsError) {
+                  log.error(`TTS after streaming failed: ${(ttsError as Error).message}), skipping audio`);
                 }
               }
             } catch (error) {
@@ -2777,12 +2595,8 @@ onStep: async (step) => {
           unsubscribeBridge(ws as any);
           return;
         }
-
-        if (data.sessionId.startsWith("hl:")) {
-          const cleanup = hlLiveClients.get(data.sessionId);
-          cleanup?.();
-          hlLiveClients.delete(data.sessionId);
-          log.info(`HiveLearn live client disconnected: ${data.sessionId}`);
+        if (data.sessionId.startsWith("meeting:")) {
+          log.info(`Meeting stream client disconnected: ${data.sessionId}`);
           return;
         }
 

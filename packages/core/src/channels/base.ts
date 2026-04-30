@@ -42,6 +42,20 @@ export interface IncomingMessage {
     base64?: string;
     mimeType?: string;
   };
+  image?: {
+    url?: string;
+    base64?: string;
+    buffer?: Buffer;
+    mimeType?: string;
+    caption?: string;
+  };
+  document?: {
+    url?: string;
+    base64?: string;
+    buffer?: Buffer;
+    mimeType?: string;
+    fileName?: string;
+  };
   metadata?: Record<string, unknown>;
   replyToId?: string;
 }

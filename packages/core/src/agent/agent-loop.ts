@@ -25,6 +25,7 @@ import { compileContext } from "./context-compiler"
 import { formatToolResult } from "../utils/toon"
 import { getAverageTokenCost } from "../storage/usage"
 import { resolveUserId, resolveAgentId } from "../storage/onboarding"
+import type { ContentPart } from "../multimodal/types"
 
 /**
  * Execute a tool by name from the available tools list
@@ -61,7 +62,7 @@ const log = logger.child("agent-loop")
 
 export interface AgentLoopOptions {
   agentId: string
-  userMessage: string
+  userMessage: string | ContentPart[]
   threadId: string
   channel?: string
   mcpManager?: MCPClientManager | null
@@ -69,12 +70,14 @@ export interface AgentLoopOptions {
   systemPromptOverride?: string
   /** Worker mode: isolated context + single-task execution */
   isolated?: boolean
-  taskContext?: string
+  taskContext?: string | ContentPart[]
   onStep?: (step: StepEvent) => Promise<void>
   /** User ID for context propagation */
   userId?: string
   /** Abort signal to stop generation mid-execution */
   signal?: AbortSignal
+  /** Clean text for FTS5 and tracing (extracted from userMessage if multimodal) */
+  rawUserMessage?: string
 }
 
 export interface StepEvent {
@@ -123,6 +126,7 @@ export async function* runAgent(
 
   // Store the user message in conversation history
   if (!opts.isolated) {
+    // If userMessage is multimodal, addMessage extracts text for history storage
     addMessage(opts.threadId, "user", opts.userMessage, { channel: opts.channel })
     // Run compaction if conversation history is getting large
     await maybeCompact(
@@ -269,8 +273,15 @@ export async function* runAgent(
         : toolResultLLM
       log.info(`[agent-loop] Tool result [${toolName}]: ${resultPreview}`)
 
+      // Extract text for trace summary
+      const textMessage = typeof opts.userMessage === "string"
+        ? opts.userMessage
+        : Array.isArray(opts.userMessage)
+          ? opts.userMessage.filter(p => p.type === "text").map(p => (p as any).text).join("\n")
+          : String(opts.userMessage)
+
       // Clean timestamp from message for trace
-      const cleanMessage = opts.userMessage.replace(/^\[Timestamp:.*?\]\n/, "")
+      const cleanMessage = textMessage.replace(/^\[Timestamp:.*?\]\n/, "")
 
       // Save tool call trace
       saveTrace({
@@ -311,7 +322,7 @@ export async function* runAgent(
         try {
           const result = toolResultJS as any
           const foundTools: Array<{ name: string }> = result?.tools ?? []
-          const foundMcpTools: Array<{ tool_name: string }> = result?.toolsmcp ?? []
+          const foundMcpTools: Array<{ tool_name: string; full_name?: string; id?: string }> = result?.toolsmcp ?? []
           const currentToolNames = new Set(ctx.tools.map((t: any) => t.function?.name))
 
           // Track which tools were injected for skill lookup
@@ -339,7 +350,11 @@ export async function* runAgent(
 
           // Inject MCP tools discovered via search_knowledge(type="mcp")
           for (const found of foundMcpTools) {
-            const mcpFullName = found.tool_name
+            // Use full_name (sanitized compound id) because ctx.allTools stores MCP tools
+            // under the sanitized name (e.g. "Instagram__mis_estadisticas_de_instagram"),
+            // NOT the original tool_name (e.g. "mis estadisticas de instagram").
+            const mcpFullName = found.full_name || found.id
+            log.debug(`[agent-loop] MCP discovery candidate: tool_name="${found.tool_name}", full_name="${found.full_name}", id="${found.id}", resolved="${mcpFullName}"`)
             if (!currentToolNames.has(mcpFullName)) {
               const mcpTool = ctx.allTools.find(t => t.name === mcpFullName)
               if (mcpTool) {
@@ -353,6 +368,8 @@ export async function* runAgent(
                 })
                 log.info(`[agent-loop] Injected discovered MCP tool into loadout: ${mcpTool.name}`)
                 currentToolNames.add(mcpFullName)
+              } else {
+                log.warn(`[agent-loop] MCP tool "${mcpFullName}" not found in allTools (available MCP: ${ctx.allTools.filter(t => t.name.includes('__')).map(t => t.name).join(', ')})`)
               }
             }
           }
@@ -525,8 +542,15 @@ export async function* runAgent(
     outputTokens: totalOutputTokens,
   })
 
+  // Extract text for trace summary
+  const textMessageFinal = opts.rawUserMessage || (typeof opts.userMessage === "string"
+    ? opts.userMessage
+    : Array.isArray(opts.userMessage)
+      ? opts.userMessage.filter(p => p.type === "text").map(p => (p as any).text).join("\n")
+      : String(opts.userMessage))
+
   // Save overall trace
-  const cleanMessageFinal = opts.userMessage.replace(/^\[Timestamp:.*?\]\n/, "")
+  const cleanMessageFinal = textMessageFinal.replace(/^\[Timestamp:.*?\]\n/, "")
   saveTrace({
     threadId: opts.threadId,
     agentId: opts.agentId,
@@ -552,7 +576,7 @@ export async function* runAgent(
  */
 export async function runAgentIsolated(opts: {
   agentId: string
-  taskDescription: string
+  taskDescription: string | ContentPart[]
   threadId: string
   mcpManager?: MCPClientManager | null
 }): Promise<string> {
@@ -586,7 +610,7 @@ export class AgentLoop {
    * the existing providers/index.ts stream consumer.
    */
   stream(
-    input: { messages: Array<{ role: string; content: string }> },
+    input: { messages: Array<{ role: string; content: string | ContentPart[] }> },
     config: {
       configurable?: {
         thread_id?: string
@@ -628,11 +652,13 @@ export class AgentLoop {
     const userMessage = lastUserMsg?.content || ""
 
     // Use clean message (without timestamp) for FTS5 selectors
-    const rawUserMessage = config.configurable?.raw_user_message || userMessage
+    const rawUserMessage = config.configurable?.raw_user_message || 
+      (typeof userMessage === "string" ? userMessage : userMessage.filter(p => p.type === "text").map(p => (p as any).text).join("\n"))
 
     return runAgent({
       agentId,
-      userMessage: rawUserMessage,  // Clean message for FTS5 selectors
+      userMessage, // FULL MULTIMODAL MESSAGE
+      rawUserMessage, // CLEAN TEXT for FTS5
       threadId,
       channel,
       systemPromptOverride,

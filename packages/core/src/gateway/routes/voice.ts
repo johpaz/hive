@@ -4,13 +4,12 @@ import { encryptApiKey } from "../../storage/crypto"
 
 export async function handleGetVoiceProviders(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   return addCorsHeaders(Response.json({
-    providers: ["elevenlabs", "openai", "gemini", "qwen", "groq"]
+    providers: ["elevenlabs", "openai", "gemini", "qwen", "groq", "piper"]
   }), req)
 }
 
 export async function handleGetConfiguredVoiceProviders(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const db = getDb()
-  // Check which voice providers have API keys configured
   const rows = db.query(`
     SELECT id, 
       CASE WHEN api_key_encrypted IS NOT NULL AND api_key_encrypted != '' THEN 1 ELSE 0 END as configured
@@ -22,6 +21,7 @@ export async function handleGetConfiguredVoiceProviders(req: Request, addCorsHea
   for (const row of rows) {
     providers[row.id] = row.configured === 1
   }
+  providers.piper = true
 
   return addCorsHeaders(Response.json(providers), req)
 }
@@ -107,6 +107,29 @@ export async function handleGetVoiceProviderVoices(
       case "qwen":
         voices = voiceService.getQwenVoices()
         break
+      case "piper": {
+        // Consultar voces disponibles en el servidor TTS local
+        const TTS_PORT = Number(process.env.TTS_PORT ?? 5500)
+        try {
+          const res = await fetch(`http://localhost:${TTS_PORT}/voices`, {
+            signal: AbortSignal.timeout(1000),
+          })
+          if (res.ok) {
+            const data = await res.json()
+            voices = (data.voices || []).map((v: string) => ({
+              id: v,
+              name: v.replace(/_/g, " ").replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()),
+            }))
+          } else {
+            // Servidor respondió pero con error - usar fallback
+            voices = [{ id: "es_MX-cortana-high", name: "Piper Local (es_MX Cortana)" }]
+          }
+        } catch {
+          // Servidor TTS no disponible - usar fallback para permitir selección
+          voices = [{ id: "es_MX-cortana-high", name: "Piper Local (es_MX Cortana)" }]
+        }
+        break
+      }
       default:
         return addCorsHeaders(Response.json({ voices: [] }), req)
     }

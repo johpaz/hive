@@ -14,6 +14,16 @@ export interface InboundMessage {
   componentId?: string;
   data?: Record<string, unknown>;
   action?: string;
+  image?: {
+    base64: string;
+    mimeType?: string;
+    caption?: string;
+  };
+  document?: {
+    base64: string;
+    mimeType?: string;
+    fileName?: string;
+  };
 }
 
 export interface OutboundMessage {
@@ -34,6 +44,8 @@ export interface OutboundMessage {
   };
   error?: string;
   result?: unknown;
+  audio?: string; // Base64 encoded audio
+  mimeType?: string; // Audio MIME type
   // Welcome message fields
   user?: {
     id: string;

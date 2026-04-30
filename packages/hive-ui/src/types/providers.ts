@@ -22,7 +22,13 @@ export type ModelCapability =
   | "embeddings"
   | "image_generation"
   | "code"
-  | "reasoning";
+  | "reasoning"
+  | "transcription"
+  | "translation"
+  | "tts"
+  | "speech"
+  | "high_quality"
+  | "ocr";
 
 export interface ProviderConfig {
   apiKey: string;
@@ -138,7 +144,8 @@ export interface Model {
   id: string;
   name: string;
   providerId?: string;
-  provider_id?: string;  // snake_case de la API
+  provider_id?: string;
+  model_type?: string;
   contextWindow?: number | null;
   capabilities?: string | null;
   enabled: boolean;

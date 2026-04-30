@@ -1,5 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { useModels } from "@/hooks/useProviders";
 import type { Model } from "@/types";
 import { ModelCapabilities } from "./ModelCapabilities";
 
@@ -8,8 +10,10 @@ interface ModelCardProps {
 }
 
 export function ModelCard({ model }: ModelCardProps) {
+  const { toggleModel } = useModels();
+
   return (
-    <Card>
+    <Card className={!model.active ? "opacity-70 bg-muted/30" : ""}>
       <CardContent className="flex items-center gap-4 p-3">
         <div className="flex-1 space-y-1">
           <div className="flex items-center gap-2">
@@ -26,8 +30,12 @@ export function ModelCard({ model }: ModelCardProps) {
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <Badge variant={model.enabled ? "default" : "secondary"} className="text-[10px]">
-            {model.enabled ? "Activo" : "Inactivo"}
+          <Switch
+            checked={!!model.active}
+            onCheckedChange={(checked) => toggleModel(model.id, checked)}
+          />
+          <Badge variant={model.active ? "default" : "secondary"} className="text-[10px]">
+            {model.active ? "Activo" : "Inactivo"}
           </Badge>
         </div>
       </CardContent>

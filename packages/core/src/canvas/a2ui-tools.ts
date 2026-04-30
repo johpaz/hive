@@ -185,6 +185,7 @@ export function createA2UIUpdateDataModelTool(_config: Config): Tool {
           description: "JSON Pointer path to update (e.g. '/user/name'). If omitted, replaces the entire data model.",
         },
         value: {
+          type: "object",
           description: "The new value for the specified path. Can be any JSON value.",
         },
       },

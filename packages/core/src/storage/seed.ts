@@ -57,17 +57,17 @@ export const SEED_DATA: SeedData = {
     { id: "task_update", name: "task_update", category: "projects", description: "Actualizar estado de tarea (pendiente, en_progreso, hecho). Sinónimos: actualizar tarea, marcar completa, en progreso" },
     { id: "task_evaluate", name: "task_evaluate", category: "projects", description: "Evaluar resultado de tarea contra criterios de aceptación. Sinónimos: validar resultado, criterios de aceptación, revisar tarea" },
 
-// ─────────────────────────────────────────
-// 4. CRON — Tareas programadas (Croner-based)
-// ─────────────────────────────────────────
-    { id: "cron.create", name: "cron.create", category: "cron", description: "Crear tarea programada: recurrente (expresión cron) o única (fire_at). Requiere campo 'task' con instrucción para el agente. Sinónimos: programar tarea, crear recordatorio, agendar, automatizar horario, tarea recurrente, una vez" },
-    { id: "cron.list", name: "cron.list", category: "cron", description: "Listar todas las tareas programadas con próximos horarios de ejecución. Sinónimos: ver tareas programadas, listar cronograma, próximas ejecuciones" },
-    { id: "cron.update", name: "cron.update", category: "cron", description: "Actualizar tarea programada existente: cambiar expresión, instrucción, canal, ventana temporal. Sinónimos: modificar cron, editar recordatorio, cambiar horario, actualizar tarea" },
-    { id: "cron.pause", name: "cron.pause", category: "cron", description: "Pausar temporalmente una tarea programada sin eliminarla. Sinónimos: pausar tarea programada, detener temporalmente, suspender recordatorio" },
-    { id: "cron.resume", name: "cron.resume", category: "cron", description: "Reanudar una tarea programada previamente pausada. Sinónimos: reanudar tarea, continuar tarea pausada, activar recordatorio" },
-    { id: "cron.delete", name: "cron.delete", category: "cron", description: "Eliminar una tarea programada permanentemente. Sinónimos: eliminar tarea programada, borrar recordatorio, cancelar tarea" },
-    { id: "cron.trigger", name: "cron.trigger", category: "cron", description: "Ejecutar manualmente una tarea programada de forma inmediata. Sinónimos: ejecutar tarea ahora, forzar ejecución, disparar manualmente" },
-    { id: "cron.history", name: "cron.history", category: "cron", description: "Obtener historial de ejecuciones y logs de una tarea programada. Sinónimos: historial ejecuciones, logs tarea, registro ejecuciones" },
+    // ─────────────────────────────────────────
+    // 4. CRON — Tareas programadas (Croner-based)
+    // ─────────────────────────────────────────
+    { id: "cron_create", name: "cron_create", category: "cron", description: "Crear tarea programada: recurrente (expresión cron) o única (fire_at). Requiere campo 'task' con instrucción para el agente. Sinónimos: programar tarea, crear recordatorio, agendar, automatizar horario, tarea recurrente, una vez" },
+    { id: "cron_list", name: "cron_list", category: "cron", description: "Listar todas las tareas programadas con próximos horarios de ejecución. Sinónimos: ver tareas programadas, listar cronograma, próximas ejecuciones" },
+    { id: "cron_update", name: "cron_update", category: "cron", description: "Actualizar tarea programada existente: cambiar expresión, instrucción, canal, ventana temporal. Sinónimos: modificar cron, editar recordatorio, cambiar horario, actualizar tarea" },
+    { id: "cron_pause", name: "cron_pause", category: "cron", description: "Pausar temporalmente una tarea programada sin eliminarla. Sinónimos: pausar tarea programada, detener temporalmente, suspender recordatorio" },
+    { id: "cron_resume", name: "cron_resume", category: "cron", description: "Reanudar una tarea programada previamente pausada. Sinónimos: reanudar tarea, continuar tarea pausada, activar recordatorio" },
+    { id: "cron_delete", name: "cron_delete", category: "cron", description: "Eliminar una tarea programada permanentemente. Sinónimos: eliminar tarea programada, borrar recordatorio, cancelar tarea" },
+    { id: "cron_trigger", name: "cron_trigger", category: "cron", description: "Ejecutar manualmente una tarea programada de forma inmediata. Sinónimos: ejecutar tarea ahora, forzar ejecución, disparar manualmente" },
+    { id: "cron_history", name: "cron_history", category: "cron", description: "Obtener historial de ejecuciones y logs de una tarea programada. Sinónimos: historial ejecuciones, logs tarea, registro ejecuciones" },
 
     // ─────────────────────────────────────────
     // 5. CLI — Ejecución de comandos
@@ -180,7 +180,7 @@ export const SEED_DATA: SeedData = {
     { id: "groq", name: "Groq", baseUrl: "https://api.groq.com/openai/v1" },
     { id: "local-llama", name: "Local LLM (llama-server)", baseUrl: "http://localhost:8080/v1" },
     { id: "elevenlabs", name: "ElevenLabs", baseUrl: "https://api.elevenlabs.io/v1" },
-    { id: "qwen", name: "Qwen (Alibaba)", baseUrl: "https://dashscope.aliyuncs.com/api/v1" },
+    { id: "qwen", name: "Qwen (Alibaba)", baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", category: "llm" },
     { id: "nvidia", name: "NVIDIA NIM", baseUrl: "https://integrate.api.nvidia.com/v1" },
   ],
 
@@ -295,6 +295,12 @@ export const SEED_DATA: SeedData = {
     { id: "eleven_turbo_v2_5", providerId: "elevenlabs", name: "Eleven Turbo V2.5", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "balanced"]) },
     { id: "eleven_multilingual_v2", providerId: "elevenlabs", name: "Eleven Multilingual V2", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "multilingual"]) },
     { id: "eleven_v3", providerId: "elevenlabs", name: "Eleven V3", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "expressive"]) },
+
+    // ── Qwen (Alibaba DashScope) ──
+    { id: "qwen3.6-max-preview", providerId: "qwen", name: "Qwen 3.6 Max", modelType: "llm", contextWindow: 32768, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
+    { id: "qwen3.6-plus", providerId: "qwen", name: "Qwen 3.6 Plus", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
+    { id: "qwen3.5-omni-plus", providerId: "qwen", name: "Qwen 3.5 Omni Plus", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
+    { id: "qwen3.5-plus", providerId: "qwen", name: "Qwen 3.5 Plus", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "streaming"]) },
 
     // ── Qwen (TTS) ──
     { id: "qwen3-tts-instruct-flash", providerId: "qwen", name: "Qwen TTS Instruct Flash", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
@@ -500,6 +506,59 @@ function reseedToolsAndSkills(): void {
   log.info(`[seed] ✅ ${skillCount} skills re-seeded (skills_fts auto-synced via triggers)`);
 }
 
+function reseedSkillsV0_28(): void {
+  const db = getDb();
+
+  // Re-create triggers for the new schema (with description column)
+  db.run(`DROP TRIGGER IF EXISTS skills_ai`);
+  db.run(`DROP TRIGGER IF EXISTS skills_au`);
+  db.run(`DROP TRIGGER IF EXISTS skills_ad`);
+  db.run(`CREATE TRIGGER skills_ai AFTER INSERT ON skills BEGIN
+    INSERT INTO skills_fts(id, name, description, category, tools, triggers, body)
+    VALUES (new.id, new.name, new.description, new.category, new.tools, new.triggers, new.body);
+  END`);
+  db.run(`CREATE TRIGGER skills_au AFTER UPDATE ON skills BEGIN
+    DELETE FROM skills_fts WHERE id = old.id;
+    INSERT INTO skills_fts(id, name, description, category, tools, triggers, body)
+    VALUES (new.id, new.name, new.description, new.category, new.tools, new.triggers, new.body);
+  END`);
+  db.run(`CREATE TRIGGER skills_ad AFTER DELETE ON skills BEGIN
+    DELETE FROM skills_fts WHERE id = old.id;
+  END`);
+
+  const skillLoader = new SkillLoader({ workspacePath: process.env.HIVE_HOME || process.cwd() });
+  const realSkills = skillLoader.loadBundledSkills();
+  log.info(`[migration v0.0.28] 📚 SkillLoader cargó ${realSkills.length} bundled skills`);
+
+  let skillCount = 0;
+  for (const s of realSkills) {
+    db.query(`
+      INSERT OR REPLACE INTO skills (
+        id, name, description, version, author, icon, category,
+        permissions, dependencies, tools, triggers, preferred_agents,
+        body, version_num, active, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, (unixepoch()), (unixepoch()))
+    `).run(
+      s.name,
+      s.name,
+      s.description || "",
+      typeof s.version === 'string' ? s.version : String(s.version || '0.0.1'),
+      s.author || "Anonymous",
+      s.icon || "🧩",
+      s.category || "general",
+      JSON.stringify(s.permissions || []),
+      JSON.stringify(s.dependencies || []),
+      (s.tools || []).join(","),
+      (s.triggers || []).join(","),
+      JSON.stringify(s.preferred_agents || []),
+      s.content || "",
+      parseInt(String(s.version || '0.0.1').split(".")[0]) || 1
+    );
+    skillCount++;
+  }
+  log.info(`[migration v0.0.28] ✅ ${skillCount} skills re-seeded with expanded schema`);
+}
 
 export function seedAllData(): void {
   const db = getDb()
@@ -538,15 +597,21 @@ export function seedAllData(): void {
     }
     log.info(`[seed] ✅ ${providerCount} providers procesados`);
 
-    // 5️⃣ Models
+    // 5️⃣ Models (Re-seed: clear and insert fresh)
+    log.info("[seed] 🔄 Re-seeding models (clearing and re-inserting)...");
+    db.run("PRAGMA foreign_keys = OFF;");
+    const result = db.run("DELETE FROM models");
+    log.info(`[seed] 🗑️  Deleted ${result.changes} existing models.`);
+
     let modelCount = 0;
     for (const model of SEED_DATA.models) {
       db.query(`
-        INSERT OR IGNORE INTO models (id, provider_id, name, model_type, context_window, capabilities, enabled, active)
+        INSERT OR REPLACE INTO models (id, provider_id, name, model_type, context_window, capabilities, enabled, active)
         VALUES (?, ?, ?, ?, ?, ?, 1, 0)
       `).run(model.id, model.providerId, model.name, model.modelType, model.contextWindow || null, model.capabilities || null)
       modelCount++;
     }
+    db.run("PRAGMA foreign_keys = ON;");
     log.info(`[seed] ✅ ${modelCount} models procesados`);
 
     // 6️⃣ MCP servers

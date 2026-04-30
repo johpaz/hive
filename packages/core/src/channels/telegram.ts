@@ -152,22 +152,32 @@ export class TelegramChannel extends BaseChannel {
       return;
     }
 
-    let content = text;
-    let contentType = "text";
+  let content = text;
+  let contentType = "text";
+  let image: IncomingMessage["image"];
+  let document_: IncomingMessage["document"];
 
-    if (message.photo && !text) {
-      const caption = message.caption ?? "";
-      if (caption) {
-        content = `[📷 Foto] ${caption}`;
-        contentType = "photo";
-      } else {
-        await ctx.reply(
-          "📷 Recibí tu foto. Por favor, añade texto descriptivo para que pueda procesarla.",
-          { parse_mode: "HTML" }
-        );
-        return;
+  if (message.photo && !text) {
+    const caption = message.caption ?? "";
+    contentType = "photo";
+    try {
+      const photos = message.photo;
+      const largest = photos[photos.length - 1];
+      if (largest && this.bot) {
+        const file = await this.bot.api.getFile(largest.file_id);
+        if (file.file_path) {
+          image = {
+            url: `https://api.telegram.org/file/bot${this.config.botToken}/${file.file_path}`,
+            mimeType: "image/jpeg",
+            caption: caption || undefined,
+          };
+        }
       }
+    } catch (err) {
+      this.log.warn(`Failed to download photo: ${(err as Error).message}`);
     }
+    content = caption || "";
+  }
 
     if (message.voice) {
       const voice = message.voice;
@@ -219,33 +229,41 @@ export class TelegramChannel extends BaseChannel {
       return;
     }
 
-    if (message.document && !text) {
-      const docName = (message.document as any).file_name ?? "documento";
-      const caption = message.caption ?? "";
-      if (caption) {
-        content = `[📎 ${docName}] ${caption}`;
-        contentType = "document";
-      } else {
-        await ctx.reply(
-          "📎 Recibí tu documento. Por favor, añade texto descriptivo para que pueda procesarlo.",
-          { parse_mode: "HTML" }
-        );
-        return;
+  if (message.document && !text) {
+    const docName = (message.document as any).file_name ?? "documento";
+    const caption = message.caption ?? "";
+    contentType = "document";
+    try {
+      if (this.bot) {
+        const file = await this.bot.api.getFile(message.document.file_id);
+        if (file.file_path) {
+          document_ = {
+            url: `https://api.telegram.org/file/bot${this.config.botToken}/${file.file_path}`,
+            mimeType: message.document.mime_type || "application/octet-stream",
+            fileName: docName,
+          };
+        }
       }
+    } catch (err) {
+      this.log.warn(`Failed to download document: ${(err as Error).message}`);
     }
+    content = caption || "";
+  }
 
     const sessionId = this.formatSessionId(peerId, kind);
     this.chatIdCache.set(sessionId, message.chat.id);
     this.messageIdCache.set(sessionId, messageId);
 
-    const incomingMessage: IncomingMessage = {
-      sessionId,
-      channel: "telegram",
-      accountId: this.accountId,
-      peerId,
-      peerKind: kind,
-      content: content ?? "",
-      metadata: {
+  const incomingMessage: IncomingMessage = {
+  sessionId,
+  channel: "telegram",
+  accountId: this.accountId,
+  peerId,
+  peerKind: kind,
+  content: content ?? "",
+  image,
+  document: document_,
+  metadata: {
         telegram: {
           chatId: message.chat.id,
           userId: message.from?.id,

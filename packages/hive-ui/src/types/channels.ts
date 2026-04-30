@@ -43,6 +43,11 @@ export interface ChannelWhatsAppConfig {
   qrCode?: string;
   pairingCode?: string;
   status: "awaiting_qr" | "awaiting_pairing" | "connected";
+  waVersion?: string;
+  acceptGroups?: boolean;
+  reconnectMaxAttempts?: number;
+  reconnectBaseDelayMs?: number;
+  dmPolicy?: "open" | "pairing" | "allowlist";
 }
 
 export interface ChannelDiscordConfig {
@@ -89,6 +94,10 @@ export interface ConnectedChannel {
   tts_provider?: string;
   tts_voice_id?: string;
   step_delivery_mode?: string;
+  vision_enabled?: boolean;
+  ocr_provider?: string;
+  vision_provider?: string;
+  vision_model_id?: string;
   isConfigured?: boolean;
 }
 

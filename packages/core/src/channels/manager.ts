@@ -146,6 +146,7 @@ export class ChannelManager {
             agentId: (config.agentId as string) ?? coordinatorId,
             dmPolicy: (config.dmPolicy as "open" | "pairing" | "allowlist") ?? "allowlist",
             allowFrom: (config.allowFrom as string[]) ?? [],
+            acceptGroups: (config.acceptGroups as boolean) ?? false,
             reconnectMaxAttempts: (config.reconnectMaxAttempts as number) ?? 10,
             reconnectBaseDelayMs: (config.reconnectBaseDelayMs as number) ?? 5000,
           } as WhatsAppConfig);
@@ -319,6 +320,40 @@ export class ChannelManager {
     }
 
     return { status: channel.isRunning() ? "connected" : "disconnected" };
+  }
+
+  getWhatsAppDetails(accountId: string): {
+    status: string;
+    phoneNumber?: string;
+    waVersion?: string;
+    qrCode?: string;
+    lastConnected?: number;
+    reconnectAttempts: number;
+    reconnectMaxAttempts: number;
+    error?: string;
+    acceptGroups: boolean;
+    dmPolicy?: string;
+  } | null {
+    const key = `whatsapp:${accountId}`;
+    const channel = this.channels.get(key) as WhatsAppChannel | undefined;
+
+    if (!channel) return null;
+
+    const state = channel.getState();
+    const config = channel.getConfig();
+
+    return {
+      status: state.status,
+      phoneNumber: state.phoneNumber,
+      waVersion: state.waVersion,
+      qrCode: state.qrCode,
+      lastConnected: state.lastConnected?.getTime(),
+      reconnectAttempts: state.reconnectAttempts,
+      reconnectMaxAttempts: config.reconnectMaxAttempts ?? 10,
+      error: state.error,
+      acceptGroups: config.acceptGroups ?? false,
+      dmPolicy: config.dmPolicy,
+    };
   }
 
   async stopChannel(channelName: string, accountId: string): Promise<void> {

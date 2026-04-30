@@ -86,33 +86,41 @@ export const SCHEMA = `
     updated_at      INTEGER NOT NULL DEFAULT (unixepoch())
   );
 
-  -- Channels: linked to user (or global if user_id is NULL)
-  -- voice_enabled: enables speech-to-text for incoming audio
-  -- tts_enabled: enables text-to-speech for outgoing responses
-  -- stt_provider: which STT provider to use (groq-whisper, openai-whisper)
-  -- tts_provider: which TTS provider to use (elevenlabs, openai-tts)
-  -- tts_voice_id: specific voice ID for TTS (e.g., ElevenLabs voice ID)
-  -- step_delivery_mode: how to send intermediate steps to user:
-  --   "new_message" = send new message for each step (default)
-  --   "edit" = edit same message (Telegram/Discord only)
-  --   "thread" = use threading (Slack only)
-  CREATE TABLE IF NOT EXISTS channels (
-    id          TEXT PRIMARY KEY,
-    user_id     TEXT REFERENCES users(id) ON DELETE CASCADE,
-    type        TEXT NOT NULL,
-    config_encrypted TEXT,
-    config_iv   TEXT,
-    enabled     INTEGER NOT NULL DEFAULT 1,
-    active      INTEGER NOT NULL DEFAULT 0,
-    status      TEXT NOT NULL DEFAULT 'disconnected',
-    last_active INTEGER,
-    voice_enabled INTEGER NOT NULL DEFAULT 0,
-    tts_enabled INTEGER NOT NULL DEFAULT 0,
-    stt_provider TEXT,
-    tts_provider TEXT,
-    tts_voice_id TEXT,
-    step_delivery_mode TEXT DEFAULT 'new_messages'
-  );
+-- Channels: linked to user (or global if user_id is NULL)
+-- voice_enabled: enables speech-to-text for incoming audio
+-- tts_enabled: enables text-to-speech for outgoing responses
+-- stt_provider: which STT provider to use (groq-whisper, openai-whisper)
+-- tts_provider: which TTS provider to use (elevenlabs, openai-tts)
+-- tts_voice_id: specific voice ID for TTS (e.g., ElevenLabs voice ID)
+-- step_delivery_mode: how to send intermediate steps to user:
+-- "new_message" = send new message for each step (default)
+-- "edit" = edit same message (Telegram/Discord only)
+-- "thread" = use threading (Slack only)
+-- vision_enabled: enables image/document processing for incoming media
+-- ocr_provider: which provider to use for OCR fallback (openai, gemini, anthropic)
+-- vision_provider: provider for vision-capable models
+-- vision_model_id: specific model for vision processing
+CREATE TABLE IF NOT EXISTS channels (
+  id TEXT PRIMARY KEY,
+  user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  config_encrypted TEXT,
+  config_iv TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  active INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'disconnected',
+  last_active INTEGER,
+  voice_enabled INTEGER NOT NULL DEFAULT 0,
+  tts_enabled INTEGER NOT NULL DEFAULT 0,
+  stt_provider TEXT,
+  tts_provider TEXT,
+  tts_voice_id TEXT,
+  step_delivery_mode TEXT DEFAULT 'new_messages',
+  vision_enabled INTEGER NOT NULL DEFAULT 0,
+  ocr_provider TEXT,
+  vision_provider TEXT,
+  vision_model_id TEXT
+);
 
   -- MCP Servers: linked to user (or global if user_id is NULL)
   CREATE TABLE IF NOT EXISTS mcp_servers (
@@ -451,6 +459,7 @@ export const CONTEXT_ENGINE_SCHEMA = `
     channel         TEXT NOT NULL DEFAULT 'webchat',
     role            TEXT NOT NULL CHECK(role IN ('user','assistant','tool','system')),
     content         TEXT NOT NULL,
+    content_multimodal TEXT,
     tool_calls_json TEXT,
     tool_call_id    TEXT,
     token_count     INTEGER NOT NULL DEFAULT 0,
@@ -645,4 +654,36 @@ export const CONTEXT_ENGINE_SCHEMA = `
   );
 
 
+`;
+
+export const MEETING_SCHEMA = `
+  -- Meeting Sessions: encabezado de cada transcripción de reunión
+  CREATE TABLE IF NOT EXISTS meeting_sessions (
+    id          TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    user_id     TEXT REFERENCES users(id) ON DELETE CASCADE,
+    title       TEXT NOT NULL DEFAULT 'Reunión sin título',
+    status      TEXT NOT NULL DEFAULT 'active'
+                CHECK(status IN ('active', 'stopped', 'report_ready')),
+    stt_model   TEXT NOT NULL DEFAULT 'whisper-large-v3-turbo',
+    started_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+    stopped_at  INTEGER,
+    report_path TEXT,
+    metadata    TEXT
+  );
+
+  -- Meeting Segments: cada bloque de audio transcrito
+  CREATE TABLE IF NOT EXISTS meeting_segments (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id  TEXT NOT NULL REFERENCES meeting_sessions(id) ON DELETE CASCADE,
+    seq         INTEGER NOT NULL,
+    speaker     TEXT,
+    text        TEXT NOT NULL,
+    duration_ms INTEGER,
+    created_at  INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_meeting_sessions_user    ON meeting_sessions(user_id);
+  CREATE INDEX IF NOT EXISTS idx_meeting_sessions_status  ON meeting_sessions(status);
+  CREATE INDEX IF NOT EXISTS idx_meeting_segments_session ON meeting_segments(session_id);
+  CREATE INDEX IF NOT EXISTS idx_meeting_segments_seq     ON meeting_segments(session_id, seq);
 `;

@@ -13,6 +13,18 @@ export interface Message {
     url?: string;
     mimeType?: string;
   };
+  image?: {
+    base64?: string;
+    url?: string;
+    mimeType?: string;
+    caption?: string;
+  };
+  document?: {
+    base64?: string;
+    url?: string;
+    fileName?: string;
+    mimeType?: string;
+  };
 }
 
 export interface Conversation {

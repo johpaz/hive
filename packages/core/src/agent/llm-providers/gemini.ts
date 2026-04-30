@@ -1,10 +1,39 @@
 import { logger } from "../../utils/logger"
 import { sanitizeMessages } from "./interface"
 import type { LLMCallOptions, LLMProvider, LLMResponse, LLMToolCall } from "./interface"
+import type { ContentPart, LLMMessage } from "../llm-client"
 
 const log = logger.child("llm-client")
 
 export class GeminiProvider implements LLMProvider {
+  private _convertContentPart(part: ContentPart): any {
+    switch (part.type) {
+      case "text":
+        return { text: part.text }
+      case "image_url": {
+        const url = part.image_url.url
+        if (url.startsWith("data:")) {
+          const match = url.match(/^data:([^;]+);base64,(.+)$/)
+          if (match) return { inlineData: { mimeType: match[1], data: match[2] } }
+        }
+        return { text: `[Image URL: ${url}]` }
+      }
+      case "image_base64":
+        return { inlineData: { mimeType: part.mimeType, data: part.base64 } }
+      case "document":
+        return { inlineData: { mimeType: part.mimeType, data: part.base64 } }
+      default:
+        return { text: JSON.stringify(part) }
+    }
+  }
+
+  private _convertUserParts(msg: LLMMessage): any[] {
+    if (Array.isArray(msg.content)) {
+      return msg.content.map(p => this._convertContentPart(p))
+    }
+    return [{ text: msg.content }]
+  }
+
   async call(options: LLMCallOptions): Promise<LLMResponse> {
     const { GoogleGenAI } = await import("@google/genai")
 
@@ -32,10 +61,10 @@ export class GeminiProvider implements LLMProvider {
         systemText += (systemText ? "\n\n" : "") + msg.content
         continue
       }
-      if (msg.role === "user") {
-        rawContents.push({ role: "user", parts: [{ text: msg.content }] })
-        continue
-      }
+    if (msg.role === "user") {
+      rawContents.push({ role: "user", parts: this._convertUserParts(msg) })
+      continue
+    }
       if (msg.role === "assistant") {
         const parts: any[] = []
         if (msg.content) parts.push({ text: msg.content })

@@ -5,13 +5,13 @@ import { ToolManager } from "@/modules/agent-config/tools/ToolManager";
 import { MCPServerList } from "@/modules/agent-config/mcp/MCPServerList";
 import { UserProfileEditor } from "@/modules/agent-config/user/UserProfileEditor";
 import { SkillsTab } from "@/modules/agent-config/skills/SkillsTab";
-import { VoiceProvidersPanel } from "@/modules/agent-config/voice/VoiceProvidersPanel";
+import { WhatsAppConfigPanel } from "@/modules/agent-config/whatsapp/WhatsAppConfigPanel";
 import { NotesPanel } from "@/components/NotesPanel";
 import { CronJobsPanel } from "@/components/CronJobsPanel";
 import { SecurityPanel } from "@/components/SecurityPanel";
 import { useSkills, useTools, useMCPServers } from "@/hooks/useProviders";
 
-type PanelId = "etica" | "herramientas" | "mcp" | "skills" | "perfil" | "notas" | "cron-jobs" | "voz" | "seguridad";
+type PanelId = "etica" | "herramientas" | "mcp" | "skills" | "perfil" | "notas" | "cron-jobs" | "seguridad" | "whatsapp";
 
 function PanelContent({ panel }: { panel: PanelId }) {
   switch (panel) {
@@ -57,16 +57,16 @@ function PanelContent({ panel }: { panel: PanelId }) {
           <CronJobsPanel />
         </div>
       );
-    case "voz":
-      return (
-        <div className="p-4">
-          <VoiceProvidersPanel />
-        </div>
-      );
     case "seguridad":
       return (
         <div className="p-4">
           <SecurityPanel />
+        </div>
+      );
+    case "whatsapp":
+      return (
+        <div className="p-4">
+          <WhatsAppConfigPanel />
         </div>
       );
     default:
@@ -74,7 +74,7 @@ function PanelContent({ panel }: { panel: PanelId }) {
   }
 }
 
-const VALID_PANELS: PanelId[] = ["etica", "herramientas", "mcp", "skills", "perfil", "notas", "cron-jobs", "voz", "seguridad"];
+const VALID_PANELS: PanelId[] = ["etica", "herramientas", "mcp", "skills", "perfil", "notas", "cron-jobs", "seguridad", "whatsapp"];
 
 export function SettingsPage({ forcePanel }: { forcePanel?: PanelId }) {
   const { panel } = useParams<{ panel: string }>();
@@ -128,15 +128,15 @@ export function SettingsPage({ forcePanel }: { forcePanel?: PanelId }) {
       title: "Tareas Programadas",
       subtitle: "Gestión de ejecuciones recurrentes y disparadores cron."
     },
-    voz: {
-      eyebrow: "INTERFAZ DE VOZ",
-      title: "Configuración de Voz",
-      subtitle: "Configura las API keys de los providers de STT (Speech-to-Text) y TTS (Text-to-Speech) para habilitar la comunicación por voz."
-    },
-    seguridad: {
+  seguridad: {
       eyebrow: "CONTROL DE ACCESO",
       title: "Seguridad",
       subtitle: "Protege tu instancia con email y contraseña. Esencial si despliegas Hive en un servidor público."
+    },
+    whatsapp: {
+      eyebrow: "CANAL DE MENSAJERÍA",
+      title: "WhatsApp",
+      subtitle: "Configura tu conexión de WhatsApp. Gestiona la sesión, opciones de grupo y reconexión."
     }
   };
 

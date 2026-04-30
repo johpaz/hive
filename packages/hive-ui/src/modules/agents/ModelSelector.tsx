@@ -11,6 +11,7 @@ interface ModelSelectorProps {
   onProviderChange: (providerId: string) => void;
   onModelChange: (modelId: string) => void;
   disabled?: boolean;
+  typeFilter?: string;
 }
 
 export function ModelSelector({
@@ -19,6 +20,7 @@ export function ModelSelector({
   onProviderChange,
   onModelChange,
   disabled = false,
+  typeFilter,
 }: ModelSelectorProps) {
   const { providers, models } = useProviders();
 
@@ -47,9 +49,11 @@ export function ModelSelector({
     if (!selectedProviderId) return [];
     return models.filter((m) => {
       const pid = m.provider_id || m.providerId;
-      return pid === selectedProviderId;
+      const matchesProvider = pid === selectedProviderId;
+      const matchesType = !typeFilter || m.model_type === typeFilter;
+      return matchesProvider && matchesType;
     });
-  }, [selectedProviderId, models]);
+  }, [selectedProviderId, models, typeFilter]);
 
   // Dropdown options: only active models for selected provider
   const modelOptions = useMemo(() => {

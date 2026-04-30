@@ -1,0 +1,25 @@
+{
+  "name": "@johpaz/hive-tts",
+  "version": "0.1.0",
+  "description": "Offline local TTS for Hive — Piper-based fallback when no internet providers available",
+  "module": "src/index.ts",
+  "main": "src/index.ts",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts",
+    "./server": "./src/server.ts",
+    "./models": "./src/models.ts"
+  },
+  "scripts": {
+    "postinstall": "bun run src/install.ts",
+    "start": "bun run src/server.ts",
+    "dev": "bun --watch src/server.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "keywords": ["hive", "tts", "offline", "piper", "voice", "spanish"],
+  "license": "MIT"
+}

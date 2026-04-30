@@ -25,7 +25,7 @@ import {
   getMessageCount,
 } from "./conversation-store"
 import { estimateTokens } from "../utils/toon"
-import { callLLM, resolveProviderConfig } from "./llm-client"
+import { callLLM, resolveProviderConfig, type ContentPart } from "./llm-client"
 import { getDb } from "../storage/sqlite"
 
 const log = logger.child("compaction")
@@ -95,7 +95,14 @@ export async function compactThread(
   const capped = toSummarize.slice(-MAX_TRANSCRIPT_MSGS)
   const apiMessages = toAPIMessages(capped)
   const transcript = apiMessages
-    .map((m) => `[${m.role.toUpperCase()}]: ${m.content.substring(0, MAX_MSG_CHARS)}`)
+    .map((m) => {
+      const text = typeof m.content === "string"
+        ? m.content
+        : Array.isArray(m.content)
+          ? m.content.filter(p => p.type === "text").map(p => (p as any).text).join("\n")
+          : ""
+      return `[${m.role.toUpperCase()}]: ${text.substring(0, MAX_MSG_CHARS)}`
+    })
     .join("\n\n")
 
   const db = getDb()
@@ -156,7 +163,7 @@ export async function compactThread(
  * - Keeps recent tool results intact (keepLastN)
  * - Uses TOON format for compact representation
  */
-export function clearOldToolResults<T extends { role: string; content: string }>(
+export function clearOldToolResults<T extends { role: string; content: string | ContentPart[] }>(
   messages: T[],
   keepLastN = 6
 ): T[] {
@@ -166,7 +173,7 @@ export function clearOldToolResults<T extends { role: string; content: string }>
   return messages.map((msg, i) => {
     if (i >= cutoffIndex) return msg
     
-    if (msg.role === "tool") {
+    if (msg.role === "tool" && typeof msg.content === "string") {
       // For tool results older than keepLastN, summarize
       if (msg.content.length > TOOL_RESULT_MAX_CHARS) {
         // Try to extract key info from TOON/JSON format

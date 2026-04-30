@@ -1534,7 +1534,7 @@ export function runStartupMigrations(): void {
       log.info("[migration v0.0.31] Updating coordinator system_prompt...");
 
       // Update coordinator system_prompt with new concise version
-      db.run(`UPDATE agents SET system_prompt = ? WHERE role = 'coordinator'`, HIVE_SYSTEM_PROMPT);
+      db.run(`UPDATE agents SET system_prompt = ? WHERE role = 'coordinator'`, [HIVE_SYSTEM_PROMPT]);
       const updated = db.query("SELECT name FROM agents WHERE role = 'coordinator' AND system_prompt = ?").get(HIVE_SYSTEM_PROMPT);
       if (updated) {
         log.info("[migration v0.0.31] ✅ Coordinator system_prompt updated");
@@ -1561,7 +1561,7 @@ export function runStartupMigrations(): void {
           s.author || "Hive", s.icon || "🧩", s.category || "general",
           JSON.stringify(s.permissions || []), JSON.stringify(s.dependencies || []),
           (s.tools || []).join(","), (s.triggers || []).join(","), "[]",
-          s.body || "", 100
+          s.content || "", 100
         );
         skillsAdded++;
       }
@@ -1577,9 +1577,26 @@ export function runStartupMigrations(): void {
       }
       log.info(`[migration v0.0.31] ✅ ${activeSkills.length} skills indexed in FTS5`);
 
-      markApplied("v0.0.31");
-      log.info("✅ Migration v0.0.31: Reduced system_prompt + skills sync");
-    }
+    markApplied("v0.0.31");
+    log.info("✅ Migration v0.0.31: Reduced system_prompt + skills sync");
+  }
+
+  // v0.0.32 — add vision/multimodal columns to channels table
+  if (!applied("v0.0.32")) {
+    const db = getDb();
+    log.info("[migration v0.0.32] Adding vision columns to channels table...");
+
+    const addCol = (col: string, def: string) => {
+      try { db.run(`ALTER TABLE channels ADD COLUMN ${col} ${def}`); } catch { /* already exists */ }
+    };
+    addCol("vision_enabled", "INTEGER NOT NULL DEFAULT 0");
+    addCol("ocr_provider", "TEXT");
+    addCol("vision_provider", "TEXT");
+    addCol("vision_model_id", "TEXT");
+
+    markApplied("v0.0.32");
+    log.info("✅ Migration v0.0.32: vision columns added to channels");
+  }
   } catch (e) {
     log.error("⚠️ runStartupMigrations failed:", { error: (e as Error).message });
   }

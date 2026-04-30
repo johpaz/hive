@@ -1,8 +1,0 @@
-.env
-.env.local
-dev-data/
-logs/
-__tests__/fixtures/
-*.log
-dist/
-node_modules/

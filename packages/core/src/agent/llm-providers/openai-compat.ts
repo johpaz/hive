@@ -1,10 +1,36 @@
 import { logger } from "../../utils/logger"
-import { sanitizeMessages, requiresTemperature1, OPENAI_COMPAT_BASE_URLS } from "./interface"
+import {
+  sanitizeMessages, requiresTemperature1, OPENAI_COMPAT_BASE_URLS,
+  getProviderProfile, modelSupportsTools, normalizeToolName, normalizeToolSchema,
+} from "./interface"
 import type { LLMCallOptions, LLMProvider, LLMResponse, LLMToolCall } from "./interface"
+import type { ContentPart, LLMMessage } from "../llm-client"
 
 const log = logger.child("llm-client")
 
 export class OpenAICompatProvider implements LLMProvider {
+  private _convertContentPart(part: ContentPart): any {
+    switch (part.type) {
+      case "text":
+        return { type: "text", text: part.text }
+      case "image_url":
+        return { type: "image_url", image_url: { url: part.image_url.url } }
+      case "image_base64":
+        return { type: "image_url", image_url: { url: `data:${part.mimeType};base64,${part.base64}` } }
+      case "document":
+        return { type: "text", text: `[Document: ${part.fileName || "file"}] (base64 content not displayed)` }
+      default:
+        return { type: "text", text: JSON.stringify(part) }
+    }
+  }
+
+  private _convertMessage(msg: LLMMessage): any {
+    if (Array.isArray(msg.content)) {
+      return { ...msg, content: msg.content.map(p => this._convertContentPart(p)) }
+    }
+    return msg
+  }
+
   async call(options: LLMCallOptions): Promise<LLMResponse> {
     const { default: OpenAI } = await import("openai")
 
@@ -24,9 +50,10 @@ export class OpenAICompatProvider implements LLMProvider {
     const needsReasoningRoundtrip = isKimi || isDeepSeek
 
     const sanitized = sanitizeMessages(options.messages)
-    const messagesForProvider = needsReasoningRoundtrip
+    const rawMessages = needsReasoningRoundtrip
       ? sanitized
       : sanitized.map(({ reasoning_content: _rc, ...rest }) => rest as typeof sanitized[number])
+    const messagesForProvider = rawMessages.map(m => this._convertMessage(m))
 
     const providerPrefix = new RegExp(`^${options.provider}\\/`, "i")
     const body: any = {
@@ -36,26 +63,68 @@ export class OpenAICompatProvider implements LLMProvider {
     }
     if (options.maxTokens) body.max_tokens = options.maxTokens
     if (options.numCtx && isLocal) body.num_ctx = options.numCtx
-    if (options.tools?.length) {
-      body.tools = options.tools
-      body.tool_choice = "auto"
+
+    // Per-provider profile drives tool call behavior
+    const profile = getProviderProfile(options.provider)
+    const sendTools = modelSupportsTools(options.provider, options.model) && !!(options.tools?.length)
+
+    // Map from wire name (normalized) → original name for denormalizing responses
+    const toolNameMap = new Map<string, string>()
+
+    if (sendTools) {
+      const preparedTools = options.tools!.map((t) => {
+        const originalName = t.function.name
+        const wireName = profile.normalizeToolNames
+          ? normalizeToolName(originalName, profile.toolNameReplacement)
+          : originalName
+        if (wireName !== originalName) toolNameMap.set(wireName, originalName)
+        return {
+          ...t,
+          function: {
+            ...t.function,
+            name: wireName,
+            parameters: normalizeToolSchema(t.function.parameters as Record<string, unknown>, profile),
+          },
+        }
+      })
+      body.tools = preparedTools
+      body.tool_choice = profile.toolChoiceAuto
+      if (profile.disableParallelToolCalls) body.parallel_tool_calls = false
     }
 
-    log.info(`[llm-client] ${options.provider}/${body.model} — ${options.messages.length} msgs, ${options.tools?.length ?? 0} tools`)
+    log.info(`[llm-client] ${options.provider}/${body.model} — ${options.messages.length} msgs, ${options.tools?.length ?? 0} tools${sendTools ? "" : " (tools suppressed)"}`)
 
-    // Stream when onToken callback is provided (better UX for long responses)
     if (options.onToken) {
-      return this._streamCall(client, body, options)
+      return this._streamCall(client, body, options, toolNameMap, sendTools, profile)
     }
 
-    const response = await client.chat.completions.create(body)
+    let response
+    try {
+      response = await client.chat.completions.create(body)
+    } catch (err: any) {
+      const status = err?.status ?? err?.response?.status
+      if (sendTools && profile.retryWithoutToolsOnCodes.includes(status)) {
+        log.warn(`[llm-client] ${options.provider}: tools rejected (HTTP ${status}) — retrying without tools`)
+        const bodyNoTools = { ...body }
+        delete bodyNoTools.tools
+        delete bodyNoTools.tool_choice
+        delete bodyNoTools.parallel_tool_calls
+        response = await client.chat.completions.create(bodyNoTools)
+      } else {
+        throw err
+      }
+    }
+
     const choice = response.choices[0]
     const msg = choice.message
 
     const tool_calls: LLMToolCall[] | undefined = (msg.tool_calls as any[])?.map((tc: any) => ({
       id: tc.id,
       type: "function" as const,
-      function: { name: tc.function.name, arguments: tc.function.arguments },
+      function: {
+        name: toolNameMap.get(tc.function.name) ?? tc.function.name,
+        arguments: tc.function.arguments,
+      },
     }))
 
     return {
@@ -73,13 +142,34 @@ export class OpenAICompatProvider implements LLMProvider {
     }
   }
 
-  private async _streamCall(client: any, body: any, options: LLMCallOptions): Promise<LLMResponse> {
-    const stream = await client.chat.completions.create({ ...body, stream: true })
+  private async _streamCall(
+    client: any,
+    body: any,
+    options: LLMCallOptions,
+    toolNameMap: Map<string, string>,
+    sendTools: boolean,
+    profile: ReturnType<typeof getProviderProfile>,
+  ): Promise<LLMResponse> {
+    let stream
+    try {
+      stream = await client.chat.completions.create({ ...body, stream: true })
+    } catch (err: any) {
+      const status = err?.status ?? err?.response?.status
+      if (sendTools && profile.retryWithoutToolsOnCodes.includes(status)) {
+        log.warn(`[llm-client] ${options.provider}: tools rejected (HTTP ${status}) — retrying stream without tools`)
+        const bodyNoTools = { ...body }
+        delete bodyNoTools.tools
+        delete bodyNoTools.tool_choice
+        delete bodyNoTools.parallel_tool_calls
+        stream = await client.chat.completions.create({ ...bodyNoTools, stream: true })
+      } else {
+        throw err
+      }
+    }
 
     let content = ""
     let reasoning_content = ""
     let finish_reason = "stop"
-    // Accumulate tool_calls by index
     const toolCallMap: Map<number, { id: string; name: string; arguments: string }> = new Map()
     let input_tokens = 0
     let output_tokens = 0
@@ -110,7 +200,6 @@ export class OpenAICompatProvider implements LLMProvider {
       }
       if (choice.finish_reason) finish_reason = choice.finish_reason
 
-      // Some providers include usage in the final chunk
       if (chunk.usage) {
         input_tokens = chunk.usage.prompt_tokens ?? 0
         output_tokens = chunk.usage.completion_tokens ?? 0
@@ -120,7 +209,10 @@ export class OpenAICompatProvider implements LLMProvider {
     const tool_calls: LLMToolCall[] = [...toolCallMap.values()].map((tc) => ({
       id: tc.id,
       type: "function" as const,
-      function: { name: tc.name, arguments: tc.arguments || "{}" },
+      function: {
+        name: toolNameMap.get(tc.name) ?? tc.name,
+        arguments: tc.arguments || "{}",
+      },
     }))
 
     return {

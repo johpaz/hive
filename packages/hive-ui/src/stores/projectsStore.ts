@@ -61,22 +61,15 @@ export const useProjectsStore = create<ProjectsStore>((set, get) => ({
         showLoader: false,
         showError: true,
       });
-      console.log("[ProjectsStore] fetchProjects - API Response:", data);
       let projects: Project[] = [];
       if (Array.isArray(data)) {
         projects = data;
-        console.log("[ProjectsStore] Response es array directo:", projects.length, "proyectos");
       } else if ('projects' in data) {
         projects = data.projects;
-        console.log("[ProjectsStore] Response tiene propiedad 'projects':", projects.length, "proyectos");
       } else if ('project' in data) {
         projects = data.project ? [data.project] : [];
-        console.log("[ProjectsStore] Response tiene propiedad 'project':", projects.length, "proyecto(s)");
       } else if (data && typeof data === 'object' && 'id' in data) {
         projects = [data as Project];
-        console.log("[ProjectsStore] Response es un proyecto directo:", projects.length, "proyecto");
-      } else {
-        console.warn("[ProjectsStore] Formato de respuesta desconocido:", data);
       }
       set({ projects });
     } catch (err) {
@@ -94,22 +87,15 @@ export const useProjectsStore = create<ProjectsStore>((set, get) => ({
         showLoader: false,
         showError: true,
       });
-      console.log("[ProjectsStore] fetchActiveProjects - API Response:", data);
       let projects: Project[] = [];
       if (Array.isArray(data)) {
         projects = data;
-        console.log("[ProjectsStore] Response es array directo:", projects.length, "proyectos");
       } else if ('projects' in data) {
         projects = data.projects;
-        console.log("[ProjectsStore] Response tiene propiedad 'projects':", projects.length, "proyectos");
       } else if ('project' in data) {
         projects = data.project ? [data.project] : [];
-        console.log("[ProjectsStore] Response tiene propiedad 'project':", projects.length, "proyecto(s)");
       } else if (data && typeof data === 'object' && 'id' in data) {
         projects = [data as Project];
-        console.log("[ProjectsStore] Response es un proyecto directo:", projects.length, "proyecto");
-      } else {
-        console.warn("[ProjectsStore] Formato de respuesta desconocido:", data);
       }
       set({ projects });
     } catch (err) {

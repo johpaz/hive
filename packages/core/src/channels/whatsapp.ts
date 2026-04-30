@@ -2,8 +2,10 @@ import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
+  downloadMediaMessage,
   type WASocket,
   type ConnectionState,
+  type WAMessage,
 } from "@whiskeysockets/baileys";
 import type { ChannelConfig, IncomingMessage, OutboundMessage } from "./base.ts";
 import { BaseChannel } from "./base.ts";
@@ -14,9 +16,20 @@ import { getDb } from "../storage/sqlite.ts";
 // @ts-ignore — no type definitions for qrcode-terminal
 import qrcodeTerminal from "qrcode-terminal";
 
+// Baileys uses the `ws` npm package which registers 'upgrade' and 'unexpected-response'
+// listeners — events that Bun's ws compatibility layer doesn't implement.
+// Patch emitWarning once so these cosmetic warnings never reach stderr.
+const _origEmitWarning = process.emitWarning.bind(process);
+(process as any).emitWarning = (warning: string | Error, ...args: unknown[]) => {
+  const msg = typeof warning === "string" ? warning : warning?.message ?? "";
+  if (msg.includes("not implemented in bun")) return;
+  _origEmitWarning(warning as any, ...(args as any[]));
+};
+
 export interface WhatsAppConfig extends ChannelConfig {
   accountId: string;
   agentId: string;
+  acceptGroups?: boolean;
   reconnectMaxAttempts?: number;
   reconnectBaseDelayMs?: number;
 }
@@ -27,6 +40,8 @@ export interface WhatsAppConnectionState {
   lastConnected?: Date;
   reconnectAttempts: number;
   error?: string;
+  phoneNumber?: string;
+  waVersion?: string;
 }
 
 export class WhatsAppChannel extends BaseChannel {
@@ -98,6 +113,7 @@ export class WhatsAppChannel extends BaseChannel {
     try {
       const { state, saveCreds } = await useMultiFileAuthState(this.authPath);
       const { version } = await fetchLatestBaileysVersion();
+      this.connectionState.waVersion = version.join(".");
       this.log.info(`Using WhatsApp Web v${version.join(".")}`);
 
       this.socket = makeWASocket({
@@ -181,6 +197,14 @@ export class WhatsAppChannel extends BaseChannel {
       void saveCreds();
       this.log.info("WhatsApp connected successfully");
 
+      // Extract phone number from socket user ID
+      const rawUserId = this.socket?.user?.id ?? "";
+      if (rawUserId) {
+        const phoneNumber = rawUserId.split(":")[0]?.replace("@s.whatsapp.net", "") ?? "";
+        this.connectionState.phoneNumber = phoneNumber;
+        this.log.info(`Linked phone: ${phoneNumber}`);
+      }
+
       try {
         getDb().query(`UPDATE channels SET status = 'connected', last_active = ? WHERE id = ?`)
           .run(Date.now(), this.accountId);
@@ -225,37 +249,95 @@ export class WhatsAppChannel extends BaseChannel {
       const from = typedMsg.key.remoteJid;
       if (!from) continue;
 
-      // Ignore group messages — this channel is for direct user↔agent communication only.
-      if (from.includes("@g.us")) continue;
-
-      // Only process self-messages (user writing to themselves to talk to the agent).
-      // Normalize JID: socket.user.id may include device suffix "573....:8@s.whatsapp.net"
-      // while remoteJid is "573....@s.whatsapp.net" — compare only the number part.
-      const rawOwnJid = this.socket?.user?.id ?? "";
-      const ownNumber = rawOwnJid.split(":")[0];
-      const fromNumber = from.split("@")[0];
-      const isSelfMessage = typedMsg.key.fromMe && fromNumber === ownNumber;
-      if (!isSelfMessage) continue;
-
-      const { content, audioMediaId } = this.extractMessageContent(typedMsg.message);
-      if (!content && !audioMediaId) continue;
-
       const isGroup = from.includes("@g.us");
+
+      // Filter out group messages unless explicitly enabled in config
+      if (isGroup && !this.config.acceptGroups) continue;
+
+      // For direct messages: only process self-messages (user writing to themselves to talk to the agent).
+      // For groups: process any message from the group (if acceptGroups is enabled).
+      if (!isGroup) {
+        // Normalize JID: socket.user.id may include device suffix "573....:8@s.whatsapp.net"
+        // while remoteJid is "573....@s.whatsapp.net" — compare only the number part.
+        const rawOwnJid = this.socket?.user?.id ?? "";
+        const ownNumber = rawOwnJid.split(":")[0];
+        const fromNumber = from.split("@")[0];
+        const isSelfMessage = typedMsg.key.fromMe && fromNumber === ownNumber;
+        if (!isSelfMessage) continue;
+      }
+
+  const { content, hasAudio, hasImage, hasDocument } = this.extractMessageContent(typedMsg.message);
+  if (!content && !hasAudio && !hasImage && !hasDocument) continue;
+
+  let audioBuffer: Buffer | null = null;
+  let imageBuffer: Buffer | null = null;
+  let documentBuffer: Buffer | null = null;
+  let imageMime: string | undefined;
+  let documentMime: string | undefined;
+  let documentName: string | undefined;
+  let imageCaption: string | undefined;
+
+  if (hasAudio && this.socket) {
+    try {
+      audioBuffer = await downloadMediaMessage(
+        typedMsg as unknown as WAMessage,
+        "buffer",
+        {},
+        { reuploadRequest: this.socket.updateMediaMessage, logger: this.log as any }
+      ) as Buffer;
+    } catch (err) {
+      this.log.warn(`Failed to download WhatsApp audio: ${(err as Error).message}`);
+    }
+  }
+
+  if (hasImage && this.socket) {
+    try {
+      imageBuffer = await downloadMediaMessage(
+        typedMsg as unknown as WAMessage,
+        "buffer",
+        {},
+        { reuploadRequest: this.socket.updateMediaMessage, logger: this.log as any }
+      ) as Buffer;
+      const imgMsg = typedMsg.message?.imageMessage as { mimetype?: string; caption?: string } | undefined;
+      imageMime = imgMsg?.mimetype || "image/jpeg";
+      imageCaption = imgMsg?.caption || undefined;
+    } catch (err) {
+      this.log.warn(`Failed to download WhatsApp image: ${(err as Error).message}`);
+    }
+  }
+
+  if (hasDocument && this.socket) {
+    try {
+      documentBuffer = await downloadMediaMessage(
+        typedMsg as unknown as WAMessage,
+        "buffer",
+        {},
+        { reuploadRequest: this.socket.updateMediaMessage, logger: this.log as any }
+      ) as Buffer;
+      const docMsg = typedMsg.message?.documentMessage as { mimetype?: string; fileName?: string } | undefined;
+      documentMime = docMsg?.mimetype || "application/pdf";
+      documentName = docMsg?.fileName || undefined;
+    } catch (err) {
+      this.log.warn(`Failed to download WhatsApp document: ${(err as Error).message}`);
+    }
+  }
+
       const peerId = isGroup ? from : from.replace("@s.whatsapp.net", "");
 
-      const incoming: IncomingMessage = {
-        sessionId: this.formatSessionId(peerId, isGroup ? "group" : "direct"),
-        channel: "whatsapp",
-        accountId: this.accountId,
-        peerId,
-        peerKind: isGroup ? "group" : "direct",
-        content: content || "",
-        audio: audioMediaId ? { url: `whatsapp:${audioMediaId}` } : undefined,
+  const incoming: IncomingMessage = {
+    sessionId: this.formatSessionId(peerId, isGroup ? "group" : "direct"),
+    channel: "whatsapp",
+    accountId: this.accountId,
+    peerId,
+    peerKind: isGroup ? "group" : "direct",
+    content: content || (hasAudio ? "[Audio message]" : ""),
+    audio: audioBuffer ? { buffer: audioBuffer, mimeType: "audio/ogg" } : undefined,
+    image: imageBuffer ? { buffer: imageBuffer, mimeType: imageMime, caption: imageCaption } : undefined,
+    document: documentBuffer ? { buffer: documentBuffer, mimeType: documentMime || "application/octet-stream", fileName: documentName } : undefined,
         metadata: {
           messageId: typedMsg.key.id,
           timestamp: typedMsg.messageTimestamp,
           pushName: typedMsg.pushName,
-          audioMediaId,
         },
       };
 
@@ -263,39 +345,38 @@ export class WhatsAppChannel extends BaseChannel {
     }
   }
 
-  private extractMessageContent(message?: Record<string, unknown>): { content: string | null; audioMediaId: string | null } {
-    if (!message) return { content: null, audioMediaId: null };
+  private extractMessageContent(message?: Record<string, unknown>): { content: string | null; hasAudio: boolean; hasImage: boolean; hasDocument: boolean } {
+    if (!message) return { content: null, hasAudio: false, hasImage: false, hasDocument: false };
 
     if (message.conversation) {
-      return { content: message.conversation as string, audioMediaId: null };
+      return { content: message.conversation as string, hasAudio: false, hasImage: false, hasDocument: false };
     }
 
     const extendedText = message.extendedTextMessage as { text?: string } | undefined;
     if (extendedText?.text) {
-      return { content: extendedText.text, audioMediaId: null };
+      return { content: extendedText.text, hasAudio: false, hasImage: false, hasDocument: false };
     }
 
     const imageMsg = message.imageMessage as { caption?: string } | undefined;
-    if (imageMsg?.caption) {
-      return { content: `[Image] ${imageMsg.caption}`, audioMediaId: null };
+    if (imageMsg) {
+      return { content: imageMsg.caption || "", hasAudio: false, hasImage: true, hasDocument: false };
     }
 
     const videoMsg = message.videoMessage as { caption?: string } | undefined;
     if (videoMsg?.caption) {
-      return { content: `[Video] ${videoMsg.caption}`, audioMediaId: null };
+      return { content: `[Video] ${videoMsg.caption}`, hasAudio: false, hasImage: false, hasDocument: false };
     }
 
     const docMsg = message.documentMessage as { caption?: string } | undefined;
-    if (docMsg?.caption) {
-      return { content: `[Document] ${docMsg.caption}`, audioMediaId: null };
+    if (docMsg) {
+      return { content: docMsg.caption || "", hasAudio: false, hasImage: false, hasDocument: true };
     }
 
-    const audioMsg = message.audioMessage as { mediaKey?: string; id?: string } | undefined;
-    if (audioMsg) {
-      return { content: "[Audio message]", audioMediaId: audioMsg.id || audioMsg.mediaKey || "unknown" };
+    if (message.audioMessage) {
+      return { content: null, hasAudio: true, hasImage: false, hasDocument: false };
     }
 
-    return { content: null, audioMediaId: null };
+    return { content: null, hasAudio: false, hasImage: false, hasDocument: false };
   }
 
   private scheduleReconnect(): void {
@@ -410,6 +491,38 @@ export class WhatsAppChannel extends BaseChannel {
 
   getState(): WhatsAppConnectionState {
     return { ...this.connectionState };
+  }
+
+  getConfig(): WhatsAppConfig {
+    return { ...this.config };
+  }
+
+  async disconnect(clearSession: boolean = false): Promise<void> {
+    this.running = false;
+
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
+    if (this.socket) {
+      try {
+        await this.socket.end(undefined);
+      } catch {
+        // Ignore close errors
+      }
+      this.socket = null;
+    }
+
+    this.connectionState.status = "disconnected";
+    this.connectionState.phoneNumber = undefined;
+    this.log.info("WhatsApp channel disconnected");
+
+    if (clearSession) {
+      this.log.info("Clearing WhatsApp session files.");
+      rmSync(this.authPath, { recursive: true, force: true });
+      mkdirSync(this.authPath, { recursive: true });
+    }
   }
 }
 

@@ -74,6 +74,15 @@
       ],
       "@johpaz/hivelearn/ui": [
         "./packages/hivelearn/src/ui/index.ts"
+      ],
+      "@johpaz/hive-tts": [
+        "./packages/tts/src/index.ts"
+      ],
+      "@johpaz/hive-tts/client": [
+        "./packages/tts/src/client.ts"
+      ],
+      "@johpaz/hive-tts/server": [
+        "./packages/tts/src/server.ts"
       ]
     }
   },

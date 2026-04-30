@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -22,7 +21,7 @@ import {
 } from "@/components/ui/accordion";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { CheckCircle2, XCircle, Sparkles, Hexagon, Volume2, Loader2, GraduationCap, Cpu } from "lucide-react";
+import { CheckCircle2, XCircle, Sparkles, Hexagon, Volume2, Loader2 } from "lucide-react";
 import { useLoaderStore } from "@/stores/useLoaderStore";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/api";
@@ -80,8 +79,6 @@ interface WizardData {
   // Step 6
   ethicsRules: Record<string, boolean>;
   customRules: Array<{ text: string; category: string }>;
-  // Step 7
-  hiveLearnEnabled: boolean;
 }
 
 const STORAGE_KEY = "hive_setup_wizard_data";
@@ -143,7 +140,6 @@ function getDefaultWizardData(): WizardData {
     ttsVoice: "",
     ethicsRules: {},
     customRules: [],
-    hiveLearnEnabled: false,
   };
 }
 
@@ -1081,45 +1077,11 @@ export default function SetupPage() {
         <p className="text-muted-foreground">Activa las funcionalidades adicionales que quieras usar</p>
       </div>
 
-      <Card
-        className={`cursor-pointer transition-all border-2 ${wizardData.hiveLearnEnabled ? "border-amber-500 bg-amber-500/5" : "border-border hover:border-amber-500/40"}`}
-        onClick={() => updateData({ hiveLearnEnabled: !wizardData.hiveLearnEnabled })}
-      >
-        <CardContent className="p-5 flex items-start gap-4">
-          <div className={`mt-1 p-2.5 rounded-xl ${wizardData.hiveLearnEnabled ? "bg-amber-500/20" : "bg-muted"}`}>
-            <GraduationCap className={`w-6 h-6 ${wizardData.hiveLearnEnabled ? "text-amber-500" : "text-muted-foreground"}`} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="font-semibold text-base">HiveLearn</h3>
-              <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-wider">
-                Enjambre Educativo
-              </Badge>
-            </div>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Genera lecciones personalizadas con 17 agentes de IA trabajando en paralelo.
-              Requiere <strong>Ollama</strong> corriendo localmente.
-            </p>
-            <div className="flex items-center gap-3 mt-3 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1"><Cpu className="w-3 h-3" /> 17 agentes especializados</span>
-              <span>·</span>
-              <span>Ollama requerido</span>
-              <span>·</span>
-              <span>~2 min primera lección</span>
-            </div>
-          </div>
-          <Switch
-            checked={wizardData.hiveLearnEnabled}
-            onCheckedChange={(v) => { updateData({ hiveLearnEnabled: v }); }}
-            onClick={(e) => e.stopPropagation()}
-            className="mt-1 shrink-0"
-          />
+      <Card className="border-border">
+        <CardContent className="p-8 text-center">
+          <p className="text-muted-foreground">No hay módulos opcionales disponibles en este momento.</p>
         </CardContent>
       </Card>
-
-      <p className="text-xs text-center text-muted-foreground">
-        Puedes activar o desactivar módulos en cualquier momento desde la configuración.
-      </p>
     </div>
   );
 
@@ -1204,17 +1166,6 @@ export default function SetupPage() {
                         </Badge>
                       );
                     })}
-                </div>
-              </div>
-
-              <div>
-                <Label className="text-sm text-muted-foreground">Módulos</Label>
-                <div className="flex gap-2 mt-1">
-                  <Badge variant={wizardData.hiveLearnEnabled ? "default" : "secondary"}
-                    className={wizardData.hiveLearnEnabled ? "bg-amber-500" : ""}>
-                    <GraduationCap className="w-3 h-3 mr-1" />
-                    HiveLearn {wizardData.hiveLearnEnabled ? "activado" : "desactivado"}
-                  </Badge>
                 </div>
               </div>
             </CardContent>

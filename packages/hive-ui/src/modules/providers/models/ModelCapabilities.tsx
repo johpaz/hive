@@ -3,14 +3,20 @@ import type { ModelCapability } from "@/types";
 
 const capLabels: Record<ModelCapability, string> = {
   chat: "Chat",
-  vision: "Visión",
+  vision: "Vision",
   json_mode: "JSON",
   function_calling: "Functions",
   streaming: "Stream",
   embeddings: "Embed",
   image_generation: "Imagen",
-  code: "Código",
+  code: "Codigo",
   reasoning: "Razonamiento",
+  transcription: "STT",
+  translation: "Traduccion",
+  tts: "TTS",
+  speech: "Voz",
+  high_quality: "HQ",
+  ocr: "OCR",
 };
 
 interface ModelCapabilitiesProps {

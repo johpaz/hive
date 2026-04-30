@@ -28,9 +28,15 @@ export interface LLMToolCall {
   thought_signature?: string
 }
 
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } }
+  | { type: "image_base64"; base64: string; mimeType: string }
+  | { type: "document"; base64: string; mimeType: string; fileName?: string }
+
 export interface LLMMessage {
   role: "system" | "user" | "assistant" | "tool"
-  content: string
+  content: string | ContentPart[]
   tool_calls?: LLMToolCall[]
   tool_call_id?: string
   name?: string

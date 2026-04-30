@@ -73,11 +73,6 @@ export function UsageStatsPanel() {
     queryKey: ["usage-stats", period],
     queryFn: async () => {
       const data = await apiClient<UsageStats>(`/api/usage-stats?hours=${period}`);
-      console.log("[UsageStatsPanel] Received stats:", {
-        totalTokens: data.totalTokens,
-        totalCostUsd: data.totalCostUsd,
-        providers: Object.keys(data.byProvider || {}).length
-      });
       return data;
     },
     refetchInterval: 60000,

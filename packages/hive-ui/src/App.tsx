@@ -6,28 +6,24 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from
 import { lazy, Suspense } from "react";
 import { AppLayout } from "@/modules/layout/AppLayout";
 
-const LessonCanvas = lazy(() =>
-  import("@johpaz/hivelearn/ui").then(m => ({ default: m.LessonCanvas })).catch(() => ({ default: () => <div className="flex h-screen items-center justify-center text-gray-400">HiveLearn no disponible — verifica que Ollama esté corriendo.</div> }))
-);
-import { DashboardPage } from "@/pages/DashboardPage";
-import { AgentsPage } from "@/pages/AgentsPage";
-import { AgentDetailPage } from "@/pages/AgentDetailPage";
-import { SettingsPage } from "@/pages/SettingsPage";
-import { AgentNewPage } from "@/pages/AgentNewPage";
-import { CanvasPage } from "@/pages/CanvasPage";
-import { BridgePage } from "@/pages/BridgePage";
-import { LogsPage } from "@/pages/LogsPage";
-import { ChannelsPage } from "@/pages/ChannelsPage";
-import { ProjectsPage } from "@/pages/ProjectsPage";
-import { ProvidersPage } from "@/pages/ProvidersPage";
-import { HiveLearnSwarmPage } from "@/pages/HiveLearnSwarmPage";
-import { HiveLearnConfigPage } from "@/pages/HiveLearnConfigPage";
-import { HiveLearnSessionsPage } from "@/pages/HiveLearnSessionsPage";
-import { WebChatPage } from "@/pages/WebChatPage";
-import SetupPage from "@/pages/SetupPage";
-import LoginPage from "@/pages/LoginPage";
-import RecoverPage from "@/pages/RecoverPage";
-import NotFound from "@/pages/NotFound";
+
+const DashboardPage = lazy(() => import("@/pages/DashboardPage").then(m => ({ default: m.DashboardPage })));
+const AgentsPage = lazy(() => import("@/pages/AgentsPage").then(m => ({ default: m.AgentsPage })));
+const AgentDetailPage = lazy(() => import("@/pages/AgentDetailPage").then(m => ({ default: m.AgentDetailPage })));
+const SettingsPage = lazy(() => import("@/pages/SettingsPage").then(m => ({ default: m.SettingsPage })));
+const AgentNewPage = lazy(() => import("@/pages/AgentNewPage").then(m => ({ default: m.AgentNewPage })));
+const CanvasPage = lazy(() => import("@/pages/CanvasPage").then(m => ({ default: m.CanvasPage })));
+const BridgePage = lazy(() => import("@/pages/BridgePage").then(m => ({ default: m.BridgePage })));
+const LogsPage = lazy(() => import("@/pages/LogsPage").then(m => ({ default: m.LogsPage })));
+const ChannelsPage = lazy(() => import("@/pages/ChannelsPage").then(m => ({ default: m.ChannelsPage })));
+const ProjectsPage = lazy(() => import("@/pages/ProjectsPage").then(m => ({ default: m.ProjectsPage })));
+const ProvidersPage = lazy(() => import("@/pages/ProvidersPage").then(m => ({ default: m.ProvidersPage })));
+const WebChatPage = lazy(() => import("@/pages/WebChatPage").then(m => ({ default: m.WebChatPage })));
+const MeetingPage = lazy(() => import("@/pages/MeetingPage").then(m => ({ default: m.MeetingPage })));
+const SetupPage = lazy(() => import("@/pages/SetupPage"));
+const LoginPage = lazy(() => import("@/pages/LoginPage"));
+const RecoverPage = lazy(() => import("@/pages/RecoverPage"));
+const NotFound = lazy(() => import("@/pages/NotFound"));
 import { useInitializeGlobalConfig } from "@/stores/useGlobalConfigStore";
 import { useUserStore } from "@/stores/userStore";
 import { WelcomeDialog } from "@/components/WelcomeDialog";
@@ -167,17 +163,10 @@ const AppContent = () => {
           <Route path="/canvas/:sessionId" element={<CanvasPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/bridge" element={<BridgePage />} />
+          <Route path="/meeting" element={<MeetingPage />} />
           <Route path="/channels" element={<ChannelsPage />} />
           <Route path="/providers" element={<ProvidersPage />} />
           <Route path="/logs" element={<LogsPage />} />
-          <Route path="/hivelearn" element={
-            <Suspense fallback={<div className="flex h-screen items-center justify-center text-amber-400">Cargando HiveLearn...</div>}>
-              <LessonCanvas />
-            </Suspense>
-          } />
-          <Route path="/hivelearn/sessions" element={<HiveLearnSessionsPage />} />
-          <Route path="/hivelearn/swarm" element={<HiveLearnSwarmPage />} />
-          <Route path="/hivelearn/config" element={<HiveLearnConfigPage />} />
         </Route>
         <Route path="*" element={<NotFound />} />
       </Routes>

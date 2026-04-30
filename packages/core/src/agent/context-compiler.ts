@@ -23,7 +23,7 @@
 
 import { getDb } from "../storage/sqlite"
 import { logger } from "../utils/logger"
-import type { LLMMessage, LLMToolDef } from "./llm-client"
+import type { LLMMessage, LLMToolDef, ContentPart } from "./llm-client"
 import type { MCPClientManager } from "@johpaz/hive-agents-mcp"
 import { syncToolCatalogToFTS, mcpToolFullName } from "./tool-selector"
 import { syncSkillsToFTS, getMinimalSkills, selectSkills, type SkillDescriptor } from "./skill-selector"
@@ -91,14 +91,14 @@ export async function compileContext(opts: {
   agentId: string
   threadId: string
   userId?: string
-  userMessage: string
+  userMessage: string | ContentPart[]
   channel?: string
   isolated?: boolean
-  taskContext?: string
+  taskContext?: string | ContentPart[]
   mcpManager?: MCPClientManager | null
 }): Promise<CompiledContext> {
   const db = getDb()
-  const { agentId, threadId, mcpManager, userMessage, isolated } = opts
+  const { agentId, threadId, mcpManager, userMessage, isolated, taskContext } = opts
 
   // Fallback: Get MCP Manager from singleton if not provided
   const effectiveMcpManager = mcpManager ?? (() => {
@@ -109,12 +109,12 @@ export async function compileContext(opts: {
     }
     return null
   })()
-  
+
   // Resolve userId from database with priority: explicit param → channel identity → single user
-  const userId = opts.userId || resolveUserId({ 
-    threadId, 
+  const userId = opts.userId || resolveUserId({
+    threadId,
     channel: opts.channel,
-    channelUserId: threadId 
+    channelUserId: threadId
   }) || threadId || ""
 
   // [STEP-1] Load agent config
@@ -199,12 +199,12 @@ export async function compileContext(opts: {
             if (!serverTools || serverTools.length === 0) {
               serverTools = effectiveMcpManager!.getServerTools(server.name)
             }
-if (serverTools && serverTools.length > 0) {
-            syncMCPToolsToDB(server.id || server.name, server.name, serverTools)
+            if (serverTools && serverTools.length > 0) {
+              syncMCPToolsToDB(server.id || server.name, server.name, serverTools)
+            }
           }
-        }
-        await syncMCPToolsToFTS();
-        log.info(`[context-compiler] [STEP-3c] ✅ Persisted MCP tools to DB + FTS5`)
+          await syncMCPToolsToFTS();
+          log.info(`[context-compiler] [STEP-3c] ✅ Persisted MCP tools to DB + FTS5`)
         } catch (syncErr) {
           log.warn(`[context-compiler] [STEP-3c] ⚠️ Failed to persist MCP tools to DB: ${(syncErr as Error).message}`)
         }
@@ -234,7 +234,7 @@ if (serverTools && serverTools.length > 0) {
   // Only native minimal tools in LLM context
   // MCP tools are discovered dynamically via search_knowledge(type="mcp")
   const filteredNativeTools: ContextTool[] = nativeTools.filter(t => MINIMAL_TOOLS.has(t.name))
-  
+
   const nativeToolsForLLM: LLMToolDef[] = filteredNativeTools.map(t => ({
     type: "function" as const,
     function: {
@@ -243,9 +243,9 @@ if (serverTools && serverTools.length > 0) {
       parameters: t.parameters,
     },
   }))
-  
+
   const toolsForLLM: LLMToolDef[] = nativeToolsForLLM
-  
+
   log.info(`[context-compiler] [STEP-4] Minimal native tool set: ${filteredNativeTools.length} tools`)
   log.info(`[context-compiler] [STEP-4b] MCP tools available via search_knowledge: ${mcpToolExecutors.length} (not injected)`)
   log.info(`[context-compiler] [STEP-8] ✅ Combined tools: ${allTools.length} total executors, ${toolsForLLM.length} in LLM context`)
@@ -262,7 +262,13 @@ if (serverTools && serverTools.length > 0) {
 
     // Discover additional skills via FTS5 (coordinator only)
     if (!isWorker) {
-      discoveredSkills = selectSkills(userMessage)
+      const inputForSkills = taskContext || userMessage
+      const textMessage = typeof inputForSkills === "string"
+        ? inputForSkills
+        : Array.isArray(inputForSkills)
+          ? inputForSkills.filter(p => p.type === "text").map(p => (p as any).text).join("\n")
+          : String(inputForSkills)
+      discoveredSkills = selectSkills(textMessage)
       log.info(`[context-compiler] [STEP-8b] ✅ Discovered ${discoveredSkills.length} additional skills via FTS5`)
     }
   } catch (err) {
@@ -425,9 +431,11 @@ if (serverTools && serverTools.length > 0) {
       `   en el campo \`task_description\` de \`task_delegate\` como instrucción explícita:\n` +
       `   "Usa las herramientas: web_search, fs_read, ... para completar esta tarea."\n` +
       `3. El worker con esa instrucción usará \`search_knowledge\` para activar las tools por nombre.\n` +
-      `Ejemplo: si el worker debe investigar en internet → busca "web search herramienta internet" → obtienes "web_search" → dile al worker que use web_search.\n`
+      `Ejemplo: si el worker debe investigar en internet → busca "web search herramienta internet, herramientas de navegacion, browser" → obtienes "web_search" → dile al worker que use web_search.\n` +
+      `4. Las herramientas se inyectan dinamicamente vía search_knowledge — NO están en tu contexto por defecto\n`
 
-// Inject available skills (minimal + discovered)
+
+    // Inject available skills (minimal + discovered)
     if (allSkills.length > 0) {
       let skillsSection = `\n\n# SKILLS ACTIVAS\n`
       skillsSection += `Usá estas skills como guía cuando sea relevante:\n\n`

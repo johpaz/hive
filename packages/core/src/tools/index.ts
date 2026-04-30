@@ -41,8 +41,11 @@ import * as core from "./core/index.ts";
 // Office (8)
 import * as office from "./office/index.ts";
 
+// Meeting (4)
+import * as meeting from "./meeting/index.ts";
+
 /**
- * Creates all 66 tools with proper configuration
+ * Creates all 70 tools with proper configuration
  */
 export function createAllTools(config: Config): Tool[] {
   return [
@@ -78,6 +81,9 @@ export function createAllTools(config: Config): Tool[] {
 
     // OFFICE (8)
     ...office.createTools(),
+
+    // MEETING (4)
+    ...meeting.createTools(),
   ];
 }
 
@@ -108,6 +114,8 @@ export function createToolsByCategory(category: string, config: Config): Tool[] 
       return core.createTools();
     case "office":
       return office.createTools();
+    case "meeting":
+      return meeting.createTools();
     default:
       return [];
   }

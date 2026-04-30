@@ -19,6 +19,7 @@ import { getAgentLoop, rebuildAgentLoop } from "./agent-loop"
 import type { MCPClientManager } from "@johpaz/hive-agents-mcp"
 import { resolveAgentId, resolveUserId } from "../storage/onboarding"
 import { getMCPManager as getSingletonMCPManager } from "../mcp/singleton"
+import type { ContentPart } from "./llm-client"
 
 const log = logger.child("agent-service")
 
@@ -239,7 +240,7 @@ export class AgentService {
   /**
    * Ejecuta un agente con un mensaje
    */
-  async runAgent(message: string, threadId: string, userId?: string): Promise<string> {
+  async runAgent(message: string | ContentPart[], threadId: string, userId?: string): Promise<string> {
     const { runAgentIsolated } = await import("./agent-loop")
     const result = await runAgentIsolated({
       agentId: this.agentId,

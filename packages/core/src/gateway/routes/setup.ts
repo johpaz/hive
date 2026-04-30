@@ -421,17 +421,6 @@ export async function handleCompleteSetup(
     writeFileSync(path.join(hiveDir, ".auth_token"), authToken, { mode: 0o600 })
     process.env.HIVE_AUTH_TOKEN = authToken
 
-    // Activar HiveLearn si el usuario lo eligió en el wizard
-    if (body.hiveLearnEnabled) {
-      try {
-        const { initHiveLearnStorage } = await import("../../../../hivelearn/src/storage/init.ts");
-        initHiveLearnStorage(getDb());
-        console.log("[setup] HiveLearn agents registered successfully");
-      } catch (e) {
-        console.error("[setup] HiveLearn activation failed:", (e as Error).message);
-      }
-    }
-
     // Restart the process so the gateway re-initializes in full mode.
     // Docker (restart: unless-stopped) brings it back up automatically.
     setTimeout(() => process.exit(0), 800)

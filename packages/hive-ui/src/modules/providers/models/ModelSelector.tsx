@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useProviders } from "@/hooks/useProviders";
 import type { Model } from "@/types";
@@ -10,7 +11,10 @@ interface ModelSelectorProps {
 
 export function ModelSelector({ value, onSelect, providerFilter }: ModelSelectorProps) {
   const { availableModels } = useProviders();
-  const models = providerFilter ? availableModels.filter((m) => m.providerId === providerFilter) : availableModels;
+  const models = useMemo(() => {
+    const filtered = providerFilter ? availableModels.filter((m) => (m.providerId || m.provider_id) === providerFilter) : availableModels;
+    return filtered.filter(m => m.enabled);
+  }, [availableModels, providerFilter]);
 
   return (
     <Select value={value} onValueChange={onSelect}>

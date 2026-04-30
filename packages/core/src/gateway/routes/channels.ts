@@ -1,9 +1,15 @@
 import { getDb } from "../../storage/sqlite"
 import { encryptConfig, decryptConfig } from "../../storage/crypto"
 
-export async function handleGetChannels(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
+export async function handleGetChannels(
+  req: Request,
+  addCorsHeaders: (r: Response, req: Request) => Response,
+  channelManager?: any
+): Promise<Response> {
   const channels = getDb().query(`
-    SELECT id, type, id as account_id, enabled, active, status, last_active, voice_enabled, tts_enabled, stt_provider, tts_provider, tts_voice_id, step_delivery_mode,
+    SELECT id, type, id as account_id, enabled, active, status, last_active, 
+           voice_enabled, tts_enabled, stt_provider, tts_provider, tts_voice_id, step_delivery_mode,
+           vision_enabled, ocr_provider, vision_provider, vision_model_id,
            (config_encrypted IS NOT NULL) as is_configured
     FROM channels
   `).all() as Array<{
@@ -20,26 +26,44 @@ export async function handleGetChannels(req: Request, addCorsHeaders: (r: Respon
     tts_provider: string | null;
     tts_voice_id: string | null;
     step_delivery_mode: string | null;
+    vision_enabled: number;
+    ocr_provider: string | null;
+    vision_provider: string | null;
+    vision_model_id: string | null;
     is_configured: number;
   }>
 
   // Convert to format expected by UI (ConnectedChannel[])
-  const formattedChannels = channels.map(c => ({
-    id: c.id,
-    type: c.type as ConnectedChannel["type"],
-    accountId: c.account_id,
-    enabled: c.enabled === 1,
-    active: c.active === 1,
-    status: c.status as ConnectedChannel["status"],
-    last_active: c.last_active ?? undefined,
-    voice_enabled: c.voice_enabled === 1,
-    tts_enabled: c.tts_enabled === 1,
-    stt_provider: c.stt_provider ?? undefined,
-    tts_provider: c.tts_provider ?? undefined,
-    tts_voice_id: c.tts_voice_id ?? undefined,
-    step_delivery_mode: c.step_delivery_mode ?? undefined,
-    isConfigured: c.is_configured === 1,
-  }))
+  // Overlay the live runtime status from channelManager so that channels like
+  // Telegram/Discord (which never write "connected" to the DB) show the correct state.
+  const formattedChannels = channels.map(c => {
+    let liveStatus: string = c.status;
+    if (channelManager && typeof channelManager.getChannelStatus === "function") {
+      const live = channelManager.getChannelStatus(c.type, c.id);
+      if (live && live.status !== "not_found") liveStatus = live.status;
+    }
+
+    return {
+      id: c.id,
+      type: c.type as ConnectedChannel["type"],
+      accountId: c.account_id,
+      enabled: c.enabled === 1,
+      active: c.active === 1,
+      status: liveStatus as ConnectedChannel["status"],
+      last_active: c.last_active ?? undefined,
+      voice_enabled: c.voice_enabled === 1,
+      tts_enabled: c.tts_enabled === 1,
+      stt_provider: c.stt_provider ?? undefined,
+      tts_provider: c.tts_provider ?? undefined,
+      tts_voice_id: c.tts_voice_id ?? undefined,
+      step_delivery_mode: c.step_delivery_mode ?? undefined,
+      vision_enabled: c.vision_enabled === 1,
+      ocr_provider: c.ocr_provider ?? undefined,
+      vision_provider: c.vision_provider ?? undefined,
+      vision_model_id: c.vision_model_id ?? undefined,
+      isConfigured: c.is_configured === 1,
+    };
+  })
 
   return addCorsHeaders(Response.json({ channels: formattedChannels }), req)
 }
@@ -58,6 +82,10 @@ type ConnectedChannel = {
   tts_provider?: string;
   tts_voice_id?: string;
   step_delivery_mode?: string;
+  vision_enabled: boolean;
+  ocr_provider?: string;
+  vision_provider?: string;
+  vision_model_id?: string;
   isConfigured?: boolean;
 }
 
@@ -186,10 +214,10 @@ export async function handleReconnectChannel(
   // Update credentials if new config provided
   if (newConfig && Object.keys(newConfig).length > 0) {
     const { encrypted, iv } = encryptConfig(newConfig);
-    getDb().query(`UPDATE channels SET config_encrypted = ?, config_iv = ?, active = 1, status = 'connecting' WHERE id = ?`)
+    getDb().query(`UPDATE channels SET config_encrypted = ?, config_iv = ?, enabled = 1, active = 1, status = 'connecting' WHERE id = ?`)
       .run(encrypted, iv, channelId);
   } else {
-    getDb().query(`UPDATE channels SET active = 1, status = 'connecting' WHERE id = ?`)
+    getDb().query(`UPDATE channels SET enabled = 1, active = 1, status = 'connecting' WHERE id = ?`)
       .run(channelId);
   }
 
@@ -321,7 +349,7 @@ export async function handleUpdateChannelSettings(
   channelId: string
 ): Promise<Response> {
   const body = await req.json().catch(() => ({})) as Record<string, unknown>;
-  const allowed = ["voice_enabled", "tts_enabled", "stt_provider", "tts_provider", "tts_voice_id", "step_delivery_mode"] as const;
+  const allowed = ["voice_enabled", "tts_enabled", "stt_provider", "tts_provider", "tts_voice_id", "step_delivery_mode", "vision_enabled", "ocr_provider", "vision_provider", "vision_model_id"] as const;
   const updates: string[] = [];
   const params: unknown[] = [];
 
@@ -357,4 +385,98 @@ export async function handleToggleChannel(
   getDb().query(`UPDATE channels SET active = ?, enabled = ? WHERE id = ?`).run(active ? 1 : 0, active ? 1 : 0, channelId);
 
   return addCorsHeaders(Response.json({ success: true, active, message: active ? `Canal "${channelId}" activado` : `Canal "${channelId}" desactivado` }), req);
+}
+
+export async function handleGetWhatsAppDetails(
+  req: Request,
+  addCorsHeaders: (r: Response, req: Request) => Response,
+  channelId: string,
+  channelManager?: any
+): Promise<Response> {
+  if (!channelManager) {
+    return addCorsHeaders(Response.json({ error: "Channel manager not available", status: 500 }), req);
+  }
+
+  const details = channelManager.getWhatsAppDetails(channelId);
+  if (!details) {
+    return addCorsHeaders(Response.json({ error: "WhatsApp channel not found", status: 404 }), req);
+  }
+
+  return addCorsHeaders(Response.json(details), req);
+}
+
+export async function handleDisconnectWhatsApp(
+  req: Request,
+  addCorsHeaders: (r: Response, req: Request) => Response,
+  channelId: string,
+  channelManager?: any
+): Promise<Response> {
+  const body = await req.json().catch(() => ({}));
+  const { clearSession } = body;
+
+  if (!channelManager) {
+    return addCorsHeaders(Response.json({ success: false, error: "Channel manager not available", status: 500 }), req);
+  }
+
+  const key = `whatsapp:${channelId}`;
+  const channel = channelManager.channels?.get?.(key);
+
+  if (!channel) {
+    return addCorsHeaders(Response.json({ success: false, error: "WhatsApp channel not found", status: 404 }), req);
+  }
+
+  try {
+    if (typeof (channel as any).disconnect === "function") {
+      await (channel as any).disconnect(clearSession === true);
+    }
+    return addCorsHeaders(Response.json({ success: true }), req);
+  } catch (error) {
+    return addCorsHeaders(Response.json({ success: false, error: (error as Error).message }, { status: 500 }), req);
+  }
+}
+
+export async function handleUpdateWhatsAppConfig(
+  req: Request,
+  addCorsHeaders: (r: Response, req: Request) => Response,
+  channelId: string,
+  channelManager?: any
+): Promise<Response> {
+  const body = await req.json().catch(() => ({}));
+  const { acceptGroups, reconnectMaxAttempts, reconnectBaseDelayMs, dmPolicy } = body;
+
+  // Read and decrypt the existing config, merge new values, then re-encrypt.
+  // These fields live inside config_encrypted — not as top-level columns.
+  const row = getDb().query(`SELECT config_encrypted, config_iv FROM channels WHERE id = ?`)
+    .get(channelId) as { config_encrypted: string | null; config_iv: string | null } | undefined;
+
+  if (!row) {
+    return addCorsHeaders(Response.json({ success: false, error: "Channel not found" }, { status: 404 }), req);
+  }
+
+  let currentConfig: Record<string, unknown> = {};
+  if (row.config_encrypted && row.config_iv) {
+    try {
+      currentConfig = decryptConfig(row.config_encrypted, row.config_iv);
+    } catch { /* start from empty if decryption fails */ }
+  }
+
+  const merged: Record<string, unknown> = { ...currentConfig };
+  if (acceptGroups !== undefined) merged.acceptGroups = Boolean(acceptGroups);
+  if (reconnectMaxAttempts !== undefined) merged.reconnectMaxAttempts = Number(reconnectMaxAttempts);
+  if (reconnectBaseDelayMs !== undefined) merged.reconnectBaseDelayMs = Number(reconnectBaseDelayMs);
+  if (dmPolicy !== undefined) merged.dmPolicy = dmPolicy;
+
+  const { encrypted, iv } = encryptConfig(merged);
+  getDb().query(`UPDATE channels SET config_encrypted = ?, config_iv = ? WHERE id = ?`)
+    .run(encrypted, iv, channelId);
+
+  // Restart the running channel so it picks up the new config immediately.
+  if (channelManager) {
+    try {
+      await channelManager.removeChannel("whatsapp", channelId);
+      await channelManager.addChannel("whatsapp", channelId, merged);
+    } catch { /* ignore restart errors */ }
+  }
+
+  return addCorsHeaders(Response.json({ success: true }), req);
 }

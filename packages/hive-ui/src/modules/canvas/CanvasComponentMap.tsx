@@ -306,10 +306,14 @@ function renderDialog(props: Record<string, unknown>) {
           <Button variant="outline">{String(props.trigger)}</Button>
         </DialogTrigger>
       )}
-      <DialogContent>
+      <DialogContent aria-describedby={props.description ? undefined : undefined}>
         <DialogHeader>
           <DialogTitle>{String(props.title || "")}</DialogTitle>
-          {props.description && <DialogDescription>{String(props.description)}</DialogDescription>}
+          {props.description ? (
+            <DialogDescription>{String(props.description)}</DialogDescription>
+          ) : (
+            <DialogDescription className="sr-only">Dialog Description</DialogDescription>
+          )}
         </DialogHeader>
         {props.children && <div className="py-2">{String(props.children)}</div>}
       </DialogContent>

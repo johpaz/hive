@@ -120,7 +120,7 @@ export function A2UIRenderer({ surface, onAction, isLoading }: A2UIRendererProps
 
 // ─── Render Context ─────────────────────────────────────────────────────────
 
-interface RenderCtx {
+export interface RenderCtx {
   id: string;
   compMap: Map<string, ComponentDef>;
   dataModel: Record<string, unknown>;
@@ -131,7 +131,7 @@ interface RenderCtx {
 
 // ─── Component Dispatcher ───────────────────────────────────────────────────
 
-function RenderComponent(ctx: RenderCtx): React.ReactNode {
+export function RenderComponent(ctx: RenderCtx): React.ReactNode {
   const def = ctx.compMap.get(ctx.id);
   if (!def) return null;
 
@@ -178,13 +178,13 @@ export function renderChildren(
 
   // String child (single reference)
   if (typeof children === "string") {
-    return [<RenderComponent key={children} {...ctx} id={children} weight={ctx.compMap.get(children)?.weight} />];
+    return [<RenderComponent key={children} {...ctx} id={children} />];
   }
 
   // spec oficial: raw array ["id1", "id2"]
   if (Array.isArray(children)) {
     return (children as string[]).map((childId) => (
-      <RenderComponent key={childId} {...ctx} id={childId} weight={ctx.compMap.get(childId)?.weight} />
+      <RenderComponent key={childId} {...ctx} id={childId} />
     ));
   }
 
@@ -194,7 +194,7 @@ export function renderChildren(
       ? (children as ChildListExplicit).explicitList
       : (children as ChildListArray).array;
     return arr.map((childId) => (
-      <RenderComponent key={childId} {...ctx} id={childId} weight={ctx.compMap.get(childId)?.weight} />
+      <RenderComponent key={childId} {...ctx} id={childId} />
     ));
   }
 
@@ -236,5 +236,3 @@ export function renderChildren(
 
   return [];
 }
-
-export { RenderComponent };

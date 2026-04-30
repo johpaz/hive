@@ -87,22 +87,28 @@ export class DiscordChannel extends BaseChannel {
       this.channelCache.set(sessionId, message.channel as DiscordTextChannel);
     }
 
-    const audioAttachment = message.attachments.find(a => 
-      a.contentType?.startsWith("audio/") || 
-      a.url.endsWith(".mp3") ||
-      a.url.endsWith(".ogg") ||
-      a.url.endsWith(".webm") ||
-      a.url.endsWith(".wav")
-    );
+  const audioAttachment = message.attachments.find(a =>
+    a.contentType?.startsWith("audio/") || a.url.endsWith(".mp3") || a.url.endsWith(".ogg") || a.url.endsWith(".webm") || a.url.endsWith(".wav")
+  );
 
-    const incomingMessage: IncomingMessage = {
-      sessionId,
-      channel: "discord",
-      accountId: this.accountId,
-      peerId,
-      peerKind: kind,
-      content: message.content || "",
-      audio: audioAttachment ? { url: audioAttachment.url, mimeType: audioAttachment.contentType || "audio/webm" } : undefined,
+  const imageAttachment = message.attachments.find(a =>
+    a.contentType?.startsWith("image/") || a.url.endsWith(".jpg") || a.url.endsWith(".jpeg") || a.url.endsWith(".png") || a.url.endsWith(".gif") || a.url.endsWith(".webp")
+  );
+
+  const documentAttachment = !audioAttachment && !imageAttachment
+    ? message.attachments.find(a => a.contentType?.startsWith("application/") || a.url.endsWith(".pdf") || a.url.endsWith(".doc") || a.url.endsWith(".docx") || a.url.endsWith(".txt"))
+    : undefined;
+
+  const incomingMessage: IncomingMessage = {
+    sessionId,
+    channel: "discord",
+    accountId: this.accountId,
+    peerId,
+    peerKind: kind,
+    content: message.content || "",
+    audio: audioAttachment ? { url: audioAttachment.url, mimeType: audioAttachment.contentType || "audio/webm" } : undefined,
+    image: imageAttachment ? { url: imageAttachment.url, mimeType: imageAttachment.contentType || "image/png" } : undefined,
+    document: documentAttachment ? { url: documentAttachment.url, mimeType: documentAttachment.contentType || "application/octet-stream", fileName: documentAttachment.name } : undefined,
       metadata: {
         discord: {
           guildId: message.guildId,

@@ -24,6 +24,49 @@ export interface AudioOutput {
 
 const log = logger.child("voice");
 
+/**
+ * Limpia texto para síntesis de voz (TTS)
+ * Elimina formato Markdown, emojis y otros elementos que no se pronuncian bien
+ */
+export function cleanTextForTTS(text: string): string {
+  if (!text) return "";
+  
+  return text
+    // Eliminar código en bloque (``` ... ```)
+    .replace(/```[\s\S]*?```/g, " ")
+    // Eliminar código inline (`texto`)
+    .replace(/`([^`]+)`/g, "$1")
+    // Eliminar enlaces [texto](url) → texto
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    // Eliminar imágenes ![alt](url) → alt
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+    // Eliminar negritas **texto** → texto
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    // Eliminar cursivas *texto* o _texto_ → texto
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/_([^_]+)_/g, "$1")
+    // Eliminar tachado ~~texto~~ → texto
+    .replace(/~~([^~]+)~~/g, "$1")
+    // Eliminar negritas/cursivas combinadas ***texto*** → texto
+    .replace(/\*\*\*([^*]+)\*\*\*/g, "$1")
+    // Eliminar encabezados # texto → texto
+    .replace(/^#+\s+/gm, "")
+    // Eliminar listas con guión - texto → texto
+    .replace(/^[\-\*]\s+/gm, "")
+    // Eliminar listas numeradas 1. texto → texto
+    .replace(/^\d+\.\s+/gm, "")
+    // Eliminar citas > texto → texto
+    .replace(/^>\s+/gm, "")
+    // Eliminar emojis (rangos Unicode de emojis)
+    .replace(/[\p{Emoji}]/gu, "")
+    // Eliminar caracteres de control Unicode
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    // Eliminar espacios múltiples
+    .replace(/\s+/g, " ")
+    // Trim final
+    .trim();
+}
+
 class VoiceService {
   private static instance: VoiceService;
 
@@ -121,9 +164,16 @@ class VoiceService {
       throw new Error("Invalid audio input type");
     }
 
-    const blob = new Blob([audioData as BlobPart], { type: audio.mimeType || "audio/ogg" });
+    const mime = audio.mimeType || "audio/ogg";
+    const ext = mime.includes("webm") ? "webm"
+      : mime.includes("mp4") || mime.includes("m4a") ? "m4a"
+      : mime.includes("mp3") || mime.includes("mpeg") ? "mp3"
+      : mime.includes("wav") ? "wav"
+      : mime.includes("flac") ? "flac"
+      : "ogg";
+    const blob = new Blob([audioData as BlobPart], { type: mime });
     const formData = new FormData();
-    formData.append("file", blob, "audio.ogg");
+    formData.append("file", blob, `audio.${ext}`);
     formData.append("model", modelId);
     formData.append("response_format", "json");
     formData.append("language", "es");
@@ -196,8 +246,11 @@ class VoiceService {
     const isOpenAI = modelId.startsWith("tts-") || modelId.startsWith("gpt-");
     const isGemini = modelId.startsWith("gemini");
     const isQwen = modelId.startsWith("qwen");
+    const isPiper = modelId === "piper" || modelId === "piper-local";
 
-    if (isElevenLabs) {
+    if (isPiper) {
+      return this.speakWithPiper(text, voiceId);
+    } else if (isElevenLabs) {
       return this.speakWithElevenLabs(text, modelId, voiceId);
     } else if (isOpenAI) {
       return this.speakWithOpenAI(text, modelId, voiceId);
@@ -206,9 +259,29 @@ class VoiceService {
     } else if (isQwen) {
       return this.speakWithQwen(text, modelId, voiceId);
     }
-    
+
     log.warn(`Unknown TTS provider ${modelId}, defaulting to ElevenLabs Flash`);
     return this.speakWithElevenLabs(text, "eleven_flash_v2_5", voiceId);
+  }
+
+  private async speakWithPiper(text: string, voiceId?: string): Promise<AudioOutput> {
+    const cleanText = cleanTextForTTS(text);
+    const port = Number(process.env.TTS_PORT ?? 5500);
+    const res = await fetch(`http://localhost:${port}/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: cleanText, voice: voiceId }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) {
+      throw new Error(`Piper TTS error ${res.status}. ¿Está el servidor TTS corriendo? (Ajustes → Voz)`);
+    }
+    const wav = await res.arrayBuffer();
+    return {
+      type: "buffer",
+      data: Buffer.from(wav),
+      mimeType: "audio/wav",
+    };
   }
 
   private async speakWithElevenLabs(text: string, modelId: string, voiceId?: string): Promise<AudioOutput> {
@@ -541,18 +614,18 @@ class VoiceService {
   }
 
   private normalizeWhatsAppAudio(audioData: unknown): AudioInput {
-    const data = audioData as { mediaId?: string; buffer?: Buffer; url?: string };
-    
+    const data = audioData as { buffer?: Buffer; url?: string; base64?: string };
+
     if (data.buffer) {
       return { type: "buffer", data: data.buffer, mimeType: "audio/ogg" };
+    }
+    if (data.base64) {
+      return { type: "base64", data: data.base64, mimeType: "audio/ogg" };
     }
     if (data.url) {
       return { type: "url", data: data.url, mimeType: "audio/ogg" };
     }
-    if (data.mediaId) {
-      return { type: "url", data: `https://wa.me/${data.mediaId}`, mimeType: "audio/ogg" };
-    }
-    throw new Error("WhatsApp audio missing buffer, URL, or mediaId");
+    throw new Error("WhatsApp audio: buffer not available — download may have failed");
   }
 
   private normalizeSlackAudio(audioData: unknown): AudioInput {

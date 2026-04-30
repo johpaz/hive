@@ -17,7 +17,7 @@ export function A2UIModal({ def, ctx }: { def: ComponentDef; ctx: RenderCtx }) {
           </div>
         </DialogTrigger>
       )}
-      <DialogContent>
+      <DialogContent aria-describedby={undefined}>
         {(def.content ?? def.contentChild) && (
           <RenderComponent {...ctx} id={def.content ?? def.contentChild} />
         )}

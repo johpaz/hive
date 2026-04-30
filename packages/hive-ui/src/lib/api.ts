@@ -35,12 +35,6 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
   // Get token from localStorage if available
   const token = typeof window !== "undefined" ? localStorage.getItem("hive-auth-token") : null;
 
-  console.log(`[API] ${method} ${endpoint}`, {
-    hasToken: !!token,
-    tokenPreview: token ? token.slice(0, 20) + "..." : null,
-    requireAuth
-  });
-
   const fetchOpts: RequestInit = {
     method,
     headers: {
@@ -62,7 +56,6 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
     } catch (err) {
       // TypeError: Failed to fetch = network error (CORS, connection refused, gateway starting)
       if (attempt < MAX_RETRIES) {
-        console.warn(`[API] Network error on ${endpoint}, retrying in ${(attempt + 1) * 2}s…`)
         await sleep((attempt + 1) * 2000)
       } else {
         if (showLoader) useLoaderStore.getState().hideLoader()

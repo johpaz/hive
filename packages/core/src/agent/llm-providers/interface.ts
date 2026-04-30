@@ -2,8 +2,8 @@
  * Shared types and utilities for LLM providers.
  */
 
-import type { LLMCallOptions, LLMMessage, LLMResponse, LLMToolCall } from "../llm-client"
-export type { LLMCallOptions, LLMMessage, LLMResponse, LLMToolCall }
+import type { LLMCallOptions, LLMMessage, LLMResponse, LLMToolCall, ContentPart } from "../llm-client"
+export type { LLMCallOptions, LLMMessage, LLMResponse, LLMToolCall, ContentPart }
 
 import { logger } from "../../utils/logger"
 const log = logger.child("llm-client")
@@ -26,7 +26,102 @@ export const OPENAI_COMPAT_BASE_URLS: Record<string, string> = {
   deepseek: "https://api.deepseek.com/v1",
   kimi: "https://api.moonshot.ai/v1",
   "local-llama": "http://localhost:8080/v1",
+  nvidia: "https://integrate.api.nvidia.com/v1",
+  qwen: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 }
+
+// ─── Provider profiles ────────────────────────────────────────────────────────
+
+export interface ProviderProfile {
+  /** Normalize tool names to strict OpenAI format: [a-zA-Z0-9_-]{1,64} */
+  normalizeToolNames: boolean
+  /** Replacement string for invalid tool name chars, e.g. "__" */
+  toolNameReplacement: string
+  /** Value for the tool_choice parameter ("auto" | "any" for Mistral) */
+  toolChoiceAuto: string
+  /** Send parallel_tool_calls: false when true */
+  disableParallelToolCalls: boolean
+  /** Strip additionalProperties: false from tool parameter schemas */
+  stripAdditionalProperties: boolean
+  /** Retry the call without tools when these HTTP status codes are returned */
+  retryWithoutToolsOnCodes: number[]
+}
+
+const DEFAULT_PROFILE: ProviderProfile = {
+  normalizeToolNames: false,
+  toolNameReplacement: "__",
+  toolChoiceAuto: "auto",
+  disableParallelToolCalls: false,
+  stripAdditionalProperties: false,
+  retryWithoutToolsOnCodes: [],
+}
+
+export const PROVIDER_PROFILES: Record<string, ProviderProfile> = {
+  openai: { ...DEFAULT_PROFILE, normalizeToolNames: true },
+  kimi: { ...DEFAULT_PROFILE, normalizeToolNames: true, disableParallelToolCalls: true, retryWithoutToolsOnCodes: [422] },
+  deepseek: { ...DEFAULT_PROFILE, normalizeToolNames: true },
+  groq: { ...DEFAULT_PROFILE, normalizeToolNames: true, retryWithoutToolsOnCodes: [400, 422] },
+  mistral: { ...DEFAULT_PROFILE, normalizeToolNames: true, toolChoiceAuto: "any", stripAdditionalProperties: true },
+  openrouter: { ...DEFAULT_PROFILE, normalizeToolNames: true, retryWithoutToolsOnCodes: [400, 422] },
+  nvidia: { ...DEFAULT_PROFILE, normalizeToolNames: true },
+  qwen: { ...DEFAULT_PROFILE, normalizeToolNames: true, retryWithoutToolsOnCodes: [400, 422] },
+  "local-llama": { ...DEFAULT_PROFILE },
+}
+
+export function getProviderProfile(provider: string): ProviderProfile {
+  return PROVIDER_PROFILES[provider] ?? DEFAULT_PROFILE
+}
+
+// ─── Models that don't support tool calling ───────────────────────────────────
+
+export const NO_TOOL_MODELS = new Set([
+  "deepseek-reasoner",
+  "deepseek/deepseek-r1:free",
+])
+
+export function modelSupportsTools(provider: string, model: string): boolean {
+  if (NO_TOOL_MODELS.has(model)) return false
+  // DeepSeek R1 and OpenRouter-routed R1 variants don't support tools
+  if ((provider === "deepseek" || provider === "openrouter") && /[-/]r1\b/i.test(model)) return false
+  return true
+}
+
+// ─── Tool name & schema normalization ────────────────────────────────────────
+
+const OPENAI_TOOL_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/
+const NORMALIZE_CHARS_RE = /[^a-zA-Z0-9_-]/g
+
+/** Normalize a tool name to pass strict [a-zA-Z0-9_-]{1,64} validation. */
+export function normalizeToolName(name: string, replacement: string): string {
+  if (OPENAI_TOOL_NAME_RE.test(name)) return name
+  const escapedReplacement = replacement.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const collapseRE = new RegExp(`(${escapedReplacement}){2,}`, "g")
+  let n = name.replace(NORMALIZE_CHARS_RE, replacement).replace(collapseRE, replacement)
+  if (!/^[a-zA-Z_]/.test(n)) n = "_" + n
+  return n.slice(0, 64)
+}
+
+/** Strip provider-incompatible fields from a tool parameter schema. */
+export function normalizeToolSchema(
+  schema: Record<string, unknown>,
+  profile: ProviderProfile
+): Record<string, unknown> {
+  if (!profile.stripAdditionalProperties) return schema
+  return deepStripSchema(schema)
+}
+
+function deepStripSchema(obj: unknown): any {
+  if (typeof obj !== "object" || obj === null) return obj
+  if (Array.isArray(obj)) return obj.map(deepStripSchema)
+  const result: any = {}
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    if (k === "additionalProperties" && v === false) continue
+    result[k] = deepStripSchema(v)
+  }
+  return result
+}
+
+// ─── Temperature constraints ──────────────────────────────────────────────────
 
 /**
  * Returns true when the model requires temperature=1.
@@ -87,7 +182,10 @@ export function sanitizeMessages(messages: LLMMessage[]): LLMMessage[] {
     }
     if (m.role === "assistant" && m.tool_calls?.some((tc) => deadIds.has(tc.id))) {
       const { tool_calls, ...rest } = m
-      if (rest.content?.trim()) result.push(rest as LLMMessage)
+      const hasContent = typeof rest.content === "string"
+        ? rest.content.trim()
+        : Array.isArray(rest.content) && rest.content.length > 0
+      if (hasContent) result.push(rest as LLMMessage)
       continue
     }
     result.push(m)

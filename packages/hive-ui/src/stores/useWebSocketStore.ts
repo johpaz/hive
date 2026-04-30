@@ -79,7 +79,6 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
                 const ws = new WebSocket(wsUrl);
 
                 ws.onopen = () => {
-                    console.log("[WS-GLOBAL] Connected to", wsUrl);
                     set({ status: "connected", retryCount: 0, ws });
 
                     ws.send(JSON.stringify({ type: "canvas_subscribe" }));
@@ -93,7 +92,6 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
                 };
 
                 ws.onclose = (event) => {
-                    console.log("[WS-GLOBAL] Disconnected from", wsUrl, "Code:", event.code);
                     if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
                     set({ status: "disconnected", ws: null });
 
@@ -108,7 +106,6 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
                 };
 
                 ws.onerror = () => {
-                    console.error("[WS-GLOBAL] Error on", wsUrl);
                     set({ status: "error" });
                 };
 
@@ -133,8 +130,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
                         // Ignore malformed messages
                     }
                 };
-            } catch (e) {
-                console.error("[WS-GLOBAL] Failed to create WebSocket:", e);
+            } catch {
                 set({ status: "error" });
             }
         },

@@ -10,6 +10,7 @@ import { logger } from "../../utils/logger.ts"
 import { getDb } from "../../storage/sqlite.ts"
 import { getAgentLoop } from "../agent-loop"
 import { resolveUserId, resolveAgentId } from "../../storage/onboarding"
+import type { ContentPart } from "../../multimodal/types"
 
 export type Provider = "openai" | "anthropic" | "gemini" | "mistral" | "kimi" | "ollama" | "openrouter" | "deepseek" | "nvidia"
 
@@ -26,7 +27,7 @@ export interface ModelOptions {
   maxTokens?: number
   temperature?: number
   system?: string
-  messages: Array<{ role: string; content: string }>
+  messages: Array<{ role: string; content: string | ContentPart[] }>
   tools?: Record<string, any>
   maxSteps?: number
   onToken?: (token: string) => void
@@ -113,7 +114,11 @@ export class AgentRunner {
           )
 
           if (lastMsg?.content) {
-            const content = typeof lastMsg.content === "string" ? lastMsg.content : ""
+            const content = typeof lastMsg.content === "string" 
+              ? lastMsg.content 
+              : Array.isArray(lastMsg.content)
+                ? lastMsg.content.filter(p => p.type === "text").map(p => (p as any).text).join("\n")
+                : ""
             lastAgentContent = content
             // Accumulate non-empty content that's not just whitespace
             if (content && content.trim().length > 0) {

@@ -81,7 +81,6 @@ function TaskRow({ task }: { task: Task }) {
 
 function ProjectCard({ project }: { project: Project }) {
   const [expanded, setExpanded] = useState(project.status === "active" || project.status === "pending");
-  console.log("[ProjectsPage] ProjectCard - Project:", expanded);
   return (
     <div className="hive-card group overflow-hidden mt-10">
       {/* Project header */}

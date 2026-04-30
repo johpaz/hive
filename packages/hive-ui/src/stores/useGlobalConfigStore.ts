@@ -2,6 +2,7 @@ import { create } from "zustand";
 import React from "react";
 import type { Provider, Model, Agent, Tool, Skill, MCPServer, ConnectedChannel } from "@/types";
 import { apiClient } from "@/lib/api";
+import { useLoaderStore } from "@/stores/useLoaderStore";
 
 // ==================== PROVIDERS ====================
 interface ProvidersState {
@@ -14,7 +15,7 @@ interface ProvidersState {
   createProvider: (data: { id: string; name: string; base_url?: string; api_key?: string; headers?: Record<string, string>; num_ctx?: number | null }) => Promise<void>;
 }
 
-const createProvidersSlice = () => ({
+const createProvidersSlice = (set: any, get: any) => ({
   providers: [] as Provider[],
   activeProviders: [] as Provider[],
   isLoading: false,
@@ -22,7 +23,16 @@ const createProvidersSlice = () => ({
   fetchProviders: async () => {
     try {
       const response = await apiClient<{ providers: Provider[] }>("/api/providers");
-      const providers = response.providers;
+      const providers = response.providers.map(p => ({
+        ...p,
+        // Ensure models inside provider are also normalized
+        models: p.models?.map(m => ({
+          ...m,
+          providerId: m.providerId || m.provider_id || p.id,
+          provider_id: m.provider_id || m.providerId || p.id
+        }))
+      }));
+      
       return {
         providers,
         activeProviders: providers.filter(p => p.enabled || p.active),
@@ -41,15 +51,9 @@ const createProvidersSlice = () => ({
         showLoader: active ? "Activando proveedor..." : "Desactivando proveedor...",
         showError: true
       });
-      // Optimistic local state update - avoids a full re-fetch
-      const state = useGlobalConfigStore.getState();
-      const updatedProviders = state.providers.map(p =>
-        p.id === id ? { ...p, active, enabled: active } : p
-      );
-      useGlobalConfigStore.setState({
-        providers: updatedProviders,
-        activeProviders: updatedProviders.filter(p => p.enabled || p.active),
-      });
+      
+      // Refresh the entire state to ensure models are also updated (cascade)
+      await get().fetchAll(true); // Force refresh
     } catch (error) {
       console.error("Failed to toggle provider:", error);
       throw error;
@@ -58,24 +62,16 @@ const createProvidersSlice = () => ({
 
   updateProvider: async (id: string, data: any) => {
     try {
-      const response = await apiClient<{ success: boolean; provider: Provider }>(`/api/providers/${id}`, {
+      await apiClient<{ success: boolean; provider: Provider }>(`/api/providers/${id}`, {
         method: "PUT",
         body: data,
         showLoader: "Actualizando proveedor...",
         showError: true,
         showSuccess: "Proveedor actualizado"
       });
-      // Patch local state with returned provider — no full re-fetch needed
-      if (response?.provider) {
-        const state = useGlobalConfigStore.getState();
-        const updatedProviders = state.providers.map(p =>
-          p.id === id ? { ...p, ...response.provider } : p
-        );
-        useGlobalConfigStore.setState({
-          providers: updatedProviders,
-          activeProviders: updatedProviders.filter(p => p.enabled || p.active),
-        });
-      }
+      
+      // Refresh the entire state to ensure consistency (especially for enabled/active cascade)
+      await get().fetchAll(true); // Force refresh
     } catch (error) {
       console.error("Failed to update provider:", error);
       throw error;
@@ -119,9 +115,8 @@ const createProvidersSlice = () => ({
       }
 
       // Step 3: Re-fetch providers to update the list
-      const state = useGlobalConfigStore.getState();
-      const result = await state.fetchProviders();
-      useGlobalConfigStore.setState(result);
+      const result = await get().fetchProvidersInternal();
+      set(result);
     } catch (error) {
       console.error("Failed to create provider:", error);
       throw error;
@@ -142,17 +137,22 @@ interface ModelsState {
   updateModel: (id: string, data: { name?: string; id?: string }) => Promise<void>;
 }
 
-const createModelsSlice = () => ({
+const createModelsSlice = (set: any, get: any) => ({
   models: [] as Model[],
   availableModels: [] as Model[],
 
   fetchModels: async () => {
     try {
       const response = await apiClient<{ models: Model[] }>("/api/models");
-      const models = response.models;
+      const models = response.models.map(m => ({
+        ...m,
+        providerId: m.providerId || m.provider_id,
+        provider_id: m.provider_id || m.providerId
+      }));
+      const availableModels = get().filterModelsByProviderStatus(models, get().providers);
       return {
         models,
-        availableModels: models.filter(m => m.enabled || m.active),
+        availableModels,
       };
     } catch (error) {
       console.error("Failed to fetch models:", error);
@@ -168,14 +168,14 @@ const createModelsSlice = () => ({
         showLoader: active ? "Activando modelo..." : "Desactivando modelo...",
         showError: true
       });
-      // Update local state immediately for responsive UI
-      const state = useGlobalConfigStore.getState();
+      const state = get();
       const updatedModels = state.models.map(m =>
         m.id === id ? { ...m, active, enabled: active } : m
       );
-      useGlobalConfigStore.setState({
+      const availableModels = get().filterModelsByProviderStatus(updatedModels, state.providers);
+      set({
         models: updatedModels,
-        availableModels: updatedModels.filter(m => m.enabled || m.active),
+        availableModels,
       });
     } catch (error) {
       console.error("Failed to toggle model:", error);
@@ -195,12 +195,18 @@ const createModelsSlice = () => ({
         }
       );
       // Patch local models state with the synced list
-      const state = useGlobalConfigStore.getState();
-      const otherModels = state.models.filter(m => (m.provider_id || m.providerId) !== providerId);
-      const updatedModels = [...otherModels, ...(response.models || [])];
-      useGlobalConfigStore.setState({
+      const state = get();
+      const otherModels = state.models.filter((m: any) => (m.provider_id || m.providerId) !== providerId);
+      const normalizedNewModels = (response.models || []).map((m: any) => ({
+        ...m,
+        providerId: m.providerId || m.provider_id,
+        provider_id: m.provider_id || m.providerId
+      }));
+      const updatedModels = [...otherModels, ...normalizedNewModels];
+      const availableModels = get().filterModelsByProviderStatus(updatedModels, get().providers);
+      set({
         models: updatedModels,
-        availableModels: updatedModels.filter(m => m.enabled || m.active),
+        availableModels,
       });
       return { synced: response.synced };
     } catch (error) {
@@ -219,15 +225,20 @@ const createModelsSlice = () => ({
         showSuccess: "Modelo agregado"
       });
       if (response?.model) {
-        const state = useGlobalConfigStore.getState();
-        const updatedModels = [...state.models, response.model];
-        useGlobalConfigStore.setState({
+        const state = get();
+        const updatedModels = [...state.models, response.model].map(m => ({
+          ...m,
+          providerId: m.providerId || m.provider_id,
+          provider_id: m.provider_id || m.providerId
+        }));
+        const availableModels = get().filterModelsByProviderStatus(updatedModels, state.providers);
+        set({
           models: updatedModels,
-          availableModels: updatedModels.filter(m => m.enabled || m.active),
+          availableModels,
         });
       } else {
-        const data = await createModelsSlice().fetchModels();
-        useGlobalConfigStore.setState(data);
+        const data = await get().fetchModelsInternal();
+        set(data);
       }
     } catch (error) {
       console.error("Failed to create model:", error);
@@ -236,10 +247,10 @@ const createModelsSlice = () => ({
   },
 
   getModelsByProvider: (providerId: string) => {
-    const { models } = useGlobalConfigStore.getState();
-    return models.filter((m) => {
+    const { models } = get();
+    return models.filter((m: any) => {
       const mProviderId = m.providerId || m.provider_id;
-      return mProviderId === providerId && (m.enabled || m.active);
+      return mProviderId === providerId;
     });
   },
 
@@ -251,11 +262,12 @@ const createModelsSlice = () => ({
         showError: true,
         showSuccess: "Modelo eliminado"
       });
-      const state = useGlobalConfigStore.getState();
-      const updatedModels = state.models.filter(m => m.id !== id);
-      useGlobalConfigStore.setState({
+      const state = get();
+      const updatedModels = state.models.filter((m: any) => m.id !== id);
+      const availableModels = get().filterModelsByProviderStatus(updatedModels, state.providers);
+      set({
         models: updatedModels,
-        availableModels: updatedModels.filter(m => m.enabled || m.active),
+        availableModels,
       });
     } catch (error) {
       console.error("Failed to delete model:", error);
@@ -273,13 +285,14 @@ const createModelsSlice = () => ({
         showSuccess: "Modelo actualizado"
       });
       if (response?.model) {
-        const state = useGlobalConfigStore.getState();
-        const updatedModels = state.models.map(m =>
+        const state = get();
+        const updatedModels = state.models.map((m: any) =>
           m.id === id ? { ...m, ...response.model } : m
         );
-        useGlobalConfigStore.setState({
+        const availableModels = get().filterModelsByProviderStatus(updatedModels, state.providers);
+        set({
           models: updatedModels,
-          availableModels: updatedModels.filter(m => m.enabled || m.active),
+          availableModels,
         });
       }
     } catch (error) {
@@ -299,7 +312,7 @@ interface AgentsState {
   deleteAgent: (id: string) => Promise<void>;
 }
 
-const createAgentsSlice = () => ({
+const createAgentsSlice = (set: any, get: any) => ({
   agents: [] as Agent[],
   isLoading: false,
 
@@ -323,8 +336,8 @@ const createAgentsSlice = () => ({
         showSuccess: "Agente creado con éxito"
       });
 
-      const { fetchAgents } = useGlobalConfigStore.getState();
-      await fetchAgents();
+      const agentsData = await get().fetchAgentsInternal();
+      set(agentsData);
 
       return response.agent;
     } catch (error) {
@@ -343,8 +356,8 @@ const createAgentsSlice = () => ({
         showSuccess: "Perfil del agente sincronizado"
       });
 
-      const { fetchAgents } = useGlobalConfigStore.getState();
-      await fetchAgents();
+      const agentsData = await get().fetchAgentsInternal();
+      set(agentsData);
     } catch (error) {
       console.error("Failed to update agent:", error);
       throw error;
@@ -360,8 +373,8 @@ const createAgentsSlice = () => ({
         showSuccess: "Agente eliminado"
       });
 
-      const { fetchAgents } = useGlobalConfigStore.getState();
-      await fetchAgents();
+      const data = await get().fetchAgentsInternal();
+      set(data);
     } catch (error) {
       console.error("Failed to delete agent:", error);
       throw error;
@@ -378,7 +391,7 @@ interface ToolsState {
   updateTool: (id: string, data: Partial<Tool>) => Promise<void>;
 }
 
-const createToolsSlice = () => ({
+const createToolsSlice = (set: any, get: any) => ({
   tools: [] as Array<{ id: string; name: string; description: string; category: string; enabled: boolean; active: boolean }>,
   activeTools: [] as Array<{ id: string; name: string; description: string; category: string }>,
 
@@ -398,16 +411,16 @@ const createToolsSlice = () => ({
 
   toggleTool: async (id: string, active: boolean) => {
     // Guardar estado anterior para posible rollback
-    const state = useGlobalConfigStore.getState();
+    const state = get();
     const previousTools = state.tools;
 
     // Actualización optimista
-    const updatedTools = state.tools.map(t =>
+    const updatedTools = state.tools.map((t: any) =>
       t.id === id ? { ...t, active } : t
     );
-    useGlobalConfigStore.setState({
+    set({
       tools: updatedTools,
-      activeTools: updatedTools.filter(t => t.active).map(t => ({ id: t.id, name: t.name, description: t.description, category: t.category }))
+      activeTools: updatedTools.filter((t: any) => t.active).map((t: any) => ({ id: t.id, name: t.name, description: t.description, category: t.category }))
     });
 
     try {
@@ -417,9 +430,9 @@ const createToolsSlice = () => ({
       });
     } catch (error) {
       // Revertir al estado anterior si la API falla
-      useGlobalConfigStore.setState({
+      set({
         tools: previousTools,
-        activeTools: previousTools.filter(t => t.active).map(t => ({ id: t.id, name: t.name, description: t.description, category: t.category }))
+        activeTools: previousTools.filter((t: any) => t.active).map((t: any) => ({ id: t.id, name: t.name, description: t.description, category: t.category }))
       });
       console.error("Failed to toggle tool:", error);
       throw error;
@@ -433,13 +446,13 @@ const createToolsSlice = () => ({
         body: data,
       });
       // Actualizar estado local
-      const state = useGlobalConfigStore.getState();
-      const currentTools = state.tools.map(t =>
+      const state = get();
+      const currentTools = state.tools.map((t: any) =>
         t.id === id ? { ...t, ...data } : t
       );
-      useGlobalConfigStore.setState({
+      set({
         tools: currentTools,
-        activeTools: currentTools.filter(t => t.active).map(t => ({ id: t.id, name: t.name, description: t.description, category: t.category }))
+        activeTools: currentTools.filter((t: any) => t.active).map((t: any) => ({ id: t.id, name: t.name, description: t.description, category: t.category }))
       });
     } catch (error) {
       console.error("Failed to update tool:", error);
@@ -457,7 +470,7 @@ interface SkillsState {
   updateSkill: (id: string, data: Partial<Skill>) => Promise<void>;
 }
 
-const createSkillsSlice = () => ({
+const createSkillsSlice = (set: any, get: any) => ({
   skills: [] as Skill[],
   activeSkills: [] as Skill[],
 
@@ -518,7 +531,7 @@ interface MCPServersState {
   deleteMCPServer: (id: string) => Promise<void>;
 }
 
-const createMCPServersSlice = () => ({
+const createMCPServersSlice = (set: any, get: any) => ({
   servers: [] as Array<{ id: string; name: string; transport: string; status: string; enabled: boolean; active: boolean; builtin: boolean }>,
   activeServers: [] as Array<{ id: string; name: string; transport: string; status: string }>,
 
@@ -570,8 +583,8 @@ const createMCPServersSlice = () => ({
         showSuccess: active ? "Servidor conectado" : "Servidor desconectado"
       });
       // Force refresh or update local state
-      const { fetchMCPServers } = useGlobalConfigStore.getState();
-      await fetchMCPServers();
+      const data = await get().fetchMCPServersInternal();
+      set(data);
     } catch (error) {
       console.error("Failed to toggle MCP server:", error);
       throw error;
@@ -587,8 +600,8 @@ const createMCPServersSlice = () => ({
         showError: true,
         showSuccess: "Configuración guardada"
       });
-      const { fetchMCPServers } = useGlobalConfigStore.getState();
-      await fetchMCPServers();
+      const data = await get().fetchMCPServersInternal();
+      set(data);
     } catch (error) {
       console.error("Failed to update MCP server:", error);
       throw error;
@@ -604,11 +617,11 @@ const createMCPServersSlice = () => ({
         showSuccess: "Servidor eliminado"
       });
       // Actualizar estado local
-      const state = useGlobalConfigStore.getState();
-      const currentServers = state.servers.filter(s => s.id !== id);
-      useGlobalConfigStore.setState({
+      const state = get();
+      const currentServers = state.servers.filter((s: any) => s.id !== id);
+      set({
         servers: currentServers,
-        activeServers: currentServers.filter(s => s.active).map(s => ({ id: s.id, name: s.name, transport: s.transport, status: s.status }))
+        activeServers: currentServers.filter((s: any) => s.active).map((s: any) => ({ id: s.id, name: s.name, transport: s.transport, status: s.status }))
       });
     } catch (error) {
       console.error("Failed to delete MCP server:", error);
@@ -628,7 +641,7 @@ interface ChannelsState {
   updateChannel: (id: string, data: Partial<ConnectedChannel>) => Promise<void>;
 }
 
-const createChannelsSlice = () => ({
+const createChannelsSlice = (set: any, get: any) => ({
   channels: [] as ConnectedChannel[],
   activeChannels: [] as ConnectedChannel[],
 
@@ -680,8 +693,8 @@ const createChannelsSlice = () => ({
         body: data,
       });
       // Refresh channels after update
-      const { fetchChannels } = useGlobalConfigStore.getState();
-      await fetchChannels();
+      const channelsData = await get().fetchChannelsInternal();
+      set(channelsData);
     } catch (error) {
       console.error("Failed to update channel:", error);
       throw error;
@@ -698,7 +711,7 @@ interface VoiceState {
   saveVoiceProviderKey: (providerId: string, apiKey: string) => Promise<void>;
 }
 
-const createVoiceSlice = () => ({
+const createVoiceSlice = (set: any, get: any) => ({
   voiceProviders: [] as string[],
   configuredVoiceProviders: {} as Record<string, boolean>,
 
@@ -734,8 +747,8 @@ const createVoiceSlice = () => ({
         body: { apiKey },
       });
       // Refresh configured providers after saving
-      const configuredData = await createVoiceSlice().fetchConfiguredVoiceProviders();
-      useGlobalConfigStore.setState(configuredData);
+      const configuredData = await createVoiceSlice(set, get).fetchConfiguredVoiceProviders();
+      set(configuredData);
     } catch (error) {
       console.error("Failed to save voice provider key:", error);
       throw error;
@@ -744,13 +757,69 @@ const createVoiceSlice = () => ({
 });
 
 
+// ==================== LOCAL TTS SLICE ====================
+export interface LocalTTSStatus {
+  installed: boolean;
+  piperExists: boolean;
+  voiceExists: boolean;
+  running: boolean;
+  port: number;
+  installing: boolean;
+  voices?: string[];
+}
+
+export interface TTSModel {
+  id: string;
+  name: string;
+  language: string;
+  quality: "low" | "medium" | "high";
+  size: string;
+  modelUrl: string;
+  configUrl: string;
+  installed: boolean;
+}
+
+interface LocalTTSState {
+  localTTS: LocalTTSStatus;
+  availableTTSModels: TTSModel[];
+  isDownloadingModel: boolean;
+  downloadLogs: string[];
+  fetchLocalTTSStatus: () => Promise<void>;
+  installLocalTTS: () => Promise<void>;
+  startLocalTTS: () => Promise<void>;
+  stopLocalTTS: () => Promise<void>;
+  fetchAvailableTTSModels: () => Promise<void>;
+  downloadTTSModel: (modelId: string) => Promise<void>;
+  fetchDownloadLogs: () => Promise<void>;
+}
+
+const DEFAULT_LOCAL_TTS: LocalTTSStatus = {
+  installed: false,
+  piperExists: false,
+  voiceExists: false,
+  running: false,
+  port: 5500,
+  installing: false,
+  voices: [],
+};
+
 // ==================== GLOBAL STORE ====================
-type GlobalConfigState = ProvidersState & ModelsState & AgentsState & ToolsState & SkillsState & MCPServersState & ChannelsState & VoiceState & {
+type GlobalConfigState = ProvidersState & ModelsState & AgentsState & ToolsState & SkillsState & MCPServersState & ChannelsState & VoiceState & LocalTTSState & {
   isLoading: boolean;
   isInitialized: boolean;
   error: string | null;
-  fetchAll: () => Promise<void>;
+  fetchAll: (force?: boolean) => Promise<void>;
   refresh: (entity: string) => Promise<void>;
+  // Internal fetchers used by slice methods via get()
+  fetchProvidersInternal: () => Promise<{ providers: Provider[]; activeProviders: Provider[] }>;
+  fetchModelsInternal: () => Promise<{ models: Model[]; availableModels: Model[] }>;
+  fetchAgentsInternal: () => Promise<{ agents: Agent[] }>;
+  fetchToolsInternal: () => Promise<any>;
+  fetchSkillsInternal: () => Promise<{ skills: Skill[]; activeSkills: Skill[] }>;
+  fetchMCPServersInternal: () => Promise<any>;
+  fetchChannelsInternal: () => Promise<{ channels: ConnectedChannel[]; activeChannels: ConnectedChannel[] }>;
+  fetchVoiceProvidersInternal: () => Promise<any>;
+  filterModelsByProviderStatus: (models: Model[], providers: Provider[]) => Model[];
 };
 
 export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
@@ -785,15 +854,40 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
   voiceProviders: [],
   configuredVoiceProviders: {},
 
+  // Local TTS
+  localTTS: DEFAULT_LOCAL_TTS,
+  availableTTSModels: [],
+  isDownloadingModel: false,
+  downloadLogs: [],
+
+  // Internal fetchers (helper methods to avoid recreating slices constantly)
+  fetchProvidersInternal: async () => createProvidersSlice(set, get).fetchProviders(),
+  fetchModelsInternal: async () => createModelsSlice(set, get).fetchModels(),
+  fetchAgentsInternal: async () => createAgentsSlice(set, get).fetchAgents(),
+  fetchToolsInternal: async () => createToolsSlice(set, get).fetchTools(),
+  fetchSkillsInternal: async () => createSkillsSlice(set, get).fetchSkills(),
+  fetchMCPServersInternal: async () => createMCPServersSlice(set, get).fetchMCPServers(),
+  fetchChannelsInternal: async () => createChannelsSlice(set, get).fetchChannels(),
+  fetchVoiceProvidersInternal: async () => createVoiceSlice(set, get).fetchVoiceProviders(),
+
+  filterModelsByProviderStatus: (models: Model[], providers: Provider[]) => {
+    const activeProviderIds = new Set(
+      providers
+        .filter(p => p.enabled && p.active)
+        .map(p => p.id)
+    );
+    return models.filter(m => activeProviderIds.has(m.providerId || m.provider_id));
+  },
+
   // State
   isLoading: false,
   isInitialized: false,
   error: null,
 
-  fetchAll: async () => {
-    if (get().isInitialized) return;
+  fetchAll: async (force = false) => {
+    if (get().isInitialized && !force) return;
 
-    const { showLoader, hideLoader } = (await import("@/stores/useLoaderStore")).useLoaderStore.getState();
+    const { showLoader, hideLoader } = useLoaderStore.getState();
     showLoader("Sincronizando la Colmena...");
 
     set({ isLoading: true, error: null });
@@ -810,22 +904,37 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
         channelsData,
         voiceData,
       ] = await Promise.all([
-        createProvidersSlice().fetchProviders(),
-        createModelsSlice().fetchModels(),
-        createAgentsSlice().fetchAgents(),
-        createToolsSlice().fetchTools(),
-        createSkillsSlice().fetchSkills(),
-        createMCPServersSlice().fetchMCPServers(),
-        createChannelsSlice().fetchChannels(),
-        createVoiceSlice().fetchVoiceProviders(),
+        get().fetchProvidersInternal(),
+        get().fetchModelsInternal(),
+        get().fetchAgentsInternal(),
+        get().fetchToolsInternal(),
+        get().fetchSkillsInternal(),
+        get().fetchMCPServersInternal(),
+        get().fetchChannelsInternal(),
+        get().fetchVoiceProvidersInternal(),
       ]);
 
+      // If providers returned models but modelsData is empty or missing them, 
+      // we merge them to ensure consistency
+      const mergedModels = [...modelsData.models];
+      providersData.providers.forEach(p => {
+        if (p.models && p.models.length > 0) {
+          p.models.forEach(m => {
+            if (!mergedModels.find(mm => mm.id === m.id)) {
+              mergedModels.push(m);
+            }
+          });
+        }
+      });
+
       // Also fetch configured voice providers (depends on voice providers being loaded)
-      const configuredVoiceData = await createVoiceSlice().fetchConfiguredVoiceProviders();
+      const configuredVoiceData = await createVoiceSlice(set, get).fetchConfiguredVoiceProviders();
 
       set({
         ...providersData,
         ...modelsData,
+        models: mergedModels,
+        availableModels: get().filterModelsByProviderStatus(mergedModels, providersData.providers),
         ...agentsData,
         ...toolsData,
         ...skillsData,
@@ -851,32 +960,32 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
       let data: any;
       switch (entity) {
         case "providers":
-          data = await createProvidersSlice().fetchProviders();
+          data = await get().fetchProvidersInternal();
           set(data);
           break;
         case "models":
-          data = await createModelsSlice().fetchModels();
+          data = await get().fetchModelsInternal();
           set(data);
           break;
         case "agents":
-          data = await createAgentsSlice().fetchAgents();
+          data = await get().fetchAgentsInternal();
           set(data);
           break;
         case "tools": {
-          const toolsData = await createToolsSlice().fetchTools();
+          const toolsData = await get().fetchToolsInternal();
           if (toolsData) set(toolsData);
           break;
         }
         case "skills":
-          data = await createSkillsSlice().fetchSkills();
+          data = await get().fetchSkillsInternal();
           set(data);
           break;
         case "mcp":
-          data = await createMCPServersSlice().fetchMCPServers();
+          data = await get().fetchMCPServersInternal();
           set(data);
           break;
         case "channels":
-          data = await createChannelsSlice().fetchChannels();
+          data = await get().fetchChannelsInternal();
           set(data);
           break;
       }
@@ -887,77 +996,77 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
 
   // Providers methods
   fetchProviders: async () => {
-    const data = await createProvidersSlice().fetchProviders();
+    const data = await get().fetchProvidersInternal();
     set(data);
   },
-  toggleProvider: createProvidersSlice().toggleProvider,
-  updateProvider: createProvidersSlice().updateProvider,
-  createProvider: createProvidersSlice().createProvider,
+  toggleProvider: (...args: any[]) => (createProvidersSlice(set, get).toggleProvider as any)(...args),
+  updateProvider: (...args: any[]) => (createProvidersSlice(set, get).updateProvider as any)(...args),
+  createProvider: (...args: any[]) => (createProvidersSlice(set, get).createProvider as any)(...args),
 
   // Models methods
   fetchModels: async () => {
-    const data = await createModelsSlice().fetchModels();
+    const data = await get().fetchModelsInternal();
     set(data);
   },
-  toggleModel: createModelsSlice().toggleModel,
-  createModel: createModelsSlice().createModel,
-  syncModels: createModelsSlice().syncModels,
-  getModelsByProvider: createModelsSlice().getModelsByProvider,
-  deleteModel: createModelsSlice().deleteModel,
-  updateModel: createModelsSlice().updateModel,
+  toggleModel: (...args: any[]) => (createModelsSlice(set, get).toggleModel as any)(...args),
+  createModel: (...args: any[]) => (createModelsSlice(set, get).createModel as any)(...args),
+  syncModels: (...args: any[]) => (createModelsSlice(set, get).syncModels as any)(...args),
+  getModelsByProvider: (...args: any[]) => (createModelsSlice(set, get).getModelsByProvider as any)(...args),
+  deleteModel: (...args: any[]) => (createModelsSlice(set, get).deleteModel as any)(...args),
+  updateModel: (...args: any[]) => (createModelsSlice(set, get).updateModel as any)(...args),
 
   // Agents methods
   fetchAgents: async () => {
-    const data = await createAgentsSlice().fetchAgents();
+    const data = await get().fetchAgentsInternal();
     set(data);
   },
-  createAgent: createAgentsSlice().createAgent,
-  updateAgent: createAgentsSlice().updateAgent,
-  deleteAgent: createAgentsSlice().deleteAgent,
+  createAgent: (...args: any[]) => (createAgentsSlice(set, get).createAgent as any)(...args),
+  updateAgent: (...args: any[]) => (createAgentsSlice(set, get).updateAgent as any)(...args),
+  deleteAgent: (...args: any[]) => (createAgentsSlice(set, get).deleteAgent as any)(...args),
 
   // Tools methods
   fetchTools: async () => {
-    const data = await createToolsSlice().fetchTools();
+    const data = await get().fetchToolsInternal();
     if (data) set(data);
   },
-  toggleTool: createToolsSlice().toggleTool,
-  updateTool: createToolsSlice().updateTool,
+  toggleTool: (...args: any[]) => (createToolsSlice(set, get).toggleTool as any)(...args),
+  updateTool: (...args: any[]) => (createToolsSlice(set, get).updateTool as any)(...args),
 
   // Skills methods
   fetchSkills: async () => {
-    const data = await createSkillsSlice().fetchSkills();
+    const data = await get().fetchSkillsInternal();
     set(data);
   },
-  toggleSkill: createSkillsSlice().toggleSkill,
-  updateSkill: createSkillsSlice().updateSkill,
+  toggleSkill: (...args: any[]) => (createSkillsSlice(set, get).toggleSkill as any)(...args),
+  updateSkill: (...args: any[]) => (createSkillsSlice(set, get).updateSkill as any)(...args),
 
   // MCP methods
   fetchMCPServers: async () => {
-    const data = await createMCPServersSlice().fetchMCPServers();
+    const data = await get().fetchMCPServersInternal();
     set(data);
   },
-  toggleMCPServer: createMCPServersSlice().toggleMCPServer,
-  updateMCPServer: createMCPServersSlice().updateMCPServer,
-  deleteMCPServer: createMCPServersSlice().deleteMCPServer,
+  toggleMCPServer: (...args: any[]) => (createMCPServersSlice(set, get).toggleMCPServer as any)(...args),
+  updateMCPServer: (...args: any[]) => (createMCPServersSlice(set, get).updateMCPServer as any)(...args),
+  deleteMCPServer: (...args: any[]) => (createMCPServersSlice(set, get).deleteMCPServer as any)(...args),
 
   // Channels methods
   fetchChannels: async () => {
-    const data = await createChannelsSlice().fetchChannels();
+    const data = await get().fetchChannelsInternal();
     set(data);
   },
-  createChannel: createChannelsSlice().createChannel,
-  reconnectChannel: createChannelsSlice().reconnectChannel,
-  toggleChannel: createChannelsSlice().toggleChannel,
-  updateChannel: createChannelsSlice().updateChannel,
+  createChannel: (...args: any[]) => (createChannelsSlice(set, get).createChannel as any)(...args),
+  reconnectChannel: (...args: any[]) => (createChannelsSlice(set, get).reconnectChannel as any)(...args),
+  toggleChannel: (...args: any[]) => (createChannelsSlice(set, get).toggleChannel as any)(...args),
+  updateChannel: (...args: any[]) => (createChannelsSlice(set, get).updateChannel as any)(...args),
 
   // Voice methods
   fetchVoiceProviders: async () => {
-    const data = await createVoiceSlice().fetchVoiceProviders();
+    const data = await createVoiceSlice(set, get).fetchVoiceProviders();
     set(data);
     return data;
   },
   fetchConfiguredVoiceProviders: async () => {
-    const data = await createVoiceSlice().fetchConfiguredVoiceProviders();
+    const data = await createVoiceSlice(set, get).fetchConfiguredVoiceProviders();
     set(data);
     return data;
   },
@@ -966,8 +1075,68 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
       method: "POST",
       body: { apiKey },
     });
-    const data = await createVoiceSlice().fetchConfiguredVoiceProviders();
+    const data = await createVoiceSlice(set, get).fetchConfiguredVoiceProviders();
     set(data);
+  },
+
+  // Local TTS methods
+  fetchLocalTTSStatus: async () => {
+    try {
+      const data = await apiClient<LocalTTSStatus>("/api/tts-local/status");
+      set({ localTTS: data });
+    } catch {
+      // Gateway no disponible aún — no modificar el estado
+    }
+  },
+  installLocalTTS: async () => {
+    await apiClient("/api/tts-local/install", { method: "POST" });
+    set((state) => ({ localTTS: { ...state.localTTS, installing: true } }));
+  },
+  startLocalTTS: async () => {
+    await apiClient("/api/tts-local/start", { method: "POST" });
+    const data = await apiClient<LocalTTSStatus>("/api/tts-local/status");
+    set({ localTTS: data });
+  },
+  stopLocalTTS: async () => {
+    await apiClient("/api/tts-local/stop", { method: "POST" });
+    const data = await apiClient<LocalTTSStatus>("/api/tts-local/status");
+    set({ localTTS: data });
+  },
+  fetchAvailableTTSModels: async () => {
+    try {
+      const data = await apiClient<{ models: TTSModel[] }>("/api/tts-local/models");
+      set({ availableTTSModels: data.models });
+    } catch {
+      // Ignore
+    }
+  },
+  downloadTTSModel: async (modelId: string) => {
+    await apiClient("/api/tts-local/models/download", { 
+      method: "POST", 
+      body: { modelId },
+      showError: true,
+      showSuccess: "Descarga iniciada",
+    });
+    set({ isDownloadingModel: true, downloadLogs: [] });
+    // Poll status until download completes
+    const pollInterval = setInterval(async () => {
+      const statusData = await apiClient<LocalTTSStatus>("/api/tts-local/status");
+      set({ localTTS: statusData });
+      const logsData = await apiClient<{ logs: string[]; downloading: boolean }>("/api/tts-local/models/logs");
+      set({ downloadLogs: logsData.logs, isDownloadingModel: logsData.downloading });
+      if (!logsData.downloading) {
+        clearInterval(pollInterval);
+        await get().fetchAvailableTTSModels();
+      }
+    }, 2000);
+  },
+  fetchDownloadLogs: async () => {
+    try {
+      const data = await apiClient<{ logs: string[]; downloading: boolean }>("/api/tts-local/models/logs");
+      set({ downloadLogs: data.logs, isDownloadingModel: data.downloading });
+    } catch {
+      // Ignore
+    }
   },
 
 }));
@@ -1002,6 +1171,7 @@ export function useProviders() {
   const fetchProviders = useGlobalConfigStore((state) => state.fetchProviders);
   const fetchModels = useGlobalConfigStore((state) => state.fetchModels);
   const toggleProvider = useGlobalConfigStore((state) => state.toggleProvider);
+  const toggleModel = useGlobalConfigStore((state) => state.toggleModel);
   const updateProvider = useGlobalConfigStore((state) => state.updateProvider);
   const createProvider = useGlobalConfigStore((state) => state.createProvider);
   const getModelsByProvider = useGlobalConfigStore((state) => state.getModelsByProvider);
@@ -1017,6 +1187,7 @@ export function useProviders() {
     fetchProviders,
     fetchModels,
     toggleProvider,
+    toggleModel,
     updateProvider,
     createProvider,
     getModelsByProvider,
@@ -1173,6 +1344,34 @@ export function useVoice() {
     fetchVoiceProviders,
     fetchConfiguredVoiceProviders,
     saveVoiceProviderKey,
+  };
+}
+
+export function useLocalTTS() {
+  const localTTS = useGlobalConfigStore((state) => state.localTTS);
+  const availableTTSModels = useGlobalConfigStore((state) => state.availableTTSModels);
+  const isDownloadingModel = useGlobalConfigStore((state) => state.isDownloadingModel);
+  const downloadLogs = useGlobalConfigStore((state) => state.downloadLogs);
+  const fetchLocalTTSStatus = useGlobalConfigStore((state) => state.fetchLocalTTSStatus);
+  const installLocalTTS = useGlobalConfigStore((state) => state.installLocalTTS);
+  const startLocalTTS = useGlobalConfigStore((state) => state.startLocalTTS);
+  const stopLocalTTS = useGlobalConfigStore((state) => state.stopLocalTTS);
+  const fetchAvailableTTSModels = useGlobalConfigStore((state) => state.fetchAvailableTTSModels);
+  const downloadTTSModel = useGlobalConfigStore((state) => state.downloadTTSModel);
+  const fetchDownloadLogs = useGlobalConfigStore((state) => state.fetchDownloadLogs);
+
+  return { 
+    localTTS, 
+    availableTTSModels,
+    isDownloadingModel,
+    downloadLogs,
+    fetchLocalTTSStatus, 
+    installLocalTTS, 
+    startLocalTTS, 
+    stopLocalTTS,
+    fetchAvailableTTSModels,
+    downloadTTSModel,
+    fetchDownloadLogs,
   };
 }
 

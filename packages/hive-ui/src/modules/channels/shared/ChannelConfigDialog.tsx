@@ -49,6 +49,9 @@ const TTS_MODELS = [
         { id: "qwen3-tts-flash", name: "Qwen3 TTS Flash" },
         { id: "qwen-tts", name: "Qwen TTS" },
     ]},
+    { group: "Piper (Local)", provider: "piper", models: [
+        { id: "piper", name: "Piper TTS (es_MX Cortana)" },
+    ]},
 ];
 
 function getProviderFromModel(modelId: string): string | null {
@@ -56,8 +59,15 @@ function getProviderFromModel(modelId: string): string | null {
     if (modelId.startsWith("tts-") || modelId.startsWith("gpt-")) return "openai";
     if (modelId.startsWith("gemini")) return "gemini";
     if (modelId.startsWith("qwen")) return "qwen";
+    if (modelId === "piper") return "piper";
     return null;
 }
+
+const OCR_PROVIDERS = [
+    { id: "gemini", name: "Google Gemini", provider: "gemini" },
+    { id: "openai", name: "OpenAI", provider: "openai" },
+    { id: "anthropic", name: "Anthropic Claude", provider: "anthropic" },
+];
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Step = "type" | "credentials" | "reconnect" | "qr" | "connecting" | "success" | "settings";
@@ -566,6 +576,23 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
 
     const renderSettingsContent = () => (
         <div className="grid gap-4 py-4">
+            {/* WhatsApp-specific settings */}
+            {channel?.type === "whatsapp" && (
+                <div className="space-y-2 pb-2 border-b border-white/10">
+                    <div className="flex items-center justify-between">
+                        <Label className="text-xs text-white/50 uppercase tracking-widest">Número Vinculado</Label>
+                    </div>
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
+                        <span className="font-mono text-sm text-white/70">
+                            {channel.accountId ? `+${channel.accountId}` : "No conectado"}
+                        </span>
+                        <span className="text-[10px] text-white/40 ml-auto">
+                            {channel.status === "connected" ? "✓" : "sin conexión"}
+                        </span>
+                    </div>
+                </div>
+            )}
+
             {/* Token section for Telegram / Discord */}
             {(channel?.type === "telegram" || channel?.type === "discord") && (
                 <div className="space-y-2 pb-2 border-b border-white/10">
@@ -700,7 +727,7 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                         </div>
                     )}
 
-                    {!configuredVoiceProviders.elevenlabs && !configuredVoiceProviders.openai && !configuredVoiceProviders.gemini && !configuredVoiceProviders.qwen && (
+                    {!configuredVoiceProviders.elevenlabs && !configuredVoiceProviders.openai && !configuredVoiceProviders.gemini && !configuredVoiceProviders.qwen && !configuredVoiceProviders.piper && (
                         <Alert variant="destructive" className="bg-yellow-500/10 border-yellow-500/30 text-yellow-200">
                             <AlertCircle className="h-4 w-4" />
                             <AlertDescription className="text-yellow-200/80">
@@ -725,6 +752,41 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                         <SelectItem value="all">Todo (Sincronización)</SelectItem>
                     </SelectContent>
                 </Select>
+            </div>
+
+            <div className="pt-4 mt-2 border-t border-white/5 space-y-4">
+                <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                        <Label className="text-xs font-bold uppercase tracking-wider text-blue-400">Visión / Multimodal</Label>
+                        <p className="text-[10px] text-white/30">Procesamiento de imágenes y documentos</p>
+                    </div>
+                    <Switch
+                        checked={formData.vision_enabled}
+                        onCheckedChange={(v) => setFormData(prev => ({ ...prev, vision_enabled: v }))}
+                    />
+                </div>
+
+                {formData.vision_enabled && (
+                    <div className="grid grid-cols-4 items-center gap-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                        <Label className="text-right text-xs">OCR Fallback</Label>
+                        <Select 
+                            value={formData.ocr_provider || ""} 
+                            onValueChange={v => setFormData(p => ({ ...p, ocr_provider: v }))}
+                        >
+                            <SelectTrigger className="col-span-3">
+                                <SelectValue placeholder="Selecciona provider de OCR" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {OCR_PROVIDERS.map(m => (
+                                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <div className="col-start-2 col-span-3 text-[10px] text-white/30 italic">
+                            Se usa cuando el modelo del agente no soporta visión nativa.
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

@@ -7,7 +7,7 @@
 
 import { getDb } from "../storage/sqlite"
 import { logger } from "../utils/logger"
-import type { LLMMessage } from "./llm-client"
+import type { LLMMessage, ContentPart } from "./llm-client"
 import { estimateTokens } from "../utils/toon"
 
 const log = logger.child("conv-store")
@@ -23,6 +23,7 @@ export interface StoredMessage {
   tool_calls_json: string | null
   tool_call_id: string | null
   reasoning_content: string | null  // Kimi K2 thinking — must be round-tripped
+  content_multimodal: string | null // JSON array of ContentPart[]
   token_count: number
   created_at: number
 }
@@ -32,7 +33,7 @@ export interface StoredMessage {
 export function addMessage(
   threadId: string,
   role: StoredMessage["role"],
-  content: string,
+  content: string | ContentPart[],
   opts?: {
     channel?: string
     tool_calls?: LLMMessage["tool_calls"]
@@ -41,24 +42,31 @@ export function addMessage(
   }
 ): number {
   const db = getDb()
-  const tool_calls_json = opts?.tool_calls?.length
-    ? JSON.stringify(opts.tool_calls)
-    : null
+  // Handle multimodal content by extracting text for the content column
+  const textContent = typeof content === "string"
+    ? content
+    : Array.isArray(content)
+      ? content.filter(p => p.type === "text").map(p => (p as any).text).join("\n")
+      : String(content)
+
+  const content_multimodal = Array.isArray(content) ? JSON.stringify(content) : null
+  const tool_calls_json = opts?.tool_calls ? JSON.stringify(opts.tool_calls) : null
 
   const result = db.query(`
-    INSERT INTO conversations (thread_id, channel, role, content, tool_calls_json, tool_call_id, reasoning_content, token_count, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
+    INSERT INTO conversations (thread_id, channel, role, content, content_multimodal, tool_calls_json, tool_call_id, reasoning_content, token_count, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
     RETURNING id
   `).get(
     threadId,
     opts?.channel ?? "webchat",
     role,
-    content,
+    textContent,
+    content_multimodal,
     tool_calls_json,
     opts?.tool_call_id ?? null,
     opts?.reasoning_content ?? null,
-    // Estimate tokens: content + tool_calls JSON (often content="" for tool-call-only assistant msgs)
-    Math.max(1, estimateTokens(content) + estimateTokens(tool_calls_json ?? "")),
+    // Estimate tokens: content + tool_calls JSON
+    Math.max(1, estimateTokens(textContent) + estimateTokens(tool_calls_json ?? "")),
   ) as { id: number }
 
   return result.id
@@ -157,7 +165,11 @@ export function getMessagesAfter(threadId: string, afterId: number): StoredMessa
 
 export function toAPIMessages(rows: StoredMessage[]): LLMMessage[] {
   return rows.map((r) => {
-    const msg: LLMMessage = { role: r.role, content: r.content }
+    let content: string | ContentPart[] = r.content
+    if (r.content_multimodal) {
+      try { content = JSON.parse(r.content_multimodal) } catch { /* ignore */ }
+    }
+    const msg: LLMMessage = { role: r.role, content }
     if (r.tool_calls_json) {
       try { msg.tool_calls = JSON.parse(r.tool_calls_json) } catch { /* ignore */ }
     }

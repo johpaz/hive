@@ -346,25 +346,6 @@ export async function initializeGateway(
     // 8. Inicializar channel manager (crítico)
     const channelManager = await initializeChannelManager(config);
 
-    // 9. HiveLearn — re-registrar agentes SOLO si el usuario ya lo activó explícitamente.
-    //    NUNCA llamar initHiveLearnStorage aquí si la tabla no existe: eso crearía agentes
-    //    sin que el usuario lo haya pedido (rompe el feature flag opt-in).
-    try {
-      const tableExists = getDb()
-        .query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='hl_agents'")
-        .get();
-      if (tableExists) {
-        const hlCount = (getDb().query("SELECT COUNT(*) as cnt FROM hl_agents").get() as any).cnt;
-        if (hlCount > 0) {
-          const { initHiveLearnStorage } = await import("../../../hivelearn/src/storage/init.ts");
-          initHiveLearnStorage(getDb());
-          log.info(`HiveLearn re-registered ${hlCount} agents (idempotent)`);
-        }
-      }
-    } catch (e) {
-      log.warn(`HiveLearn init skipped: ${(e as Error).message}`);
-    }
-
     return { agent, runner, channelManager, provider, model };
 
   } catch (error) {

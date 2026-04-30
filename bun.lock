@@ -38,7 +38,7 @@
     },
     "packages/cli": {
       "name": "@johpaz/hive-agents",
-      "version": "0.0.26",
+      "version": "0.0.29",
       "bin": {
         "hive": "./dist/hive.js",
       },
@@ -55,7 +55,7 @@
     },
     "packages/code-bridge": {
       "name": "@johpaz/hive-agents-code-bridge",
-      "version": "0.0.26",
+      "version": "0.0.29",
       "dependencies": {
         "@johpaz/hive-agents-mcp": "^0.0.26",
         "zod": "^4.3.6",
@@ -66,7 +66,7 @@
     },
     "packages/core": {
       "name": "@johpaz/hive-agents-core",
-      "version": "0.0.26",
+      "version": "0.0.29",
       "dependencies": {
         "@ag-ui/core": "^0.0.46",
         "@johpaz/hive-agents-code-bridge": "^0.0.26",
@@ -97,7 +97,7 @@
     },
     "packages/hive-ui": {
       "name": "@johpaz/hive-agents-ui",
-      "version": "0.0.26",
+      "version": "0.0.29",
       "dependencies": {
         "@hookform/resolvers": "^3.10.0",
         "@johpaz/hivelearn": "workspace:*",
@@ -207,7 +207,7 @@
     },
     "packages/mcp": {
       "name": "@johpaz/hive-agents-mcp",
-      "version": "0.0.26",
+      "version": "0.0.29",
       "dependencies": {
         "@modelcontextprotocol/sdk": "latest",
         "zod": "latest",
@@ -219,7 +219,7 @@
     },
     "packages/sdk": {
       "name": "@johpaz/hive-sdk",
-      "version": "0.0.26",
+      "version": "0.0.29",
       "dependencies": {
         "@anthropic-ai/sdk": "latest",
         "@google/genai": "latest",
@@ -250,10 +250,17 @@
     },
     "packages/skills": {
       "name": "@johpaz/hive-agents-skills",
-      "version": "0.0.26",
+      "version": "0.0.29",
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "6.0.2",
+      },
+    },
+    "packages/tts": {
+      "name": "@johpaz/hive-tts",
+      "version": "0.1.0",
+      "devDependencies": {
+        "typescript": "^5.0.0",
       },
     },
   },
@@ -448,6 +455,8 @@
     "@johpaz/hive-agents-ui": ["@johpaz/hive-agents-ui@workspace:packages/hive-ui"],
 
     "@johpaz/hive-sdk": ["@johpaz/hive-sdk@workspace:packages/sdk"],
+
+    "@johpaz/hive-tts": ["@johpaz/hive-tts@workspace:packages/tts"],
 
     "@johpaz/hivelearn": ["@johpaz/hivelearn@workspace:packages/hivelearn"],
 
@@ -2276,6 +2285,8 @@
     "@johpaz/hive-agents-ui/zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
 
     "@johpaz/hive-sdk/@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.90.0", "", { "dependencies": { "json-schema-to-ts": "^3.1.1" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-MzZtPabJF1b0FTDl6Z6H5ljphPwACLGP13lu8MTiB8jXaW/YXlpOp+Po2cVou3MPM5+f5toyLnul9whKCy7fBg=="],
+
+    "@johpaz/hive-tts/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
     "@puppeteer/browsers/yargs": ["yargs@17.7.2", "", { "dependencies": { "cliui": "^8.0.1", "escalade": "^3.1.1", "get-caller-file": "^2.0.5", "require-directory": "^2.1.1", "string-width": "^4.2.3", "y18n": "^5.0.5", "yargs-parser": "^21.1.1" } }, "sha512-7dSzzRQ++CKnNI/krKnYRV7JKKPUXMEh61soaHKg9mrWEhzFWhFnxPxGl+69cD1Ou63C13NUPCnmIcrvqCuM6w=="],
 

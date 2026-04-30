@@ -115,6 +115,10 @@ export interface ComponentDef {
   entryPointChild?: ComponentId;
   contentChild?: ComponentId;
 
+  // Aliases/Extensions
+  trigger?: ComponentId;
+  content?: ComponentId;
+
   src?: DynamicString;
   width?: number;
   height?: number;
@@ -197,7 +201,7 @@ export interface A2UISurface {
   theme?: CreateSurfaceMessage["createSurface"]["theme"];
   sendDataModel?: boolean;
   rootId?: ComponentId;
-  components: Map<string, ComponentDef>;
+  components: ComponentDef[];
   dataModel: Record<string, unknown>;
   componentOrder: ComponentDef[];
 }

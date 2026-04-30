@@ -1,5 +1,6 @@
 import { logger } from "../../utils/logger"
 import type { LLMCallOptions, LLMProvider, LLMResponse, LLMToolCall } from "./interface"
+import type { ContentPart, LLMMessage } from "../llm-client"
 
 const log = logger.child("llm-client")
 
@@ -22,6 +23,34 @@ function supportsThinking(model: string): boolean {
 }
 
 export class AnthropicProvider implements LLMProvider {
+  private _convertContentPart(part: ContentPart): any {
+    switch (part.type) {
+      case "text":
+        return { type: "text", text: part.text }
+      case "image_url": {
+        const url = part.image_url.url
+        if (url.startsWith("data:")) {
+          const match = url.match(/^data:([^;]+);base64,(.+)$/)
+          if (match) return { type: "image", source: { type: "base64", media_type: match[1], data: match[2] } }
+        }
+        return { type: "image", source: { type: "url", url } }
+      }
+      case "image_base64":
+        return { type: "image", source: { type: "base64", media_type: part.mimeType, data: part.base64 } }
+      case "document":
+        return { type: "document", source: { type: "base64", media_type: part.mimeType, data: part.base64 } }
+      default:
+        return { type: "text", text: JSON.stringify(part) }
+    }
+  }
+
+  private _convertUserContent(msg: LLMMessage): any[] {
+    if (Array.isArray(msg.content)) {
+      return msg.content.map(p => this._convertContentPart(p))
+    }
+    return [{ type: "text", text: msg.content }]
+  }
+
   async call(options: LLMCallOptions): Promise<LLMResponse> {
     const Anthropic = await import("@anthropic-ai/sdk")
     const client = new Anthropic.default({ apiKey: options.apiKey })
@@ -59,7 +88,7 @@ export class AnthropicProvider implements LLMProvider {
         continue
       }
 
-      anthropicMessages.push({ role: msg.role, content: msg.content })
+      anthropicMessages.push({ role: msg.role, content: Array.isArray(msg.content) ? this._convertUserContent(msg) : msg.content })
     }
 
     const tools: any[] = (options.tools ?? []).map((t) => ({

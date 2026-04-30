@@ -11,14 +11,19 @@ export async function handleGetProviders(req: Request, addCorsHeaders: (r: Respo
   `).all() as Record<string, unknown>[]
 
   const modelsRows = getDb().query(`
-    SELECT id, name, provider_id, enabled, active FROM models
+    SELECT * FROM models
   `).all() as Record<string, unknown>[]
 
   const modelsByProvider: Record<string, Record<string, unknown>[]> = {}
   for (const m of modelsRows) {
-    const pid = m.provider_id as string
+    const pid = (m.provider_id || m.providerId) as string
     if (!modelsByProvider[pid]) modelsByProvider[pid] = []
-    modelsByProvider[pid].push({ id: m.id, name: m.name, provider_id: m.provider_id, enabled: !!m.enabled, active: !!m.active })
+    modelsByProvider[pid].push({
+      ...m,
+      enabled: !!m.enabled,
+      active: !!m.active,
+      provider_id: pid
+    })
   }
 
   const providers = rawProviders.map((p) => {
@@ -85,7 +90,7 @@ export async function handleUpdateProvider(req: Request, addCorsHeaders: (r: Res
   const id = providerIdMatch[1]
   const body = await req.json().catch(() => ({}))
   const updates: string[] = []
-  const params: unknown[] = []
+  const params: any[] = []
 
   if (body.name) {
     updates.push("name = ?")
@@ -127,7 +132,7 @@ export async function handleUpdateProvider(req: Request, addCorsHeaders: (r: Res
 
   if (updates.length > 0) {
     params.push(id)
-    getDb().query(`UPDATE providers SET ${updates.join(", ")} WHERE id = ?`).run(...params as any[])
+    getDb().query(`UPDATE providers SET ${updates.join(", ")} WHERE id = ?`).run(...params)
 
     // Cascade active/enabled changes to models
     const activeIdx = updates.findIndex(u => u.startsWith("active"))
@@ -135,10 +140,10 @@ export async function handleUpdateProvider(req: Request, addCorsHeaders: (r: Res
 
     if (activeIdx !== -1) {
       const activeVal = params[activeIdx]
-      getDb().query(`UPDATE models SET active = ?, enabled = ? WHERE provider_id = ?`).run(activeVal, activeVal, id)
+      getDb().query(`UPDATE models SET active = ?, enabled = ? WHERE provider_id = ?`).run(activeVal as any, activeVal as any, id)
     } else if (enabledIdx !== -1) {
       const enabledVal = params[enabledIdx]
-      getDb().query(`UPDATE models SET enabled = ?, active = ? WHERE provider_id = ?`).run(enabledVal, enabledVal, id)
+      getDb().query(`UPDATE models SET enabled = ?, active = ? WHERE provider_id = ?`).run(enabledVal as any, enabledVal as any, id)
     }
   }
 

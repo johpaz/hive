@@ -6,8 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { useVoice } from "@/stores/useGlobalConfigStore";
 import { Check, Key, Lock, Unlock } from "lucide-react";
+import { PiperTTSCard } from "./PiperTTSCard";
 
-const PROVIDER_INFO: Record<string, { name: string; description: string; logo: string; consoleUrl: string }> = {
+const PROVIDER_INFO: Record<string, { name: string; description: string; logo: string; consoleUrl: string; noApiKey?: boolean }> = {
   groq: {
     name: "Groq",
     description: "STT (Speech-to-Text) - Transcripción de audio ultra-rápida",
@@ -37,6 +38,13 @@ const PROVIDER_INFO: Record<string, { name: string; description: string; logo: s
     description: "TTS - Voces de Qwen",
     logo: "🟣",
     consoleUrl: "https://dashscope.console.aliyun.com/apiKey",
+  },
+  piper: {
+    name: "Piper TTS (Local)",
+    description: "TTS offline — sin internet, sin API key. Selecciónalo como provider TTS en la configuración del canal.",
+    logo: "🖥️",
+    consoleUrl: "/settings/voz",
+    noApiKey: true,
   },
 };
 
@@ -78,7 +86,6 @@ export function VoiceProvidersPanel() {
   const handleRemoveKey = async (providerId: string) => {
     // For now, we just clear it visually - backend would need an endpoint to delete
     // This is a placeholder for future implementation
-    console.log("Remove key for:", providerId);
   };
 
   const providers = voiceProviders.length > 0 ? voiceProviders : Object.keys(PROVIDER_INFO);
@@ -86,6 +93,7 @@ export function VoiceProvidersPanel() {
   return (
     <div className="space-y-6">
       <div className="grid gap-6 md:grid-cols-2">
+        <PiperTTSCard />
         {providers.map((providerId) => {
           const info = PROVIDER_INFO[providerId] || {
             name: providerId,
@@ -107,7 +115,11 @@ export function VoiceProvidersPanel() {
                       <CardDescription className="text-xs">{info.description}</CardDescription>
                     </div>
                   </div>
-                  {isConfigured ? (
+                  {info.noApiKey ? (
+                    <Badge variant="outline" className="bg-zinc-700/40 text-zinc-300 border-zinc-600">
+                      Sin API key
+                    </Badge>
+                  ) : isConfigured ? (
                     <Badge variant="default" className="bg-green-500/20 text-green-400 border-green-500/30">
                       <Check className="h-3 w-3 mr-1" />
                       Configurado
@@ -120,7 +132,14 @@ export function VoiceProvidersPanel() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                {isEditing ? (
+                {info.noApiKey ? (
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">{info.description}</p>
+                    <p className="text-xs text-muted-foreground/60">
+                      Para usar Piper en un canal: ve a Canales → selecciona el canal → Voz → TTS Provider → <code>piper</code>
+                    </p>
+                  </div>
+                ) : isEditing ? (
                   <div className="space-y-3">
                     <div>
                       <Label htmlFor={`api-key-${providerId}`}>API Key</Label>
