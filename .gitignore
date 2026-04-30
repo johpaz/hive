@@ -36,6 +36,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # env
 .env
 .hive-dev
+.env.example
 
 binaries/
 
