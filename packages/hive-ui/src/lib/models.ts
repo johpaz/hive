@@ -42,7 +42,8 @@ export const AVAILABLE_MODELS: Record<ProviderType, Partial<ModelDefinition>[]> 
     ],
     mistral: [],
     groq: [],
-    cohere: []
+    cohere: [],
+    nvidia: []
 };
 
 // Map these simplified partial models into full ModelDefinition objects

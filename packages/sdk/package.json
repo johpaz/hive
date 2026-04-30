@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-sdk",
-  "version": "0.0.30",
+  "version": "0.0.29",
   "description": "Hive SDK - Build on top of Hive for enterprise and custom integrations",
   "private": false,
   "main": "./dist/index.js",
@@ -13,7 +13,7 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "bun build src/index.ts src/agents/index.ts src/tools/index.ts src/skills/index.ts src/mcp/index.ts src/channels/index.ts src/cron/index.ts src/ethics/index.ts src/database/index.ts src/types/index.ts src/hivelearn/index.ts --outdir dist --target bun --external zod --external @google/genai --external @anthropic-ai/sdk --external openai --external ollama --external grammy --external discord.js --external @slack/bolt --external @whiskeysockets/baileys --external puppeteer --external @puppeteer/browsers --external better-sqlite3 --external @modelcontextprotocol/sdk && bunx tsc -p tsconfig.build.json && cp -r dist/src/. dist/ && cp -r dist/sdk/src/. dist/ && rm -rf dist/src dist/sdk",
+    "build": "bun build src/index.ts src/agents/index.ts src/tools/index.ts src/skills/index.ts src/mcp/index.ts src/channels/index.ts src/cron/index.ts src/ethics/index.ts src/database/index.ts src/types/index.ts src/hivelearn/index.ts src/tts/index.ts src/tts/client.ts src/tts/server.ts --outdir dist --target bun --external zod --external @google/genai --external @anthropic-ai/sdk --external openai --external ollama --external grammy --external discord.js --external @slack/bolt --external @whiskeysockets/baileys --external puppeteer --external @puppeteer/browsers --external better-sqlite3 --external @modelcontextprotocol/sdk --external @johpaz/hive-tts && bunx tsc -p tsconfig.build.json && cp -r dist/src/. dist/ && cp -r dist/sdk/src/. dist/ && rm -rf dist/src dist/sdk",
     "prepublishOnly": "bun run build",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
@@ -28,6 +28,7 @@
     }
   },
   "dependencies": {
+    "@johpaz/hive-tts": "^0.1.0",
     "zod": "latest",
     "@google/genai": "latest",
     "@anthropic-ai/sdk": "latest",
@@ -45,7 +46,7 @@
     "@modelcontextprotocol/sdk": "latest"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/bun": "^1.3.13",
     "typescript": "6.0.2"
   },
   "exports": {
@@ -92,6 +93,18 @@
     "./hivelearn": {
       "types": "./dist/hivelearn/index.d.ts",
       "default": "./dist/hivelearn/index.js"
+    },
+    "./tts": {
+      "types": "./dist/tts/index.d.ts",
+      "default": "./dist/tts/index.js"
+    },
+    "./tts/client": {
+      "types": "./dist/tts/client.d.ts",
+      "default": "./dist/tts/client.js"
+    },
+    "./tts/server": {
+      "types": "./dist/tts/server.d.ts",
+      "default": "./dist/tts/server.js"
     }
   },
   "keywords": [

@@ -19,7 +19,10 @@
       "@johpaz/hive-agents-mcp/transports": ["../../node_modules/@johpaz/hive-agents-mcp/src/transports/index.ts"],
       "@johpaz/hive-agents-skills": ["../../node_modules/@johpaz/hive-agents-skills/src/index.ts"],
       "@johpaz/hive-agents-skills/loader": ["../../node_modules/@johpaz/hive-agents-skills/src/loader.ts"],
-      "@johpaz/hive-agents-code-bridge": ["../../node_modules/@johpaz/hive-agents-code-bridge/src/index.ts"]
+      "@johpaz/hive-agents-code-bridge": ["../../node_modules/@johpaz/hive-agents-code-bridge/src/index.ts"],
+      "@johpaz/hive-tts": ["../../node_modules/@johpaz/hive-tts/src/index.ts"],
+      "@johpaz/hive-tts/client": ["../../node_modules/@johpaz/hive-tts/src/client.ts"],
+      "@johpaz/hive-tts/server": ["../../node_modules/@johpaz/hive-tts/src/server.ts"]
     }
   },
   "include": ["src/**/*"]

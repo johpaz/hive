@@ -20,6 +20,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { CheckCircle2, XCircle, Sparkles, Hexagon, Volume2, Loader2 } from "lucide-react";
 import { useLoaderStore } from "@/stores/useLoaderStore";

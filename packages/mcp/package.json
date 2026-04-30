@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-agents-mcp",
-  "version": "0.0.30",
+  "version": "0.0.29",
   "private": true,
   "description": "Hive MCP Client — Model Context Protocol client layer",
   "main": "./src/index.ts",
@@ -17,7 +17,7 @@
   },
   "devDependencies": {
     "typescript": "6.0.2",
-    "@types/bun": "latest"
+    "@types/bun": "^1.3.13"
   },
   "exports": {
     ".": "./src/index.ts",
