@@ -1,43 +1,19 @@
 /**
  * @johpaz/hive-sdk/hivelearn
  *
- * Sub-módulo que expone el enjambre HiveLearn para integraciones enterprise.
- * Permite a agencias desplegar módulos de capacitación IA personalizados.
+ * ⚠️ DEPRECATED - HiveLearn ha sido migrado a un repositorio independiente
  *
- * Uso:
- *   import { runHiveLearnSession, LessonPersistence } from '@johpaz/hive-sdk/hivelearn'
+ * HiveLearn ahora es un proyecto standalone separado del monorepo de Hive.
+ * Para usar HiveLearn, instala el paquete separado o clona el repositorio:
+ *
+ *   git clone https://github.com/johpaz/HiveLearn.git
+ *
+ * O usa HiveLearn como servicio externo compatible con Hive.
+ *
+ * @deprecated Use el paquete independiente @johpaz/hivelearn desde https://github.com/johpaz/HiveLearn
  */
-export {
-  HiveLearnSwarm,
-  runHiveLearnSession,
-  LessonPersistence,
-  evaluarRespuestas,
-  calificarEvaluacionTool,
-  calificarRespuestaTool,
-  AGENT_IDS,
-  updateHiveLearnAgentsProviderModel,
-  hlSwarmEmitter,
-  nodeCache,
-  cacheInvalidator,
-} from '@johpaz/hivelearn'
 
-export type {
-  StudentProfile,
-  LessonProgram,
-  SwarmProgress,
-  NodoLesson,
-  NodoContenido,
-  MicroEvaluacion,
-  FeedbackOutput,
-  EvaluacionOutput,
-  PreguntaEvaluacion,
-  GamificacionOutput,
-  Logro,
-  RangoEdad,
-  TipoPedagogico,
-  TipoVisual,
-  EstadoNodo,
-  CalificacionOutput,
-  CalificacionInput,
-  SessionData,
-} from '@johpaz/hivelearn'
+throw new Error(
+  'HiveLearn ha sido migrado a un repositorio independiente. ' +
+  'Para usarlo, clona https://github.com/johpaz/HiveLearn.git o instálalo como paquete separado.'
+)

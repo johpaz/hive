@@ -1,7 +1,7 @@
 {
   "name": "@johpaz/hive-agents-ui",
   "private": true,
-  "version": "0.0.29",
+  "version": "0.0.30",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
-    "@johpaz/hivelearn": "workspace:*",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-aspect-ratio": "^1.1.7",
