@@ -1,10 +1,13 @@
 import { existsSync, readdirSync, readFileSync } from "fs"
 import { join } from "path"
+import { homedir } from "os"
 import { TTS_MODELS, getModelById } from "../../../../tts/src/models.ts"
+import { runInstall } from "../../../../tts/src/install.ts"
 
-// import.meta.dir = .../packages/core/src/gateway/routes → subir 4 niveles → packages/
-// Confiable independientemente del cwd del gateway
-const TTS_ROOT = join(import.meta.dir, "../../../../tts")
+// Datos de TTS en HIVE_HOME/tts/ — funciona igual en dev, npm global y Docker
+const TTS_ROOT =
+  process.env.HIVE_TTS_ROOT ??
+  join(process.env.HIVE_HOME ?? join(homedir(), ".hive"), "tts")
 const BIN_PATH = join(TTS_ROOT, "bin", process.platform === "win32" ? "piper.exe" : "piper")
 const VOICES_DIR = join(TTS_ROOT, "voices")
 const TTS_PORT = Number(process.env.TTS_PORT ?? 5500)
@@ -82,65 +85,29 @@ export async function handleInstallLocalTTS(
     return addCors(Response.json({ started: false, reason: "Piper ya está instalado" }), req)
   }
 
-  const installScript = join(TTS_ROOT, "src", "install.ts")
-  if (!existsSync(installScript)) {
-    return addCors(
-      Response.json({
-        started: false,
-        reason: `Script no encontrado: ${installScript}. Verifica que packages/tts existe.`,
-      }, { status: 500 }),
-      req
-    )
-  }
-
   installing = true
   installLogs = [`[${new Date().toISOString()}] Iniciando instalación de Piper...`]
   installLogs.push(`  TTS_ROOT: ${TTS_ROOT}`)
-  installLogs.push(`  Script: ${installScript}`)
-  installLogs.push(`  Bun: ${process.execPath}`)
 
-  // Usar process.execPath (ruta absoluta al binario bun actual) — confiable en cualquier entorno
-  const proc = Bun.spawn([process.execPath, installScript], {
-    stdout: "pipe",
-    stderr: "pipe",
-    cwd: TTS_ROOT,
-  })
+  // Interceptar console.log de runInstall para capturar en installLogs
+  const origLog = console.log
+  const origWarn = console.warn
+  console.log = (...args) => { installLogs.push(args.join(" ")); origLog(...args) }
+  console.warn = (...args) => { installLogs.push(`[warn] ${args.join(" ")}`); origWarn(...args) }
 
-  // Capturar stdout en background
-  ;(async () => {
-    const reader = proc.stdout.getReader()
-    const decoder = new TextDecoder()
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      const line = decoder.decode(value).trim()
-      if (line) installLogs.push(line)
-    }
-  })()
-
-  // Capturar stderr en background
-  ;(async () => {
-    const reader = proc.stderr.getReader()
-    const decoder = new TextDecoder()
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      const line = decoder.decode(value).trim()
-      if (line) {
-        installLogs.push(`[stderr] ${line}`)
-        console.error(`[hive-tts install] ${line}`)
-      }
-    }
-  })()
-
-  proc.exited.then((code) => {
-    installing = false
-    installLogs.push(`[${new Date().toISOString()}] Proceso finalizado con código ${code}`)
-    if (code !== 0) console.error(`[hive-tts install] Falló con código ${code}`)
-  }).catch((err) => {
-    installing = false
-    installLogs.push(`[error] ${err}`)
-  })
+  runInstall(TTS_ROOT)
+    .then(() => {
+      installLogs.push(`[${new Date().toISOString()}] Instalación completada`)
+    })
+    .catch((err) => {
+      installLogs.push(`[error] ${err instanceof Error ? err.message : String(err)}`)
+      console.error(`[hive-tts install] Falló: ${err}`)
+    })
+    .finally(() => {
+      installing = false
+      console.log = origLog
+      console.warn = origWarn
+    })
 
   return addCors(Response.json({ started: true }), req)
 }

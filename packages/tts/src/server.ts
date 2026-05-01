@@ -10,8 +10,8 @@
  */
 
 import { existsSync, readdirSync, readFileSync } from "fs"
-import { join, dirname } from "path"
-import { fileURLToPath } from "url"
+import { join } from "path"
+import { homedir } from "os"
 import { detectPlatform, getPiperBinaryName, DEFAULT_VOICE } from "./detect.ts"
 
 const log = {
@@ -20,10 +20,11 @@ const log = {
   error: (msg: string) => console.error(`[TTS] ${msg}`),
 }
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const ROOT = join(__dirname, "..")
-const BIN_DIR = join(ROOT, "bin")
-const VOICES_DIR = join(ROOT, "voices")
+const TTS_ROOT =
+  process.env.HIVE_TTS_ROOT ??
+  join(process.env.HIVE_HOME ?? join(homedir(), ".hive"), "tts")
+const BIN_DIR = join(TTS_ROOT, "bin")
+const VOICES_DIR = join(TTS_ROOT, "voices")
 const PORT = Number(process.env.TTS_PORT ?? 5500)
 const DEFAULT_VOICE_ENV = process.env.TTS_VOICE ?? DEFAULT_VOICE
 

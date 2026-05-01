@@ -52,7 +52,7 @@ function reloadEnvToProcess(hiveDir: string): void {
   }
 }
 
-const VERSION = "0.0.30";
+const VERSION = "0.0.31";
 
 const DEFAULT_MODELS: Record<string, string> = {
   anthropic: "claude-sonnet-4-6",

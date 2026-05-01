@@ -6,9 +6,8 @@ WORKDIR /app
 # Copy root manifests
 COPY package.json bun.lock bunfig.toml tsconfig.base.json tsconfig.json ./
 
-# Copy UI and hivelearn source (needed for build)
+# Copy hive-ui source
 COPY packages/hive-ui ./packages/hive-ui
-COPY packages/hivelearn ./packages/hivelearn
 
 # Stub workspace packages with correct names so bun workspace resolution works
 RUN mkdir -p packages/core packages/cli packages/mcp packages/skills packages/code-bridge && \
@@ -33,9 +32,9 @@ COPY packages/cli/package.json ./packages/cli/package.json
 COPY packages/mcp/package.json ./packages/mcp/package.json
 COPY packages/skills/package.json ./packages/skills/package.json
 COPY packages/code-bridge/package.json ./packages/code-bridge/package.json
-COPY packages/hivelearn/package.json ./packages/hivelearn/package.json
+COPY packages/tts/package.json ./packages/tts/package.json
 
-RUN bun install
+RUN bun install --ignore-scripts
 
 # Copy source after install so dependency layer stays cached on code changes
 COPY packages/core ./packages/core
@@ -43,7 +42,7 @@ COPY packages/cli ./packages/cli
 COPY packages/mcp ./packages/mcp
 COPY packages/skills ./packages/skills
 COPY packages/code-bridge ./packages/code-bridge
-COPY packages/hivelearn ./packages/hivelearn
+COPY packages/tts ./packages/tts
 
 # Set NODE_ENV=production so Bun inlines it correctly in the compiled binary
 ENV NODE_ENV=production
