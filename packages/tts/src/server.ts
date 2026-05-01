@@ -158,72 +158,87 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type",
 }
 
-const server = Bun.serve({
-  port: PORT,
-  async fetch(req) {
-    const url = new URL(req.url)
+/**
+ * Inicia el servidor TTS en-proceso.
+ * Exportado para que el gateway pueda llamarlo directamente
+ * sin necesidad de spawnar un subproceso externo.
+ */
+export function startTTSServer(opts?: { port?: number }): ReturnType<typeof Bun.serve> {
+  const listenPort = opts?.port ?? PORT
 
-    if (req.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: CORS })
-    }
+  const server = Bun.serve({
+    port: listenPort,
+    async fetch(req) {
+      const url = new URL(req.url)
 
-    if (req.method === "GET" && url.pathname === "/health") {
-      return Response.json(
-        { ok: true, voice: DEFAULT_VOICE_ENV, voices: listVoices() },
-        { headers: CORS }
-      )
-    }
+      if (req.method === "OPTIONS") {
+        return new Response(null, { status: 204, headers: CORS })
+      }
 
-    if (req.method === "GET" && url.pathname === "/voices") {
-      return Response.json({ voices: listVoices() }, { headers: CORS })
-    }
-
-    if (req.method === "POST" && url.pathname === "/tts") {
-      let body: { text?: string; voice?: string }
-      try {
-        body = await req.json()
-      } catch {
+      if (req.method === "GET" && url.pathname === "/health") {
         return Response.json(
-          { error: "Body JSON inválido" },
-          { status: 400, headers: CORS }
+          { ok: true, voice: DEFAULT_VOICE_ENV, voices: listVoices() },
+          { headers: CORS }
         )
       }
 
-      const { text, voice = DEFAULT_VOICE_ENV } = body
-
-      if (!text || typeof text !== "string" || text.trim().length === 0) {
-        return Response.json(
-          { error: "Campo 'text' requerido" },
-          { status: 400, headers: CORS }
-        )
+      if (req.method === "GET" && url.pathname === "/voices") {
+        return Response.json({ voices: listVoices() }, { headers: CORS })
       }
 
-      if (text.length > 2000) {
-        return Response.json(
-          { error: "Texto demasiado largo (máx 2000 chars)" },
-          { status: 400, headers: CORS }
-        )
+      if (req.method === "POST" && url.pathname === "/tts") {
+        let body: { text?: string; voice?: string }
+        try {
+          body = await req.json()
+        } catch {
+          return Response.json(
+            { error: "Body JSON inválido" },
+            { status: 400, headers: CORS }
+          )
+        }
+
+        const { text, voice = DEFAULT_VOICE_ENV } = body
+
+        if (!text || typeof text !== "string" || text.trim().length === 0) {
+          return Response.json(
+            { error: "Campo 'text' requerido" },
+            { status: 400, headers: CORS }
+          )
+        }
+
+        if (text.length > 2000) {
+          return Response.json(
+            { error: "Texto demasiado largo (máx 2000 chars)" },
+            { status: 400, headers: CORS }
+          )
+        }
+
+        try {
+          const audio = await synthesize(text.trim(), voice)
+          return new Response(audio, {
+            headers: {
+              ...CORS,
+              "Content-Type": "audio/wav",
+              "Content-Length": String(audio.byteLength),
+            },
+          })
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Error interno"
+          return Response.json({ error: message }, { status: 500, headers: CORS })
+        }
       }
 
-      try {
-        const audio = await synthesize(text.trim(), voice)
-        return new Response(audio, {
-          headers: {
-            ...CORS,
-            "Content-Type": "audio/wav",
-            "Content-Length": String(audio.byteLength),
-          },
-        })
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Error interno"
-        return Response.json({ error: message }, { status: 500, headers: CORS })
-      }
-    }
+      return Response.json({ error: "Not found" }, { status: 404, headers: CORS })
+    },
+  })
 
-    return Response.json({ error: "Not found" }, { status: 404, headers: CORS })
-  },
-})
+  log.info(`Hive TTS Server escuchando en http://localhost:${listenPort}`)
+  log.info(`Voz por defecto: ${DEFAULT_VOICE_ENV}`)
+  log.info(`Voces disponibles: ${listVoices().join(", ") || "ninguna (ejecuta install.ts primero)"}`)
+  return server
+}
 
-log.info(`Hive TTS Server escuchando en http://localhost:${PORT}`)
-log.info(`Voz por defecto: ${DEFAULT_VOICE_ENV}`)
-log.info(`Voces disponibles: ${listVoices().join(", ") || "ninguna (ejecuta install.ts primero)"}`)
+// Ejecución directa: bun run src/server.ts
+if (import.meta.main) {
+  startTTSServer()
+}

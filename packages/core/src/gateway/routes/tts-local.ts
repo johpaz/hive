@@ -3,6 +3,7 @@ import { join } from "path"
 import { homedir } from "os"
 import { TTS_MODELS, getModelById } from "../../../../tts/src/models.ts"
 import { runInstall } from "../../../../tts/src/install.ts"
+import { startTTSServer } from "../../../../tts/src/server.ts"
 
 // Datos de TTS en HIVE_HOME/tts/ — funciona igual en dev, npm global y Docker
 const TTS_ROOT =
@@ -12,7 +13,7 @@ const BIN_PATH = join(TTS_ROOT, "bin", process.platform === "win32" ? "piper.exe
 const VOICES_DIR = join(TTS_ROOT, "voices")
 const TTS_PORT = Number(process.env.TTS_PORT ?? 5500)
 
-let ttsProcess: ReturnType<typeof Bun.spawn> | null = null
+let ttsServer: ReturnType<typeof Bun.serve> | null = null
 let installing = false
 let installLogs: string[] = []
 let downloadingModelId: string | null = null
@@ -126,28 +127,15 @@ export async function handleStartLocalTTS(
     )
   }
 
-  const serverScript = join(TTS_ROOT, "src", "server.ts")
-  ttsProcess = Bun.spawn([process.execPath, serverScript], {
-    stdout: "pipe",
-    stderr: "pipe",
-    env: { ...process.env, TTS_PORT: String(TTS_PORT) },
-    cwd: TTS_ROOT,
-  })
-
-  // Capturar stderr para logs de error
-  ;(async () => {
-    const reader = ttsProcess!.stderr.getReader()
-    const decoder = new TextDecoder()
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      const line = decoder.decode(value).trim()
-      if (line) {
-        installLogs.push(`[tts-server] ${line}`)
-        console.error(`[tts-server] ${line}`)
-      }
-    }
-  })()
+  try {
+    ttsServer = startTTSServer({ port: TTS_PORT })
+    installLogs.push(`[tts-server] Servidor TTS iniciado en puerto ${TTS_PORT}`)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[tts-server] Falló al iniciar: ${msg}`)
+    installLogs.push(`[error] Servidor TTS falló al iniciar: ${msg}`)
+    return addCors(Response.json({ started: false, reason: msg }), req)
+  }
 
   // Esperar hasta 3s a que el server levante
   for (let i = 0; i < 6; i++) {
@@ -156,14 +144,6 @@ export async function handleStartLocalTTS(
   }
 
   const running = await isRunning()
-  
-  // Si no inició, capturar el exit code para debugging
-  if (!running) {
-    const exitCode = await ttsProcess.exited
-    console.error(`[tts-server] Falló al iniciar, exit code: ${exitCode}`)
-    installLogs.push(`[error] Servidor TTS falló al iniciar (código ${exitCode})`)
-  }
-  
   return addCors(Response.json({ started: running }), req)
 }
 
@@ -171,15 +151,9 @@ export async function handleStopLocalTTS(
   req: Request,
   addCors: (r: Response, req: Request) => Response
 ): Promise<Response> {
-  if (ttsProcess) {
-    ttsProcess.kill()
-    ttsProcess = null
-  } else {
-    try {
-      Bun.spawn(["pkill", "-f", "tts/src/server.ts"])
-    } catch {
-      // pkill no disponible en Windows
-    }
+  if (ttsServer) {
+    ttsServer.stop(true)
+    ttsServer = null
   }
 
   return addCors(Response.json({ stopped: true }), req)
@@ -189,15 +163,11 @@ async function ensureTTSRunning(): Promise<boolean> {
   if (await isRunning()) return true
   if (!isInstalled().installed) return false
 
-  const serverScript = join(TTS_ROOT, "src", "server.ts")
-  if (!existsSync(serverScript)) return false
-
-  ttsProcess = Bun.spawn([process.execPath, serverScript], {
-    stdout: "pipe",
-    stderr: "pipe",
-    env: { ...process.env, TTS_PORT: String(TTS_PORT) },
-    cwd: TTS_ROOT,
-  })
+  try {
+    ttsServer = startTTSServer({ port: TTS_PORT })
+  } catch {
+    return false
+  }
 
   for (let i = 0; i < 10; i++) {
     await Bun.sleep(500)
