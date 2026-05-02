@@ -1,8 +1,8 @@
 {
-  "name": "@johpaz/hive-agents",
+  "name": "@johpaz/hive-monorepo",
   "version": "0.0.32",
   "description": "Tu colmena de agentes IA. Local-first. Multi-canal. Open source. Construido desde Colombia para el mundo.",
-  "private": false,
+  "private": true,
   "bin": {
     "hive": "dist/hive.js"
   },
