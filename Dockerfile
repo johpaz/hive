@@ -32,8 +32,6 @@ COPY packages/cli/package.json ./packages/cli/package.json
 COPY packages/mcp/package.json ./packages/mcp/package.json
 COPY packages/skills/package.json ./packages/skills/package.json
 COPY packages/code-bridge/package.json ./packages/code-bridge/package.json
-COPY packages/tts/package.json ./packages/tts/package.json
-
 RUN bun install --ignore-scripts
 
 # Copy source after install so dependency layer stays cached on code changes
@@ -42,7 +40,6 @@ COPY packages/cli ./packages/cli
 COPY packages/mcp ./packages/mcp
 COPY packages/skills ./packages/skills
 COPY packages/code-bridge ./packages/code-bridge
-COPY packages/tts ./packages/tts
 
 # Set NODE_ENV=production so Bun inlines it correctly in the compiled binary
 ENV NODE_ENV=production
