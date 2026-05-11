@@ -11,6 +11,7 @@
     "dist/hive.js",
     "dist/hive.cmd",
     "dist/hive.ps1",
+    "dist/ui",
     "README.md"
   ],
   "scripts": {
