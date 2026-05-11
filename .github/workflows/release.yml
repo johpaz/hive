@@ -18,18 +18,7 @@ jobs:
           bun-version: latest
 
       - name: Install UI dependencies
-        run: |
-          # Stub every workspace package except hive-ui so bun's resolver is satisfied
-          VERSION=$(node -p "require('./package.json').version")
-          for pkg_dir in packages/*/; do
-            pkg=$(basename "$pkg_dir")
-            [ "$pkg" = "hive-ui" ] && continue
-            name=$(node -p "require('./packages/$pkg/package.json').name")
-            mkdir -p "packages/$pkg"
-            printf '{"name":"%s","version":"%s"}\n' "$name" "$VERSION" \
-              > "packages/$pkg/package.json"
-          done
-          bun install
+        run: cd packages/hive-ui && bun install
 
       - name: Build UI
         run: cd packages/hive-ui && bun run build
