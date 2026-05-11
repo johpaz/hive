@@ -1,5 +1,5 @@
 import { getDb } from "../../storage/sqlite"
-import { encryptConfig, decryptConfig } from "../../storage/crypto"
+import { storeChannelConfig, loadChannelConfig, deleteChannelSecrets } from "../../storage/crypto"
 
 export async function handleGetChannels(
   req: Request,
@@ -7,10 +7,9 @@ export async function handleGetChannels(
   channelManager?: any
 ): Promise<Response> {
   const channels = getDb().query(`
-    SELECT id, type, id as account_id, enabled, active, status, last_active, 
+    SELECT id, type, id as account_id, enabled, active, status, last_active,
            voice_enabled, tts_enabled, stt_provider, tts_provider, tts_voice_id, step_delivery_mode,
-           vision_enabled, ocr_provider, vision_provider, vision_model_id,
-           (config_encrypted IS NOT NULL) as is_configured
+           vision_enabled, ocr_provider, vision_provider, vision_model_id
     FROM channels
   `).all() as Array<{
     id: string;
@@ -30,18 +29,19 @@ export async function handleGetChannels(
     ocr_provider: string | null;
     vision_provider: string | null;
     vision_model_id: string | null;
-    is_configured: number;
   }>
 
   // Convert to format expected by UI (ConnectedChannel[])
   // Overlay the live runtime status from channelManager so that channels like
   // Telegram/Discord (which never write "connected" to the DB) show the correct state.
-  const formattedChannels = channels.map(c => {
+  const formattedChannels = await Promise.all(channels.map(async c => {
     let liveStatus: string = c.status;
     if (channelManager && typeof channelManager.getChannelStatus === "function") {
       const live = channelManager.getChannelStatus(c.type, c.id);
       if (live && live.status !== "not_found") liveStatus = live.status;
     }
+    const config = await loadChannelConfig(c.id);
+    const isConfigured = Object.keys(config).length > 0;
 
     return {
       id: c.id,
@@ -61,9 +61,9 @@ export async function handleGetChannels(
       ocr_provider: c.ocr_provider ?? undefined,
       vision_provider: c.vision_provider ?? undefined,
       vision_model_id: c.vision_model_id ?? undefined,
-      isConfigured: c.is_configured === 1,
+      isConfigured,
     };
-  })
+  }))
 
   return addCorsHeaders(Response.json({ channels: formattedChannels }), req)
 }
@@ -154,33 +154,40 @@ export async function handleCreateChannel(
     return addCorsHeaders(new Response("Missing type", { status: 400 }), req);
   }
 
-  let encryptedData: string | null = null;
-  let configIv: string | null = null;
-  if (channelConfig && Object.keys(channelConfig).length > 0) {
-    const { encrypted, iv } = encryptConfig(channelConfig);
-    encryptedData = encrypted;
-    configIv = iv;
-  }
-
   // Reuse the existing seeded channel record (e.g. id="whatsapp") if it exists
   // and has not been configured yet — avoids creating duplicate UUID entries.
-  const seeded = getDb().query(
-    `SELECT id FROM channels WHERE type = ? AND config_encrypted IS NULL LIMIT 1`
-  ).get(type) as { id: string } | null;
+  // A seeded-but-unconfigured channel has no secret in the keychain yet.
+  const seededRows = getDb().query(
+    `SELECT id FROM channels WHERE type = ? LIMIT 10`
+  ).all(type) as { id: string }[];
+
+  // Find a row with no config in keychain (unconfigured seed)
+  let seededId: string | null = null;
+  for (const row of seededRows) {
+    const existing = await loadChannelConfig(row.id);
+    if (Object.keys(existing).length === 0) {
+      seededId = row.id;
+      break;
+    }
+  }
 
   let id: string;
-  if (seeded) {
-    id = seeded.id;
+  if (seededId) {
+    id = seededId;
     getDb().query(
-      `UPDATE channels SET config_encrypted = ?, config_iv = ?, enabled = 1, active = 1, status = 'connecting' WHERE id = ?`
-    ).run(encryptedData, configIv, id);
+      `UPDATE channels SET enabled = 1, active = 1, status = 'connecting' WHERE id = ?`
+    ).run(id);
   } else {
     const { randomUUID } = await import("crypto");
     id = randomUUID();
     getDb().query(`
-      INSERT INTO channels(id, type, config_encrypted, config_iv, enabled, active, status)
-      VALUES(?, ?, ?, ?, 1, 1, 'connecting')
-    `).run(id, type, encryptedData, configIv);
+      INSERT INTO channels(id, type, enabled, active, status)
+      VALUES(?, ?, 1, 1, 'connecting')
+    `).run(id, type);
+  }
+
+  if (channelConfig && Object.keys(channelConfig).length > 0) {
+    await storeChannelConfig(id, channelConfig);
   }
 
   if (channelManager) {
@@ -201,10 +208,8 @@ export async function handleReconnectChannel(
   const body = await req.json().catch(() => ({}));
   const { config: newConfig } = body;
 
-  const row = getDb().query(`SELECT type, config_encrypted, config_iv FROM channels WHERE id = ?`).get(channelId) as {
+  const row = getDb().query(`SELECT type FROM channels WHERE id = ?`).get(channelId) as {
     type: string;
-    config_encrypted: string | null;
-    config_iv: string | null;
   } | undefined;
 
   if (!row) {
@@ -213,23 +218,17 @@ export async function handleReconnectChannel(
 
   // Update credentials if new config provided
   if (newConfig && Object.keys(newConfig).length > 0) {
-    const { encrypted, iv } = encryptConfig(newConfig);
-    getDb().query(`UPDATE channels SET config_encrypted = ?, config_iv = ?, enabled = 1, active = 1, status = 'connecting' WHERE id = ?`)
-      .run(encrypted, iv, channelId);
-  } else {
-    getDb().query(`UPDATE channels SET enabled = 1, active = 1, status = 'connecting' WHERE id = ?`)
-      .run(channelId);
+    await storeChannelConfig(channelId, newConfig);
   }
+  getDb().query(`UPDATE channels SET enabled = 1, active = 1, status = 'connecting' WHERE id = ?`)
+    .run(channelId);
 
   if (channelManager) {
-    // Resolve config: use new or existing encrypted config
     let config: Record<string, unknown> = {};
     if (newConfig && Object.keys(newConfig).length > 0) {
       config = newConfig;
-    } else if (row.config_encrypted && row.config_iv) {
-      try {
-        config = decryptConfig(row.config_encrypted, row.config_iv);
-      } catch { /* keep empty */ }
+    } else {
+      config = await loadChannelConfig(channelId);
     }
 
     // Remove old instance then start fresh — must be sequential to avoid race
@@ -360,6 +359,16 @@ export async function handleUpdateChannelSettings(
     }
   }
 
+  // Merge type-specific config into config_encrypted if body.config is provided
+  const newConfig = body.config as Record<string, unknown> | undefined;
+  if (newConfig && typeof newConfig === "object" && Object.keys(newConfig).length > 0) {
+    const exists = getDb().query(`SELECT id FROM channels WHERE id = ?`).get(channelId);
+    if (exists) {
+      const currentConfig = await loadChannelConfig(channelId);
+      await storeChannelConfig(channelId, { ...currentConfig, ...newConfig });
+    }
+  }
+
   if (updates.length === 0) {
     return addCorsHeaders(Response.json({ error: "No valid fields to update" }, { status: 400 }), req);
   }
@@ -442,7 +451,7 @@ export async function handleUpdateWhatsAppConfig(
   channelManager?: any
 ): Promise<Response> {
   const body = await req.json().catch(() => ({}));
-  const { acceptGroups, reconnectMaxAttempts, reconnectBaseDelayMs, dmPolicy } = body;
+  const { acceptGroups, reconnectMaxAttempts, reconnectBaseDelayMs, dmPolicy, selfMessagesOnly, allowFrom } = body;
 
   // Read and decrypt the existing config, merge new values, then re-encrypt.
   // These fields live inside config_encrypted — not as top-level columns.
@@ -453,22 +462,15 @@ export async function handleUpdateWhatsAppConfig(
     return addCorsHeaders(Response.json({ success: false, error: "Channel not found" }, { status: 404 }), req);
   }
 
-  let currentConfig: Record<string, unknown> = {};
-  if (row.config_encrypted && row.config_iv) {
-    try {
-      currentConfig = decryptConfig(row.config_encrypted, row.config_iv);
-    } catch { /* start from empty if decryption fails */ }
-  }
-
+  const currentConfig = await loadChannelConfig(channelId);
   const merged: Record<string, unknown> = { ...currentConfig };
   if (acceptGroups !== undefined) merged.acceptGroups = Boolean(acceptGroups);
   if (reconnectMaxAttempts !== undefined) merged.reconnectMaxAttempts = Number(reconnectMaxAttempts);
   if (reconnectBaseDelayMs !== undefined) merged.reconnectBaseDelayMs = Number(reconnectBaseDelayMs);
   if (dmPolicy !== undefined) merged.dmPolicy = dmPolicy;
-
-  const { encrypted, iv } = encryptConfig(merged);
-  getDb().query(`UPDATE channels SET config_encrypted = ?, config_iv = ? WHERE id = ?`)
-    .run(encrypted, iv, channelId);
+  if (selfMessagesOnly !== undefined) merged.selfMessagesOnly = Boolean(selfMessagesOnly);
+  if (allowFrom !== undefined) merged.allowFrom = Array.isArray(allowFrom) ? allowFrom : [];
+  await storeChannelConfig(channelId, merged);
 
   // Restart the running channel so it picks up the new config immediately.
   if (channelManager) {

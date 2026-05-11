@@ -4,6 +4,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useUserStore } from "@/stores/userStore";
+import { useChannelStore } from "@/stores/channelStore";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -114,14 +115,6 @@ const FieldWrap = ({
   </div>
 );
 
-/* ─── Constants ──────────────────────────────────────────────────────── */
-const CRON_CHANNELS = [
-  { value: "auto",     label: "Auto — detectar mejor canal" },
-  { value: "webchat",  label: "Web Chat" },
-  { value: "telegram", label: "Telegram" },
-  { value: "discord",  label: "Discord" },
-];
-
 type FormData = {
   name: string; occupation: string; language: string;
   timezone: string; preferred_cron_channel: string; notes: string;
@@ -136,6 +129,7 @@ function getInitials(name: string) {
 ════════════════════════════════════════════════════════════════════════ */
 export function UserProfileEditor() {
   const { fetchUser, saveUser, isLoading } = useUserStore();
+  const { channels } = useChannelStore();
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     name: "", occupation: "", language: "",
@@ -175,7 +169,10 @@ export function UserProfileEditor() {
     } finally { loader.hide(); }
   };
 
-  const channelLabel = CRON_CHANNELS.find(o => o.value === formData.preferred_cron_channel)?.label ?? "auto";
+  const activeChannels = channels.filter(c => c.active);
+  const channelLabel = formData.preferred_cron_channel === "auto"
+    ? "Auto — detectar mejor canal"
+    : activeChannels.find(o => o.type === formData.preferred_cron_channel)?.type ?? formData.preferred_cron_channel;
   const initials = getInitials(formData.name);
 
   return (
@@ -398,9 +395,17 @@ export function UserProfileEditor() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="hive-select-content">
-                  {CRON_CHANNELS.map(o => (
-                    <SelectItem key={o.value} value={o.value} className="hive-select-item text-sm">
-                      {o.label}
+                  <SelectItem value="auto" className="hive-select-item text-sm">
+                    Auto — detectar mejor canal
+                  </SelectItem>
+                  {activeChannels.map(ch => (
+                    <SelectItem key={ch.id} value={ch.type} className="hive-select-item text-sm">
+                      {ch.type === 'webchat' ? 'Web Chat'
+                        : ch.type === 'telegram' ? 'Telegram'
+                        : ch.type === 'discord' ? 'Discord'
+                        : ch.type === 'slack' ? 'Slack'
+                        : ch.type === 'whatsapp' ? 'WhatsApp'
+                        : ch.type}
                     </SelectItem>
                   ))}
                 </SelectContent>

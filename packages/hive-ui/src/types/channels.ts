@@ -25,7 +25,7 @@ export interface ChannelConfig {
 }
 
 export interface ChannelPolicies {
-  dmPolicy: "open" | "pairing";
+  dmPolicy: "open" | "pairing" | "allowlist";
   allowedUsers?: string[];
   requireAuth: boolean;
 }
@@ -45,9 +45,11 @@ export interface ChannelWhatsAppConfig {
   status: "awaiting_qr" | "awaiting_pairing" | "connected";
   waVersion?: string;
   acceptGroups?: boolean;
+  selfMessagesOnly?: boolean;
   reconnectMaxAttempts?: number;
   reconnectBaseDelayMs?: number;
   dmPolicy?: "open" | "pairing" | "allowlist";
+  allowFrom?: string[];
 }
 
 export interface ChannelDiscordConfig {

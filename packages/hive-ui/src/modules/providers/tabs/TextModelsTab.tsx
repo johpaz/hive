@@ -5,6 +5,7 @@ import { useProviders } from "@/hooks/useProviders";
 import { useGlobalConfigStore } from "@/stores/useGlobalConfigStore";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ModelCard } from "@/modules/providers/models/ModelCard";
+import { LocalLLMCard } from "@/modules/providers/LocalLLMCard";
 import { Search } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 
@@ -38,7 +39,10 @@ export function TextModelsTab() {
   }, [availableModels, filter, providerFilter]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      <LocalLLMCard />
+
+      <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold">Modelos de Texto</h3>
         <Badge variant="secondary">{filtered.length}</Badge>
@@ -69,5 +73,6 @@ export function TextModelsTab() {
         </div>
       </ScrollArea>
     </div>
+  </div>
   );
 }

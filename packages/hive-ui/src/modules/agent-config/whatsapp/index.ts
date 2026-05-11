@@ -1,1 +1,0 @@
-export { WhatsAppConfigPanel } from "./WhatsAppConfigPanel";

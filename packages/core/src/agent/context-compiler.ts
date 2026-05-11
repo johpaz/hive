@@ -41,7 +41,9 @@ const log = logger.child("context-compiler")
 
 // Configuration constants
 const KEEP_LAST_N_MESSAGES = 40      // Always keep last N messages (Strategy: SELECT) — increased because tool calls/results are now persisted
-const TOKEN_COMPACT_THRESHOLD = 6000 // Compact when exceeds this (Strategy: COMPRESS)
+const DEFAULT_CONTEXT_WINDOW = 128000 // Default context window when model is unknown
+const COMPACT_RATIO = 0.70           // Compact when estimated input exceeds 70% of context window
+const MAX_SYSTEM_PROMPT_CHARS = 8000 // Truncate system prompt to this max
 
 // MINIMAL TOOL SET — fixed always-available tools
 // The agent discovers the rest via search_knowledge
@@ -135,6 +137,15 @@ export async function compileContext(opts: {
 
   const isWorker = agent.role === 'worker' || !!isolated
   log.info(`[context-compiler] [STEP-1] ✅ Compiling for ${isWorker ? 'worker' : 'coordinator'} agent=${agent.name}`)
+
+  // Load model's context window for compaction decisions
+  let modelContextWindow = DEFAULT_CONTEXT_WINDOW
+  if (agent.model_id) {
+    try {
+      const mRow = db.query<any, [string]>("SELECT context_window FROM models WHERE id = ?").get(agent.model_id.replace(/^[^/]+\//, ''))
+      if (mRow?.context_window) modelContextWindow = mRow.context_window
+    } catch { /* use default */ }
+  }
 
   // [STEP-2] STRATEGY 1: WRITE — Load scratchpad (persistent notes)
   log.info(`[context-compiler] [STEP-2] Loading scratchpad...`)
@@ -311,7 +322,8 @@ export async function compileContext(opts: {
 
   let messages: LLMMessage[]
 
-  if (summary && totalTokens > TOKEN_COMPACT_THRESHOLD) {
+  const compactThreshold = Math.floor(modelContextWindow * COMPACT_RATIO)
+  if (summary && totalTokens > compactThreshold) {
     // Use summary + recent messages (Strategy: COMPRESS)
     messages = [
       { role: "system", content: `[Conversation Summary]: ${summary.summary}` },
@@ -547,11 +559,26 @@ export async function compileContext(opts: {
       `\n# CURRENT TASK\n${opts.taskContext}\n\nFocus ONLY on this task. Do not deviate.`
   }
 
+  // Truncate system prompt if it exceeds the max allowed chars
+  if (systemPrompt.length > MAX_SYSTEM_PROMPT_CHARS) {
+    const originalLen = systemPrompt.length
+    systemPrompt = systemPrompt.substring(0, MAX_SYSTEM_PROMPT_CHARS) +
+      `\n\n[... System prompt truncated (${originalLen} chars → ${MAX_SYSTEM_PROMPT_CHARS} chars) ...]`
+    log.info(`[context-compiler] System prompt truncated: ${originalLen} → ${MAX_SYSTEM_PROMPT_CHARS} chars`)
+  }
+
+  const estimatedSystemTokens = estimateTokens(systemPrompt)
+  const estimatedMsgTokens = messages.reduce((sum, m) => sum + estimateTokens(typeof m.content === 'string' ? m.content : JSON.stringify(m.content)), 0)
+  const estimatedToolTokens = toolsForLLM.reduce((sum, t) => sum + estimateTokens(JSON.stringify(t)), 0)
+  const estimatedTotal = estimatedSystemTokens + estimatedMsgTokens + estimatedToolTokens
+  const budgetPct = modelContextWindow > 0 ? Math.round((estimatedTotal / modelContextWindow) * 100) : 0
+
   log.info(
     `[context-compiler] ✅ DONE: ${allTools.length} total tools, ` +
     `${toolsForLLM.length} selected tools, ${messages.length} messages, ` +
-    `${allSkills.length} skills (${minimalSkills.length} minimal, ${discoveredSkills.length} discovered), ` +
-    `isolated=${isWorker}`
+    `${allSkills.length} skills, isolated=${isWorker}, ` +
+    `est.tokens: sys=${estimatedSystemTokens} msgs=${estimatedMsgTokens} tools=${estimatedToolTokens} ` +
+    `total=${estimatedTotal}/${modelContextWindow} (${budgetPct}%)`
   )
 
   return {

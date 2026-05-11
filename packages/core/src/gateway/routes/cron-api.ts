@@ -518,9 +518,9 @@ export async function handleGetCronChannels(
     const userId = user?.id || "";
 
     const channels = db.query(`
-      SELECT c.id, c.type, c.active, c.status
+      SELECT DISTINCT c.id, c.type, c.active, c.status
       FROM channels c
-      INNER JOIN user_identities ui ON ui.channel = c.id
+      INNER JOIN user_identities ui ON ui.channel = c.type
       WHERE ui.user_id = ? AND c.active = 1
     `).all(userId) as Array<{ id: string; type: string; active: number; status: string }>;
 

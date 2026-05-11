@@ -131,7 +131,7 @@ export abstract class BaseChannel implements IChannel {
       return true;
     }
 
-    const normalizedPeerId = `tg:${peerId}`;
+    const normalizedPeerId = `${this.name}:${peerId}`;
 
     if (this.config.dmPolicy === "allowlist") {
       return this.config.allowFrom.some(

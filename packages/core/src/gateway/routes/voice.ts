@@ -1,27 +1,24 @@
 import { getDb } from "../../storage/sqlite"
 import { voiceService } from "../../voice"
-import { encryptApiKey } from "../../storage/crypto"
+import { storeProviderApiKey, loadProviderApiKey } from "../../storage/crypto"
 
 export async function handleGetVoiceProviders(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   return addCorsHeaders(Response.json({
-    providers: ["elevenlabs", "openai", "gemini", "qwen", "groq", "piper"]
+    providers: ["elevenlabs", "openai", "gemini", "qwen", "groq", "piper", "local-llama"]
   }), req)
 }
 
 export async function handleGetConfiguredVoiceProviders(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
-  const db = getDb()
-  const rows = db.query(`
-    SELECT id, 
-      CASE WHEN api_key_encrypted IS NOT NULL AND api_key_encrypted != '' THEN 1 ELSE 0 END as configured
-    FROM providers
-    WHERE id IN ('groq', 'elevenlabs', 'openai', 'gemini', 'qwen')
-  `).all() as Array<{ id: string; configured: number }>
+  const voiceProviderIds = ["groq", "elevenlabs", "openai", "gemini", "qwen"]
+  const results = await Promise.all(voiceProviderIds.map(async id => ({
+    id,
+    configured: !!(await loadProviderApiKey(id))
+  })))
 
   const providers: Record<string, boolean> = {}
-  for (const row of rows) {
-    providers[row.id] = row.configured === 1
-  }
+  for (const r of results) providers[r.id] = r.configured
   providers.piper = true
+  providers["local-llama"] = true
 
   return addCorsHeaders(Response.json(providers), req)
 }
@@ -47,35 +44,25 @@ export async function handleSaveVoiceProviderKey(
 
   try {
     const db = getDb()
-    const encrypted = encryptApiKey(apiKey)
 
     // Get base URL for the provider
     let baseUrl = ""
     switch (providerId) {
-      case "groq":
-        baseUrl = "https://api.groq.com/openai/v1"
-        break
-      case "elevenlabs":
-        baseUrl = "https://api.elevenlabs.io/v1"
-        break
-      case "openai":
-        baseUrl = "https://api.openai.com/v1"
-        break
-      case "gemini":
-        baseUrl = "https://generativelanguage.googleapis.com/v1beta"
-        break
-      case "qwen":
-        baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-        break
+      case "groq":       baseUrl = "https://api.groq.com/openai/v1"; break
+      case "elevenlabs": baseUrl = "https://api.elevenlabs.io/v1"; break
+      case "openai":     baseUrl = "https://api.openai.com/v1"; break
+      case "gemini":     baseUrl = "https://generativelanguage.googleapis.com/v1beta"; break
+      case "qwen":       baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1"; break
       default:
         return addCorsHeaders(Response.json({ success: false, error: "Unknown provider" }, { status: 400 }), req)
     }
 
-    // Insert or update provider with API key
     db.query(`
-      INSERT OR REPLACE INTO providers (id, name, base_url, api_key_encrypted, api_key_iv, enabled, active)
-      VALUES (?, ?, ?, ?, ?, 1, 1)
-    `).run(providerId, providerId, baseUrl, encrypted.encrypted, encrypted.iv)
+      INSERT OR REPLACE INTO providers (id, name, base_url, enabled, active)
+      VALUES (?, ?, ?, 1, 1)
+    `).run(providerId, providerId, baseUrl)
+
+    await storeProviderApiKey(providerId, apiKey)
 
     return addCorsHeaders(Response.json({ success: true, provider: providerId }), req)
   } catch (error) {
@@ -121,12 +108,11 @@ export async function handleGetVoiceProviderVoices(
               name: v.replace(/_/g, " ").replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()),
             }))
           } else {
-            // Servidor respondió pero con error - usar fallback
-            voices = [{ id: "es_MX-cortana-high", name: "Piper Local (es_MX Cortana)" }]
+            voices = [{ id: "es_MX-claude-14947-epoch-high", name: "Piper Local (Claude Spanish)" }]
           }
         } catch {
           // Servidor TTS no disponible - usar fallback para permitir selección
-          voices = [{ id: "es_MX-cortana-high", name: "Piper Local (es_MX Cortana)" }]
+          voices = [{ id: "es_MX-claude-14947-epoch-high", name: "Piper Local (Claude Spanish)" }]
         }
         break
       }

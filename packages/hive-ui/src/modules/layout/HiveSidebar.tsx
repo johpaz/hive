@@ -16,7 +16,6 @@ import {
   StickyNote,
   Clock,
   Video,
-  Phone,
   type LucideProps,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
@@ -61,7 +60,6 @@ const configGroups = [
       { id: "mcp", label: "MCP Servers", icon: Server },
       { id: "skills", label: "Skills", icon: Wand2 },
       { id: "etica", label: "Ética", icon: ShieldAlert },
-      { id: "whatsapp", label: "WhatsApp", icon: Phone },
     ],
   },
   {

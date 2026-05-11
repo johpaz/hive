@@ -1,5 +1,5 @@
 import { getDb } from "../../storage/sqlite.ts"
-import { encryptConfig, decryptConfig } from "../../storage/crypto.ts"
+import { storeMcpHeaders, loadMcpHeaders, deleteMcpSecrets } from "../../storage/crypto.ts"
 import { logger } from "../../utils/logger.ts"
 
 const mcpLog = logger.child("mcp:api")
@@ -36,19 +36,17 @@ export async function handleGetMcpServers(
   `).all() as Record<string, unknown>[]
 
   // Combine DB info with real-time status from MCP manager
-  const allServers = dbServers.map(s => {
+  const allServers = await Promise.all(dbServers.map(async s => {
     // Try to find matching server in MCP Manager (by name or normalized name)
     const normalizedName = (s.name as string).toLowerCase().replace(/[^a-z0-9-]/g, '-')
     const mcpServer = mcpServers.get(s.name as string) || mcpServers.get(normalizedName)
     const isEnabled = s.enabled === 1
 
     // Redact headers for safe UI display
-    let headers = undefined
-    if (s.headers_encrypted && s.headers_iv) {
-      try {
-        const decryptedHeaders = decryptConfig(s.headers_encrypted as string, s.headers_iv as string)
-        headers = Object.fromEntries(
-          Object.entries(decryptedHeaders).map(([k, v]) => [
+    const rawHeaders = await loadMcpHeaders(s.id as string)
+    const headers = Object.keys(rawHeaders).length > 0
+      ? Object.fromEntries(
+          Object.entries(rawHeaders).map(([k, v]) => [
             k,
             k.toLowerCase().includes("auth") ||
               k.toLowerCase().includes("token") ||
@@ -57,10 +55,7 @@ export async function handleGetMcpServers(
               : v,
           ])
         )
-      } catch (e) {
-        mcpLog.error(`Failed to decrypt headers for ${s.name}: ${(e as Error).message}`)
-      }
-    }
+      : undefined
 
     return {
       id: s.id,
@@ -78,7 +73,7 @@ export async function handleGetMcpServers(
       tools_count: mcpServer?.tools.length || s.tools_count || 0,
       tools: mcpServer?.tools || [],
     }
-  })
+  }))
 
   return addCorsHeaders(Response.json(allServers), req)
 }
@@ -96,19 +91,10 @@ export async function handleCreateMcpServer(req: Request, addCorsHeaders: (r: Re
   // Generate unique ID (name-based for consistency)
   const serverId = body.name.toLowerCase().replace(/[^a-z0-9-]/g, '-')
 
-  // Encrypt headers if present
-  let headersEncrypted: string | undefined
-  let headersIv: string | undefined
-  if (body.config.headers) {
-    const encrypted = encryptConfig(body.config.headers)
-    headersEncrypted = encrypted.encrypted
-    headersIv = encrypted.iv
-  }
-
   // Save to database
   db.query(`
-    INSERT INTO mcp_servers(id, name, transport, command, args, url, headers_encrypted, headers_iv, enabled, builtin, status)
-    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'disconnected')
+    INSERT INTO mcp_servers(id, name, transport, command, args, url, enabled, builtin, status)
+    VALUES(?, ?, ?, ?, ?, ?, ?, 0, 'disconnected')
   `).run(
     serverId,
     body.name,
@@ -116,10 +102,12 @@ export async function handleCreateMcpServer(req: Request, addCorsHeaders: (r: Re
     body.config.command || null,
     body.config.args ? JSON.stringify(body.config.args) : null,
     body.config.url || null,
-    headersEncrypted,
-    headersIv,
     body.config.enabled !== false ? 1 : 0
   )
+
+  if (body.config.headers) {
+    await storeMcpHeaders(serverId, body.config.headers)
+  }
 
   return addCorsHeaders(Response.json({ success: true, id: serverId }), req)
 }
@@ -134,7 +122,10 @@ export async function handleDeleteMcpServer(req: Request, addCorsHeaders: (r: Re
     return addCorsHeaders(Response.json({ success: false, error: "server name required" }), req)
   }
 
+  // Delete from DB and keychain
+  const row = getDb().query(`SELECT id FROM mcp_servers WHERE id = ? OR name = ?`).get(serverName, serverName) as { id: string } | undefined
   getDb().query(`DELETE FROM mcp_servers WHERE id = ? OR name = ?`).run(serverName, serverName)
+  if (row?.id) await deleteMcpSecrets(row.id)
 
   return addCorsHeaders(Response.json({ success: true }), req)
 }
@@ -151,15 +142,9 @@ export async function handleGetMcpServerDetail(
     return addCorsHeaders(new Response("Server not found", { status: 404 }), req)
   }
 
-  // Decrypt headers — unredacted, for editing
-  let headers: Record<string, string> | undefined
-  if (server.headers_encrypted && server.headers_iv) {
-    try {
-      headers = decryptConfig(server.headers_encrypted as string, server.headers_iv as string)
-    } catch (e) {
-      mcpLog.error(`Failed to decrypt headers for ${server.name}: ${(e as Error).message}`)
-    }
-  }
+  // Load headers — unredacted, for editing
+  const rawDetail = await loadMcpHeaders(server.id as string)
+  const headers = Object.keys(rawDetail).length > 0 ? rawDetail as Record<string, string> : undefined
 
   return addCorsHeaders(Response.json({
     id: server.id,
@@ -217,18 +202,14 @@ export async function handleUpdateMcpServer(req: Request, addCorsHeaders: (r: Re
     updates.push("enabled = ?")
     params.push(body.enabled ? 1 : 0)
   }
-  if (body.headers) {
-    const { encrypted, iv } = encryptConfig(body.headers)
-    updates.push("headers_encrypted = ?")
-    params.push(encrypted)
-    updates.push("headers_iv = ?")
-    params.push(iv)
-  }
-
   if (updates.length > 0) {
     params.push(serverName)
     params.push(serverName)
     db.query(`UPDATE mcp_servers SET ${updates.join(", ")} WHERE id = ? OR name = ?`).run(...params as any[])
+  }
+
+  if (body.headers) {
+    await storeMcpHeaders(serverName, body.headers)
   }
 
   return addCorsHeaders(Response.json({ success: true }), req)

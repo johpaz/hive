@@ -12,7 +12,7 @@
  */
 
 import { getDb, initializeDatabase } from "../packages/core/src/storage/sqlite";
-import { decryptConfig } from "../packages/core/src/storage/crypto";
+import { legacyDecryptAES } from "../packages/core/src/storage/crypto";
 
 async function testMCPConnection() {
   console.log("🧪 MCP Connection Flow Test\n");
@@ -47,7 +47,7 @@ async function testMCPConnection() {
 
     if (server.headers_encrypted && server.headers_iv) {
       try {
-        const headers = decryptConfig(server.headers_encrypted, server.headers_iv);
+        const headers = legacyDecryptAES(server.headers_encrypted, server.headers_iv);
         console.log(`   │  Decrypted headers:`, headers);
       } catch (e) {
         console.log(`   │  ❌ Failed to decrypt headers`);
@@ -132,7 +132,7 @@ async function testMCPConnection() {
 
       if (testServer.headers_encrypted && testServer.headers_iv) {
         try {
-          mcpServerConfig.headers = decryptConfig(testServer.headers_encrypted, testServer.headers_iv);
+          mcpServerConfig.headers = legacyDecryptAES(testServer.headers_encrypted, testServer.headers_iv);
           console.log("   ✅ Headers decrypted");
         } catch (e) {
           console.log("   ⚠️  Failed to decrypt headers");

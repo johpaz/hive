@@ -1,6 +1,7 @@
 import { Bot, GrammyError, InputFile, type Context } from "grammy";
 import { BaseChannel, type ChannelConfig, type IncomingMessage, type OutboundMessage } from "./base.ts";
 import { logger } from "../utils/logger.ts";
+import { getDb } from "../storage/sqlite.ts";
 
 export interface TelegramConfig extends ChannelConfig {
   botToken: string;
@@ -57,10 +58,16 @@ export class TelegramChannel extends BaseChannel {
       onStart: () => {
         this.running = true;
         this.log.info(`Telegram bot started: @${this.bot?.botInfo?.username ?? "unknown"}`);
+        try {
+          getDb().query(`UPDATE channels SET status = 'connected' WHERE id = ?`).run(this.accountId);
+        } catch { /* ignore DB errors */ }
       },
     }).catch((error: Error) => {
       this.log.error(`Telegram bot error: ${error.message}`);
       this.running = false;
+      try {
+        getDb().query(`UPDATE channels SET status = 'error' WHERE id = ?`).run(this.accountId);
+      } catch { /* ignore DB errors */ }
     });
   }
 
@@ -298,6 +305,9 @@ export class TelegramChannel extends BaseChannel {
       await this.bot.stop();
       this.running = false;
       this.log.info("Telegram bot stopped");
+      try {
+        getDb().query(`UPDATE channels SET status = 'disconnected' WHERE id = ?`).run(this.accountId);
+      } catch { /* ignore DB errors */ }
     }
   }
 

@@ -1,6 +1,12 @@
 import { logger } from "../utils/logger.ts";
 import { getDb, initializeDatabase } from "./sqlite";
-import { encryptApiKey, encryptConfig, decryptApiKey, decryptConfig } from "./crypto";
+import {
+  storeProviderApiKey,
+  storeChannelConfig,
+  storeMcpEnv,
+  loadProviderApiKey,
+  loadChannelConfig,
+} from "./crypto";
 import { seedAllData, SEED_DATA } from "./seed";
 import { SkillLoader } from "@johpaz/hive-agents-skills";
 
@@ -255,25 +261,14 @@ export async function saveProviderConfig(data: {
   try {
     const db = getDb();
 
-    let apiKeyEncrypted = null;
-    let apiKeyIv = null;
-
-    if (data.apiKey) {
-      const encrypted = await encryptApiKey(data.apiKey);
-      apiKeyEncrypted = encrypted.encrypted;
-      apiKeyIv = encrypted.iv;
-    }
-
     // 1️⃣ Primero: Actualizar provider global con API key del usuario
     db.query(`
-      UPDATE providers SET
-api_key_encrypted = ?,
-  api_key_iv = ?,
-  base_url = ?,
-  enabled = 1,
-  active = 1
-      WHERE id = ?
-  `).run(apiKeyEncrypted, apiKeyIv, data.baseUrl || null, data.provider);
+      UPDATE providers SET base_url = ?, enabled = 1, active = 1 WHERE id = ?
+    `).run(data.baseUrl || null, data.provider);
+
+    if (data.apiKey) {
+      await storeProviderApiKey(data.provider as string, data.apiKey as string);
+    }
 
     log.info("✅ Provider actualizado:", { provider: data.provider });
 
@@ -410,20 +405,12 @@ export async function activateChannel(userId: string, data: {
   try {
     const db = getDb();
 
+    db.query(`
+      UPDATE channels SET user_id = ?, active = 1, enabled = 1, status = 'connected' WHERE id = ?
+    `).run(userId, data.channelId);
+
     if (data.config && Object.keys(data.config).length > 0) {
-      const encrypted = await encryptConfig(data.config);
-      db.query(`
-        UPDATE channels 
-        SET user_id = ?, active = 1, enabled = 1, status = 'connected',
-  config_encrypted = ?, config_iv = ?
-    WHERE id = ?
-      `).run(userId, encrypted.encrypted, encrypted.iv, data.channelId);
-    } else {
-      db.query(`
-        UPDATE channels 
-        SET user_id = ?, active = 1, enabled = 1, status = 'connected'
-        WHERE id = ?
-  `).run(userId, data.channelId);
+      await storeChannelConfig(data.channelId, data.config);
     }
 
     // Create user_identity for the channel if channelUserId provided
@@ -480,30 +467,16 @@ export async function saveVoiceConfig(data: {
 
     // Save STT API key to provider if provided
     if (data.sttApiKey && sttProviderId) {
-      const encrypted = await encryptApiKey(data.sttApiKey);
-      db.query(`
-        UPDATE providers SET
-api_key_encrypted = ?,
-  api_key_iv = ?,
-  enabled = 1,
-  active = 1
-        WHERE id = ?
-  `).run(encrypted.encrypted, encrypted.iv, sttProviderId);
-      log.info("✅ STT API key guardada en BD (encriptada)", { provider: sttProviderId });
+      db.query(`UPDATE providers SET enabled = 1, active = 1 WHERE id = ?`).run(sttProviderId);
+      await storeProviderApiKey(sttProviderId, data.sttApiKey);
+      log.info("✅ STT API key guardada en keychain", { provider: sttProviderId });
     }
 
     // Save TTS API key to provider if provided
     if (data.ttsApiKey && ttsProviderId) {
-      const encrypted = await encryptApiKey(data.ttsApiKey);
-      db.query(`
-        UPDATE providers SET
-api_key_encrypted = ?,
-  api_key_iv = ?,
-  enabled = 1,
-  active = 1
-        WHERE id = ?
-  `).run(encrypted.encrypted, encrypted.iv, ttsProviderId);
-      log.info("✅ TTS API key guardada en BD (encriptada)", { provider: ttsProviderId });
+      db.query(`UPDATE providers SET enabled = 1, active = 1 WHERE id = ?`).run(ttsProviderId);
+      await storeProviderApiKey(ttsProviderId, data.ttsApiKey);
+      log.info("✅ TTS API key guardada en keychain", { provider: ttsProviderId });
     }
 
     // Update channel with voice config
@@ -541,31 +514,24 @@ export async function saveMcpServer(data: {
 
     const mcpId = `${data.userId}:${data.name} `;
 
-    let envEncrypted = null;
-    let envIv = null;
-
-    if (data.env && Object.keys(data.env).length > 0) {
-      const encrypted = await encryptConfig(data.env as Record<string, unknown>);
-      envEncrypted = encrypted.encrypted;
-      envIv = encrypted.iv;
-    }
-
     db.query(`
       INSERT OR REPLACE INTO mcp_servers
-  (id, user_id, name, transport, command, args, env_encrypted, env_iv, url, enabled, builtin)
-VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-  `).run(
+        (id, user_id, name, transport, command, args, url, enabled, builtin)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, 0)
+    `).run(
       mcpId,
       data.userId,
       data.name,
       data.transport,
       data.command || null,
       JSON.stringify(data.args || []),
-      envEncrypted,
-      envIv,
       data.url || null,
       data.enabled ? 1 : 0
     );
+
+    if (data.env && Object.keys(data.env).length > 0) {
+      await storeMcpEnv(mcpId, data.env);
+    }
 
     log.info("✅ MCP server saved:", { name: data.name });
   } catch (e) {
@@ -1070,9 +1036,7 @@ export async function getUserProviders(userId: string): Promise<Array<{
     return Promise.all(results.map(async r => ({
       id: r.name,
       name: r.name,
-      apiKey: r.api_key_encrypted && r.api_key_iv
-        ? await decryptApiKey(r.api_key_encrypted, r.api_key_iv)
-        : null,
+      apiKey: await loadProviderApiKey(r.name) || null,
       baseUrl: r.base_url,
       enabled: r.enabled === 1,
     })));
@@ -1095,21 +1059,16 @@ export async function getUserChannels(userId: string): Promise<Array<{
       id: string;
       type: string;
       account_id: string;
-      config_encrypted: string | null;
-      config_iv: string | null;
       enabled: number;
     }, [string]>(`
-      SELECT id, type, id as account_id, config_encrypted, config_iv, enabled
-      FROM channels WHERE user_id = ?
-  `).all(userId);
+      SELECT id, type, id as account_id, enabled FROM channels WHERE user_id = ?
+    `).all(userId);
 
     return Promise.all(results.map(async r => ({
       id: r.type,
       type: r.type,
       accountId: r.id,
-      config: r.config_encrypted && r.config_iv
-        ? await decryptConfig(r.config_encrypted, r.config_iv)
-        : {},
+      config: await loadChannelConfig(r.id),
       enabled: r.enabled === 1,
     })));
   } catch (e) {

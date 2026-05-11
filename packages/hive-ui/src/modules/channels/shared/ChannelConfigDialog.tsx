@@ -16,7 +16,7 @@ import {
 import { apiClient } from "@/lib/api";
 import { useChannels, useVoice } from "@/stores/useGlobalConfigStore";
 import type { ConnectedChannel } from "@/types";
-import { Settings, AlertCircle, Loader2, CheckCircle2, Eye, EyeOff, QrCode, RefreshCw, X } from "lucide-react";
+import { Settings, AlertCircle, Loader2, CheckCircle2, Eye, EyeOff, QrCode, RefreshCw, X, Plus } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import QRCode from "qrcode";
 
@@ -125,14 +125,24 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
     const [isConnecting, setIsConnecting] = useState(false);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    // ── edit channel state ────────────────────────────────────────────────
-    const [formData, setFormData] = useState<Partial<ConnectedChannel>>({});
-    const [isSaving, setIsSaving] = useState(false);
-    const [voices, setVoices] = useState<Array<{ id: string; name: string }>>([]);
-    const [loadingVoices, setLoadingVoices] = useState(false);
-    const [showChangeToken, setShowChangeToken] = useState(false);
-    const [newToken, setNewToken] = useState("");
-    const [showNewToken, setShowNewToken] = useState(false);
+  // ── edit channel state ────────────────────────────────────────────────
+  const [formData, setFormData] = useState<Partial<ConnectedChannel>>({});
+  const [isSaving, setIsSaving] = useState(false);
+  const [voices, setVoices] = useState<Array<{ id: string; name: string }>>([]);
+  const [loadingVoices, setLoadingVoices] = useState(false);
+  const [showChangeToken, setShowChangeToken] = useState(false);
+  const [newToken, setNewToken] = useState("");
+  const [showNewToken, setShowNewToken] = useState(false);
+
+  // ── WhatsApp message reception config ────────────────────────────────
+  const [waSelfMessagesOnly, setWaSelfMessagesOnly] = useState(true);
+  const [waAcceptGroups, setWaAcceptGroups] = useState(false);
+  const [waDmPolicy, setWaDmPolicy] = useState<"open" | "allowlist" | "pairing">("open");
+  const [waAllowFrom, setWaAllowFrom] = useState<string[]>([]);
+  const [waNewAllowFrom, setWaNewAllowFrom] = useState("");
+  const [waReconnectMaxAttempts, setWaReconnectMaxAttempts] = useState(5);
+  const [waReconnectBaseDelayMs, setWaReconnectBaseDelayMs] = useState(1000);
+  const [waConfigLoaded, setWaConfigLoaded] = useState(false);
 
     // ── helpers ───────────────────────────────────────────────────────────
     const isDisconnected = channel && channel.status !== "connected";
@@ -172,9 +182,37 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
         }
     }, [isOpen, channel]);
 
-    useEffect(() => {
-        fetchConfiguredVoiceProviders();
-    }, [fetchConfiguredVoiceProviders]);
+  useEffect(() => {
+    fetchConfiguredVoiceProviders();
+  }, [fetchConfiguredVoiceProviders]);
+
+  useEffect(() => {
+    if (!isOpen || !channel || channel.type !== "whatsapp") {
+      setWaConfigLoaded(false);
+      return;
+    }
+    let cancelled = false;
+    apiClient<{
+      selfMessagesOnly?: boolean;
+      acceptGroups?: boolean;
+      dmPolicy?: "open" | "allowlist" | "pairing";
+      allowFrom?: string[];
+      reconnectMaxAttempts?: number;
+      reconnectBaseDelayMs?: number;
+    }>(`/api/channels/whatsapp/${channel.id}/details`, { showError: false })
+      .then(data => {
+        if (cancelled) return;
+        setWaSelfMessagesOnly(data.selfMessagesOnly ?? true);
+        setWaAcceptGroups(data.acceptGroups ?? false);
+        setWaDmPolicy(data.dmPolicy ?? "open");
+        setWaAllowFrom(data.allowFrom ?? []);
+        setWaReconnectMaxAttempts(data.reconnectMaxAttempts ?? 5);
+        setWaReconnectBaseDelayMs(data.reconnectBaseDelayMs ?? 1000);
+        setWaConfigLoaded(true);
+      })
+      .catch(() => setWaConfigLoaded(false));
+    return () => { cancelled = true; };
+  }, [isOpen, channel]);
 
     // ── voice selector for TTS ────────────────────────────────────────────
     useEffect(() => {
@@ -278,23 +316,39 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
         }
     };
 
-    const handleSaveSettings = async () => {
-        if (!channel?.id) return;
-        setIsSaving(true);
-        try {
-            // If a new token was entered, reconnect with it first
-            if (newToken.trim().length > 10 && (channel.type === "telegram" || channel.type === "discord")) {
-                const config: Record<string, unknown> = { botToken: newToken.trim() };
-                await reconnectChannel(channel.id, config);
-            }
-            await onSave(channel.id, formData);
-            onClose();
-        } catch (error) {
-            console.error("Save failed", error);
-        } finally {
-            setIsSaving(false);
-        }
-    };
+  const handleSaveSettings = async () => {
+    if (!channel?.id) return;
+    setIsSaving(true);
+    try {
+      // If a new token was entered, reconnect with it first
+      if (newToken.trim().length > 10 && (channel.type === "telegram" || channel.type === "discord")) {
+        const config: Record<string, unknown> = { botToken: newToken.trim() };
+        await reconnectChannel(channel.id, config);
+      }
+      await onSave(channel.id, formData);
+
+      // Save WhatsApp message reception config
+      if (channel.type === "whatsapp") {
+        await apiClient(`/api/channels/whatsapp/${channel.id}/config`, {
+          method: "PUT",
+          body: {
+            selfMessagesOnly: waSelfMessagesOnly,
+            acceptGroups: waAcceptGroups,
+            dmPolicy: waDmPolicy,
+            allowFrom: waAllowFrom,
+            reconnectMaxAttempts: waReconnectMaxAttempts,
+            reconnectBaseDelayMs: waReconnectBaseDelayMs,
+          },
+        });
+      }
+
+      onClose();
+    } catch (error) {
+      console.error("Save failed", error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
     const handleClose = () => {
         stopPoll();
@@ -576,22 +630,157 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
 
     const renderSettingsContent = () => (
         <div className="grid gap-4 py-4">
-            {/* WhatsApp-specific settings */}
-            {channel?.type === "whatsapp" && (
-                <div className="space-y-2 pb-2 border-b border-white/10">
-                    <div className="flex items-center justify-between">
-                        <Label className="text-xs text-white/50 uppercase tracking-widest">Número Vinculado</Label>
+    {/* WhatsApp-specific settings */}
+      {channel?.type === "whatsapp" && (
+        <>
+          <div className="space-y-2 pb-2 border-b border-white/10">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-white/50 uppercase tracking-widest">Número Vinculado</Label>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
+              <span className="font-mono text-sm text-white/70">
+                {channel.accountId ? `+${channel.accountId}` : "No conectado"}
+              </span>
+              <span className="text-[10px] text-white/40 ml-auto">
+                {channel.status === "connected" ? "✓" : "sin conexión"}
+              </span>
+            </div>
+          </div>
+
+          {/* RECEPCIÓN DE MENSAJES */}
+          <div className="space-y-3 pb-2 border-b border-white/10">
+            <p className="text-xs font-bold uppercase tracking-widest text-green-400">Recepción de Mensajes</p>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-xs text-white/60">Solo mensajes propios</Label>
+                <p className="text-[10px] text-white/30">Solo se procesan los mensajes enviados por la propia cuenta</p>
+              </div>
+              <Switch
+                checked={waSelfMessagesOnly}
+                onCheckedChange={setWaSelfMessagesOnly}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-xs text-white/60">Aceptar mensajes de grupo</Label>
+                <p className="text-[10px] text-white/30">Procesar mensajes provenientes de conversaciones grupales</p>
+              </div>
+              <Switch
+                checked={waAcceptGroups}
+                onCheckedChange={setWaAcceptGroups}
+              />
+            </div>
+
+            {!waSelfMessagesOnly && (
+              <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                <Label className="text-xs text-white/60 uppercase tracking-widest">Política de DM (WhatsApp)</Label>
+                <Select value={waDmPolicy} onValueChange={(v: "open" | "allowlist" | "pairing") => setWaDmPolicy(v)}>
+                  <SelectTrigger className="bg-white/5 border-white/10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="open">
+                      <div className="flex flex-col"><span>Abierto</span><span className="text-[10px] text-white/30">Cualquiera puede iniciar chat</span></div>
+                    </SelectItem>
+                    <SelectItem value="allowlist">
+                      <div className="flex flex-col"><span>Lista permitida</span><span className="text-[10px] text-white/30">Solo números autorizados</span></div>
+                    </SelectItem>
+                    <SelectItem value="pairing">
+                      <div className="flex flex-col"><span>Emparejamiento</span><span className="text-[10px] text-white/30">Requiere vinculación manual</span></div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {(waDmPolicy === "allowlist" || waDmPolicy === "pairing") && (
+                  <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                    <Label className="text-xs text-white/60 uppercase tracking-widest">Números permitidos</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={waNewAllowFrom}
+                        onChange={e => setWaNewAllowFrom(e.target.value)}
+                        placeholder="Ej. +521234567890"
+                        className="bg-white/5 border-white/10 font-mono text-sm"
+                        onKeyDown={e => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            const trimmed = waNewAllowFrom.trim();
+                            if (trimmed && !waAllowFrom.includes(trimmed)) {
+                              setWaAllowFrom(prev => [...prev, trimmed]);
+                              setWaNewAllowFrom("");
+                            }
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={!waNewAllowFrom.trim()}
+                        onClick={() => {
+                          const trimmed = waNewAllowFrom.trim();
+                          if (trimmed && !waAllowFrom.includes(trimmed)) {
+                            setWaAllowFrom(prev => [...prev, trimmed]);
+                            setWaNewAllowFrom("");
+                          }
+                        }}
+                        className="h-9 w-9 p-0 shrink-0 hover:bg-blue-500/10"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
                     </div>
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
-                        <span className="font-mono text-sm text-white/70">
-                            {channel.accountId ? `+${channel.accountId}` : "No conectado"}
-                        </span>
-                        <span className="text-[10px] text-white/40 ml-auto">
-                            {channel.status === "connected" ? "✓" : "sin conexión"}
-                        </span>
-                    </div>
-                </div>
+                    {waAllowFrom.length > 0 ? (
+                      <div className="space-y-1.5">
+                        {waAllowFrom.map(entry => (
+                          <div key={entry} className="flex items-center justify-between h-9 px-3 rounded-lg bg-white/5 border border-white/10">
+                            <span className="text-sm font-mono font-medium">{entry}</span>
+                            <button
+                              type="button"
+                              onClick={() => setWaAllowFrom(prev => prev.filter(e => e !== entry))}
+                              className="text-white/30 hover:text-red-400 transition-colors"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-white/30 italic">No hay números en la lista permitida</p>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
+          </div>
+
+          {/* RECONEXIÓN */}
+          <div className="space-y-3 pb-2 border-b border-white/10">
+            <p className="text-xs font-bold uppercase tracking-widest text-amber-400">Reconexión</p>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right text-xs">Intentos máx.</Label>
+              <Input
+                type="number"
+                min={0}
+                value={waReconnectMaxAttempts}
+                onChange={e => setWaReconnectMaxAttempts(parseInt(e.target.value, 10) || 0)}
+                className="col-span-3 bg-white/5 border-white/10 text-sm"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right text-xs">Retardo base (ms)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={waReconnectBaseDelayMs}
+                onChange={e => setWaReconnectBaseDelayMs(parseInt(e.target.value, 10) || 0)}
+                className="col-span-3 bg-white/5 border-white/10 text-sm"
+              />
+            </div>
+            <p className="text-[10px] text-white/30">Backoff exponencial usando el retardo base configurado.</p>
+          </div>
+        </>
+      )}
 
             {/* Token section for Telegram / Discord */}
             {(channel?.type === "telegram" || channel?.type === "discord") && (

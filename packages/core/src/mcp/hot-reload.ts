@@ -10,7 +10,7 @@
 
 import { getDb } from "../storage/sqlite";
 import { logger } from "../utils/logger";
-import { decryptConfig } from "../storage/crypto";
+import { loadMcpHeaders } from "../storage/crypto";
 import { syncMCPToolsToDB, syncMCPToolsToFTS, clearMCPToolsFromDB } from "./tool-sync";
 import type { MCPClientManager } from "@johpaz/hive-agents-mcp";
 
@@ -82,8 +82,9 @@ async function syncMCPServers(mcpManager: MCPClientManager): Promise<void> {
             enabled: true,
           };
 
-          if (server.headers_encrypted && server.headers_iv) {
-            mcpServerConfig.headers = decryptConfig(server.headers_encrypted, server.headers_iv);
+          const mcpHeaders = await loadMcpHeaders(server.id || server.name);
+          if (Object.keys(mcpHeaders).length > 0) {
+            mcpServerConfig.headers = mcpHeaders;
           }
 
           // Update MCP Manager config (auto-connects new servers)

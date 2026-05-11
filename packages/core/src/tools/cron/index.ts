@@ -39,16 +39,19 @@ export function resolveBestChannel(userId: string, explicitChannel?: string): st
   } | undefined;
 
   const activeChannels = db.query(`
-    SELECT ui.channel FROM user_identities ui
-    JOIN channels c ON c.id = ui.channel
+    SELECT DISTINCT ui.channel FROM user_identities ui
+    JOIN channels c ON c.type = ui.channel
     WHERE ui.user_id = ? AND c.active = 1 AND c.status = 'connected'
   `).all(userId) as { channel: string }[];
+
+  log.debug(`[resolveBestChannel] userId=${userId}, explicit=${explicitChannel}, preferred=${user?.preferred_cron_channel}, activeChannels=[${activeChannels.map(c => c.channel).join(", ")}]`);
 
   const identities = activeChannels.length > 0
     ? activeChannels
     : db.query("SELECT channel FROM user_identities WHERE user_id = ?").all(userId) as { channel: string }[];
 
   if (identities.length === 0) {
+    log.warn(`[resolveBestChannel] No identities found for user ${userId}, falling back to webchat`);
     return "webchat";
   }
 
@@ -57,12 +60,16 @@ export function resolveBestChannel(userId: string, explicitChannel?: string): st
   if (explicitChannel && explicitChannel !== "system") {
     if (identities.some((i) => i.channel === explicitChannel)) {
       bestChannel = explicitChannel;
+      log.info(`[resolveBestChannel] Using explicit channel: ${bestChannel}`);
     }
   }
 
   if (!bestChannel && user?.preferred_cron_channel && user.preferred_cron_channel !== "auto") {
     if (identities.some((i) => i.channel === user.preferred_cron_channel)) {
       bestChannel = user.preferred_cron_channel;
+      log.info(`[resolveBestChannel] Using preferred_cron_channel: ${bestChannel}`);
+    } else {
+      log.warn(`[resolveBestChannel] preferred_cron_channel=${user.preferred_cron_channel} not in identities=[${identities.map(i => i.channel).join(", ")}]`);
     }
   }
 
@@ -71,6 +78,7 @@ export function resolveBestChannel(userId: string, explicitChannel?: string): st
     for (const p of preferred) {
       if (identities.some((i) => i.channel === p)) {
         bestChannel = p;
+        log.info(`[resolveBestChannel] Using fallback priority: ${bestChannel}`);
         break;
       }
     }
@@ -78,6 +86,7 @@ export function resolveBestChannel(userId: string, explicitChannel?: string): st
 
   if (!bestChannel) {
     bestChannel = identities[0].channel;
+    log.info(`[resolveBestChannel] Using first identity: ${bestChannel}`);
   }
 
   return bestChannel;

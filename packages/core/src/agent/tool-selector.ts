@@ -194,6 +194,7 @@ export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
     // CodeBridge (subagent process management)
     { name: "codebridge_launch", description: "Launch subagent process, spawn new code bridge agent process. Spanish keywords: lanzar proceso, iniciar subagente, ejecutar código, nuevo proceso", category: "code", abstractionLevel: "orchestration" },
     { name: "codebridge_status", description: "Get status of running subagents, check code bridge agent status. Spanish keywords: estado del proceso, verificar subagente, estado del worker, estado", category: "code", abstractionLevel: "atomic" },
+    { name: "codebridge_feedback", description: "Send feedback or additional instructions to a running CodeBridge subagent. Spanish keywords: enviar feedback, corregir rumbo, aclaraciones, mejoras iterativas", category: "code", abstractionLevel: "atomic" },
     { name: "codebridge_cancel", description: "Cancel running subagent, terminate code bridge agent process. Spanish keywords: cancelar proceso, terminar subagente, detener proceso, parar", category: "code", abstractionLevel: "atomic" },
 
     // Voice tools
@@ -445,14 +446,26 @@ export async function syncToolCatalogToFTS(tools?: ToolDescriptor[]): Promise<vo
         // Merge in any tools from the DB that are missing from the static catalog
         const dbTools = db.query("SELECT name, description, category FROM tools").all() as Array<{ name: string; description: string | null; category: string | null }>
         for (const row of dbTools) {
-            if (!catalogByName.has(row.name)) {
-                catalogByName.set(row.name, {
-                    name: row.name,
-                    description: row.description ?? row.name,
-                    category: (row.category ?? "core") as any,
-                    abstractionLevel: "atomic",
-                })
+            if (catalogByName.has(row.name)) continue
+
+            // Check if this is a legacy name with different separator
+            // (e.g. "cron_create" vs "cron.create" — seed was wrong, tools use dots)
+            const altName = row.name.includes("_")
+                ? row.name.replace(/_/g, ".")
+                : row.name.includes(".")
+                    ? row.name.replace(/\./g, "_")
+                    : ""
+            if (altName && catalogByName.has(altName)) {
+                log.info(`[tool-selector] Skipping legacy tool name "${row.name}" — canonical "${altName}" already in catalog`)
+                continue
             }
+
+            catalogByName.set(row.name, {
+                name: row.name,
+                description: row.description ?? row.name,
+                category: (row.category ?? "core") as any,
+                abstractionLevel: "atomic",
+            })
         }
 
         // Also merge any explicitly passed tools (e.g. from initializer)

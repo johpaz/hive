@@ -210,6 +210,7 @@ export async function notifyTaskCompletion(
 
   const explicitChannel = task.channel && task.channel !== "system" ? task.channel : undefined;
   const notifyChannel = resolveBestChannel(userId, explicitChannel) || "webchat";
+  log.info(`[notifyTaskCompletion] task.channel=${task.channel} explicit=${explicitChannel} resolved=${notifyChannel}`);
 
   const status = success ? "✅" : "❌";
   const message = success

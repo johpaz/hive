@@ -25,7 +25,7 @@ export const OPENAI_COMPAT_BASE_URLS: Record<string, string> = {
   openrouter: "https://openrouter.ai/api/v1",
   deepseek: "https://api.deepseek.com/v1",
   kimi: "https://api.moonshot.ai/v1",
-  "local-llama": "http://localhost:8080/v1",
+  "local-llama": "http://localhost:8081/v1",
   nvidia: "https://integrate.api.nvidia.com/v1",
   qwen: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 }

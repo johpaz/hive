@@ -1,9 +1,9 @@
 import { existsSync, readdirSync, readFileSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
-import { TTS_MODELS, getModelById } from "../../../../tts/src/models.ts"
-import { runInstall } from "../../../../tts/src/install.ts"
-import { startTTSServer } from "../../../../tts/src/server.ts"
+import { TTS_MODELS, getModelById } from "../tts/src/models.ts"
+import { runInstall } from "../tts/src/install.ts"
+import { startTTSServer } from "../tts/src/server.ts"
 
 // Datos de TTS en HIVE_HOME/tts/ — funciona igual en dev, npm global y Docker
 const TTS_ROOT =
@@ -174,6 +174,23 @@ async function ensureTTSRunning(): Promise<boolean> {
     if (await isRunning()) return true
   }
   return false
+}
+
+export async function initializeLocalTTS() {
+  const { installed } = isInstalled()
+  if (installed) {
+    const running = await isRunning()
+    if (!running) {
+      try {
+        ttsServer = startTTSServer({ port: TTS_PORT })
+        console.log(`[tts-server] Servidor TTS auto-iniciado en puerto ${TTS_PORT}`)
+      } catch (err) {
+        console.error(`[tts-server] Falló el auto-inicio: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    } else {
+      console.log(`[tts-server] Servidor TTS ya está ejecutándose en puerto ${TTS_PORT}`)
+    }
+  }
 }
 
 // Proxy de síntesis para el browser — evita exponer el puerto TTS directamente

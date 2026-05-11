@@ -12,7 +12,7 @@
 import { existsSync, readdirSync, readFileSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
-import { detectPlatform, getPiperBinaryName, DEFAULT_VOICE } from "./detect.ts"
+import { detectPlatform, getPiperBinaryName, DEFAULT_VOICE } from "./detect.js"
 
 const log = {
   info: (msg: string) => console.log(`[TTS] ${msg}`),
@@ -48,11 +48,18 @@ function listVoices(): string[] {
 
 async function synthesize(text: string, voice: string): Promise<ArrayBuffer> {
   const piperPath = getPiperPath()
-  const modelPath = join(VOICES_DIR, `${voice}.onnx`)
-  const configPath = join(VOICES_DIR, `${voice}.onnx.json`)
+  let modelPath = join(VOICES_DIR, `${voice}.onnx`)
+  let configPath = join(VOICES_DIR, `${voice}.onnx.json`)
 
   if (!existsSync(modelPath)) {
-    throw new Error(`Voz no encontrada: ${voice}`)
+    console.warn(`[TTS] Voz no encontrada: ${voice}. Usando por defecto: ${DEFAULT_VOICE}`);
+    voice = DEFAULT_VOICE;
+    modelPath = join(VOICES_DIR, `${voice}.onnx`);
+    configPath = join(VOICES_DIR, `${voice}.onnx.json`);
+    
+    if (!existsSync(modelPath)) {
+      throw new Error(`Ni siquiera la voz por defecto se encuentra: ${voice}`);
+    }
   }
 
   // Leer configuración del modelo para obtener parámetros de inferencia
@@ -65,7 +72,7 @@ async function synthesize(text: string, voice: string): Promise<ArrayBuffer> {
     try {
       const config = JSON.parse(readFileSync(configPath, "utf-8"))
       const inference = config.inference || {}
-      
+
       // Usar valores del modelo con ajustes para mejorar naturalidad
       lengthScale = (inference.length_scale ?? 1) * 0.95
       noiseScale = (inference.noise_scale ?? 0.667) * 0.9
@@ -239,6 +246,7 @@ export function startTTSServer(opts?: { port?: number }): ReturnType<typeof Bun.
 }
 
 // Ejecución directa: bun run src/server.ts
+// @ts-ignore
 if (import.meta.main) {
   startTTSServer()
 }

@@ -1,6 +1,6 @@
 import { getDb } from "../../storage/sqlite"
 import { emitCanvas } from "../../canvas/emitter"
-import { encryptConfig } from "../../storage/crypto"
+import { storeAgentHeaders, deleteAgentSecrets } from "../../storage/crypto"
 
 export async function handleGetAgents(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const url = new URL(req.url)
@@ -67,17 +67,13 @@ export async function handleGetAgents(req: Request, addCorsHeaders: (r: Response
 
 export async function handleCreateAgent(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const body = await req.json().catch(() => ({}))
-  const { encrypted: headersEnc, iv: headersIv } = body.headers
-    ? encryptConfig(body.headers)
-    : { encrypted: null, iv: null }
-
   let agentId: string
 
   if (body.id) {
     agentId = body.id
     getDb().query(`
-      INSERT INTO agents(id, name, description, provider_id, model_id, tone, enabled, headers_encrypted, headers_iv, workspace)
-      VALUES(?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+      INSERT INTO agents(id, name, description, provider_id, model_id, tone, enabled, workspace)
+      VALUES(?, ?, ?, ?, ?, ?, 1, ?)
     `).run(
       agentId,
       body.name,
@@ -85,14 +81,12 @@ export async function handleCreateAgent(req: Request, addCorsHeaders: (r: Respon
       body.providerId || "openai",
       body.modelId || "gpt-4o",
       body.tone || "friendly",
-      headersEnc,
-      headersIv,
       body.workspace || null
     )
   } else {
     const result = getDb().query(`
-      INSERT INTO agents(name, description, provider_id, model_id, tone, enabled, headers_encrypted, headers_iv, workspace)
-      VALUES(?, ?, ?, ?, ?, 1, ?, ?, ?)
+      INSERT INTO agents(name, description, provider_id, model_id, tone, enabled, workspace)
+      VALUES(?, ?, ?, ?, ?, 1, ?)
       RETURNING id
     `).get(
       body.name,
@@ -100,11 +94,13 @@ export async function handleCreateAgent(req: Request, addCorsHeaders: (r: Respon
       body.providerId || "openai",
       body.modelId || "gpt-4o",
       body.tone || "friendly",
-      headersEnc,
-      headersIv,
       body.workspace || null
     ) as { id: string } | undefined
     agentId = result?.id || ""
+  }
+
+  if (body.headers && agentId) {
+    await storeAgentHeaders(agentId, body.headers)
   }
 
   emitCanvas("canvas:node_add", {
@@ -176,11 +172,7 @@ export async function handleUpdateAgent(req: Request, addCorsHeaders: (r: Respon
 
   const agentHeaders = body.headers !== undefined ? body.headers : body.config?.headers
   if (agentHeaders !== undefined) {
-    const { encrypted, iv } = encryptConfig(agentHeaders)
-    updates.push("headers_encrypted = ?")
-    params.push(encrypted)
-    updates.push("headers_iv = ?")
-    params.push(iv)
+    await storeAgentHeaders(agentId, agentHeaders)
   }
 
   const userPreferences = body.userPreferences !== undefined ? body.userPreferences : body.user_preferences
@@ -211,6 +203,7 @@ export async function handleDeleteAgent(req: Request, addCorsHeaders: (r: Respon
   }
 
   getDb().query(`DELETE FROM agents WHERE id = ?`).run(agentId)
+  await deleteAgentSecrets(agentId)
 
   emitCanvas("canvas:node_remove", { id: agentId })
 

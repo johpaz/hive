@@ -33,7 +33,7 @@ import { subscribeCanvas, unsubscribeCanvas, emitCanvas, getCanvasSnapshot, remo
 import { subscribeBridge, unsubscribeBridge } from "../tools/bridge-events";
 import { resolveCanvasInteraction } from "../tools/canvas/index";
 import { randomUUID } from "crypto";
-import { decryptConfig } from "../storage/crypto.ts";
+import { legacyDecryptAES } from "../storage/crypto.ts";
 import { resolveContext } from "./resolver";
 import { voiceService } from "../voice/index";
 import { multimodalService } from "../multimodal/index";
@@ -74,7 +74,8 @@ import { handleGetMcpServers, handleGetMcpServerDetail, handleCreateMcpServer, h
 import { handleGetModels, handleCreateModel, handleToggleModel, handleGetModelsConfig, handleUpdateModelsConfig, handleDeleteModel, handleUpdateModel } from "./routes/models";
 import { handleGetVoiceProviders, handleGetConfiguredVoiceProviders, handleSaveVoiceProviderKey, handleTestVoice, handleGetChannelVoice, handleUpdateChannelVoice, handleGetVoiceProviderVoices } from "./routes/voice";
 import { handleGetVisionProviders, handleGetChannelVision, handleUpdateChannelVision, handleOcrImage } from "./routes/multimodal";
-import { handleGetLocalTTSStatus, handleGetLocalTTSLogs, handleInstallLocalTTS, handleStartLocalTTS, handleStopLocalTTS, handleSpeakLocalTTS, handleGetAvailableModels, handleGetInstalledVoices, handleDownloadModel, handleGetDownloadLogs } from "./routes/tts-local";
+import { handleGetLocalTTSStatus, handleGetLocalTTSLogs, handleInstallLocalTTS, handleStartLocalTTS, handleStopLocalTTS, handleSpeakLocalTTS, handleGetAvailableModels, handleGetInstalledVoices, handleDownloadModel, handleGetDownloadLogs, initializeLocalTTS } from "./routes/tts-local";
+import { handleGetLocalLLMStatus, handleGetLocalLLMLogs, handleInstallLocalLLM, handleStartLocalLLM, handleStopLocalLLM, handleDownloadLLMModel, initializeLocalLLM } from "./routes/llm-local";
 import { handleCreateMeeting, handleListMeetings, handleGetMeeting, handleAddMeetingSegment, handleStopMeeting } from "./routes/meeting";
 import { handleGetActivityStats, handleGetSystemStats, handleGetUsageStats, handleSystemReload, handleApiReload, handleGetVersion, handleTriggerUpdate } from "./routes/system";
 import { handleGetChatHistory, handleGetCanvas, handleGetNotes, handleUpdateNote } from "./routes/chat";
@@ -193,6 +194,10 @@ export async function startGateway(config: Config): Promise<void> {
     channelManager = init.channelManager;
     dbProvider = init.provider;
     dbModel = init.model;
+
+    // Auto-iniciar TTS y LLM local si están instalados
+    await initializeLocalTTS();
+    await initializeLocalLLM();
 
     // Conectar channel-notify singleton para que las tools (notify, report_progress) puedan enviar mensajes
     setChannelSendFn(async (channel, sessionId, content) => {
@@ -1363,7 +1368,7 @@ export async function startGateway(config: Config): Promise<void> {
                     // Decrypt headers if present
                     if (server.headers_encrypted && server.headers_iv) {
                       try {
-                        mcpServerConfig.headers = decryptConfig(server.headers_encrypted, server.headers_iv);
+                        mcpServerConfig.headers = legacyDecryptAES(server.headers_encrypted, server.headers_iv);
                       } catch (e) {
                         log.warn(`Failed to decrypt headers for ${mcpName}`);
                       }
@@ -1448,7 +1453,7 @@ export async function startGateway(config: Config): Promise<void> {
                     // Decrypt headers if present
                     if (server.headers_encrypted && server.headers_iv) {
                       try {
-                        mcpServerConfig.headers = decryptConfig(server.headers_encrypted, server.headers_iv);
+                        mcpServerConfig.headers = legacyDecryptAES(server.headers_encrypted, server.headers_iv);
                       } catch (e) {
                         log.warn(`Failed to decrypt headers for ${mcpName}`);
                       }
@@ -1630,6 +1635,26 @@ export async function startGateway(config: Config): Promise<void> {
           return await handleGetInstalledVoices(req, addCorsHeaders)
         }
 
+        // ── LLM Local ────────────────────────────────────────────────────────
+        if (url.pathname === "/api/llm-local/status" && req.method === "GET") {
+          return await handleGetLocalLLMStatus(req, addCorsHeaders)
+        }
+        if (url.pathname === "/api/llm-local/logs" && req.method === "GET") {
+          return await handleGetLocalLLMLogs(req, addCorsHeaders)
+        }
+        if (url.pathname === "/api/llm-local/install" && req.method === "POST") {
+          return await handleInstallLocalLLM(req, addCorsHeaders)
+        }
+        if (url.pathname === "/api/llm-local/start" && req.method === "POST") {
+          return await handleStartLocalLLM(req, addCorsHeaders)
+        }
+        if (url.pathname === "/api/llm-local/stop" && req.method === "POST") {
+          return await handleStopLocalLLM(req, addCorsHeaders)
+        }
+        if (url.pathname === "/api/llm-local/download-model" && req.method === "POST") {
+          return await handleDownloadLLMModel(req, addCorsHeaders)
+        }
+
         // ── Meeting Transcription API ────────────────────────────────────────
         if (url.pathname === "/api/meetings" && req.method === "POST") {
           return await handleCreateMeeting(req, addCorsHeaders);
@@ -1760,6 +1785,13 @@ export async function startGateway(config: Config): Promise<void> {
           return;
         }
 
+        // ── LLM Local ─────────────────────────────────────────────────────────
+        if (data.sessionId.startsWith("llm-local:")) {
+          log.info(`Local LLM client connected: ${data.sessionId}`);
+          ws.send(JSON.stringify({ type: "llm-local:connected", sessionId: data.sessionId }));
+          return;
+        }
+
         log.debug(`WebSocket connected: ${data.sessionId} `);
 
         sessionManager.create(data.sessionId, ws);
@@ -1809,6 +1841,13 @@ export async function startGateway(config: Config): Promise<void> {
 
       async message(ws, message) {
         const data = ws.data;
+
+        // LLM Local
+        if (data.sessionId.startsWith("llm-local:")) {
+          const { handleLLMWebSocket } = await import("./llm-local/server");
+          await handleLLMWebSocket(ws as any, message.toString());
+          return;
+        }
 
         // Bridge events clients are read-only; only respond to ping keepalive
         if (data.sessionId.startsWith("bridge:")) {

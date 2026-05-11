@@ -5,13 +5,12 @@ import { ToolManager } from "@/modules/agent-config/tools/ToolManager";
 import { MCPServerList } from "@/modules/agent-config/mcp/MCPServerList";
 import { UserProfileEditor } from "@/modules/agent-config/user/UserProfileEditor";
 import { SkillsTab } from "@/modules/agent-config/skills/SkillsTab";
-import { WhatsAppConfigPanel } from "@/modules/agent-config/whatsapp/WhatsAppConfigPanel";
 import { NotesPanel } from "@/components/NotesPanel";
 import { CronJobsPanel } from "@/components/CronJobsPanel";
 import { SecurityPanel } from "@/components/SecurityPanel";
 import { useSkills, useTools, useMCPServers } from "@/hooks/useProviders";
 
-type PanelId = "etica" | "herramientas" | "mcp" | "skills" | "perfil" | "notas" | "cron-jobs" | "seguridad" | "whatsapp";
+type PanelId = "etica" | "herramientas" | "mcp" | "skills" | "perfil" | "notas" | "cron-jobs" | "seguridad";
 
 function PanelContent({ panel }: { panel: PanelId }) {
   switch (panel) {
@@ -57,24 +56,18 @@ function PanelContent({ panel }: { panel: PanelId }) {
           <CronJobsPanel />
         </div>
       );
-    case "seguridad":
-      return (
-        <div className="p-4">
-          <SecurityPanel />
-        </div>
-      );
-    case "whatsapp":
-      return (
-        <div className="p-4">
-          <WhatsAppConfigPanel />
-        </div>
-      );
-    default:
+  case "seguridad":
+    return (
+      <div className="p-4">
+        <SecurityPanel />
+      </div>
+    );
+  default:
       return null;
   }
 }
 
-const VALID_PANELS: PanelId[] = ["etica", "herramientas", "mcp", "skills", "perfil", "notas", "cron-jobs", "seguridad", "whatsapp"];
+const VALID_PANELS: PanelId[] = ["etica", "herramientas", "mcp", "skills", "perfil", "notas", "cron-jobs", "seguridad"];
 
 export function SettingsPage({ forcePanel }: { forcePanel?: PanelId }) {
   const { panel } = useParams<{ panel: string }>();
@@ -129,16 +122,11 @@ export function SettingsPage({ forcePanel }: { forcePanel?: PanelId }) {
       subtitle: "Gestión de ejecuciones recurrentes y disparadores cron."
     },
   seguridad: {
-      eyebrow: "CONTROL DE ACCESO",
-      title: "Seguridad",
-      subtitle: "Protege tu instancia con email y contraseña. Esencial si despliegas Hive en un servidor público."
-    },
-    whatsapp: {
-      eyebrow: "CANAL DE MENSAJERÍA",
-      title: "WhatsApp",
-      subtitle: "Configura tu conexión de WhatsApp. Gestiona la sesión, opciones de grupo y reconexión."
-    }
-  };
+    eyebrow: "CONTROL DE ACCESO",
+    title: "Seguridad",
+    subtitle: "Protege tu instancia con email y contraseña. Esencial si despliegas Hive en un servidor público."
+  }
+};
 
   const { title, subtitle, eyebrow } = panelTitles[activePanel];
 

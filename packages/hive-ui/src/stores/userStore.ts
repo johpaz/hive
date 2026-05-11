@@ -10,6 +10,7 @@ interface User {
     timezone?: string;
     occupation?: string;
     notes?: string;
+    preferred_cron_channel?: string;
     created_at?: number;
 }
 

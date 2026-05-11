@@ -6,11 +6,11 @@
  * Compatible con packages/hivelearn para programas educativos narrados.
  *
  * Iniciar servidor:
- *   bun run packages/tts/src/server.ts
+ *   bun run packages/core/src/gateway/tts/src/server.ts
  *
  * Uso desde hivelearn:
  *   import { isTTSAvailable, synthesize } from "@johpaz/hive-tts/client"
  */
 
-export * from "./client.ts"
-export { detectPlatform } from "./detect.ts"
+export * from "./client.js"
+export { detectPlatform } from "./detect.js"

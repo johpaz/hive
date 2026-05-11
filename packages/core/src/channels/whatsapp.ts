@@ -16,20 +16,21 @@ import { getDb } from "../storage/sqlite.ts";
 // @ts-ignore — no type definitions for qrcode-terminal
 import qrcodeTerminal from "qrcode-terminal";
 
-// Baileys uses the `ws` npm package which registers 'upgrade' and 'unexpected-response'
-// listeners — events that Bun's ws compatibility layer doesn't implement.
-// Patch emitWarning once so these cosmetic warnings never reach stderr.
-const _origEmitWarning = process.emitWarning.bind(process);
-(process as any).emitWarning = (warning: string | Error, ...args: unknown[]) => {
-  const msg = typeof warning === "string" ? warning : warning?.message ?? "";
-  if (msg.includes("not implemented in bun")) return;
-  _origEmitWarning(warning as any, ...(args as any[]));
+// Baileys uses the `ws` npm package which triggers "[bun] Warning: ws.WebSocket 'upgrade'
+// event is not implemented in bun" etc. Bun writes these directly to stderr from native
+// code, bypassing process.emitWarning. Patch process.stderr.write to filter them out.
+const _origStderrWrite = process.stderr.write.bind(process.stderr);
+(process.stderr as any).write = function (chunk: string | Buffer, ...args: unknown[]) {
+  const str = typeof chunk === "string" ? chunk : Buffer.isBuffer(chunk) ? chunk.toString() : "";
+  if (str.includes("[bun] Warning:") && str.includes("not implemented in bun")) return true;
+  return _origStderrWrite(chunk, ...(args as any[]));
 };
 
 export interface WhatsAppConfig extends ChannelConfig {
   accountId: string;
   agentId: string;
   acceptGroups?: boolean;
+  selfMessagesOnly?: boolean;
   reconnectMaxAttempts?: number;
   reconnectBaseDelayMs?: number;
 }
@@ -251,19 +252,35 @@ export class WhatsAppChannel extends BaseChannel {
 
       const isGroup = from.includes("@g.us");
 
-      // Filter out group messages unless explicitly enabled in config
-      if (isGroup && !this.config.acceptGroups) continue;
+          if (isGroup && !this.config.acceptGroups) {
+        this.log.info(`[filter] Group message skipped (acceptGroups=false): ${from}`);
+        continue;
+      }
 
-      // For direct messages: only process self-messages (user writing to themselves to talk to the agent).
-      // For groups: process any message from the group (if acceptGroups is enabled).
+      const selfMessagesOnly = this.config.selfMessagesOnly !== false;
+
       if (!isGroup) {
-        // Normalize JID: socket.user.id may include device suffix "573....:8@s.whatsapp.net"
-        // while remoteJid is "573....@s.whatsapp.net" — compare only the number part.
-        const rawOwnJid = this.socket?.user?.id ?? "";
-        const ownNumber = rawOwnJid.split(":")[0];
         const fromNumber = from.split("@")[0];
-        const isSelfMessage = typedMsg.key.fromMe && fromNumber === ownNumber;
-        if (!isSelfMessage) continue;
+        const ownJid = this.socket?.user?.id ?? "";
+        const ownLid = this.socket?.user?.lid ?? "";
+        const ownNumber = ownJid.split(":")[0].split("@")[0];
+        const ownLidNumber = ownLid.split(":")[0].split("@")[0];
+        const isToSelf = fromNumber === ownNumber || fromNumber === ownLidNumber;
+        const isSelfMessage = !!typedMsg.key.fromMe && isToSelf;
+
+        this.log.info(`[filter] DM from=${fromNumber} ownNumber=${ownNumber} ownLid=${ownLidNumber} fromMe=${typedMsg.key.fromMe} selfMessagesOnly=${selfMessagesOnly} isSelfMessage=${isSelfMessage}`);
+
+        if (selfMessagesOnly) {
+          if (!isSelfMessage) {
+            this.log.info(`[filter] DM skipped (selfMessagesOnly=true, not self)`);
+            continue;
+          }
+        } else {
+          if (!isSelfMessage && !this.isUserAllowed(fromNumber)) {
+            this.log.info(`[filter] DM skipped (not in allowlist): ${fromNumber}`);
+            continue;
+          }
+        }
       }
 
   const { content, hasAudio, hasImage, hasDocument } = this.extractMessageContent(typedMsg.message);

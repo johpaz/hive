@@ -169,6 +169,10 @@ export const searchKnowledgeTool: Tool = {
     const MIN_RESULTS_FOR_BILINGUAL = 2;
 
     try {
+      if (!query) {
+        log.info(`[search_knowledge] Empty query — returning empty results`)
+        return { query, type, tools: [], skills: [], playbook: [], toolsmcp: [] }
+      }
       const escapedQuery = query.replace(/'/g, "''");
       const normalizedQuery = escapedQuery.replace(/_/g, " ").trim();
       const words = normalizedQuery.split(/\s+/).filter(w => w.length > 0);

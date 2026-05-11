@@ -4,7 +4,9 @@
  *   gemini / google  → native Gemini REST API (v1beta, ?key=)
  *   anthropic        → @anthropic-ai/sdk
  *   ollama           → ollama npm package
- *   everything else  → openai  npm package  (OpenAI-compatible endpoint)
+ *   openai           → openai npm package
+ *   groq / mistral / openrouter / deepseek / kimi / local-llama / nvidia / qwen
+ *                    → openai npm package (OpenAI-compatible endpoint, per-provider adapter)
  *
  * Public interface (LLMMessage, callLLM, resolveProviderConfig) is stable.
  */
@@ -13,7 +15,15 @@ import { logger } from "../utils/logger"
 import { GeminiProvider } from "./llm-providers/gemini"
 import { AnthropicProvider } from "./llm-providers/anthropic"
 import { OllamaProvider } from "./llm-providers/ollama"
-import { OpenAICompatProvider } from "./llm-providers/openai-compat"
+import { OpenAIProvider } from "./llm-providers/openai"
+import { GroqProvider } from "./llm-providers/groq"
+import { MistralProvider } from "./llm-providers/mistral"
+import { OpenRouterProvider } from "./llm-providers/openrouter"
+import { DeepSeekProvider } from "./llm-providers/deepseek"
+import { KimiProvider } from "./llm-providers/kimi"
+import { LocalLlamaProvider } from "./llm-providers/local-llama"
+import { NvidiaProvider } from "./llm-providers/nvidia"
+import { QwenProvider } from "./llm-providers/qwen"
 import type { LLMProvider } from "./llm-providers/interface"
 
 const log = logger.child("llm-client")
@@ -59,6 +69,7 @@ export interface LLMCallOptions {
   apiKey: string
   baseUrl?: string
   numCtx?: number
+  contextWindow?: number
   messages: LLMMessage[]
   tools?: LLMToolDef[]
   temperature?: number
@@ -83,18 +94,25 @@ export interface LLMResponse {
 
 // ─── Provider factory ─────────────────────────────────────────────────────────
 
-const GEMINI_PROVIDERS = new Set(["gemini", "google"])
-
-const KNOWN_PROVIDERS = new Set(["anthropic", "gemini", "google", "ollama", "openai", "groq", "mistral", "openrouter", "deepseek", "kimi", "local-llama", "nvidia"])
-
 function getProvider(provider: string): LLMProvider {
-  if (GEMINI_PROVIDERS.has(provider)) return new GeminiProvider()
-  if (provider === "anthropic") return new AnthropicProvider()
-  if (provider === "ollama") return new OllamaProvider()
-  if (!KNOWN_PROVIDERS.has(provider)) {
-    log.warn(`[llm-client] Unknown provider "${provider}" — falling back to OpenAI-compatible endpoint`)
+  switch (provider) {
+    case "gemini":
+    case "google":      return new GeminiProvider()
+    case "anthropic":   return new AnthropicProvider()
+    case "ollama":      return new OllamaProvider()
+    case "openai":      return new OpenAIProvider()
+    case "groq":        return new GroqProvider()
+    case "mistral":     return new MistralProvider()
+    case "openrouter":  return new OpenRouterProvider()
+    case "deepseek":    return new DeepSeekProvider()
+    case "kimi":        return new KimiProvider()
+    case "local-llama": return new LocalLlamaProvider()
+    case "nvidia":      return new NvidiaProvider()
+    case "qwen":        return new QwenProvider()
+    default:
+      log.warn(`[llm-client] Unknown provider "${provider}" — falling back to OpenAI-compatible endpoint`)
+      return new OpenAIProvider()
   }
-  return new OpenAICompatProvider()
 }
 
 // ─── Public API ────────────────────────────────────────────────────────────────
@@ -119,21 +137,20 @@ export async function callLLM(options: LLMCallOptions): Promise<LLMResponse> {
 export async function resolveProviderConfig(
   providerId: string,
   modelId: string
-): Promise<Pick<LLMCallOptions, "provider" | "model" | "apiKey" | "baseUrl" | "numCtx" | "numGpu">> {
+): Promise<Pick<LLMCallOptions, "provider" | "model" | "apiKey" | "baseUrl" | "numCtx" | "numGpu" | "contextWindow">> {
   const { getDb } = await import("../storage/sqlite")
-  const { decryptApiKey } = await import("../storage/crypto")
-
+  const { loadProviderApiKey } = await import("../storage/crypto")
   const db = getDb()
   const providerRow = db
     .query<any, [string]>("SELECT * FROM providers WHERE id = ? AND enabled = 1")
     .get(providerId)
 
-  let apiKey = ""
-  if (providerRow?.api_key_encrypted && providerRow?.api_key_iv) {
-    try {
-      apiKey = await decryptApiKey(providerRow.api_key_encrypted, providerRow.api_key_iv)
-    } catch { /* fall through to env var */ }
-  }
+  // Load model's context window for token budget management
+  const modelRow = db
+    .query<any, [string]>("SELECT context_window FROM models WHERE id = ?")
+    .get(modelId)
+
+  let apiKey = await loadProviderApiKey(providerId)
   if (!apiKey) {
     apiKey = process.env[`${providerId.toUpperCase()}_API_KEY`] || ""
   }
@@ -145,5 +162,6 @@ export async function resolveProviderConfig(
     baseUrl: providerRow?.base_url || undefined,
     numCtx: providerRow?.num_ctx ?? undefined,
     numGpu: providerRow?.num_gpu ?? undefined,
+    contextWindow: modelRow?.context_window ?? undefined,
   }
 }

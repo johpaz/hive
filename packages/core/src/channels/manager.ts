@@ -7,7 +7,7 @@ import { createWebChatChannel, type WebChatConfig } from "./webchat.ts";
 import { createWhatsAppChannel, WhatsAppChannel, type WhatsAppConfig } from "./whatsapp.ts";
 import { createSlackChannel, type SlackConfig } from "./slack.ts";
 import { getDb } from "../storage/sqlite.ts";
-import { decryptConfig } from "../storage/crypto.ts";
+import { loadChannelConfig } from "../storage/crypto.ts";
 
 export class ChannelManager {
   private config: Config;
@@ -40,28 +40,16 @@ export class ChannelManager {
       const db = getDb();
       // Load all active channels - config may be empty for webchat
       const rows = db.query(`
-        SELECT id, type, config_encrypted, config_iv, enabled, active
-        FROM channels
-        WHERE enabled = 1 AND active = 1
-      `).all() as Array<{
-        id: string;
-        type: string;
-        config_encrypted: string | null;
-        config_iv: string | null;
-        enabled: number;
-        active: number;
-      }>;
+        SELECT id, type, enabled, active FROM channels WHERE enabled = 1 AND active = 1
+      `).all() as Array<{ id: string; type: string; enabled: number; active: number }>;
 
       for (const row of rows) {
         let config: Record<string, unknown> = {};
-
-        if (row.config_encrypted && row.config_iv) {
-          try {
-            config = await decryptConfig(row.config_encrypted, row.config_iv);
-            this.log.debug(`Decrypted config for ${row.type}:${row.id}:`, Object.keys(config));
-          } catch (error) {
-            this.log.warn(`Failed to decrypt config for channel ${row.id}:`, (error as Error).message);
-          }
+        try {
+          config = await loadChannelConfig(row.id);
+          this.log.debug(`Loaded config for ${row.type}:${row.id}:`, Object.keys(config));
+        } catch (error) {
+          this.log.warn(`Failed to load config for channel ${row.id}:`, (error as Error).message);
         }
 
         // Use channel id as accountId
@@ -332,7 +320,9 @@ export class ChannelManager {
     reconnectMaxAttempts: number;
     error?: string;
     acceptGroups: boolean;
+    selfMessagesOnly: boolean;
     dmPolicy?: string;
+    allowFrom: string[];
   } | null {
     const key = `whatsapp:${accountId}`;
     const channel = this.channels.get(key) as WhatsAppChannel | undefined;
@@ -352,7 +342,9 @@ export class ChannelManager {
       reconnectMaxAttempts: config.reconnectMaxAttempts ?? 10,
       error: state.error,
       acceptGroups: config.acceptGroups ?? false,
+      selfMessagesOnly: config.selfMessagesOnly !== false,
       dmPolicy: config.dmPolicy,
+      allowFrom: config.allowFrom ?? [],
     };
   }
 

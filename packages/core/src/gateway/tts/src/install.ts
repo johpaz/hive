@@ -13,7 +13,7 @@ import {
   VOICE_URLS,
   getPiperBinaryName,
   DEFAULT_VOICE,
-} from "./detect.ts"
+} from "./detect.js"
 
 const log = {
   info: (msg: string) => console.log(`[TTS] ${msg}`),
@@ -117,6 +117,7 @@ export async function runInstall(ttsRoot: string): Promise<void> {
 }
 
 // Ejecución directa: bun run src/install.ts
+// @ts-ignore
 if (import.meta.main) {
   const ttsRoot =
     process.env.HIVE_TTS_ROOT ??

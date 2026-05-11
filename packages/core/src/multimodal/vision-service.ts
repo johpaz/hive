@@ -1,5 +1,5 @@
 import { getDb } from "../storage/sqlite"
-import { decryptApiKey } from "../storage/crypto"
+import { loadProviderApiKey } from "../storage/crypto"
 import { logger } from "../utils/logger"
 import type { ImageInput, DocumentInput, VisionConfig } from "./types"
 import type { ContentPart } from "./types"
@@ -132,18 +132,8 @@ class MultimodalService {
 
   private async getProviderApiKey(providerId: string): Promise<string | null> {
     const db = getDb()
-    const provider = db.query(`
-      SELECT api_key_encrypted, api_key_iv FROM providers WHERE id = ?
-    `).get(providerId) as { api_key_encrypted: string; api_key_iv: string } | undefined
-
-    if (!provider?.api_key_encrypted) return null
-
-    try {
-      return await decryptApiKey(provider.api_key_encrypted, provider.api_key_iv)
-    } catch (error) {
-      log.error(`Failed to decrypt API key for provider ${providerId}: ${(error as Error).message}`)
-      return null
-    }
+    const apiKey = await loadProviderApiKey(providerId)
+    return apiKey || null
   }
 
   private async ocrWithOpenAI(image: ImageInput): Promise<string> {

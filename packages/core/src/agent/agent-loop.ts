@@ -331,7 +331,17 @@ export async function* runAgent(
           // Inject native tools
           for (const found of foundTools) {
             if (!currentToolNames.has(found.name)) {
-              const nativeTool = ctx.allTools.find(t => t.name === found.name)
+              let nativeTool = ctx.allTools.find(t => t.name === found.name)
+              // Fallback: try alternative naming (dots ↔ underscores for legacy DB names)
+              if (!nativeTool) {
+                const altName = found.name.includes(".")
+                  ? found.name.replace(/\./g, "_")
+                  : found.name.replace(/_/g, ".")
+                nativeTool = ctx.allTools.find(t => t.name === altName)
+                if (nativeTool) {
+                  log.info(`[agent-loop] Resolved legacy tool name "${found.name}" → "${nativeTool.name}"`)
+                }
+              }
               if (nativeTool) {
                 ctx.tools.push({
                   type: "function",
@@ -344,6 +354,8 @@ export async function* runAgent(
                 log.info(`[agent-loop] Injected discovered native tool into loadout: ${nativeTool.name}`)
                 currentToolNames.add(found.name)
                 injectedTools.push(nativeTool.name)
+              } else {
+                log.warn(`[agent-loop] search_knowledge returned tool "${found.name}" but no matching executor found in allTools`)
               }
             }
           }

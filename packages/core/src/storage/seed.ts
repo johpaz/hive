@@ -60,14 +60,14 @@ export const SEED_DATA: SeedData = {
     // ─────────────────────────────────────────
     // 4. CRON — Tareas programadas (Croner-based)
     // ─────────────────────────────────────────
-    { id: "cron_create", name: "cron_create", category: "cron", description: "Crear tarea programada: recurrente (expresión cron) o única (fire_at). Requiere campo 'task' con instrucción para el agente. Sinónimos: programar tarea, crear recordatorio, agendar, automatizar horario, tarea recurrente, una vez" },
-    { id: "cron_list", name: "cron_list", category: "cron", description: "Listar todas las tareas programadas con próximos horarios de ejecución. Sinónimos: ver tareas programadas, listar cronograma, próximas ejecuciones" },
-    { id: "cron_update", name: "cron_update", category: "cron", description: "Actualizar tarea programada existente: cambiar expresión, instrucción, canal, ventana temporal. Sinónimos: modificar cron, editar recordatorio, cambiar horario, actualizar tarea" },
-    { id: "cron_pause", name: "cron_pause", category: "cron", description: "Pausar temporalmente una tarea programada sin eliminarla. Sinónimos: pausar tarea programada, detener temporalmente, suspender recordatorio" },
-    { id: "cron_resume", name: "cron_resume", category: "cron", description: "Reanudar una tarea programada previamente pausada. Sinónimos: reanudar tarea, continuar tarea pausada, activar recordatorio" },
-    { id: "cron_delete", name: "cron_delete", category: "cron", description: "Eliminar una tarea programada permanentemente. Sinónimos: eliminar tarea programada, borrar recordatorio, cancelar tarea" },
-    { id: "cron_trigger", name: "cron_trigger", category: "cron", description: "Ejecutar manualmente una tarea programada de forma inmediata. Sinónimos: ejecutar tarea ahora, forzar ejecución, disparar manualmente" },
-    { id: "cron_history", name: "cron_history", category: "cron", description: "Obtener historial de ejecuciones y logs de una tarea programada. Sinónimos: historial ejecuciones, logs tarea, registro ejecuciones" },
+    { id: "cron.create", name: "cron.create", category: "cron", description: "Crear tarea programada: recurrente (expresión cron) o única (fire_at). Requiere campo 'task' con instrucción para el agente. Sinónimos: programar tarea, crear recordatorio, agendar, automatizar horario, tarea recurrente, una vez" },
+    { id: "cron.list", name: "cron.list", category: "cron", description: "Listar todas las tareas programadas con próximos horarios de ejecución. Sinónimos: ver tareas programadas, listar cronograma, próximas ejecuciones" },
+    { id: "cron.update", name: "cron.update", category: "cron", description: "Actualizar tarea programada existente: cambiar expresión, instrucción, canal, ventana temporal. Sinónimos: modificar cron, editar recordatorio, cambiar horario, actualizar tarea" },
+    { id: "cron.pause", name: "cron.pause", category: "cron", description: "Pausar temporalmente una tarea programada sin eliminarla. Sinónimos: pausar tarea programada, detener temporalmente, suspender recordatorio" },
+    { id: "cron.resume", name: "cron.resume", category: "cron", description: "Reanudar una tarea programada previamente pausada. Sinónimos: reanudar tarea, continuar tarea pausada, activar recordatorio" },
+    { id: "cron.delete", name: "cron.delete", category: "cron", description: "Eliminar una tarea programada permanentemente. Sinónimos: eliminar tarea programada, borrar recordatorio, cancelar tarea" },
+    { id: "cron.trigger", name: "cron.trigger", category: "cron", description: "Ejecutar manualmente una tarea programada de forma inmediata. Sinónimos: ejecutar tarea ahora, forzar ejecución, disparar manualmente" },
+    { id: "cron.history", name: "cron.history", category: "cron", description: "Obtener historial de ejecuciones y logs de una tarea programada. Sinónimos: historial ejecuciones, logs tarea, registro ejecuciones" },
 
     // ─────────────────────────────────────────
     // 5. CLI — Ejecución de comandos
@@ -178,10 +178,11 @@ export const SEED_DATA: SeedData = {
     { id: "openrouter", name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1" },
     { id: "ollama", name: "Ollama (Local)", baseUrl: "http://localhost:11434" },
     { id: "groq", name: "Groq", baseUrl: "https://api.groq.com/openai/v1" },
-    { id: "local-llama", name: "Local LLM (llama-server)", baseUrl: "http://localhost:8080/v1" },
+    { id: "local-llama", name: "Local LLM (llama-server)", baseUrl: "http://localhost:8081/v1" },
     { id: "elevenlabs", name: "ElevenLabs", baseUrl: "https://api.elevenlabs.io/v1" },
     { id: "qwen", name: "Qwen (Alibaba)", baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", category: "llm" },
     { id: "nvidia", name: "NVIDIA NIM", baseUrl: "https://integrate.api.nvidia.com/v1" },
+    { id: "piper", name: "Piper (Local TTS)" },
   ],
 
   models: [
@@ -204,6 +205,7 @@ export const SEED_DATA: SeedData = {
     { id: "tts-1", providerId: "openai", name: "TTS-1", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
     { id: "tts-1-hd", providerId: "openai", name: "TTS-1 HD", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "high_quality"]) },
     { id: "gpt-4o-mini-tts", providerId: "openai", name: "GPT-4o Mini TTS", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
+    { id: "es_MX-claude-14947-epoch-high", providerId: "piper", name: "Piper Spanish (Claude)", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "local"]) },
 
     // ── Google Gemini (fuente: openrouter.ai/google + ai.google.dev) ──
     { id: "gemini-3.1-pro-preview", providerId: "gemini", name: "Gemini 3.1 Pro Preview", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]) },
@@ -287,8 +289,12 @@ export const SEED_DATA: SeedData = {
 
     // ── Ollama: models are detected at runtime via /api/setup/ollama-models and inserted dynamically ──
 
-    // ── Local LLM (llama-server): model detected at runtime via sync ──
-    { id: "local-model", providerId: "local-llama", name: "Local Model (auto-detected)", modelType: "llm", contextWindow: 32768, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
+    // ── Local LLM (llama-server): motor nativo para inferencia offline ──
+    { id: "e2b_Q4_K_XL", providerId: "local-llama", name: "Gemma 4 2B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "text", "stt", "local"]) },
+    { id: "e4b_Q4_K_XL", providerId: "local-llama", name: "Gemma 4 4B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "text", "vision", "stt", "local"]) },
+    { id: "e4b_vision", providerId: "local-llama", name: "Gemma 4 4B Vision (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "vision", "local"]) },
+    { id: "local_stt", providerId: "local-llama", name: "Local STT (Gemma)", modelType: "stt", contextWindow: 16000, capabilities: JSON.stringify(["transcription", "local"]) },
+
 
     // ── ElevenLabs (TTS) ──
     { id: "eleven_flash_v2_5", providerId: "elevenlabs", name: "Eleven Flash V2.5", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "fast"]) },

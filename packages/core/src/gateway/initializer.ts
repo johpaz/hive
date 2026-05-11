@@ -93,25 +93,17 @@ export async function loadAgentConfigFromDB(
 
     // Cargar API keys de los providers desde la DB
     const providers = db.query(`
-      SELECT id, name, api_key_encrypted, api_key_iv, base_url
-      FROM providers
-      WHERE active = 1 AND api_key_encrypted IS NOT NULL
-    `).all() as Array<{
-      id: string;
-      name: string;
-      api_key_encrypted: string;
-      api_key_iv: string;
-      base_url: string | null
-    }>;
+      SELECT id, name, base_url FROM providers WHERE active = 1
+    `).all() as Array<{ id: string; name: string; base_url: string | null }>;
 
     if (providers.length > 0) {
       config.models = config.models || {};
       config.models.providers = config.models.providers || {};
 
-      const { decryptApiKey } = await import("../storage/crypto");
+      const { loadProviderApiKey } = await import("../storage/crypto");
 
       for (const p of providers) {
-        const apiKey = await decryptApiKey(p.api_key_encrypted, p.api_key_iv);
+        const apiKey = await loadProviderApiKey(p.id);
 
         config.models.providers[p.name] = {
           apiKey,
@@ -231,6 +223,10 @@ export async function initializeGateway(
     // 3a. Startup migrations (idempotent, version-keyed)
     runStartupMigrations();
 
+    // 3b. Migrate AES-encrypted secrets → OS keychain (one-shot, idempotent)
+    const { migrateEncryptedSecretsToKeychain } = await import("../storage/migrate");
+    await migrateEncryptedSecretsToKeychain();
+
     // 3. Cargar configuración del agente desde DB
     const { provider, model } = await loadAgentConfigFromDB(config);
 
@@ -293,8 +289,8 @@ export async function initializeGateway(
         
         // Decrypt headers if present
         if (server.headers_encrypted && server.headers_iv) {
-          const { decryptConfig } = await import("../storage/crypto");
-          mcpServerConfig.headers = decryptConfig(server.headers_encrypted, server.headers_iv);
+          const { legacyDecryptAES } = await import("../storage/crypto");
+          mcpServerConfig.headers = legacyDecryptAES(server.headers_encrypted, server.headers_iv);
         }
         
         mcpServersFromDB[server.id || server.name] = mcpServerConfig;

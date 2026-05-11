@@ -31,7 +31,8 @@ import { getDb } from "../storage/sqlite"
 const log = logger.child("compaction")
 
 // Token budget: compress when stored tokens exceed this threshold
-const COMPACT_TOKEN_THRESHOLD = 6000   // ~60% of 10K context window
+// Will be overridden by model's context_window at runtime if available
+const COMPACT_TOKEN_THRESHOLD = 32000  // ~25% of 128K default context window
 const KEEP_LAST_N_MESSAGES = 5         // always keep most recent N messages
 const TOOL_RESULT_MAX_CHARS = 200      // max chars for old tool results after clearing
 const MAX_TRANSCRIPT_MSGS = 30         // cap messages sent to summarizer (avoids OOM on small models)
@@ -47,7 +48,25 @@ export async function maybeCompact(
 ): Promise<void> {
   try {
     const totalTokens = getTotalTokens(threadId)
-    if (totalTokens < COMPACT_TOKEN_THRESHOLD) return
+
+    // Use model's context window if available, otherwise use default
+    const db = getDb()
+    let effectiveThreshold = COMPACT_TOKEN_THRESHOLD
+    try {
+      const coordinator = db.query<any, []>(
+        "SELECT a.model_id FROM agents a WHERE a.role = 'coordinator' LIMIT 1"
+      ).get()
+      if (coordinator?.model_id) {
+        const modelRow = db.query<any, [string]>(
+          "SELECT context_window FROM models WHERE id = ?"
+        ).get(coordinator.model_id.replace(/^[^/]+\//, ''))
+        if (modelRow?.context_window) {
+          effectiveThreshold = Math.floor(modelRow.context_window * 0.25)
+        }
+      }
+    } catch { /* use default threshold */ }
+
+    if (totalTokens < effectiveThreshold) return
 
     const summary = getSummary(threadId)
     const totalMessages = getMessageCount(threadId)

@@ -9,6 +9,7 @@ import {
 } from "discord.js";
 import { BaseChannel, type ChannelConfig, type IncomingMessage, type OutboundMessage } from "./base.ts";
 import { logger } from "../utils/logger.ts";
+import { getDb } from "../storage/sqlite.ts";
 
 export interface DiscordConfig extends ChannelConfig {
   botToken: string;
@@ -58,6 +59,9 @@ export class DiscordChannel extends BaseChannel {
     this.client.once(Events.ClientReady, () => {
       this.log.info(`Discord bot started: ${this.client?.user?.tag ?? "unknown"}`);
       this.running = true;
+      try {
+        getDb().query(`UPDATE channels SET status = 'connected' WHERE id = ?`).run(this.accountId);
+      } catch { /* ignore DB errors */ }
     });
 
     try {
@@ -132,6 +136,9 @@ export class DiscordChannel extends BaseChannel {
       this.client.destroy();
       this.running = false;
       this.log.info("Discord bot stopped");
+      try {
+        getDb().query(`UPDATE channels SET status = 'disconnected' WHERE id = ?`).run(this.accountId);
+      } catch { /* ignore DB errors */ }
     }
   }
 
