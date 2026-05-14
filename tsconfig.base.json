@@ -22,6 +22,30 @@
       "DOM.Iterable"
     ],
     "paths": {
+      "@johpaz/hive-agents-core": [
+        "./packages/core/src/index.ts"
+      ],
+      "@johpaz/hive-agents-core/*": [
+        "./packages/core/src/*"
+      ],
+      "@johpaz/hive-agents-code-bridge": [
+        "./packages/code-bridge/src/index.ts"
+      ],
+      "@johpaz/hive-agents-code-bridge/*": [
+        "./packages/code-bridge/src/*"
+      ],
+      "@johpaz/hive-agents-mcp": [
+        "./packages/mcp/src/index.ts"
+      ],
+      "@johpaz/hive-agents-mcp/*": [
+        "./packages/mcp/src/*"
+      ],
+      "@johpaz/hive-agents-skills": [
+        "./packages/skills/src/index.ts"
+      ],
+      "@johpaz/hive-agents-skills/*": [
+        "./packages/skills/src/*"
+      ],
       "@johpaz/hive-core": [
         "./packages/core/src/index.ts"
       ],
