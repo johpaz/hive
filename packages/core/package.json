@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-agents-core",
-  "version": "0.0.34",
+  "version": "0.0.35",
   "type": "module",
   "private": true,
   "description": "Hive Gateway — Personal AI agent runtime",
