@@ -261,18 +261,21 @@ jobs:
           test -d packages/cli/dist/ui && echo "✓ dist/ui/ exists" || (echo "✗ dist/ui/ missing" && exit 1)
           echo "=== All artifacts verified ==="
 
-      - name: Strip workspace dependencies from published package.json
+      - name: Prepare package.json for npm publish
         run: |
           node -e "
             const fs = require('fs');
             const pkg = JSON.parse(fs.readFileSync('packages/cli/package.json', 'utf8'));
+            // Rename to the public npm package name
+            pkg.name = '@johpaz/hive-agents';
+            // Strip workspace:* deps (already bundled)
             const deps = pkg.dependencies || {};
             for (const [k, v] of Object.entries(deps)) {
               if (v.startsWith('workspace:')) delete deps[k];
             }
             fs.writeFileSync('packages/cli/package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
-          echo "Cleaned package.json:"
+          echo "Prepared package.json:"
           cat packages/cli/package.json
 
       - uses: actions/setup-node@v4

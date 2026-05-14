@@ -1,5 +1,5 @@
 {
-  "name": "@johpaz/hive-agents",
+  "name": "@johpaz/hive-cli",
   "version": "0.0.35",
   "description": "Hive CLI — Command line interface for the Hive AI Gateway",
   "bin": {
