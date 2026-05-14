@@ -105,6 +105,7 @@ jobs:
           [[ "${{ matrix.platform.name }}" == "windows-x64" ]] && EXT=".exe"
           bun build --compile \
             --target=${{ matrix.platform.target }} \
+            --tsconfig-override=tsconfig.json \
             --outfile=hive-v${{ steps.version.outputs.VERSION }}-${{ matrix.platform.name }}${EXT} \
             ./packages/cli/src/index.ts
 
@@ -240,7 +241,7 @@ jobs:
 
       - name: Build package (includes Windows shims)
         run: |
-          bun build packages/cli/src/index.ts --bundle --outfile dist/hive.js --target bun
+          bun build packages/cli/src/index.ts --bundle --tsconfig-override=tsconfig.json --outfile dist/hive.js --target bun
           cp -r packages/hive-ui/dist dist/ui
           bun packages/cli/scripts/postbuild.ts
           # Copy build artifacts to packages/cli/ for npm publish
