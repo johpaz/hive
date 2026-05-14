@@ -65,6 +65,17 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Link workspace packages
+        run: |
+          mkdir -p node_modules/@johpaz
+          ln -sf ../../packages/core        node_modules/@johpaz/hive-agents-core
+          ln -sf ../../packages/code-bridge node_modules/@johpaz/hive-agents-code-bridge
+          ln -sf ../../packages/mcp         node_modules/@johpaz/hive-agents-mcp
+          ln -sf ../../packages/skills      node_modules/@johpaz/hive-agents-skills
+          ln -sf ../../packages/cli         node_modules/@johpaz/hive-cli
+          echo "Workspace symlinks created:"
+          ls -la node_modules/@johpaz/
+
       - name: Download UI artifact
         uses: actions/download-artifact@v4
         with:
@@ -232,6 +243,15 @@ jobs:
 
       - name: Install dependencies
         run: bun install
+
+      - name: Link workspace packages
+        run: |
+          mkdir -p node_modules/@johpaz
+          ln -sf ../../packages/core        node_modules/@johpaz/hive-agents-core
+          ln -sf ../../packages/code-bridge node_modules/@johpaz/hive-agents-code-bridge
+          ln -sf ../../packages/mcp         node_modules/@johpaz/hive-agents-mcp
+          ln -sf ../../packages/skills      node_modules/@johpaz/hive-agents-skills
+          ln -sf ../../packages/cli         node_modules/@johpaz/hive-cli
 
       - name: Download UI artifact
         uses: actions/download-artifact@v4
