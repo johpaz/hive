@@ -9,10 +9,10 @@
     "dev": "bun run src/index.ts"
   },
   "dependencies": {
-    "@johpaz/hive-agents-mcp": "^0.0.34",
+    "@johpaz/hive-agents-mcp": "workspace:*",
     "zod": "^4.3.6"
   },
   "peerDependencies": {
-    "@johpaz/hive-agents-core": "^0.0.34"
+    "@johpaz/hive-agents-core": "workspace:*"
   }
 }

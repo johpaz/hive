@@ -17,9 +17,9 @@
   },
   "dependencies": {
     "@ag-ui/core": "^0.0.46",
-    "@johpaz/hive-agents-code-bridge": "^0.0.34",
-    "@johpaz/hive-agents-mcp": "^0.0.34",
-    "@johpaz/hive-agents-skills": "^0.0.34",
+    "@johpaz/hive-agents-code-bridge": "workspace:*",
+    "@johpaz/hive-agents-mcp": "workspace:*",
+    "@johpaz/hive-agents-skills": "workspace:*",
     "@modelcontextprotocol/sdk": "latest",
     "@sapphire/snowflake": "latest",
     "@slack/bolt": "latest",
