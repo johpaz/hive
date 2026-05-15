@@ -3,7 +3,6 @@ services:
     image: johpaz/hive-agents:latest
     ports:
       - "18790:18790"
-      - "18791:18791"
     volumes:
       - hive-data:/root/.hive
     environment:

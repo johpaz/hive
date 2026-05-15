@@ -115,7 +115,6 @@ export class DockerAdapter implements InstallationAdapter {
         host: env.HIVE_HOST || "0.0.0.0",
         port,
         wsPort: port,
-        codeBridgePort: PORTS.CODE_BRIDGE,
         publicUrl,
         openBrowser: !env.NO_BROWSER,
         daemon: false,

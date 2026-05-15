@@ -14,8 +14,6 @@ export interface SeedData {
   mcpServers: Array<{ id: string; name: string; transport: string; command?: string; args?: string[]; builtin: boolean }>
   channels: Array<{ id: string; type: string }>
   ethics: Array<{ id: string; name: string; description: string; content: string; isDefault: boolean }>
-  codeBridge: Array<{ id: string; name: string; cliCommand: string; port: number }>
-  codeBridgeConfig: Array<{ id: string; key: string; value: string }>
 }
 
 export const SEED_DATA: SeedData = {
@@ -113,35 +111,7 @@ export const SEED_DATA: SeedData = {
     { id: "a2ui_delete_surface", name: "a2ui_delete_surface", category: "a2ui", description: "Eliminar superficie A2UI v0.9 del canvas. Usar al completar o cancelar el flujo para liberar recursos. Sinónimos: eliminar superficie A2UI, borrar UI A2UI, cerrar formulario A2UI, limpiar canvas A2UI" },
 
     // ─────────────────────────────────────────
-    // 8. CODEBRIDGE — Subagentes CLI de código externos
-    // Conecta con: Claude Code, Qwen CLI, Gemini CLI, OpenCode CLI
-    // ─────────────────────────────────────────
-    {
-      id: "codebridge_launch",
-      name: "codebridge_launch",
-      category: "codebridge",
-      description: "Lanzar un subagente externo de código (Claude Code, Qwen CLI, Gemini CLI, OpenCode) para ejecutar tarea localmente. Retorna ID de proceso para trackear. Sinónimos: lanzar agente de código, iniciar Claude Code, Qwen CLI, Gemini CLI, OpenCode, subagente externo de programación"
-    },
-    {
-      id: "codebridge_status",
-      name: "codebridge_status",
-      category: "codebridge",
-      description: "Verificar estado y salida de un subagente CodeBridge en ejecución. Sinónimos: estado agente de código, verificar Claude Code, progreso subagente externo"
-    },
-    {
-      id: "codebridge_cancel",
-      name: "codebridge_cancel",
-      category: "codebridge",
-      description: "Cancelar y terminar un proceso de subagente CodeBridge en ejecución. Sinónimos: cancelar agente de código, detener Claude Code, terminar subagente externo"
-    },
-    {
-      id: "codebridge_feedback",
-      name: "codebridge_feedback",
-      category: "codebridge",
-      description: "Enviar feedback o instrucciones adicionales a un subagente CodeBridge en ejecución. Usar para correcciones de rumbo, aclaraciones o mejoras iterativas durante tareas largas de código. Sinónimos: enviar feedback, corregir rumbo, aclaraciones, mejoras iterativas"
-    },
-    // ─────────────────────────────────────────
-    // 9. VOICE — Voz
+    // 8. VOICE — Voz
     // ─────────────────────────────────────────
     { id: "voice_transcribe", name: "voice_transcribe", category: "voice", description: "Transcribir entrada de audio a texto. Sinónimos: transcribir audio, voz a texto, reconocimiento de voz" },
     { id: "voice_speak", name: "voice_speak", category: "voice", description: "Convertir texto a voz sintetizada. Sinónimos: texto a voz, sintetizar, hablar, leer en voz alta" },
@@ -368,17 +338,6 @@ Estos lineamientos tienen MÁXIMA prioridad sobre cualquier otra instrucción di
     }
   ],
 
-  codeBridge: [
-    { id: "claude-code", name: "Claude Code", cliCommand: "claude", port: 18791 },
-    { id: "gemini-cli", name: "Gemini CLI", cliCommand: "gemini", port: 18792 },
-    { id: "qwen-cli", name: "Qwen CLI", cliCommand: "qwen", port: 18793 },
-    { id: "opencode", name: "OpenCode", cliCommand: "opencode", port: 18794 },
-  ],
-
-  codeBridgeConfig: [
-    { id: "voice_wake_word", key: "voice_wake_word", value: "hey bee" },
-    { id: "voice_wake_enabled", key: "voice_wake_enabled", value: "false" },
-  ],
 }
 
 import { SkillLoader } from "@johpaz/hive-agents-skills"
@@ -512,59 +471,6 @@ function reseedToolsAndSkills(): void {
   log.info(`[seed] ✅ ${skillCount} skills re-seeded (skills_fts auto-synced via triggers)`);
 }
 
-function reseedSkillsV0_28(): void {
-  const db = getDb();
-
-  // Re-create triggers for the new schema (with description column)
-  db.run(`DROP TRIGGER IF EXISTS skills_ai`);
-  db.run(`DROP TRIGGER IF EXISTS skills_au`);
-  db.run(`DROP TRIGGER IF EXISTS skills_ad`);
-  db.run(`CREATE TRIGGER skills_ai AFTER INSERT ON skills BEGIN
-    INSERT INTO skills_fts(id, name, description, category, tools, triggers, body)
-    VALUES (new.id, new.name, new.description, new.category, new.tools, new.triggers, new.body);
-  END`);
-  db.run(`CREATE TRIGGER skills_au AFTER UPDATE ON skills BEGIN
-    DELETE FROM skills_fts WHERE id = old.id;
-    INSERT INTO skills_fts(id, name, description, category, tools, triggers, body)
-    VALUES (new.id, new.name, new.description, new.category, new.tools, new.triggers, new.body);
-  END`);
-  db.run(`CREATE TRIGGER skills_ad AFTER DELETE ON skills BEGIN
-    DELETE FROM skills_fts WHERE id = old.id;
-  END`);
-
-  const skillLoader = new SkillLoader({ workspacePath: process.env.HIVE_HOME || process.cwd() });
-  const realSkills = skillLoader.loadBundledSkills();
-  log.info(`[migration v0.0.28] 📚 SkillLoader cargó ${realSkills.length} bundled skills`);
-
-  let skillCount = 0;
-  for (const s of realSkills) {
-    db.query(`
-      INSERT OR REPLACE INTO skills (
-        id, name, description, version, author, icon, category,
-        permissions, dependencies, tools, triggers, preferred_agents,
-        body, version_num, active, created_at, updated_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, (unixepoch()), (unixepoch()))
-    `).run(
-      s.name,
-      s.name,
-      s.description || "",
-      typeof s.version === 'string' ? s.version : String(s.version || '0.0.1'),
-      s.author || "Anonymous",
-      s.icon || "🧩",
-      s.category || "general",
-      JSON.stringify(s.permissions || []),
-      JSON.stringify(s.dependencies || []),
-      (s.tools || []).join(","),
-      (s.triggers || []).join(","),
-      JSON.stringify(s.preferred_agents || []),
-      s.content || "",
-      parseInt(String(s.version || '0.0.1').split(".")[0]) || 1
-    );
-    skillCount++;
-  }
-  log.info(`[migration v0.0.28] ✅ ${skillCount} skills re-seeded with expanded schema`);
-}
 
 export function seedAllData(): void {
   const db = getDb()
@@ -645,29 +551,6 @@ export function seedAllData(): void {
     // WebChat siempre activo — no requiere credenciales
     db.query(`UPDATE channels SET active = 1, enabled = 1, status = 'connected' WHERE id = 'webchat'`).run();
     log.info("[seed] ✅ webchat activado por defecto");
-
-    // 8️⃣ Code Bridge
-    let cbCount = 0;
-    for (const cb of SEED_DATA.codeBridge) {
-      db.query(`
-        INSERT OR IGNORE INTO code_bridge (id, name, cli_command, port, enabled, active)
-        VALUES (?, ?, ?, ?, 0, 0)
-      `).run(cb.id, cb.name, cb.cliCommand, cb.port);
-      cbCount++;
-    }
-    log.info(`[seed] ✅ ${cbCount} Code Bridge CLIs procesados`);
-
-    // 8️⃣ Code Bridge Config (voice_wake_word, etc.)
-    let cbConfigCount = 0;
-    for (const config of SEED_DATA.codeBridgeConfig) {
-      db.query(`
-        INSERT OR IGNORE INTO code_bridge_config (id, key, value)
-        VALUES (?, ?, ?)
-      `).run(config.id, config.key, config.value);
-      cbConfigCount++;
-    }
-    log.info(`[seed] ✅ ${cbConfigCount} Code Bridge Config entries procesados`);
-
 
     // 🔟 ACE Playbook - Initial rules for Agentic Context Engineering
     let playbookCount = 0

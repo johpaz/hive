@@ -2,7 +2,6 @@ import {
   LayoutDashboard,
   Bot,
   Layers,
-  Cable,
   ScrollText,
   SlidersHorizontal,
   MessageSquare,
@@ -47,7 +46,6 @@ const navItems = [
   { title: "Canales", url: "/channels", icon: MessageSquare },
   { title: "Providers", url: "/providers", icon: Brain },
   { title: "Canvas", url: "/canvas", icon: Layers },
-  { title: "Bridge", url: "/bridge", icon: Cable },
   { title: "Reuniones", url: "/meeting", icon: Video },
 
 ];

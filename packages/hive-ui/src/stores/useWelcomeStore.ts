@@ -19,7 +19,6 @@ export interface WelcomeData {
     sttProvider: string | null;
     ttsProvider: string | null;
   };
-  codeBridge: string[];
 }
 
 interface WelcomeStore {

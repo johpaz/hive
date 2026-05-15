@@ -39,11 +39,6 @@ export default defineConfig({
         ws: true,
         rewrite: (path) => path,
       },
-      "/hivelearn-onboarding": {
-        target: "ws://127.0.0.1:18790",
-        ws: true,
-        rewrite: (path) => path,
-      },
     },
   },
   build: {

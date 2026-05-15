@@ -6,9 +6,8 @@ export async function handleGetAgents(req: Request, addCorsHeaders: (r: Response
   const url = new URL(req.url)
   const typeFilter = url.searchParams.get("type")
   
-  // Filter by type if provided (exclude hl-* agents by default)
-  let whereClause = "WHERE a.id NOT LIKE 'hl-%'"
-  if (typeFilter && typeFilter !== "hivelearn") {
+  let whereClause = ""
+  if (typeFilter) {
     whereClause = "WHERE a.status = ?"
   }
 
@@ -19,7 +18,7 @@ export async function handleGetAgents(req: Request, addCorsHeaders: (r: Response
     LEFT JOIN users u ON a.user_id = u.id
     ${whereClause}
     ORDER BY a.created_at DESC
-  `).all(typeFilter && typeFilter !== "hivelearn" ? [typeFilter] : []) as Record<string, unknown>[]
+  `).all(typeFilter ? [typeFilter] : []) as Record<string, unknown>[]
 
   const agents = rows.map(row => ({
     // Basic fields

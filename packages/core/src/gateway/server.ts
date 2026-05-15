@@ -30,7 +30,6 @@ import { getDb, getDbPathLazy, initializeDatabase } from "../storage/sqlite";
 import { seedAllData } from "../storage/seed";
 import { canvasManager } from "../canvas/canvas-manager.ts";
 import { subscribeCanvas, unsubscribeCanvas, emitCanvas, getCanvasSnapshot, removeCanvasComponent } from "../canvas/emitter";
-import { subscribeBridge, unsubscribeBridge } from "../tools/bridge-events";
 import { resolveCanvasInteraction } from "../tools/canvas/index";
 import { randomUUID } from "crypto";
 import { legacyDecryptAES } from "../storage/crypto.ts";
@@ -679,14 +678,6 @@ export async function startGateway(config: Config): Promise<void> {
           });
           if (success) return undefined;
           return new Response("WebSocket upgrade failed", { status: 400 });
-        }
-
-        // ── Bridge Events WebSocket upgrade ────────────────────────────────────
-        if (url.pathname === "/bridge-events" || url.pathname === "/bridge-events/") {
-          const sessionId = `bridge:${url.searchParams.get("sessionId") ?? (resolveUserId({}) ?? "default")}`;
-          const success = server.upgrade(req, { data: { sessionId, authenticatedAt: Date.now() } });
-          if (success) return undefined;
-          return new Response("Bridge events WebSocket upgrade failed", { status: 400 });
         }
 
 
@@ -1769,15 +1760,6 @@ export async function startGateway(config: Config): Promise<void> {
     websocket: {
       open(ws) {
         const data = ws.data;
-        const isBridge = data.sessionId.startsWith("bridge:");
-
-        if (isBridge) {
-          log.info(`Bridge events client connected: ${data.sessionId}`);
-          subscribeBridge(ws as any);
-          ws.send(JSON.stringify({ type: "bridge:connected", sessionId: data.sessionId }));
-          return;
-        }
-
         // ── Meeting Stream ─────────────────────────────────────────────────────
         if (data.sessionId.startsWith("meeting:")) {
           log.info(`Meeting stream client connected: ${data.sessionId}`);
@@ -1818,9 +1800,6 @@ export async function startGateway(config: Config): Promise<void> {
           // Get voice config from webchat channel
           const voiceConfig = db.query("SELECT voice_enabled, stt_provider, tts_provider FROM channels WHERE id = 'webchat'").get() as { voice_enabled: number; stt_provider: string; tts_provider: string } | undefined;
 
-          // Get code bridge
-          const codeBridge = db.query("SELECT id FROM code_bridge WHERE enabled = 1").all() as Array<{ id: string }>;
-
           ws.send(JSON.stringify({
             type: "welcome",
             sessionId: data.sessionId,
@@ -1832,7 +1811,6 @@ export async function startGateway(config: Config): Promise<void> {
               sttProvider: voiceConfig.stt_provider,
               ttsProvider: voiceConfig.tts_provider
             } : { enabled: false, sttProvider: null, ttsProvider: null },
-            codeBridge: codeBridge.map(cb => cb.id)
           } as OutboundMessage));
         } catch (err) {
           log.error("Error sending welcome message:", err);
@@ -2628,12 +2606,6 @@ export async function startGateway(config: Config): Promise<void> {
 
       close(ws) {
         const data = ws.data;
-        const isBridge = data.sessionId.startsWith("bridge:");
-
-        if (isBridge) {
-          unsubscribeBridge(ws as any);
-          return;
-        }
         if (data.sessionId.startsWith("meeting:")) {
           log.info(`Meeting stream client disconnected: ${data.sessionId}`);
           return;

@@ -45,7 +45,6 @@
     "./tools/cron/index": "./packages/core/src/tools/cron/index.ts",
     "./tools/cli/index": "./packages/core/src/tools/cli/index.ts",
     "./tools/canvas/index": "./packages/core/src/tools/canvas/index.ts",
-    "./tools/codebridge/index": "./packages/core/src/tools/codebridge/index.ts",
     "./tools/voice/index": "./packages/core/src/tools/voice/index.ts",
     "./tools/core/index": "./packages/core/src/tools/core/index.ts",
     "./config/index": "./packages/core/src/config/index.ts",
@@ -61,7 +60,6 @@
     "./mcp/transports": "./packages/mcp/src/transports/index.ts",
     "./skills": "./packages/skills/src/index.ts",
     "./skills/loader": "./packages/skills/src/loader.ts",
-    "./code-bridge": "./packages/code-bridge/src/index.ts",
     "./cli": "./packages/cli/src/index.ts"
   },
   "files": [

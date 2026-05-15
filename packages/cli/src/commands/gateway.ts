@@ -367,7 +367,7 @@ async function handleDevMode(
     return;
   }
 
-  // Parent process: start Vite, Code Bridge, and Gateway
+  // Parent process: start Vite and Gateway
   const hiveUiPath = path.join(process.cwd(), "packages/hive-ui");
   const hasVite = existsSync(path.join(hiveUiPath, "package.json"));
 
@@ -402,44 +402,6 @@ async function handleDevMode(
     } else {
       viteProcess.unref();
     }
-  }
-
-  // Start Code Bridge
-  console.log("[Gateway] 🌉 Iniciando Code Bridge...");
-  try {
-    await import("@johpaz/hive-agents-code-bridge");
-    console.log("🌉 Code Bridge iniciado en puerto 18791");
-    
-    // Wait for Code Bridge to be ready (max 5 seconds)
-    const CODE_BRIDGE_PORT = 18791;
-    let codeBridgeReady = false;
-    console.log(`[Gateway] 🌉 Esperando Code Bridge en puerto ${CODE_BRIDGE_PORT}...`);
-    for (let i = 0; i < 50; i++) {
-      try {
-        const response = await fetch(`http://localhost:${CODE_BRIDGE_PORT}/health`, {
-          signal: AbortSignal.timeout(200),
-        });
-        if (response.ok) {
-          codeBridgeReady = true;
-          console.log(`[Gateway] 🌉 ✅ Code Bridge disponible después de ${((i + 1) * 100)}ms`);
-          break;
-        }
-      } catch (fetchError) {
-        // Not ready yet, wait 100ms before retry
-        if (i % 10 === 0) {
-          console.log(`[Gateway] 🌉 ⏳ Esperando Code Bridge... intento ${i + 1}/50`);
-        }
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-    }
-    
-    if (!codeBridgeReady) {
-      console.warn("[Gateway] 🌉 ⚠️  Code Bridge no respondió a tiempo - las herramientas codebridge pueden fallar");
-    } else {
-      console.log("[Gateway] 🌉 ✅ Code Bridge listo para aceptar conexiones");
-    }
-  } catch (error) {
-    console.warn(`[Gateway] 🌉 ❌ No se pudo iniciar el Code Bridge: ${(error as Error).message}`);
   }
 
   // Spawn Gateway child process
@@ -547,44 +509,6 @@ async function handleProductionMode(
     const coreConfig = await loadConfig();
     await startGateway(coreConfig);
     return;
-  }
-
-  // Start Code Bridge
-  console.log("[Gateway] 🌉 Iniciando Code Bridge...");
-  try {
-    await import("@johpaz/hive-agents-code-bridge");
-    console.log("🌉 Code Bridge iniciado en puerto 18791");
-    
-    // Wait for Code Bridge to be ready (max 5 seconds)
-    const CODE_BRIDGE_PORT = 18791;
-    let codeBridgeReady = false;
-    console.log(`[Gateway] 🌉 Esperando Code Bridge en puerto ${CODE_BRIDGE_PORT}...`);
-    for (let i = 0; i < 50; i++) {
-      try {
-        const response = await fetch(`http://localhost:${CODE_BRIDGE_PORT}/health`, {
-          signal: AbortSignal.timeout(200),
-        });
-        if (response.ok) {
-          codeBridgeReady = true;
-          console.log(`[Gateway] 🌉 ✅ Code Bridge disponible después de ${((i + 1) * 100)}ms`);
-          break;
-        }
-      } catch (fetchError) {
-        // Not ready yet, wait 100ms before retry
-        if (i % 10 === 0) {
-          console.log(`[Gateway] 🌉 ⏳ Esperando Code Bridge... intento ${i + 1}/50`);
-        }
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-    }
-    
-    if (!codeBridgeReady) {
-      console.warn("[Gateway] 🌉 ⚠️  Code Bridge no respondió a tiempo - las herramientas codebridge pueden fallar");
-    } else {
-      console.log("[Gateway] 🌉 ✅ Code Bridge listo para aceptar conexiones");
-    }
-  } catch (error) {
-    console.warn(`[Gateway] 🌉 ❌ No se pudo iniciar el Code Bridge: ${(error as Error).message}`);
   }
 
   // Get UI directory from adapter config

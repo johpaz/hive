@@ -69,7 +69,6 @@ jobs:
         run: |
           mkdir -p node_modules/@johpaz
           ln -sf ../../packages/core        node_modules/@johpaz/hive-agents-core
-          ln -sf ../../packages/code-bridge node_modules/@johpaz/hive-agents-code-bridge
           ln -sf ../../packages/mcp         node_modules/@johpaz/hive-agents-mcp
           ln -sf ../../packages/skills      node_modules/@johpaz/hive-agents-skills
           ln -sf ../../packages/cli         node_modules/@johpaz/hive-cli
@@ -248,7 +247,6 @@ jobs:
         run: |
           mkdir -p node_modules/@johpaz
           ln -sf ../../packages/core        node_modules/@johpaz/hive-agents-core
-          ln -sf ../../packages/code-bridge node_modules/@johpaz/hive-agents-code-bridge
           ln -sf ../../packages/mcp         node_modules/@johpaz/hive-agents-mcp
           ln -sf ../../packages/skills      node_modules/@johpaz/hive-agents-skills
           ln -sf ../../packages/cli         node_modules/@johpaz/hive-cli

@@ -159,22 +159,12 @@ async function testLoadBundledSkills(): Promise<TestResult> {
       console.log(`   - ${cat}: ${count}`);
     }
     
-    // Verificar skills de codebridge
-    const codebridgeSkills = skills.filter(s => s.category === "codebridge");
-    if (codebridgeSkills.length > 0) {
-      printSuccess(`${codebridgeSkills.length} skills de codebridge encontradas`);
-      codebridgeSkills.forEach(s => {
-        printInfo(`   - ${s.name}: tools=[${(s.tools || []).join(", ")}]`);
-      });
-    }
-    
     return {
       success: true,
       message: "Skills cargadas",
-      details: { 
-        total: skills.length, 
+      details: {
+        total: skills.length,
         byCategory,
-        codebridge: codebridgeSkills.length 
       }
     };
   } catch (error) {
@@ -294,28 +284,28 @@ async function testGetAllSkillsFromDB(): Promise<TestResult> {
 }
 
 /**
- * Test 6: Obtener skills por categoría (codebridge)
+ * Test 6: Obtener skills por categoría (canvas)
  */
 async function testGetSkillsByCategory(): Promise<TestResult> {
-  printSubHeader("Test 6: Obtener Skills por Categoría (codebridge)");
-  
+  printSubHeader("Test 6: Obtener Skills por Categoría (canvas)");
+
   try {
-    const skills = getSkillsByCategory("codebridge");
-    
+    const skills = getSkillsByCategory("canvas");
+
     if (skills.length === 0) {
       return {
         success: false,
-        message: "No se encontraron skills de codebridge"
+        message: "No se encontraron skills de canvas"
       };
     }
-    
-    printSuccess(`${skills.length} skills de codebridge encontradas`);
-    
+
+    printSuccess(`${skills.length} skills de canvas encontradas`);
+
     skills.forEach(s => {
       const tools = s.tools ? s.tools.split(",") : [];
       printInfo(`   - ${s.name}: tools=[${tools.join(", ")}]`);
     });
-    
+
     return {
       success: true,
       message: "Skills por categoría obtenidas",
@@ -459,24 +449,24 @@ async function testFTS5Search(): Promise<TestResult> {
   printSubHeader("Test 10: Búsqueda Semántica con FTS5");
   
   const testCases = [
-    { 
-      message: "necesito crear un endpoint REST en Express", 
-      expectedCategory: "codebridge",
+    {
+      message: "necesito crear un endpoint REST en Express",
+      expectedCategory: "cli",
       description: "Generación de código API"
     },
-    { 
-      message: "la aplicación tiene un bug y no sé dónde está", 
-      expectedCategory: "codebridge",
+    {
+      message: "la aplicación tiene un bug y no sé dónde está",
+      expectedCategory: "cli",
       description: "Debug de errores"
     },
-    { 
-      message: "este código es muy lento, cómo lo optimizo", 
-      expectedCategory: "codebridge",
+    {
+      message: "este código es muy lento, cómo lo optimizo",
+      expectedCategory: "cli",
       description: "Refactorización/performance"
     },
-    { 
-      message: "quiero mejorar la calidad del código antes del merge", 
-      expectedCategory: "codebridge",
+    {
+      message: "quiero mejorar la calidad del código antes del merge",
+      expectedCategory: "cli",
       description: "Code review"
     },
   ];
@@ -563,7 +553,6 @@ async function testContextInjection(): Promise<TestResult> {
   printSubHeader("Test 12: Inyección de Skills al Contexto");
   
   try {
-    // Simular mensaje que activa codebridge skills
     const message = "generá un endpoint REST con autenticación JWT";
     const skills = selectSkills(message);
     

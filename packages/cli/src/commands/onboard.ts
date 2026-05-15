@@ -9,9 +9,7 @@ import {
   saveOnboardingProgress,
   activateChannel,
   activateEthics,
-  activateCodeBridge,
   getAllEthics,
-  getAllCodeBridge,
   saveVoiceConfig,
 } from "@johpaz/hive-agents-core/storage/onboarding";
 import { generateAuthToken } from "../utils/token";
@@ -209,11 +207,6 @@ interface OnboardConfig {
   mcp?: { servers: Record<string, unknown> };
   agentTone: "formal" | "friendly" | "direct";
 
-  codeBridge: {
-    enabled: boolean;
-    clis: string[];
-    port: number;
-  };
   userLanguage?: string;
   userTimezone?: string;
   userOccupation?: string;
@@ -816,7 +809,7 @@ async function runFullWizard(): Promise<void> {
   // Initialize DB at start
   initOnboardingDb();
 
-  const TOTAL_STEPS = 8;
+  const TOTAL_STEPS = 7;
   let step = 1;
 
   // Shared wizard state — pre-populated with defaults
@@ -852,8 +845,6 @@ async function runFullWizard(): Promise<void> {
     channel: "webchat",
     channelToken: "",
     // Step 7: Code Bridge
-    codeBridgeEnabled: false,
-    codeBridgeClis: [] as string[],
   };
 
   const hiveDir = getHiveDir();
@@ -1441,69 +1432,9 @@ async function runFullWizard(): Promise<void> {
       }
 
       // ═══════════════════════════════════
-      // STEP 7: Code Bridge
+      // STEP 7: Resumen Final
       // ═══════════════════════════════════
       case 7: {
-        showProgress(step, TOTAL_STEPS, "Code Bridge");
-
-        const codeBridgeEnabled = await p.confirm({
-          message: "¿Quieres delegar tareas de código a CLIs externos? (claude-code, gemini, qwen, opencode)",
-          initialValue: state.codeBridgeEnabled,
-        });
-        if (p.isCancel(codeBridgeEnabled)) { p.cancel("Onboarding cancelado."); process.exit(0); }
-        state.codeBridgeEnabled = codeBridgeEnabled as boolean;
-
-        let codeBridgeClis: string[] = [];
-        if (state.codeBridgeEnabled) {
-          const availableClis = getAllCodeBridge();
-
-          if (availableClis.length === 0) {
-            log.warn("⚠️  No hay CLIs de code bridge configurados. Puedes agregar más desde el dashboard.");
-          } else {
-            log.info("Selecciona los CLIs que tengas instalados (presiona Espacio para seleccionar, Enter para continuar):");
-            const selectedClis = await p.multiselect({
-              message: "¿Qué CLIs tienes instalados?",
-              options: availableClis.map(cb => ({
-                value: cb.id,
-                label: cb.name,
-                hint: cb.cliCommand,
-              })),
-              required: false,
-            });
-            if (p.isCancel(selectedClis)) { p.cancel("Onboarding cancelado."); process.exit(0); }
-            codeBridgeClis = (selectedClis as string[]) || [];
-          }
-        }
-        state.codeBridgeClis = codeBridgeClis;
-
-        // ✅ Save code bridge config in DB
-        const codeBridgeConfig = getAllCodeBridge().map(cb => ({
-          id: cb.id,
-          enabled: codeBridgeClis.includes(cb.id),
-          port: cb.port,
-        }));
-        activateCodeBridge(state.userId, codeBridgeConfig);
-
-        // ✅ MCP servers se agregan desactivados (se configuran desde el dashboard)
-        log.info("ℹ️  MCP servers disponibles (configura desde el dashboard)");
-
-        saveOnboardingProgress({
-          step: "codebridge",
-          userId: state.userId,
-          data: { enabled: state.codeBridgeEnabled, clis: codeBridgeClis },
-        });
-
-        const nav = await askNavigation();
-        if (nav === "cancel") { p.cancel("Onboarding cancelado."); process.exit(0); }
-        if (nav === "prev") { step = 5; break; }
-        step = 8;
-        break;
-      }
-
-      // ═══════════════════════════════════
-      // STEP 8: Resumen Final
-      // ═══════════════════════════════════
-      case 8: {
         showProgress(step, TOTAL_STEPS, "Resumen final");
 
 
@@ -1514,8 +1445,7 @@ async function runFullWizard(): Promise<void> {
           `  Idioma:     ${state.userLanguage}\n` +
           `  Proveedor:  ${state.provider} (${state.model})\n` +
           `  Voz:        ${state.voiceEnabled ? `STT: ${state.sttProvider}, TTS: ${state.ttsProvider}` : "no"}\n` +
-          `  Canal:      ${state.channel}${state.channelToken ? ' (Telegram configurado)' : ''}\n` +
-          `  Code Bridge: ${state.codeBridgeEnabled ? state.codeBridgeClis.join(", ") : "no"}`,
+          `  Canal:      ${state.channel}${state.channelToken ? ' (Telegram configurado)' : ''}`,
           "📋 Resumen final"
         );
 
@@ -1534,7 +1464,7 @@ async function runFullWizard(): Promise<void> {
         }
 
         if (confirm === "prev") {
-          step = 7;
+          step = 6;
           break;
         }
 
@@ -1597,7 +1527,6 @@ async function runFullWizard(): Promise<void> {
     `  📢 Canal:    WebChat (UI web)\n` +
     `${state.channelToken ? `  ✈️  Telegram: Configurado\n` : ''}` +
     `${state.voiceEnabled ? `  🎤 Voz:      STT (${state.sttProvider}) + TTS (${state.ttsProvider})\n` : ''}` +
-    `${state.codeBridgeEnabled ? `  🔧 Code Bridge: ${state.codeBridgeClis.join(', ')}\n` : ''}` +
     `\n` +
     `🌐 ABRE TU DASHBOARD:\n` +
     `  👉 http://localhost:5173\n\n` +

@@ -1,6 +1,5 @@
 /**
  * Hive TTS Client
- * Importar desde packages/hivelearn u otros paquetes de Hive.
  * No bloqueante: si TTS no está disponible, las funciones retornan null silenciosamente.
  */
 

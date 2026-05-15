@@ -10,12 +10,11 @@ COPY package.json bun.lock bunfig.toml tsconfig.base.json tsconfig.json ./
 COPY packages/hive-ui ./packages/hive-ui
 
 # Stub workspace packages with correct names so bun workspace resolution works
-RUN mkdir -p packages/core packages/cli packages/mcp packages/skills packages/code-bridge && \
+RUN mkdir -p packages/core packages/cli packages/mcp packages/skills && \
       echo '{"name":"@johpaz/hive-agents-core","version":"0.0.0"}' > packages/core/package.json && \
       echo '{"name":"@johpaz/hive-agents","version":"0.0.0"}' > packages/cli/package.json && \
       echo '{"name":"@johpaz/hive-agents-mcp","version":"0.0.0"}' > packages/mcp/package.json && \
-      echo '{"name":"@johpaz/hive-agents-skills","version":"0.0.0"}' > packages/skills/package.json && \
-      echo '{"name":"@johpaz/hive-agents-code-bridge","version":"0.0.0"}' > packages/code-bridge/package.json
+      echo '{"name":"@johpaz/hive-agents-skills","version":"0.0.0"}' > packages/skills/package.json
 
 RUN bun install
 RUN cd packages/hive-ui && bun run build
@@ -31,7 +30,6 @@ COPY packages/core/package.json ./packages/core/package.json
 COPY packages/cli/package.json ./packages/cli/package.json
 COPY packages/mcp/package.json ./packages/mcp/package.json
 COPY packages/skills/package.json ./packages/skills/package.json
-COPY packages/code-bridge/package.json ./packages/code-bridge/package.json
 RUN bun install --ignore-scripts
 
 # Copy source after install so dependency layer stays cached on code changes
@@ -39,7 +37,6 @@ COPY packages/core ./packages/core
 COPY packages/cli ./packages/cli
 COPY packages/mcp ./packages/mcp
 COPY packages/skills ./packages/skills
-COPY packages/code-bridge ./packages/code-bridge
 
 # Set NODE_ENV=production so Bun inlines it correctly in the compiled binary
 ENV NODE_ENV=production

@@ -123,7 +123,6 @@ export class BunGlobalAdapter implements InstallationAdapter {
         host: env.HIVE_HOST || "127.0.0.1",
         port,
         wsPort: port,
-        codeBridgePort: PORTS.CODE_BRIDGE,
         publicUrl,
         openBrowser: !env.NO_BROWSER,
         daemon: !!env.HIVE_DAEMON,

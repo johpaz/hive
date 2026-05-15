@@ -22,7 +22,6 @@
   "dependencies": {
     "@clack/prompts": "1.1.0",
     "@johpaz/hive-agents-core": "workspace:*",
-    "@johpaz/hive-agents-code-bridge": "workspace:*",
     "toon-format-parser": "1.1.3"
   },
   "devDependencies": {

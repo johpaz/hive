@@ -72,18 +72,6 @@
       "@johpaz/hive-cli": [
         "./packages/cli/src/index.ts"
       ],
-      "@johpaz/hive-code-bridge": [
-        "./packages/code-bridge/src/index.ts"
-      ],
-      "@johpaz/hive-code-bridge/*": [
-        "./packages/code-bridge/src/*"
-      ],
-      "@johpaz/hive-agents-code-bridge": [
-        "./packages/code-bridge/src/index.ts"
-      ],
-      "@johpaz/hive-agents-code-bridge/*": [
-        "./packages/code-bridge/src/*"
-      ],
       "@johpaz/hive-tools": [
         "./packages/tools/src/index.ts"
       ],

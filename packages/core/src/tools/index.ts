@@ -29,9 +29,6 @@ import * as agents from "./agents/index.ts";
 // Canvas (7)
 import * as canvas from "./canvas/index.ts";
 
-// Codebridge (3)
-import * as codebridge from "./codebridge/index.ts";
-
 // Voice (2)
 import * as voice from "./voice/index.ts";
 
@@ -70,9 +67,6 @@ export function createAllTools(config: Config): Tool[] {
     // CANVAS (7 + A2UI 4)
     ...canvas.createTools(config),
 
-    // CODEBRIDGE (3)
-    ...codebridge.createTools(),
-
     // VOICE (2)
     ...voice.createTools(),
 
@@ -106,8 +100,6 @@ export function createToolsByCategory(category: string, config: Config): Tool[] 
       return agents.createTools();
     case "canvas":
       return canvas.createTools(config);
-    case "codebridge":
-      return codebridge.createTools();
     case "voice":
       return voice.createTools();
     case "core":
@@ -200,12 +192,6 @@ export {
   canvasShowListTool,
   canvasClearTool,
 } from "./canvas/index.ts";
-
-export {
-  codebridgeLaunchTool,
-  codebridgeStatusTool,
-  codebridgeCancelTool,
-} from "./codebridge/index.ts";
 
 export {
   voiceTranscribeTool,

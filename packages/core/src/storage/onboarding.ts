@@ -11,7 +11,7 @@ import { seedAllData, SEED_DATA } from "./seed";
 import { SkillLoader } from "@johpaz/hive-agents-skills";
 
 export interface OnboardingSection {
-  step: "user" | "skills" | "ethics" | "tools" | "provider" | "model" | "channel" | "codebridge" | "mcp" | "agent" | "complete";
+  step: "user" | "skills" | "ethics" | "tools" | "provider" | "model" | "channel" | "mcp" | "agent" | "complete";
   userId: string;
   data: Record<string, unknown>;
   completedAt?: number;
@@ -32,8 +32,6 @@ Sos Bee, coordinador de Hive. Resolvés tareas del usuario directamente o delega
 3. **Buscá antes de crear** — Usá search_knowledge para capacidades, find_agent para workers.
 4. **Mínimo privilegio** — Asigná solo las tools necesarias a cada worker.
 5. **Nunca cli_exec para cron** — Usá siempre cron.create para tareas programadas.
-6. **Nunca codebridge_launch directo** — Creá un worker code_developer primero.
-
 ## 🔍 DISCOVERY — CÓMO ENCONTRAR MÁS CAPACIDADES
 
 Arrancás con solo 4 herramientas. Para descubrir más, usá **search_knowledge**:
@@ -290,22 +288,6 @@ VALUES(?, ?, 'ollama', 'llm', 1, 1)
   } catch (e) {
     log.error("⚠️ Error saving provider:", { error: (e as Error).message });
     throw e;
-  }
-}
-
-export function activateCodeBridge(userId: string, codeBridgeConfig: { id: string; enabled: boolean; port?: number }[]): void {
-  try {
-    const db = getDb();
-    // 7️⃣ Séptimo: Configurar Code Bridge CLIs seleccionados
-    for (const cb of codeBridgeConfig) {
-      db.query(`
-        UPDATE code_bridge SET enabled = ?, active = ?, port = ?, user_id = ?
-  WHERE id = ?
-    `).run(cb.enabled ? 1 : 0, cb.enabled ? 1 : 0, cb.port || 18791, userId, cb.id);
-    }
-    log.info("✅ Code Bridge configurado:", { codeBridgeIds: codeBridgeConfig.map(c => c.id).join(", ") });
-  } catch (e) {
-    log.error("⚠️ Error configuring code bridge:", { error: (e as Error).message });
   }
 }
 
@@ -754,42 +736,6 @@ export function getAllEthics(): Array<{
     }));
   } catch (e) {
     log.error("⚠️ Error getting ethics:", { error: (e as Error).message });
-    return [];
-  }
-}
-
-export function getAllCodeBridge(): Array<{
-  id: string;
-  name: string;
-  cliCommand: string;
-  port: number;
-  enabled: boolean;
-  active: boolean;
-}> {
-  try {
-    const db = getDb();
-    const results = db.query(`
-      SELECT id, name, cli_command, port, enabled, active
-      FROM code_bridge
-  `).all() as Array<{
-      id: string;
-      name: string;
-      cli_command: string;
-      port: number;
-      enabled: number;
-      active: number;
-    }>;
-
-    return results.map(r => ({
-      id: r.id,
-      name: r.name,
-      cliCommand: r.cli_command,
-      port: r.port,
-      enabled: r.enabled === 1,
-      active: r.active === 1,
-    }));
-  } catch (e) {
-    log.error("⚠️ Error getting code bridge:", { error: (e as Error).message });
     return [];
   }
 }

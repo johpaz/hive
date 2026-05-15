@@ -28,12 +28,6 @@
       "@johpaz/hive-agents-core/*": [
         "./packages/core/src/*"
       ],
-      "@johpaz/hive-agents-code-bridge": [
-        "./packages/code-bridge/src/index.ts"
-      ],
-      "@johpaz/hive-agents-code-bridge/*": [
-        "./packages/code-bridge/src/*"
-      ],
       "@johpaz/hive-agents-mcp": [
         "./packages/mcp/src/index.ts"
       ],
@@ -51,12 +45,6 @@
       ],
       "@johpaz/hive-core/*": [
         "./packages/core/src/*"
-      ],
-      "@johpaz/hive-code-bridge": [
-        "./packages/code-bridge/src/index.ts"
-      ],
-      "@johpaz/hive-code-bridge/*": [
-        "./packages/code-bridge/src/*"
       ],
       "@hive/core": [
         "./packages/core/src/index.ts"

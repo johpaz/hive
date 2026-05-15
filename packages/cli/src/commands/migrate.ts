@@ -40,8 +40,6 @@ export async function migrate(): Promise<void> {
     const playbookBefore = (db.query("SELECT COUNT(*) as n FROM playbook").get() as { n: number })?.n ?? 0;
 
     // 3. Ejecutar re-seed (idempotente)
-    //    IMPORTANTE: NO llamar initHiveLearnStorage aquí — HiveLearn es opt-in.
-    //    Los agentes hl_* solo se crean si el usuario los activó en setup o dashboard.
     console.log("\n🌱 Aplicando seed de datos...");
     const { seedAllData } = await import("@johpaz/hive-agents-core/storage/seed");
     seedAllData();

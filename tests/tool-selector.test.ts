@@ -233,7 +233,7 @@ describe("Tool Selector Module", () => {
 
         test("should have code tools", () => {
             const tools = getToolsByCategory("code")
-            expect(tools.length).toBeGreaterThanOrEqual(5)  // exec, terminal, codebridge_*
+            expect(tools.length).toBeGreaterThanOrEqual(2)  // exec, terminal
         })
 
         test("should have canvas tools", () => {

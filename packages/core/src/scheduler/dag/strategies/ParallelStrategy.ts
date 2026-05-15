@@ -1,5 +1,5 @@
 /**
- * ParallelStrategy — default for HiveLearn
+ * ParallelStrategy — executes DAG nodes in parallel as slots become available
  *
  * Picks nodes from the READY queue in FIFO order.
  * Nodes are launched immediately when a worker slot is available,

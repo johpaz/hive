@@ -214,27 +214,6 @@ CREATE TABLE IF NOT EXISTS channels (
     active          INTEGER NOT NULL DEFAULT 0
   );
 
-  -- Code Bridge: external CLI tools configuration (global)
-  CREATE TABLE IF NOT EXISTS code_bridge (
-    id              TEXT PRIMARY KEY,
-    user_id     TEXT REFERENCES users(id) ON DELETE CASCADE,
-    name            TEXT NOT NULL UNIQUE,
-    cli_command     TEXT NOT NULL,
-    enabled         INTEGER NOT NULL DEFAULT 0,
-    active          INTEGER NOT NULL DEFAULT 0,
-    port            INTEGER DEFAULT 18791,
-    config          TEXT
-  );
-
-  -- Code Bridge Config: key-value store for configuration (voice_wake_word, etc.)
-  CREATE TABLE IF NOT EXISTS code_bridge_config (
-    id              TEXT PRIMARY KEY,
-    user_id         TEXT REFERENCES users(id) ON DELETE CASCADE,
-    key             TEXT NOT NULL,
-    value           TEXT,
-    UNIQUE(user_id, key)
-  );
-
   -- USER IDENTITIES (channel + user mapping)
 
   CREATE TABLE IF NOT EXISTS user_identities (
@@ -385,11 +364,9 @@ CREATE TABLE IF NOT EXISTS channels (
   CREATE INDEX IF NOT EXISTS idx_channels_user  ON channels(user_id);
   CREATE INDEX IF NOT EXISTS idx_channels_type  ON channels(type);
   CREATE INDEX IF NOT EXISTS idx_ethics        ON ethics(id);
-  CREATE INDEX IF NOT EXISTS idx_code_bridge   ON code_bridge(id);
   CREATE INDEX IF NOT EXISTS idx_identities_user ON user_identities(user_id);
   CREATE INDEX IF NOT EXISTS idx_usage_provider_model ON usage_records(provider, model);
   CREATE INDEX IF NOT EXISTS idx_usage_created_at ON usage_records(created_at);
-  CREATE INDEX IF NOT EXISTS idx_code_bridge_config_user ON code_bridge_config(user_id);
   
 `;
 

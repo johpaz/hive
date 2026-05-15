@@ -64,7 +64,6 @@ export interface OutboundMessage {
     sttProvider: string | null;
     ttsProvider: string | null;
   };
-  codeBridge?: string[];
 }
 
 export interface SlashCommand {

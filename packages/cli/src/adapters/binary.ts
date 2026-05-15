@@ -192,7 +192,6 @@ export class BinaryAdapter implements InstallationAdapter {
         host: env.HIVE_HOST || (this.isDockerContainer ? "0.0.0.0" : "127.0.0.1"),
         port,
         wsPort: port,
-        codeBridgePort: PORTS.CODE_BRIDGE,
         publicUrl,
         openBrowser: !env.NO_BROWSER && !this.isDockerContainer,
         daemon: !!env.HIVE_DAEMON,

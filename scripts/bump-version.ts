@@ -27,7 +27,7 @@ function bumpVersion(current: string, type: "patch" | "minor" | "major"): string
 
 async function getPackageVersions(): Promise<Map<string, string>> {
   const versions = new Map<string, string>();
-  const packages = ["cli", "core", "sdk", "mcp", "skills", "hive-ui", "code-bridge"];
+  const packages = ["cli", "core", "sdk", "mcp", "skills", "hive-ui"];
 
   for (const pkg of packages) {
     try {
@@ -55,8 +55,6 @@ async function main() {
     "packages/mcp/package.json",
     "packages/skills/package.json",
     "packages/hive-ui/package.json",
-    "packages/code-bridge/package.json",
-
   ];
 
   for (const filePath of packageFiles) {

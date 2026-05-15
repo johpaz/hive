@@ -2,7 +2,7 @@
  * DAGScheduler — Public API
  *
  * Usage:
- *   import { DAGScheduler, TaskGraph, ParallelStrategy, createHiveLearnGraph } from "./dag"
+ *   import { DAGScheduler, TaskGraph, ParallelStrategy } from "./dag"
  */
 
 export { DAGScheduler } from "./DAGScheduler"
@@ -21,9 +21,6 @@ export { CyclicDependencyError, TaskTimeoutError, TaskFailureError } from "./err
 export { ParallelStrategy } from "./strategies/ParallelStrategy"
 export type { ExecutionStrategy } from "./strategies/ParallelStrategy"
 export { PriorityStrategy } from "./strategies/PriorityStrategy"
-
-export { createHiveLearnGraph } from "./presets/HiveLearnPreset"
-export type { HiveLearnAgentIds, HiveLearnInput } from "./presets/HiveLearnPreset"
 
 export { createResearchGraph } from "./presets/ResearchPreset"
 export type { ResearchAgentIds } from "./presets/ResearchPreset"

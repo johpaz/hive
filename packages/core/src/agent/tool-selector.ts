@@ -191,12 +191,6 @@ export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
     { name: "a2ui_update_data_model", description: "Update A2UI v0.9 surface data model with JSON Pointer for dynamic data binding. Spanish keywords: actualizar datos A2UI, poblar formulario, cambiar valores, data model A2UI, actualizar modelo de datos", category: "a2ui", abstractionLevel: "atomic" },
     { name: "a2ui_delete_surface", description: "Delete A2UI v0.9 surface and remove it from the user's canvas. Spanish keywords: eliminar superficie A2UI, borrar UI, limpiar superficie A2UI, cerrar formulario, delete surface", category: "a2ui", abstractionLevel: "atomic" },
 
-    // CodeBridge (subagent process management)
-    { name: "codebridge_launch", description: "Launch subagent process, spawn new code bridge agent process. Spanish keywords: lanzar proceso, iniciar subagente, ejecutar código, nuevo proceso", category: "code", abstractionLevel: "orchestration" },
-    { name: "codebridge_status", description: "Get status of running subagents, check code bridge agent status. Spanish keywords: estado del proceso, verificar subagente, estado del worker, estado", category: "code", abstractionLevel: "atomic" },
-    { name: "codebridge_feedback", description: "Send feedback or additional instructions to a running CodeBridge subagent. Spanish keywords: enviar feedback, corregir rumbo, aclaraciones, mejoras iterativas", category: "code", abstractionLevel: "atomic" },
-    { name: "codebridge_cancel", description: "Cancel running subagent, terminate code bridge agent process. Spanish keywords: cancelar proceso, terminar subagente, detener proceso, parar", category: "code", abstractionLevel: "atomic" },
-
     // Voice tools
     { name: "voice_transcribe", description: "Transcribe audio to text, convert speech to written text from audio files. Spanish keywords: transcribir audio, voz a texto, convertir audio, transcripción", category: "voice", abstractionLevel: "atomic" },
     { name: "voice_speak", description: "Convert text to audio and play, synthesize speech from text. Spanish keywords: hablar, sintetizar voz, texto a voz, reproducir audio, voz", category: "voice", abstractionLevel: "atomic" },

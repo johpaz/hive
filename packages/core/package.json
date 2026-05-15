@@ -17,7 +17,6 @@
   },
   "dependencies": {
     "@ag-ui/core": "^0.0.46",
-    "@johpaz/hive-agents-code-bridge": "workspace:*",
     "@johpaz/hive-agents-mcp": "workspace:*",
     "@johpaz/hive-agents-skills": "workspace:*",
     "@modelcontextprotocol/sdk": "latest",
@@ -76,7 +75,6 @@
     "./tools/agents": "./src/tools/agents/index.ts",
     "./tools/canvas": "./src/tools/canvas/index.ts",
     "./tools/cli": "./src/tools/cli/index.ts",
-    "./tools/codebridge": "./src/tools/codebridge/index.ts",
     "./tools/core": "./src/tools/core/index.ts",
     "./tools/cron": "./src/tools/cron/index.ts",
     "./tools/filesystem": "./src/tools/filesystem/index.ts",

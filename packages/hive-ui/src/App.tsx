@@ -13,7 +13,6 @@ const AgentDetailPage = lazy(() => import("@/pages/AgentDetailPage").then(m => (
 const SettingsPage = lazy(() => import("@/pages/SettingsPage").then(m => ({ default: m.SettingsPage })));
 const AgentNewPage = lazy(() => import("@/pages/AgentNewPage").then(m => ({ default: m.AgentNewPage })));
 const CanvasPage = lazy(() => import("@/pages/CanvasPage").then(m => ({ default: m.CanvasPage })));
-const BridgePage = lazy(() => import("@/pages/BridgePage").then(m => ({ default: m.BridgePage })));
 const LogsPage = lazy(() => import("@/pages/LogsPage").then(m => ({ default: m.LogsPage })));
 const ChannelsPage = lazy(() => import("@/pages/ChannelsPage").then(m => ({ default: m.ChannelsPage })));
 const ProjectsPage = lazy(() => import("@/pages/ProjectsPage").then(m => ({ default: m.ProjectsPage })));
@@ -162,7 +161,6 @@ const AppContent = () => {
           <Route path="/canvas" element={<CanvasPage />} />
           <Route path="/canvas/:sessionId" element={<CanvasPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
-          <Route path="/bridge" element={<BridgePage />} />
           <Route path="/meeting" element={<MeetingPage />} />
           <Route path="/channels" element={<ChannelsPage />} />
           <Route path="/providers" element={<ProvidersPage />} />

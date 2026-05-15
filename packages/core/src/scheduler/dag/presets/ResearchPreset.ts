@@ -13,7 +13,7 @@
  *   const graph = createResearchGraph(
  *     { research: "agent-uuid-1", strategy: "agent-uuid-2",
  *       design: "agent-uuid-3", synthesis: "agent-uuid-4" },
- *     "Design a distributed caching strategy for HiveLearn"
+ *     "Design a distributed caching strategy for the platform"
  *   )
  *   await scheduler.execute(graph, { projectId, coordinatorId })
  */
