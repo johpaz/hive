@@ -271,6 +271,7 @@ jobs:
           echo ""
           echo "Checking required files:"
           test -f dist/hive.js && echo "✓ dist/hive.js exists" || (echo "✗ dist/hive.js missing" && exit 1)
+          test -f dist/tool-worker.js && echo "✓ dist/tool-worker.js exists" || (echo "✗ dist/tool-worker.js missing" && exit 1)
           test -f dist/hive.cmd && echo "✓ dist/hive.cmd exists (Windows)" || (echo "✗ dist/hive.cmd missing" && exit 1)
           test -f dist/hive.ps1 && echo "✓ dist/hive.ps1 exists (PowerShell)" || (echo "✗ dist/hive.ps1 missing" && exit 1)
           test -d dist/ui && echo "✓ dist/ui/ exists" || (echo "✗ dist/ui/ missing" && exit 1)

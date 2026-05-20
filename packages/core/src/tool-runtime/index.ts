@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 import { availableParallelism } from "node:os"
 import type { Config } from "../config/loader.ts"
 import { loadConfig } from "../config/loader.ts"
@@ -92,6 +94,25 @@ type WorkerSlot = {
   worker: Worker
   busy: boolean
   job?: QueuedJob
+}
+
+function resolveWorkerEntry(): string {
+  const candidates = [
+    new URL("./tool-worker.js", import.meta.url),
+    new URL("./tool-worker.ts", import.meta.url),
+    new URL("../packages/core/src/tool-runtime/tool-worker.js", import.meta.url),
+    new URL("../packages/core/src/tool-runtime/tool-worker.ts", import.meta.url),
+  ]
+
+  for (const candidate of candidates) {
+    if (existsSync(fileURLToPath(candidate))) {
+      return candidate.href
+    }
+  }
+
+  throw new Error(
+    `Tool worker entry not found. Tried: ${candidates.map((candidate) => fileURLToPath(candidate)).join(", ")}`
+  )
 }
 
 function serializeError(error: unknown): SerializedError {
@@ -260,7 +281,7 @@ class ToolWorkerPool {
   }
 
   private createSlot(): WorkerSlot {
-    const worker = new Worker(new URL("./tool-worker.ts", import.meta.url).href, { type: "module" })
+    const worker = new Worker(resolveWorkerEntry(), { type: "module" })
     const slot: WorkerSlot = { worker, busy: false }
 
     worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
@@ -287,13 +308,18 @@ class ToolWorkerPool {
       const job = slot.job
       if (!job) return
 
+      const location = [event.filename, event.lineno, event.colno].filter(Boolean).join(":")
+      const message = location
+        ? `${event.message || "Tool worker failed"} (${location})`
+        : (event.message || "Tool worker failed")
+
       this.finishJob(slot, {
         toolCall: job.toolCall,
         toolName: job.toolCall.function.name,
-        result: toolErrorResult(job.toolCall.function.name, event.message || "Tool worker failed"),
+        result: toolErrorResult(job.toolCall.function.name, message),
         ok: false,
         durationMs: Math.round(performance.now() - job.startedAt),
-        error: { name: "WorkerError", message: event.message || "Tool worker failed" },
+        error: { name: "WorkerError", message },
       }, true)
     }
 
