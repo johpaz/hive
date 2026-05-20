@@ -260,6 +260,7 @@ jobs:
       - name: Build package (includes Windows shims)
         run: |
           bun build packages/cli/src/index.ts --bundle --tsconfig-override=tsconfig.json --outfile dist/hive.js --target bun
+          bun build packages/core/src/tool-runtime/tool-worker.ts --outfile dist/tool-worker.js --target bun
           cp -r packages/hive-ui/dist dist/ui
           bun packages/cli/scripts/postbuild.ts
 
