@@ -17,7 +17,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   filesystem: "Sistema de archivos",
   web: "Web",
   cron: "Cron",
-  projects: "Proyectos",
   cli: "CLI",
   agents: "Agentes",
   canvas: "Canvas",
@@ -152,7 +151,6 @@ export function ToolManager() {
                       {tool.category === 'cron' && <Search className="h-6 w-6" />}
                       {tool.category === 'cli' && <Terminal className="h-6 w-6" />}
                       {tool.category === 'agents' && <Settings2 className="h-6 w-6" />}
-                      {tool.category === 'projects' && <Terminal className="h-6 w-6" />}
                       {tool.category === 'canvas' && <Terminal className="h-6 w-6" />}
                       {tool.category === 'voice' && <Settings2 className="h-6 w-6" />}
                     </div>

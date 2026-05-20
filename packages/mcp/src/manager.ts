@@ -239,8 +239,8 @@ export class MCPClientManager {
         description: t.description ?? "",
         inputSchema: t.inputSchema as Record<string, unknown>,
       }));
-    } catch {
-      this.log.debug(`No tools from MCP server: ${name}`);
+    } catch (err) {
+      this.log.warn(`Failed to list tools from MCP server ${name}: ${(err as Error).message}`);
     }
 
     try {
@@ -251,8 +251,8 @@ export class MCPClientManager {
         description: r.description,
         mimeType: r.mimeType,
       }));
-    } catch {
-      this.log.debug(`No resources from MCP server: ${name}`);
+    } catch (err) {
+      this.log.warn(`Failed to list resources from MCP server ${name}: ${(err as Error).message}`);
     }
 
     try {
@@ -262,8 +262,8 @@ export class MCPClientManager {
         description: p.description,
         arguments: p.arguments,
       }));
-    } catch {
-      this.log.debug(`No prompts from MCP server: ${name}`);
+    } catch (err) {
+      this.log.warn(`Failed to list prompts from MCP server ${name}: ${(err as Error).message}`);
     }
   }
 

@@ -19,13 +19,6 @@ export const TOOL_NARRATIONS: Record<string, string> = {
   "cron.resume": "Reanudando tarea programada...",
   "cron.trigger": "Ejecutando tarea ahora...",
   "cron.history": "Consultando historial...",
-  // Projects
-  project_create: "Creando proyecto...",
-  project_update: "Actualizando proyecto...",
-  project_done: "Marcando proyecto como completado...",
-  project_fail: "Registrando falla en el proyecto...",
-  task_create: "Creando tarea...",
-  task_update: "Actualizando tarea...",
   // Agents
   create_agent: "Creando agente worker...",
   find_agent: "Buscando agente disponible...",

@@ -13,7 +13,8 @@ const JUSTIFY_MAP: Record<string, string> = {
 
 export function A2UIColumn({ def, ctx }: { def: ComponentDef; ctx: RenderCtx }) {
   // spec: "justify"/"align" | ours: "distribution"/"alignment" (aliases)
-  const justify = JUSTIFY_MAP[(def.justify ?? def.distribution) ?? "start"] ?? "flex-start";
+  const justifyKey = String((def.justify ?? def.distribution) ?? "start");
+  const justify = JUSTIFY_MAP[justifyKey] ?? "flex-start";
   const align = (() => { const a = def.align ?? def.alignment; return a === "center" ? "center" : a === "end" ? "flex-end" : a === "stretch" ? "stretch" : "flex-start"; })();
 
   return (

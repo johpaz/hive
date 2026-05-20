@@ -63,8 +63,8 @@ export class SSETransport implements Transport {
           signal: this.abortController!.signal,
         });
 
-        if (response.status === 405) {
-          logger.debug(`[SSE] GET not allowed (405), falling back to Streamable HTTP pattern for ${this.baseUrl}`);
+        if (response.status === 405 || response.status === 400) {
+          logger.debug(`[SSE] GET not allowed (${response.status}), falling back to Streamable HTTP pattern for ${this.baseUrl}`);
           this.startResolve();
           return;
         }
@@ -193,18 +193,15 @@ export class SSETransport implements Transport {
     }
 
     const targetUrl = this.messagesUrl || this.baseUrl;
-    let url = targetUrl;
 
-    if (this.sessionId && !url.includes(`sessionId=${this.sessionId}`)) {
-      url = `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}sessionId=${this.sessionId}`;
-    }
-
-    const response = await fetch(url, {
+    const response = await fetch(targetUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Accept": "application/json, text/event-stream",
         ...this.headers,
+        // Streamable HTTP spec requires session ID as header, not query param
+        ...(this.sessionId ? { "mcp-session-id": this.sessionId } : {}),
         ...(this.cookies.length > 0 ? { "Cookie": this.cookies.join('; ') } : {}),
       },
       body: JSON.stringify(message),

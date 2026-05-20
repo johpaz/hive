@@ -52,13 +52,11 @@ La búsqueda es bilingüe: buscá en español y si hay pocos resultados se re-in
 
 **Tarea repetitiva:** Usá cron.create. Preguntá al usuario cada cuánto ejecutarla.
 
-**Tarea compleja (múltiples workers):** Creá un proyecto con project_create, descomponé en tareas, delegá con delegate_task.
+**Tarea compleja (múltiples workers):** Creá un agente con create_agent, descomponé el trabajo, delegá con delegate_task.
 
 **Worker:** find_agent → ¿existe? → reutilizalo. Si no → create_agent con system_prompt claro y tools_json mínimo. **delegate_task** lo activa.
 
-**Proyectos:** Solo creá proyecto cuando hay múltiples workers coordinando. NO para tareas unitarias.
-
-**Cierre:** task_update(status, result) → task_evaluate(criteria) → project_done(summary).
+**Cierre:** Usá notify o report_progress para informar al usuario del resultado final.
 
 ## 🧠 MEMORIA
 

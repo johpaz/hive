@@ -1,7 +1,7 @@
 ---
 name: busqueda_fts5
-description: "Core discovery skill - learn how to find any capability using search_knowledge"
-version: 1.0.0
+description: "Core discovery skill - find any capability with a single keyword"
+version: 1.2.0
 author: Hive Team
 icon: "🔍"
 category: core
@@ -9,7 +9,6 @@ permissions: []
 dependencies: []
 tools: [search_knowledge]
 
-# Triggers - how to activate this skill
 triggers:
   - cómo busco herramientas
   - cómo encuentro skills
@@ -21,70 +20,55 @@ triggers:
 
 ---
 
-# busqueda_fts5 — Discovery System
+# busqueda_fts5 — Sistema de Discovery
 
-This skill teaches you how to find any capability in Hive using **search_knowledge**.
+Arrancás con solo 4 herramientas. Todo lo demás se descubre con **search_knowledge**.
 
-## Por qué Discovery?
+## Regla de oro: UNA PALABRA, busca TODO
 
-You start with only 4 basic tools. All other capabilities (tools, skills, MCP tools, playbook rules) must be discovered dynamically.
-
-## Cómo Buscar
-
-`search_knowledge(type, query)`
-
-### Type Options:
-
-| type | What it finds | Example |
-|------|---------------|---------|
-| **tools** | Native Hive tools | `search_knowledge(type="tools", query="leer archivo")` |
-| **skills** | Task instructions | `search_knowledge(type="skills", query="generar código")` |
-| **mcp** | External MCP tools (Airtable, GitHub) | `search_knowledge(type="mcp", query="crear registro")` |
-| **playbook** | Best practices rules | `search_knowledge(type="playbook", query="seguridad")` |
-| **all** | Everything | `search_knowledge(type="all", query="buscar web")` |
-
-## Query Tips
-
-- **Be specific**: `search_knowledge(type="tools", query="leer archivo markdown")` not just "file"
-- **Bilingual**: Search in Spanish, the system retries in English if few results
-- **Use task context**: "debuggear código" finds code_debug skill
-- **Tool format**: MCP tools are `{serverName}__{toolName}` (e.g., `airtable_crm_datos___AIRTABLE_LIST_BASES`)
-
-## Discovery Flow
-
-1. User asks for something you don't have → `search_knowledge(query, type)`
-2. Results come back with tool names and descriptions
-3. Tools are automatically injected into your context
-4. Use the injected tools immediately
-
-## Examples
-
-**Find a tool to read files:**
 ```
-search_knowledge({type: "tools", query: "leer archivo", limit: 5})
-→ Returns fs_read, fs_list, etc.
+search_knowledge(query="email")
 ```
 
-**Find Airtable tools:**
+Eso solo — sin type, sin frases largas — devuelve tools, skills, MCP y playbook relacionados con "email".
+
+**NO hagas esto:** `search_knowledge(type="tools", query="enviar correo electrónico")` — AND entre palabras no encuentra nada.
+
+**SÍ hagas esto:** `search_knowledge(query="email")` — encuentra todo lo relacionado.
+
+## Cuándo especificar type
+
+Solo si querés filtrar resultados que ya son muchos:
+
 ```
-search_knowledge({type: "mcp", query: "crear registro airtable", limit: 5})
-→ Returns AIRTABLE_CREATE_RECORD, etc.
+search_knowledge(query="email", type="mcp")   → solo herramientas externas de email
+search_knowledge(query="email", type="tools") → solo herramientas nativas de email
 ```
 
-**Find skill to generate code:**
+Por defecto type="all" — no hace falta especificarlo.
+
+## Regla de prioridad
+
+**Preferí herramientas nativas sobre MCP** cuando ambas sirven.
+- Nativas: más rápidas, sin red, siempre disponibles
+- MCP: cuando no hay equivalente nativo
+
+## Flujo de uso
+
+1. Identificá la palabra clave de lo que necesitás
+2. `search_knowledge(query="<palabra>")` → resultados de todos los tipos
+3. Las tools encontradas se inyectan automáticamente en tu contexto
+4. Usás las tools en el siguiente paso
+
+---
+
+## Ejemplos
+
 ```
-search_knowledge({type: "skills", query: "generar código", limit: 3})
-→ Returns code_generate, code_delegator, etc.
+search_knowledge(query="pdf")       → tools para leer/escribir PDFs
+search_knowledge(query="browser")   → tools de navegación web
+search_knowledge(query="github")    → tools MCP de GitHub si están configuradas
+search_knowledge(query="calendar")  → tools de Google Calendar
+search_knowledge(query="canvas")    → skills de visualización
+search_knowledge(query="slack")     → tools de Slack si están configuradas
 ```
-
-## Priority Rule
-
-**ALWAYS prefer native tools over MCP tools** when both do the task.
-- Native tools: faster, no network, always available
-- MCP tools: fallback when no native tool exists
-
-## Remember
-
-- No tool in your startup context? → **search_knowledge**
-- Don't know how to do something? → **search_knowledge**
-- Need external capabilities (Airtable, GitHub)? → **search_knowledge(type="mcp")**

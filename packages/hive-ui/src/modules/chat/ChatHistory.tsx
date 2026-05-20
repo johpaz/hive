@@ -1,6 +1,6 @@
 import type { Message } from "@/types";
 import { ChatMessage } from "./ChatMessage";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { Bot, Zap, Sparkles } from "lucide-react";
 
 interface ChatHistoryProps {
@@ -20,40 +20,46 @@ const SUGGESTIONS = [
   { icon: Bot, text: "Ayudame con una tarea" },
 ];
 
+const EMPTY_STEPS: string[] = [];
+
 export function ChatHistory({
   messages,
   isLoading = false,
-  currentSteps = [],
+  currentSteps = EMPTY_STEPS,
   streamingMessageId,
   userName,
   agentName,
   onSuggestionClick,
   onNarrateMessage,
 }: ChatHistoryProps) {
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
-    messagesEndRef.current?.scrollIntoView({ behavior });
-  };
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
+  const previousListRef = useRef({ count: 0, firstId: "", lastId: "" });
 
   // Auto-scroll logic
   useLayoutEffect(() => {
-    if (containerRef.current) {
-      const scrollElement = containerRef.current.querySelector('.overflow-y-auto');
-      if (scrollElement) {
-        // If we are streaming or just received a new message, and we are already near the bottom, scroll down
-        const isNearBottom = scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 200;
-        
-        // If it's a new message (streaming or finished) and we are near the bottom, or if it's the very first message
-        if (isNearBottom || messages.length <= 1) {
-          // Use setTimeout to ensure the DOM has finished updating
-          const timeoutId = setTimeout(() => {
-            scrollElement.scrollTop = scrollElement.scrollHeight;
-          }, 0);
-          return () => clearTimeout(timeoutId);
-        }
-      }
+    const scrollElement = scrollViewportRef.current;
+    if (!scrollElement) return;
+
+    const previousList = previousListRef.current;
+    const firstId = messages[0]?.id ?? "";
+    const lastId = messages[messages.length - 1]?.id ?? "";
+    const isInitialHistory = previousList.count === 0 && messages.length > 0;
+    const isHistoryReplacement =
+      previousList.count > 0 &&
+      messages.length > 0 &&
+      previousList.count === messages.length &&
+      (previousList.firstId !== firstId || previousList.lastId !== lastId);
+    const isNearBottom = scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 200;
+    const shouldScrollToBottom = isInitialHistory || isHistoryReplacement || isNearBottom || messages.length <= 1;
+
+    previousListRef.current = { count: messages.length, firstId, lastId };
+
+    if (shouldScrollToBottom) {
+      // Let message markdown/media layout commit before measuring the final height.
+      const timeoutId = setTimeout(() => {
+        scrollElement.scrollTop = scrollElement.scrollHeight;
+      }, 0);
+      return () => clearTimeout(timeoutId);
     }
   }, [messages, isLoading, currentSteps]);
 
@@ -94,8 +100,8 @@ export function ChatHistory({
   }
 
   return (
-    <div ref={containerRef} className="flex-1 flex flex-col min-h-0 w-full">
-      <div className="flex-1 overflow-y-auto w-full">
+    <div className="flex-1 flex flex-col min-h-0 w-full">
+      <div ref={scrollViewportRef} className="flex-1 overflow-y-auto w-full">
         <div className="max-w-3xl mx-auto flex flex-col gap-6 p-4 md:p-8 pb-2">
           {messages.map((message) => (
             <ChatMessage
@@ -146,7 +152,7 @@ export function ChatHistory({
             </div>
           )}
 
-          <div ref={messagesEndRef} className="h-0" />
+          <div className="h-0" />
         </div>
       </div>
     </div>

@@ -20,6 +20,7 @@ export interface GraphEdge {
 }
 
 interface CanvasState {
+  sessionId: string | null;
   components: CanvasComponent[];
   selectedComponentId: string | null;
   isConnected: boolean;
@@ -34,6 +35,7 @@ interface CanvasState {
 
   // Actions
   setComponents: (components: CanvasComponent[]) => void;
+  setSessionId: (sessionId: string | null) => void;
   addComponent: (component: CanvasComponent) => void;
   removeComponent: (id: string) => void;
   selectComponent: (id: string | null) => void;
@@ -63,6 +65,7 @@ interface CanvasState {
 }
 
 export const useCanvasStore = create<CanvasState>((set, get) => ({
+  sessionId: null,
   components: [],
   selectedComponentId: null,
   isConnected: false,
@@ -73,6 +76,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   panY: 0,
   a2uiSurfaces: new Map(),
 
+  setSessionId: (sessionId) => set({ sessionId }),
   setComponents: (components) => set({ components }),
   addComponent: (component) => set((s) => ({ components: [...s.components, component] })),
   removeComponent: (id) => set((s) => ({ components: s.components.filter((c) => c.id !== id) })),

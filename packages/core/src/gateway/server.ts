@@ -32,7 +32,7 @@ import { canvasManager } from "../canvas/canvas-manager.ts";
 import { subscribeCanvas, unsubscribeCanvas, emitCanvas, getCanvasSnapshot, removeCanvasComponent } from "../canvas/emitter";
 import { resolveCanvasInteraction } from "../tools/canvas/index";
 import { randomUUID } from "crypto";
-import { legacyDecryptAES } from "../storage/crypto.ts";
+import { legacyDecryptAES, loadMcpHeaders } from "../storage/crypto.ts";
 import { resolveContext } from "./resolver";
 import { voiceService } from "../voice/index";
 import { multimodalService } from "../multimodal/index";
@@ -46,7 +46,6 @@ import { handleGetUsers, handleCreateUser, handleUpdateUserSettings, handleGetUs
 import { handleGetSkills, handleActivateSkill, handleUpdateSkill, handleDeleteSkill, handleCreateSkill } from "./routes/skills";
 import { handleGetEthics, handleActivateEthics, handleDeleteEthics } from "./routes/ethics";
 import { handleGetTools, handleActivateTool, handleUpdateTool } from "./routes/tools";
-import { handleGetProjects, handleGetActiveProject, handleCreateProject, handleUpdateProject, handleGetProjectHistory, handleGetProjectDetail, handleGetProjectTasks } from "./routes/projects";
 import { handleGetTasks, handleUpdateTask } from "./routes/tasks";
 import { setChannelSendFn } from "./channel-notify";
 import { CronScheduler } from "../scheduler/CronScheduler";
@@ -962,40 +961,6 @@ export async function startGateway(config: Config): Promise<void> {
           }
         }
 
-        // ── Projects API ─────────────────────────────────────────────────────
-        if ((url.pathname === "/api/projects" || url.pathname === "/api/projects/") && req.method === "GET") {
-          return await handleGetProjects(req, addCorsHeaders)
-        }
-
-        if (url.pathname === "/api/projects/active" && req.method === "GET") {
-          return await handleGetActiveProject(req, addCorsHeaders)
-        }
-
-        if (url.pathname === "/api/projects/history" && req.method === "GET") {
-          return await handleGetProjectHistory(req, addCorsHeaders)
-        }
-
-        const projectDetailMatch = url.pathname.match(/^\/api\/projects\/([^/]+)$/)
-        if (projectDetailMatch && req.method === "GET") {
-          const projectId = projectDetailMatch[1]
-          return await handleGetProjectDetail(req, addCorsHeaders, projectId)
-        }
-
-        if (projectDetailMatch && (req.method === "PATCH" || req.method === "PUT")) {
-          return await handleUpdateProject(req, addCorsHeaders)
-        }
-
-        const projectTasksMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/tasks$/)
-        if (projectTasksMatch && req.method === "GET") {
-          const projectId = projectTasksMatch[1]
-          return await handleGetProjectTasks(req, addCorsHeaders, projectId)
-        }
-
-        // POST /api/projects — crear nuevo proyecto
-        if (url.pathname === "/api/projects" && req.method === "POST") {
-          return await handleCreateProject(req, addCorsHeaders)
-        }
-
         // ── Tasks API ─────────────────────────────────────────────────────
         if ((url.pathname === "/api/tasks" || url.pathname === "/api/tasks/") && req.method === "GET") {
           return await handleGetTasks(req, addCorsHeaders)
@@ -1356,12 +1321,15 @@ export async function startGateway(config: Config): Promise<void> {
                       enabled: true,
                     }
 
-                    // Decrypt headers if present
-                    if (server.headers_encrypted && server.headers_iv) {
+                    // Load headers from keychain (modern approach), fall back to legacy AES
+                    const keychainHeaders = await loadMcpHeaders(server.id as string);
+                    if (Object.keys(keychainHeaders).length > 0) {
+                      mcpServerConfig.headers = keychainHeaders;
+                    } else if (server.headers_encrypted && server.headers_iv) {
                       try {
                         mcpServerConfig.headers = legacyDecryptAES(server.headers_encrypted, server.headers_iv);
                       } catch (e) {
-                        log.warn(`Failed to decrypt headers for ${mcpName}`);
+                        log.warn(`Failed to decrypt legacy headers for ${mcpName}`);
                       }
                     }
 
@@ -1380,8 +1348,13 @@ export async function startGateway(config: Config): Promise<void> {
 
                     // Get tools after connection
                     const tools = mcp.getServerTools(mcpName) || [];
-                    log.info(`[MCP] Connected! Tools: ${tools.length}`)
-                    getDb().query(`UPDATE mcp_servers SET status = ?, tools_count = ? WHERE id = ? OR name = ?`).run("connected", tools.length, mcpName, mcpName);
+                    const serverDetails = mcp.getServerDetails?.(mcpName);
+                    const serverStatus = serverDetails?.status ?? mcp.getServerStatus(mcpName);
+                    if (serverStatus === "error" && serverDetails?.error) {
+                      log.error(`[MCP] Connection error for ${mcpName}: ${serverDetails.error}`);
+                    }
+                    log.info(`[MCP] Connected! Tools: ${tools.length}, status: ${serverStatus}`);
+                    getDb().query(`UPDATE mcp_servers SET status = ?, tools_count = ? WHERE id = ? OR name = ?`).run(serverStatus === "connected" ? "connected" : "error", tools.length, mcpName, mcpName);
                   } else {
                     log.error(`[MCP] Server not found in DB: ${mcpName}`)
                   }
@@ -1441,12 +1414,15 @@ export async function startGateway(config: Config): Promise<void> {
                       enabled: true,
                     }
 
-                    // Decrypt headers if present
-                    if (server.headers_encrypted && server.headers_iv) {
+                    // Load headers from keychain (modern approach), fall back to legacy AES
+                    const keychainHeaders2 = await loadMcpHeaders(server.id as string);
+                    if (Object.keys(keychainHeaders2).length > 0) {
+                      mcpServerConfig.headers = keychainHeaders2;
+                    } else if (server.headers_encrypted && server.headers_iv) {
                       try {
                         mcpServerConfig.headers = legacyDecryptAES(server.headers_encrypted, server.headers_iv);
                       } catch (e) {
-                        log.warn(`Failed to decrypt headers for ${mcpName}`);
+                        log.warn(`Failed to decrypt legacy headers for ${mcpName}`);
                       }
                     }
 
@@ -1465,10 +1441,15 @@ export async function startGateway(config: Config): Promise<void> {
 
                     // Get tools after connection
                     const tools = mcp.getServerTools(mcpName) || [];
-                    log.info(`[MCP] Connected! Tools: ${tools.length}`)
+                    const serverDetails2 = mcp.getServerDetails?.(mcpName);
+                    const serverStatus2 = serverDetails2?.status ?? mcp.getServerStatus(mcpName);
+                    if (serverStatus2 === "error" && serverDetails2?.error) {
+                      log.error(`[MCP] Connection error for ${mcpName}: ${serverDetails2.error}`);
+                    }
+                    log.info(`[MCP] Connected! Tools: ${tools.length}, status: ${serverStatus2}`);
 
                     // Update DB with status and tools
-                    getDb().query(`UPDATE mcp_servers SET status = ?, tools_count = ? WHERE id = ? OR name = ?`).run("connected", tools.length, mcpName, mcpName);
+                    getDb().query(`UPDATE mcp_servers SET status = ?, tools_count = ? WHERE id = ? OR name = ?`).run(serverStatus2 === "connected" ? "connected" : "error", tools.length, mcpName, mcpName);
                   } else {
                     log.error(`[MCP] Server not found in DB: ${mcpName}`)
                   }

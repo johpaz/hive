@@ -27,7 +27,7 @@ export interface MCPToolDefinition {
  * Uses the same sanitization as mcpToolFullName for consistency.
  */
 export function mcpToolId(serverName: string, toolName: string): string {
-    const safe = (s: string) => s.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_.\-:]/g, '_')
+    const safe = (s: string) => s.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-]/g, '_')
     const full = `${safe(serverName)}__${safe(toolName)}`
     const trimmed = full.length > 64 ? full.substring(0, 64) : full
     return /^[a-zA-Z_]/.test(trimmed) ? trimmed : `_${trimmed}`.substring(0, 64)

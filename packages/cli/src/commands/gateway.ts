@@ -79,8 +79,9 @@ function startUIServer(
           const html = entry.data.toString("utf8").replace("</head>", `${configScript}</head>`);
           return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
         }
-        // Convert Buffer to Uint8Array for Response
-        return new Response(entry.data as unknown as Uint8Array, { headers: { "Content-Type": entry.mime } });
+        const bytes = entry.data as Uint8Array;
+        const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+        return new Response(body, { headers: { "Content-Type": entry.mime } });
       }
 
       // Filesystem path (npm / Docker)

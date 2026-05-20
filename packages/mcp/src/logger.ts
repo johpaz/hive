@@ -5,6 +5,7 @@ class Logger {
   private context: string;
   private level: LogLevel = "info";
   private handler: LogHandler | null = null;
+  private _parent: Logger | null = null;
 
   constructor(context: string, handler: LogHandler | null = null) {
     this.context = context;
@@ -16,8 +17,10 @@ class Logger {
   }
 
   private log(level: LogLevel, message: string, data?: Record<string, unknown>): void {
-    if (this.handler) {
-      this.handler(level, this.context, message, data);
+    // Use own handler if set, otherwise delegate to parent dynamically
+    const effectiveHandler = this.handler ?? this._parent?.handler ?? null;
+    if (effectiveHandler) {
+      effectiveHandler(level, this.context, message, data);
       return;
     }
 
@@ -31,7 +34,9 @@ class Logger {
   error(message: string, data?: Record<string, unknown>): void { this.log("error", message, data); }
 
   child(context: string): Logger {
-    return new Logger(`${this.context}:${context}`, this.handler);
+    const child = new Logger(`${this.context}:${context}`, this.handler);
+    child._parent = this;
+    return child;
   }
 
   setLevel(level: LogLevel): void {

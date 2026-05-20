@@ -128,31 +128,29 @@ function translateQueryToEnglish(query: string): string {
 
 /**
  * Build an FTS5 MATCH expression from a list of words.
- * Multi-word: AND with prefix wildcard. Single: exact OR prefix.
+ * Always uses OR + prefix wildcard for maximum recall.
+ * A single keyword like "email" finds everything related to email.
  */
 function buildFtsMatch(words: string[]): string {
-  if (words.length > 1) {
-    return words.map(w => `${w}*`).join(' AND ');
-  }
-  return `"${words.join(' ')}" OR ${words[0]}*`;
+  return words.map(w => `${w}*`).join(' OR ');
 }
 
 // ─── search_knowledge ────────────────────────────────────────────────────────
 
 export const searchKnowledgeTool: Tool = {
   name: "search_knowledge",
-  description: "Busca herramientas NATIVAS (tools), MCP (tools externas), habilidades (skills) o reglas del playbook en la base de conocimientos. Usa búsqueda full-text (FTS5) con fallback bilingüe español→inglés. type='mcp' para herramientas MCP, type='all' para buscar en todo.",
+  description: "Busca en TODO el conocimiento de Hive con una sola palabra clave. Encuentra tools nativas, MCP, skills y playbook en una sola query. Ejemplo: search_knowledge(query='email') devuelve todo lo relacionado con email. Sin especificar type busca en todo. Fallback bilingüe automático.",
   parameters: {
     type: "object",
     properties: {
       query: {
         type: "string",
-        description: "Término de búsqueda (nombre, descripción, categoría). Se busca primero en español, luego en inglés si hay pocos resultados.",
+        description: "Una palabra clave. Ejemplos: 'email', 'github', 'pdf', 'browser', 'calendar'. Busca en nombres, descripciones y categorías.",
       },
       type: {
         type: "string",
         enum: ["all", "tools", "skills", "playbook", "mcp"],
-        description: "Tipo de conocimiento a buscar",
+        description: "Opcional. Por defecto 'all' (busca en todo). Usa 'mcp' para filtrar solo herramientas externas, 'tools' para solo nativas.",
       },
       limit: {
         type: "number",
@@ -263,7 +261,7 @@ export const searchKnowledgeTool: Tool = {
         id: s.id, name: s.name, description: s.description, category: s.category,
         tools: s.tools, triggers: s.triggers,
         preferred_agents: s.preferred_agents ? JSON.parse(s.preferred_agents) : [],
-        body: s.body ? (s.body.length > 400 ? s.body.substring(0, 400) + "…" : s.body) : undefined,
+        body: s.body ? (s.body.length > 1500 ? s.body.substring(0, 1500) + "…" : s.body) : undefined,
         active: s.active === 1, rank: s.rank,
       }));
       result.playbook = playbook1.map((p: any) => ({
@@ -311,7 +309,7 @@ export const searchKnowledgeTool: Tool = {
                 id: s.id, name: s.name, description: s.description, category: s.category,
                 tools: s.tools, triggers: s.triggers,
                 preferred_agents: s.preferred_agents ? JSON.parse(s.preferred_agents) : [],
-                body: s.body ? (s.body.length > 400 ? s.body.substring(0, 400) + "…" : s.body) : undefined,
+                body: s.body ? (s.body.length > 1500 ? s.body.substring(0, 1500) + "…" : s.body) : undefined,
                 active: s.active === 1, rank: s.rank,
               });
               existingIds.add(s.id);

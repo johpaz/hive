@@ -1,6 +1,6 @@
 /**
- * Tools Registry - Exports all 66 tools
- * 
+ * Tools Registry
+ *
  * Import this to get all tools:
  * import { createAllTools } from "./tools";
  */
@@ -13,9 +13,6 @@ import * as filesystem from "./filesystem/index.ts";
 
 // Web (9)
 import * as web from "./web/index.ts";
-
-// Projects (8)
-import * as projects from "./projects/index.ts";
 
 // Cron (7) - Croner-based scheduler tools
 import * as cron from "./cron/index.ts";
@@ -42,7 +39,7 @@ import * as office from "./office/index.ts";
 import * as meeting from "./meeting/index.ts";
 
 /**
- * Creates all 70 tools with proper configuration
+ * Creates all tools with proper configuration
  */
 export function createAllTools(config: Config): Tool[] {
   return [
@@ -51,9 +48,6 @@ export function createAllTools(config: Config): Tool[] {
 
     // WEB (9)
     ...web.createTools(),
-
-    // PROJECTS (8)
-    ...projects.createTools(),
 
     // CRON (7)
     ...cron.createTools(),
@@ -90,8 +84,6 @@ export function createToolsByCategory(category: string, config: Config): Tool[] 
       return filesystem.createTools();
     case "web":
       return web.createTools();
-    case "projects":
-      return projects.createTools();
     case "cron":
       return cron.createTools();
     case "cli":
@@ -141,17 +133,6 @@ export {
 } from "./web/index.ts";
 
 export {
-  projectCreateTool,
-  projectListTool,
-  projectUpdateTool,
-  projectDoneTool,
-  projectFailTool,
-  taskCreateTool,
-  taskUpdateTool,
-  taskEvaluateTool,
-} from "./projects/index.ts";
-
-export {
   cronCreateTool,
   cronListTool,
   cronUpdateTool,
@@ -180,7 +161,6 @@ export {
   taskStatusTool,
   busPublishTool,
   busReadTool,
-  projectUpdatesTool,
 } from "./agents/index.ts";
 
 export {

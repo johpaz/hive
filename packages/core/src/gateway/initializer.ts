@@ -13,6 +13,7 @@ import { resolveAgentId, runStartupMigrations } from "../storage/onboarding";
 import { createMCPManager, type MCPClientManager } from "@johpaz/hive-agents-mcp";
 import { setMCPManager } from "../mcp/singleton";
 import { startMCPHotReload } from "../mcp/hot-reload";
+import { loadMcpHeaders } from "../storage/crypto";
 import { initializeBrowserService } from "../tools/web/browser-service";
 import { activateBrowserTools } from "../storage/onboarding";
 
@@ -287,8 +288,11 @@ export async function initializeGateway(
           enabled: true,
         };
         
-        // Decrypt headers if present
-        if (server.headers_encrypted && server.headers_iv) {
+        // Load headers from keychain (modern), fall back to legacy AES
+        const keychainHeaders = await loadMcpHeaders(server.id || server.name);
+        if (Object.keys(keychainHeaders).length > 0) {
+          mcpServerConfig.headers = keychainHeaders;
+        } else if (server.headers_encrypted && server.headers_iv) {
           const { legacyDecryptAES } = await import("../storage/crypto");
           mcpServerConfig.headers = legacyDecryptAES(server.headers_encrypted, server.headers_iv);
         }
@@ -309,6 +313,10 @@ export async function initializeGateway(
           ...config.mcp,
           servers: mergedMcpServers,
         });
+        const mcpLog = logger.child("mcp");
+        mcpManager.setLogHandler((level, context, message) => {
+          mcpLog[level](`[${context}] ${message}`);
+        });
         await mcpManager.initialize();
         setMCPManager(mcpManager); // Save to singleton for global access
         log.info(`MCP Manager initialized with ${Object.keys(mergedMcpServers).length} server(s) from config + DB`);
@@ -324,6 +332,10 @@ export async function initializeGateway(
       // Initialize empty MCP Manager for hot reload to work
       try {
         mcpManager = createMCPManager({ servers: {} });
+        const mcpLog2 = logger.child("mcp");
+        mcpManager.setLogHandler((level, context, message) => {
+          mcpLog2[level](`[${context}] ${message}`);
+        });
         await mcpManager.initialize();
         setMCPManager(mcpManager);
         startMCPHotReload(mcpManager);

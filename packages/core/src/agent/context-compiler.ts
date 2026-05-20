@@ -40,9 +40,9 @@ import { getUserDate, getUserTime } from "../utils/date"
 const log = logger.child("context-compiler")
 
 // Configuration constants
-const KEEP_LAST_N_MESSAGES = 40      // Always keep last N messages (Strategy: SELECT) — increased because tool calls/results are now persisted
-const DEFAULT_CONTEXT_WINDOW = 128000 // Default context window when model is unknown
-const COMPACT_RATIO = 0.70           // Compact when estimated input exceeds 70% of context window
+const KEEP_LAST_N_MESSAGES = 15      // Always keep last N messages (Strategy: SELECT) — increased because tool calls/results are now persisted
+const DEFAULT_CONTEXT_WINDOW = 250000 // Default context window when model is unknown
+const COMPACT_RATIO = 0.80           // Compact when estimated input exceeds 70% of context window
 const MAX_SYSTEM_PROMPT_CHARS = 8000 // Truncate system prompt to this max
 
 // MINIMAL TOOL SET — fixed always-available tools
@@ -57,9 +57,10 @@ const MINIMAL_TOOLS = new Set([
 // MINIMAL SKILL SET — fixed always-available skills
 // These skills are ALWAYS in context - the agent uses them to discover everything else
 const MINIMAL_SKILL_NAMES = [
-  "busqueda_fts5",   // Core: how to find tools, skills, MCP, playbook via search_knowledge
-  "canvas_report",  // Display results to users with charts, tables, cards
-  "memory_manager", // Persistent notes that survive context compression
+  "busqueda_fts5",    // Core: how to find tools, skills, MCP, playbook via search_knowledge
+  "memory_manager",   // Persistent notes that survive context compression
+  "canvas_report",    // Display results to users with charts, tables, cards
+  "task_orchestrator", // Agent coordination via notify
 ]
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -369,46 +370,6 @@ export async function compileContext(opts: {
     systemPrompt += `\n\n# SCRATCHPAD (Persistent Notes)\n${scratchpadContent}\n`
   }
 
-  // Inject active/recent project state from DB (coordinator only)
-  if (!isWorker) {
-    try {
-      const recentProjects = db.query<any, []>(`
-        SELECT p.id, p.name, p.status, p.progress, p.description,
-               COUNT(t.id) as total_tasks,
-               SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) as done_tasks
-        FROM projects p
-        LEFT JOIN tasks t ON t.project_id = p.id
-        WHERE p.status IN ('active', 'pending', 'paused')
-        GROUP BY p.id
-        ORDER BY p.updated_at DESC
-        LIMIT 10
-      `).all()
-
-      if (recentProjects.length > 0) {
-        let projectSection = `\n\n# ESTADO DE PROYECTOS\n`
-        for (const proj of recentProjects) {
-          projectSection += `\n## ${proj.name} [${proj.status.toUpperCase()}] (${proj.done_tasks}/${proj.total_tasks} tareas, ${proj.progress ?? 0}%)\n`
-          if (proj.description) projectSection += `> ${proj.description}\n`
-
-          // Load tasks for this project
-          const tasks = db.query<any, [string]>(
-            "SELECT name, status, progress, result FROM tasks WHERE project_id = ? ORDER BY id ASC"
-          ).all(proj.id)
-          for (const task of tasks) {
-            const resultSummary = task.result
-              ? ` → ${task.result.substring(0, 120)}${task.result.length > 120 ? "…" : ""}`
-              : ""
-            projectSection += `  - [${task.status}] ${task.name}${resultSummary}\n`
-          }
-        }
-        systemPrompt += projectSection
-        log.info(`[context-compiler] [STEP-10c] Injected ${recentProjects.length} projects into context`)
-      }
-    } catch (err) {
-      log.warn(`[context-compiler] [STEP-10c] Failed to inject projects: ${(err as Error).message}`)
-    }
-  }
-
   // Dynamic tool discovery instruction (coordinator only)
   // Note: MCP tools are already available directly, no search needed
   if (!isWorker) {
@@ -418,135 +379,39 @@ export async function compileContext(opts: {
       .map(t => `- **${t.name}**: ${t.description || "Herramienta nativa"}`)
       .join("\n")
 
-    systemPrompt += `\n\n# HERRAMIENTAS NATIVAS BÁSICAS (SIEMPRE DISPONIBLES)\n` +
-      `Estas 4 herramientas nativas están SIEMPRE disponibles en tu contexto y tienen prioridad sobre MCP:\n\n` +
+    systemPrompt += `\n\n# HERRAMIENTAS SIEMPRE DISPONIBLES\n` +
       `${minimalToolsDocs}\n\n` +
-      `**REGLAS DE USO:**\n` +
-      `1. Si necesitas una herramienta que no esté en la lista arriba → USA \`search_knowledge\` para encontrarla:\n` +
-      `   - Herramientas nativas: \`search_knowledge(type="tools", query="<qué necesitas>")\`\n` +
-      `   - Herramientas MCP (externas): \`search_knowledge(type="mcp", query="<qué necesitas>")\`\n` +
-      `   - Todo junto: \`search_knowledge(type="all", query="<qué necesitas>")\`\n` +
-      `2. NUNCA uses una herramienta MCP si existe una nativa equivalente en el catálogo\n` +
-      `3. Las herramientas MCP se activan dinámicamente vía search_knowledge — NO están en tu contexto por defecto\n\n` +
-      `# CATÁLOGO DE HERRAMIENTAS\n` +
-      `Usá \`search_knowledge\` para descubrir:\n` +
-      `- Skills (instrucciones de tareas complejas): type="skills"\n` +
-      `- Playbook (buenas prácticas): type="playbook"\n` +
-      `- Herramientas nativas: type="tools"\n` +
-      `- Herramientas MCP (externas): type="mcp"\n` +
-      `- Todo: type="all"\n` +
-      `\n## REGLA CRÍTICA — Delegación a workers\n` +
-      `Los workers arrancan con herramientas mínimas (save_note, notify, report_progress, search_knowledge).\n` +
-      `**ANTES de crear o delegar a un worker**, SIEMPRE debes:\n` +
-      `1. Usar \`search_knowledge(type="tools", query="<tarea del worker>")\` para identificar qué herramientas necesita.\n` +
-      `2. Incluir esas herramientas en el campo \`tools\` al crear el agente con \`create_agent\`, o\n` +
-      `   en el campo \`task_description\` de \`task_delegate\` como instrucción explícita:\n` +
-      `   "Usa las herramientas: web_search, fs_read, ... para completar esta tarea."\n` +
-      `3. El worker con esa instrucción usará \`search_knowledge\` para activar las tools por nombre.\n` +
-      `Ejemplo: si el worker debe investigar en internet → busca "web search herramienta internet, herramientas de navegacion, browser" → obtienes "web_search" → dile al worker que use web_search.\n` +
-      `4. Las herramientas se inyectan dinamicamente vía search_knowledge — NO están en tu contexto por defecto\n`
+      `## Delegación a workers\n` +
+      `Los workers arrancan con estas mismas 4 herramientas mínimas.\n` +
+      `**Antes de delegar**, usá \`search_knowledge(type="tools", query="<tarea>")\` para identificar qué tools necesita el worker e incluirlas en la instrucción de \`task_delegate\`.\n`
 
 
     // Inject available skills (minimal + discovered)
     if (allSkills.length > 0) {
-      let skillsSection = `\n\n# SKILLS ACTIVAS\n`
-      skillsSection += `Usá estas skills como guía cuando sea relevante:\n\n`
-
-      for (const skill of allSkills) {
-        const isMinimal = MINIMAL_SKILL_NAMES.includes(skill.name)
-        const badge = isMinimal ? "[SIEMPRE]" : "[DISCOVERED]"
-        const desc = skill.description ? ` — ${skill.description}` : ""
-        skillsSection += `- **${skill.name}** ${badge}${desc}\n`
+      // Minimal skills: inject full body (always-loaded instructions)
+      const minimalWithBody = allSkills.filter(s => MINIMAL_SKILL_NAMES.includes(s.name) && s.body)
+      if (minimalWithBody.length > 0) {
+        let minimalSection = `\n\n# SKILLS SIEMPRE ACTIVAS\n`
+        for (const skill of minimalWithBody) {
+          minimalSection += `\n## ${skill.name}\n${skill.body}\n`
+        }
+        systemPrompt += minimalSection
       }
 
-      systemPrompt += skillsSection
-      log.info(`[context-compiler] [STEP-10d] Injected ${allSkills.length} skills (${minimalSkills.length} minimal, ${discoveredSkills.length} discovered)`)
+      // Discovered skills: list only (body arrives via agent-loop when tools are injected)
+      const discoveredOnly = allSkills.filter(s => !MINIMAL_SKILL_NAMES.includes(s.name))
+      if (discoveredOnly.length > 0) {
+        let discoveredSection = `\n\n# SKILLS DESCUBIERTAS (relevantes para esta tarea)\n`
+        for (const skill of discoveredOnly) {
+          const desc = skill.description ? ` — ${skill.description}` : ""
+          discoveredSection += `- **${skill.name}**${desc}\n`
+        }
+        systemPrompt += discoveredSection
+      }
+
+      log.info(`[context-compiler] [STEP-10d] Injected ${minimalWithBody.length} minimal skill bodies + ${discoveredOnly.length} discovered skills`)
     }
 
-    // Inject Canvas A2UI component documentation
-    systemPrompt += `\n\n# 🎨 CANVAS A2UI — Componentes disponibles para \`canvas_render\`\n` +
-      `**REGLA**: Usá \`canvas_render\` con el tipo específico en vez de siempre usar \`canvas_show_card\` + markdown.\n\n` +
-      `## Tipos de visualización:\n` +
-      `- **chart** — Gráficos. Props: \`{type:"bar"|"line"|"area"|"pie", data:[{name,...}], xKey:"name", keys:["valor"], colors:[], title}\`\n` +
-      `- **table** — Tablas de datos. Props: \`{title, columns:[{header,key}], data:[{...}]}\`\n` +
-      `- **progress** — Barras de progreso. Props: \`{bars:[{label,value:0-100}]}\`\n` +
-      `- **markdown** — Texto rich. Props: \`{content:"## título\\n..."}\`\n` +
-      `- **card** — Tarjeta con items. Props: \`{title, description, items:[{label,value}], footer}\`\n` +
-      `- **accordion** — Secciones colapsables. Props: \`{items:[{value,title,content}]}\`\n` +
-      `- **tabs** — Pestañas. Props: \`{tabs:[{value,label,content}]}\`\n` +
-      `- **badge** — Etiqueta. Props: \`{label, variant:"default"|"secondary"|"destructive"|"outline"}\`\n` +
-      `- **separator** — Línea divisora\n` +
-      `- **bee-loader** — Animación de carga. Props: \`{message}\`\n\n` +
-      `## Tipos interactivos (bloquean hasta respuesta del usuario):\n` +
-      `- **form** — Formulario. Props: \`{title, fields:[{name,label,type,placeholder,options}], submitLabel}\`\n` +
-      `  → Tipos de campo: \`text\`, \`email\`, \`number\`, \`textarea\`, \`select\`, \`checkbox\`\n` +
-      `  → Al Submit recibirás: \`{data:{campo:valor,...}}\`\n` +
-      `- **button** — Botón clickeable. Props: \`{label, variant:"default"|"outline"|"secondary"|"destructive"}\`\n` +
-      `  → Al click recibirás: \`{action:"click", data:{label}}\`\n` +
-      `- **alert-dialog** — Confirmación. Props: \`{title, description, confirmLabel, cancelLabel}\`\n` +
-      `  → Al confirmar recibirás: \`{data:{confirmed:true|false}}\`\n\n` +
-      `## Cuándo usar cada uno:\n` +
-      `- Estadísticas/datos numéricos → **chart** (bar/line/pie)\n` +
-      `- Listas de filas/columnas → **table**\n` +
-      `- Texto largo / análisis → **markdown**\n` +
-      `- Pedir datos al usuario → **canvas_ask** o **canvas_render con form**\n` +
-      `- Confirmar acción peligrosa → **canvas_confirm** o **canvas_render con alert-dialog**\n` +
-      `- Mostrar progreso de tarea → **canvas_show_progress**\n\n` +
-      `## Ejemplos:\n` +
-      `\`\`\`\n` +
-      `canvas_render(component:"chart", data:{type:"bar", data:[{mes:"Ene",ventas:1200},{mes:"Feb",ventas:1800}], xKey:"mes", keys:["ventas"], title:"Ventas por mes"})\n` +
-      `canvas_render(component:"table", data:{title:"Archivos", columns:[{header:"Nombre",key:"name"},{header:"Tamaño",key:"size"}], data:[{name:"app.ts",size:"12KB"}]})\n` +
-      `canvas_render(component:"form", data:{title:"Configuración", fields:[{name:"nombre",label:"Nombre",type:"text"},{name:"tipo",label:"Tipo",type:"select",options:[{value:"a",label:"A"},{value:"b",label:"B"}]}], submitLabel:"Guardar"})\n` +
-      `\`\`\`\n\n` +
-      `# 🎨🎨 CANVAS A2UI v0.9 — Superficies interactivas ricas\n` +
-      `Además de los componentes shadcn, podes crear superficies A2UI v0.9 (protocolo estándar de Google) para UIs ricas e interactivas.\n\n` +
-      `## Flujo A2UI:\n` +
-      `1. \`a2ui_create_surface\` — Crear la superficie (obligatorio primero)\n` +
-      `2. \`a2ui_update_components\` — Enviar componentes (puedes enviar múltiples veces)\n` +
-      `3. \`a2ui_update_data_model\` — Actualizar datos dinámicos\n` +
-      `4. \`a2ui_delete_surface\` — Eliminar la superficie\n\n` +
-      `## Componentes A2UI v0.9:\n` +
-      `- **Column** — Contenedor vertical. Props: children (array de IDs), distribution, alignment\n` +
-      `- **Row** — Contenedor horizontal. Props: children (array de IDs), distribution, alignment\n` +
-      `- **Card** — Tarjeta con child\n` +
-      `- **Text** — Texto con usageHint: h1-h5, body, caption, code, label\n` +
-      `- **Button** — Botón interactivo. Props: child, variant ("primary"|"borderless"), action\n` +
-      `- **TextField** — Campo de texto. Props: label, value (path), variant, placeholder, checks\n` +
-      `- **CheckBox** — Checkbox. Props: label, value (path)\n` +
-      `- **ChoicePicker** — Selección múltiple. Props: options, variant, maxAllowedSelections, selections\n` +
-      `- **Slider** — Slider numérico. Props: value (path), minValue, maxValue\n` +
-      `- **DateTimeInput** — Fecha/hora. Props: value (path), enableDate, enableTime\n` +
-      `- **List** — Lista scrolleable. Props: children, direction\n` +
-      `- **Tabs** — Pestañas. Props: tabItems\n` +
-      `- **Modal** — Diálogo. Props: entryPointChild, contentChild\n` +
-      `- **Divider** — Línea divisora. Props: axis\n` +
-      `- **Image** — Imagen. Props: url, fit, usageHint\n` +
-      `- **Icon** — Ícono. Props: name\n` +
-      `- **Video** — Video. Props: url\n` +
-      `- **AudioPlayer** — Reproductor de audio. Props: url, description\n\n` +
-      `## Data Binding (Dynamic Values):\n` +
-      `- Valor literal: \`"texto"\` o número directo\n` +
-      `- Path del data model: \`{"path": "/user/name"}\` — se resuelve contra el data model de la superficie\n` +
-      `- Function call: \`{"call": "formatDate", "args": {"value": {"path": "/date"}, "format": "yyyy-MM-dd"}}\`\n\n` +
-      `## Acciones:\n` +
-      `- Evento: \`{"event": {"name": "submit_form", "context": {"email": {"path": "/form/email"}}}}\`\n` +
-      `- El contexto se resuelve contra el data model antes de enviar\n\n` +
-      `## Ejemplo completo:\n` +
-      `\`\`\`\n` +
-      `// 1. Crear superficie\n` +
-      `a2ui_create_surface(surfaceId:"contact_form", catalogId:"https://a2ui.org/specification/v0_9/basic_catalog.json", theme:{primaryColor:"#3B82F6", agentDisplayName:"Asistente"})\n\n` +
-      `// 2. Enviar componentes\n` +
-      `a2ui_update_components(surfaceId:"contact_form", components:[\n` +
-      `  {id:"root", component:"Column", children:{array:["header","name_field","email_field","submit_btn"]}},\n` +
-      `  {id:"header", component:"Text", text:"Contacto", usageHint:"h2"},\n` +
-      `  {id:"name_field", component:"TextField", label:"Nombre", value:{path:"/form/name"}, variant:"shortText"},\n` +
-      `  {id:"email_field", component:"TextField", label:"Email", value:{path:"/form/email"}, variant:"shortText", checks:[{call:"required",args:{value:{path:"/form/email"}},message:"Email es obligatorio"},{call:"email",args:{value:{path:"/form/email"}},message:"Email inválido"}]},\n` +
-      `  {id:"submit_text", component:"Text", text:"Enviar"},\n` +
-      `  {id:"submit_btn", component:"Button", child:"submit_text", variant:"primary", action:{event:{name:"submit_contact",context:{name:{path:"/form/name"},email:{path:"/form/email"}}}}}\n` +
-      `])\n\n` +
-      `// 3. Poblar data model\n` +
-      `a2ui_update_data_model(surfaceId:"contact_form", path:"/form", value:{name:"",email:""})\n` +
-      `\`\`\`\n`
   }
 
   // For isolated workers, add task context + tool discovery instruction

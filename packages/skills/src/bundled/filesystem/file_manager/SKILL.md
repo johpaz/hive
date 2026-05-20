@@ -8,7 +8,7 @@ category: filesystem
 permissions:
   - filesystem_read
 dependencies: []
-tools: [project_list, project_glob, project_exists]
+tools: [fs_list, fs_glob, fs_exists]
 
 # Structured skill fields
 triggers:
@@ -31,30 +31,30 @@ preferred_agents: []
 
 steps:
   - step: 1
-    action: project_list
+    action: fs_list
     instruction: "List directory contents to understand project structure"
     params:
       path: "."
     output: directory_tree
 
   - step: 2
-    action: project_glob
+    action: fs_glob
     instruction: "Find files matching specific pattern (e.g., **/*.ts, **/*.md)"
     params:
       pattern: "**/*.ts"
     output: matching_files
 
   - step: 3
-    action: project_exists
+    action: fs_exists
     instruction: "Verify specific file or directory exists"
     params:
       path: "specific/path"
     output: exists_boolean
 
 rules:
-  - "Use project_list for initial exploration of unknown directories"
-  - "Use project_glob when user specifies file type or pattern"
-  - "Always verify with project_exists before read/edit operations"
+  - "Use fs_list for initial exploration of unknown directories"
+  - "Use fs_glob when user specifies file type or pattern"
+  - "Always verify with fs_exists before read/edit operations"
   - "Stay within workspace directory unless explicitly requested otherwise"
   - "For recursive search, use ** pattern (e.g., **/*.ts finds all .ts files)"
 
@@ -68,13 +68,13 @@ output_format:
 
 examples:
   - user_input: "lista los archivos del proyecto"
-    expected_behavior: "project_list({ path: '.' }) → return root directory structure"
+    expected_behavior: "fs_list({ path: '.' }) → return root directory structure"
 
   - user_input: "buscá todos los archivos TypeScript"
-    expected_behavior: "project_glob({ pattern: '**/*.ts' }) → return list of .ts files"
+    expected_behavior: "fs_glob({ pattern: '**/*.ts' }) → return list of .ts files"
 
   - user_input: "existe el archivo src/config.ts"
-    expected_behavior: "project_exists({ path: 'src/config.ts' }) → return true/false"
+    expected_behavior: "fs_exists({ path: 'src/config.ts' }) → return true/false"
 ---
 
 # File Manager Skill
@@ -91,15 +91,15 @@ Esta skill se activa cuando el usuario necesita:
 
 | Tool | Qué hace | Cuándo usarla |
 |------|----------|---------------|
-| `project_list` | Lista directorios y archivos | Exploración inicial |
-| `project_glob` | Busca archivos por patrón wildcard | Búsqueda por extensión/patrón |
-| `project_exists` | Verifica existencia | Pre-check antes de operaciones |
+| `fs_list` | Lista directorios y archivos | Exploración inicial |
+| `fs_glob` | Busca archivos por patrón wildcard | Búsqueda por extensión/patrón |
+| `fs_exists` | Verifica existencia | Pre-check antes de operaciones |
 
 ## Workflow
 
-1. **Explorar** → `project_list({ path })` para estructura general
-2. **Buscar por patrón** → `project_glob({ pattern })` para tipos específicos
-3. **Verificar** → `project_exists({ path })` para confirmación
+1. **Explorar** → `fs_list({ path })` para estructura general
+2. **Buscar por patrón** → `fs_glob({ pattern })` para tipos específicos
+3. **Verificar** → `fs_exists({ path })` para confirmación
 
 ## Patrones Glob Comunes
 
@@ -114,5 +114,5 @@ Esta skill se activa cuando el usuario necesita:
 ## Errores a Evitar
 
 - ❌ No verificar existencia antes de leer/editar
-- ❌ Usar project_list cuando se conoce el patrón (usar glob)
+- ❌ Usar fs_list cuando se conoce el patrón (usar glob)
 - ❌ Patrones muy amplios sin filtrado

@@ -25,6 +25,11 @@ import {
 } from "./config";
 import { PORTS } from "./types";
 
+type SpawnedProcess = {
+  on(event: "close", listener: (code: number | null) => void): void;
+  on(event: "error", listener: (error: Error) => void): void;
+};
+
 /**
  * Bun Global installation adapter
  */
@@ -153,7 +158,8 @@ export class BunGlobalAdapter implements InstallationAdapter {
         }),
       });
 
-      child.on("close", (code) => {
+      const childProcess = child as unknown as SpawnedProcess;
+      childProcess.on("close", (code) => {
         if (code === 0) {
           resolve();
         } else {
@@ -161,7 +167,7 @@ export class BunGlobalAdapter implements InstallationAdapter {
         }
       });
 
-      child.on("error", (error) => {
+      childProcess.on("error", (error) => {
         reject(error);
       });
     });

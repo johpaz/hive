@@ -67,7 +67,7 @@ export function MCPServerList() {
             <MCPServerCard
               key={server.id}
               server={server}
-              isConnected={server.status === "connected" || server.active === 1}
+              isConnected={server.status === "connected" || server.active === true}
               onClick={() => handleCardClick(server)}
             />
           ))}

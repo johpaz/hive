@@ -29,6 +29,7 @@ const log = logger.child("skill-selector")
  * - task_orchestrator: usa notify (comunicación entre agentes)
  */
 export const MINIMAL_SKILL_NAMES = new Set([
+  "busqueda_fts5",    // Core: cómo descubrir tools, MCP, skills, playbook
   "memory_manager",   // Asociada a save_note
   "canvas_report",    // Asociada a report_progress
   "task_orchestrator", // Asociada a notify y agent coordination

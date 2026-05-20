@@ -30,9 +30,6 @@ import {
   Eye,
   Pencil,
   FileEdit,
-  BookOpen,
-  Save,
-  List,
   UserPlus,
   FileText,
   FileUp,
@@ -59,9 +56,6 @@ const TOOL_ICONS: Record<string, any> = {
   workspace_read: Eye,
   workspace_write: Pencil,
   workspace_patch: FileEdit,
-  project_read: BookOpen,
-  project_write: Save,
-  project_list: List,
   create_agent: UserPlus,
   read: FileText,
   write: FileUp,
@@ -73,7 +67,6 @@ const TOOL_ICONS: Record<string, any> = {
 const CATEGORY_LABELS: Record<string, string> = {
   bundled: "Nativas",
   workspace: "Workspace",
-  project: "Proyecto",
   builtin: "Sistema",
 };
 
@@ -133,7 +126,7 @@ export function ToolPermissions() {
     );
   }
 
-  const categories = ["bundled", "workspace", "project", "builtin"];
+  const categories = ["bundled", "workspace", "builtin"];
   const toolsByCategory = categories.reduce((acc, cat) => {
     acc[cat] = tools.filter(t => t.category === cat);
     return acc;

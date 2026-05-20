@@ -40,5 +40,6 @@ export interface Tool {
   usageStats?: ToolUsageStat[];
   enabled: boolean;
   active?: boolean;
+  core?: boolean;
   version?: string;
 }

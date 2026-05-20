@@ -129,18 +129,6 @@ export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
     { name: "cron.trigger", description: "Manually trigger immediate execution of a cron job now. Spanish keywords: ejecutar tarea ahora, forzar ejecución, disparar manualmente", category: "scheduling", abstractionLevel: "atomic" },
     { name: "cron.history", description: "Get execution history and run logs for a cron job. Spanish keywords: historial ejecuciones, logs tarea, cuándo corrió, registro de ejecuciones", category: "scheduling", abstractionLevel: "atomic" },
 
-    // Project management tools (high-level orchestration)
-    { name: "project_create", description: "Create project with tasks, start new project for complex multi-step work. Spanish keywords: crear proyecto, nuevo proyecto, iniciar trabajo, proyecto nuevo, comenzar proyecto", category: "projects", abstractionLevel: "orchestration" },
-    { name: "project_list", description: "List all projects with their status. Spanish keywords: listar proyectos, ver proyectos, historial proyectos, todos los proyectos", category: "projects", abstractionLevel: "atomic" },
-    { name: "project_update", description: "Update project progress, mark progress percentage and status changes. Spanish keywords: actualizar progreso, marcar avance, estado del proyecto, porcentaje completado", category: "projects", abstractionLevel: "atomic" },
-    { name: "project_done", description: "Mark project complete, close finished projects and archive results. Spanish keywords: proyecto terminado, cerrar proyecto, finalizar, proyecto completado, marcar como hecho", category: "projects", abstractionLevel: "atomic" },
-    { name: "project_fail", description: "Mark project failed, record failure reason and lessons learned. Spanish keywords: proyecto fallido, error, marcar como fallido, proyecto fracasado, fracaso", category: "projects", abstractionLevel: "atomic" },
-
-    // Task management (atomic)
-    { name: "task_create", description: "Add task to project, create subtasks and action items within projects. Spanish keywords: crear tarea, nueva tarea, agregar pendiente, agregar tarea, crear subtarea", category: "projects", abstractionLevel: "atomic" },
-    { name: "task_update", description: "Update task status, mark tasks as complete or in progress. Spanish keywords: actualizar tarea, cambiar estado, marcar completa, tarea completada, tarea en progreso", category: "projects", abstractionLevel: "atomic" },
-    { name: "task_evaluate", description: "Evaluate task result against acceptance criteria. Spanish keywords: evaluar tarea, validar resultado, criterios aceptación, verificar calidad", category: "projects", abstractionLevel: "atomic" },
-
     // Code execution
     { name: "cli_exec", description: "Execute shell commands, run bash scripts and system commands. Spanish keywords: ejecutar comando, terminal, línea de comandos, bash, script, comando del sistema", category: "cli", abstractionLevel: "atomic" },
 
@@ -210,7 +198,6 @@ export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
     { name: "task_status", description: "Get execution status of delegated tasks. Spanish keywords: estado tarea delegada, verificar progreso, consultar tarea, progreso delegado", category: "agents", abstractionLevel: "atomic" },
     { name: "bus_publish", description: "Publish message to Agent Bus for worker-to-worker communication. Spanish keywords: publicar mensaje, comunicar workers, enviar bus, mensaje bus", category: "agents", abstractionLevel: "atomic" },
     { name: "bus_read", description: "Read unread messages from Agent Bus. Spanish keywords: leer mensajes bus, recibir mensajes, verificar bus, mensajes workers", category: "agents", abstractionLevel: "atomic" },
-    { name: "project_updates", description: "Get recent status updates from workers in project. Spanish keywords: actualizaciones proyecto, estado workers, progreso equipo, noticias proyecto", category: "agents", abstractionLevel: "atomic" },
 ]
 
 // ─── Helper Functions ───────────────────────────────────────────────────────-
@@ -515,7 +502,6 @@ export async function syncToolCatalogToFTS(tools?: ToolDescriptor[]): Promise<vo
 function enrichToolDescription(tool: ToolDescriptor): string {
     const keywordsByCategory: Record<string, string> = {
         scheduling: "programar recordatorio alarma cron schedule reminder task future tiempo",
-        projects: "proyecto tarea plan organizer milestone backlog sprint work",
         filesystem: "archivo file leer escribir editar documento content source code",
         web: "buscar internet google web search find information news research",
         browser: "navegador browser click screenshot form automation web page UI",
@@ -541,11 +527,10 @@ function enrichToolDescription(tool: ToolDescriptor): string {
  *
  * Canonical format: `{safeServer}__{safeTool}` (double underscore as separator)
  */
-export function mcpToolFullName(serverName: string, toolName: string): string {
-    const safe = (s: string) => s.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_.\-:]/g, '_')
-    const full = `${safe(serverName)}__${safe(toolName)}`
-    // Ensure starts with letter/underscore and fits within 64 chars
-    const trimmed = full.length > 64 ? full.substring(0, 64) : full
+export function mcpToolFullName(_serverName: string, toolName: string): string {
+    const safe = (s: string) => s.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-]/g, '_')
+    const sanitized = safe(toolName)
+    const trimmed = sanitized.length > 64 ? sanitized.substring(0, 64) : sanitized
     return /^[a-zA-Z_]/.test(trimmed) ? trimmed : `_${trimmed}`.substring(0, 64)
 }
 

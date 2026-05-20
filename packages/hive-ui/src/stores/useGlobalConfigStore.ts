@@ -383,8 +383,10 @@ const createAgentsSlice = (set: any, get: any) => ({
 });
 
 // ==================== TOOLS ====================
+type StoreTool = { id: string; name: string; description: string; category: string; enabled: boolean; active: boolean; core?: boolean };
+
 interface ToolsState {
-  tools: Array<{ id: string; name: string; description: string; category: string; enabled: boolean; active: boolean }>;
+  tools: StoreTool[];
   activeTools: Array<{ id: string; name: string; description: string; category: string }>;
   fetchTools: () => Promise<void>;
   toggleTool: (id: string, active: boolean) => Promise<void>;
@@ -392,12 +394,12 @@ interface ToolsState {
 }
 
 const createToolsSlice = (set: any, get: any) => ({
-  tools: [] as Array<{ id: string; name: string; description: string; category: string; enabled: boolean; active: boolean }>,
+  tools: [] as StoreTool[],
   activeTools: [] as Array<{ id: string; name: string; description: string; category: string }>,
 
   fetchTools: async () => {
     try {
-      const response = await apiClient<{ tools: Array<{ id: string; name: string; description: string; category: string; enabled: boolean; active: boolean }> }>("/api/tools");
+      const response = await apiClient<{ tools: StoreTool[] }>("/api/tools");
       const tools = response.tools;
       return {
         tools,
@@ -1497,4 +1499,3 @@ export function useLocalLLM() {
     fetchLocalLLMLogs,
   };
 }
-

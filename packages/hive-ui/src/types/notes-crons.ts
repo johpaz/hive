@@ -17,6 +17,7 @@ export type TaskRunStatus = 'running' | 'success' | 'failed' | 'timeout';
 export interface ScheduledTask {
     id: string;
     name: string;
+    description?: string | null;
     task: string;
     task_type: TaskType;
     cron_expression: string | null;

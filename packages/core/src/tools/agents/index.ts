@@ -8,7 +8,6 @@ import type { Tool } from "../types.ts";
 import { getDb } from "../../storage/sqlite.ts";
 import { logger } from "../../utils/logger.ts";
 import { agentBus } from "../../events/agent-bus.ts";
-import { emitCanvas } from "../../canvas/emitter.ts";
 
 const log = logger.child("agents");
 
@@ -378,8 +377,6 @@ export const taskDelegateTool: Tool = {
     properties: {
       worker_id: { type: "string", description: "ID of the worker agent" },
       task_description: { type: "string", description: "Clear, detailed instructions for the worker" },
-      task_id: { type: "number", description: "Optional task DB ID to update status automatically" },
-      project_id: { type: "string", description: "Optional project ID for progress tracking" },
     },
     required: ["worker_id", "task_description"],
   },
@@ -387,10 +384,7 @@ export const taskDelegateTool: Tool = {
     const db = getDb();
     const workerId = params.worker_id as string;
     const taskDescription = params.task_description as string;
-    const taskId = params.task_id as number | undefined;
-    const projectId = params.project_id as string | undefined;
 
-    // Verify worker exists and is enabled
     const worker = db.query<any, [string]>(
       "SELECT id, name, enabled FROM agents WHERE id = ?"
     ).get(workerId);
@@ -402,86 +396,35 @@ export const taskDelegateTool: Tool = {
       return { ok: false, error: `Worker is disabled: ${worker.name}` };
     }
 
-    // Fetch task info for bus notifications
-    const taskRow = taskId
-      ? db.query<any, [number]>("SELECT name, project_id FROM tasks WHERE id = ?").get(taskId)
-      : null;
-    const taskName = taskRow?.name ?? taskDescription.slice(0, 60);
-    const resolvedProjectId = projectId ?? taskRow?.project_id ?? "";
-
-    // Mark task in_progress if task_id provided
-    if (taskId) {
-      db.query("UPDATE tasks SET status='in_progress', agent_id=?, updated_at=unixepoch() WHERE id=?")
-        .run(workerId, taskId);
-      emitCanvas("canvas:node_update", { id: taskId.toString(), type: "task", data: { status: "in_progress", agent_id: workerId } });
-    }
-
-    // Notify Agent Bus: task started
-    agentBus.notifyTaskStarted(workerId, worker.name, taskId ?? 0, taskName, resolvedProjectId);
+    const taskName = taskDescription.slice(0, 60);
+    agentBus.notifyTaskStarted(workerId, worker.name, 0, taskName, "");
 
     log.info(`[task_delegate] Delegating to ${worker.name} (${workerId})`);
 
     try {
-      // Dynamic import to avoid circular dependency (agent-loop → tools → agent-loop)
       const { runAgentIsolated } = await import("../../agent/agent-loop.ts");
 
-      const threadId = `task-${taskId ?? Date.now()}-${workerId}`;
+      const threadId = `task-${Date.now()}-${workerId}`;
       const result = await runAgentIsolated({
         agentId: workerId,
         taskDescription,
         threadId,
       });
 
-      // Update task to completed if task_id provided
-      if (taskId) {
-        db.query(
-          "UPDATE tasks SET status='completed', progress=100, result=?, updated_at=unixepoch() WHERE id=?"
-        ).run(result, taskId);
-        emitCanvas("canvas:node_update", { id: taskId.toString(), type: "task", data: { status: "completed", progress: 100 } });
-
-        // Recalculate project progress if project_id provided
-        if (resolvedProjectId) {
-          const rows = db.query<any, [string]>(
-            "SELECT AVG(progress) as avg FROM tasks WHERE project_id=?"
-          ).get(resolvedProjectId);
-          const avg = Math.round(rows?.avg ?? 0);
-          db.query("UPDATE projects SET progress=?, updated_at=unixepoch() WHERE id=?")
-            .run(avg, resolvedProjectId);
-          emitCanvas("canvas:node_update", { id: resolvedProjectId, type: "project", data: { progress: avg } });
-        }
-      }
-
-      // Notify Agent Bus: task completed
-      agentBus.notifyTaskCompleted(workerId, worker.name, taskId ?? 0, taskName, resolvedProjectId, result);
-
-      const finalProgress = resolvedProjectId
-        ? (db.query<any, [string]>("SELECT progress FROM projects WHERE id=?").get(resolvedProjectId)?.progress ?? null)
-        : null;
+      agentBus.notifyTaskCompleted(workerId, worker.name, 0, taskName, "", result);
 
       return {
         ok: true,
         worker_id: workerId,
         worker_name: worker.name,
-        task_id: taskId,
         result,
-        project_progress: finalProgress,
       };
     } catch (err) {
-      // Mark task failed if task_id provided
-      if (taskId) {
-        db.query(
-          "UPDATE tasks SET status='failed', result=?, updated_at=unixepoch() WHERE id=?"
-        ).run((err as Error).message, taskId);
-        emitCanvas("canvas:node_update", { id: taskId.toString(), type: "task", data: { status: "failed" } });
-      }
-
-      // Notify Agent Bus: task failed
-      agentBus.notifyTaskFailed(workerId, worker.name, taskId ?? 0, taskName, resolvedProjectId, (err as Error).message);
+      agentBus.notifyTaskFailed(workerId, worker.name, 0, taskName, "", (err as Error).message);
 
       return {
         ok: false,
         worker_id: workerId,
-        task_id: taskId,
         error: (err as Error).message,
       };
     }
@@ -643,53 +586,6 @@ export const busReadTool: Tool = {
   },
 };
 
-// ─── project_updates ─────────────────────────────────────────────────────────
-
-export const projectUpdatesTool: Tool = {
-  name: "project_updates",
-  description: "Get recent status updates from workers in the same project. Spanish: actualizaciones proyecto, estado workers, progreso equipo",
-  parameters: {
-    type: "object",
-    properties: {
-      project_id: { type: "string", description: "Project ID to get updates from" },
-      limit: { type: "number", description: "Maximum updates to return (default: 10)" },
-    },
-    required: ["project_id"],
-  },
-  execute: async (params: Record<string, unknown>) => {
-    const db = getDb();
-    const projectId = params.project_id as string;
-    const limit = (params.limit as number) ?? 10;
-
-    try {
-      const tasks = db.query<any, [string, number]>(
-        `SELECT t.id, t.name, t.status, t.progress, t.result, t.updated_at, a.name as agent_name
-         FROM tasks t
-         LEFT JOIN agents a ON t.agent_id = a.id
-         WHERE t.project_id = ?
-         ORDER BY t.updated_at DESC
-         LIMIT ?`
-      ).all(projectId, limit) as any[];
-
-      return {
-        ok: true,
-        project_id: projectId,
-        count: tasks.length,
-        updates: tasks.map((t) => ({
-          task_id: t.id,
-          task_name: t.name,
-          agent_name: t.agent_name,
-          status: t.status,
-          progress: t.progress,
-          result: t.result,
-          updated_at: new Date(t.updated_at * 1000).toISOString(),
-        })),
-      };
-    } catch (error) {
-      return { ok: false, error: `Failed to get updates: ${(error as Error).message}` };
-    }
-  },
-};
 
 import crypto from "crypto";
 import { getAvailableModelsTool } from "./get-available-models.ts";
@@ -710,6 +606,5 @@ export function createTools(): Tool[] {
     taskStatusTool,
     busPublishTool,
     busReadTool,
-    projectUpdatesTool,
   ];
 }

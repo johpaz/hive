@@ -68,7 +68,7 @@ try {
     tool.description,
     tool.category,
     tool.enabled !== false ? 1 : 0, // default a 1 si no está especificado
-    tool.active !== false ? 1 : 0, // default a 1 si no está especificado (igual que seed.ts)
+    !("active" in tool) || tool.active !== false ? 1 : 0, // default a 1 si no está especificado (igual que seed.ts)
   ] as [string, string, string, string, number, number])
 
   insertMany(toolsData)

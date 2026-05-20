@@ -6,8 +6,9 @@ import { Slider } from "@/components/ui/slider";
 
 export function A2UISlider({ def, ctx }: { def: ComponentDef; ctx: RenderCtx }) {
   // spec: "min"/"max" | ours: "minValue"/"maxValue" (aliases)
-  const min = def.min ?? def.minValue ?? 0;
-  const max = def.max ?? def.maxValue ?? 100;
+  const min = typeof def.min === "number" ? def.min : def.minValue ?? 0;
+  const max = typeof def.max === "number" ? def.max : def.maxValue ?? 100;
+  const step = typeof def.step === "number" ? def.step : 1;
   const label = def.label as string | undefined;
   const initialValue = resolveDynamicNumber(def.value as any, ctx.dataModel, ctx.scopeData);
   const [localValue, setLocalValue] = useState(initialValue);
@@ -56,7 +57,7 @@ export function A2UISlider({ def, ctx }: { def: ComponentDef; ctx: RenderCtx }) 
         value={[localValue]}
         min={min}
         max={max}
-        step={def.step ?? 1}
+        step={step}
         onValueChange={handleChange}
         onValueCommit={handleCommit}
         className="w-full"
