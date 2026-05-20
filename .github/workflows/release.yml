@@ -262,40 +262,19 @@ jobs:
           bun build packages/cli/src/index.ts --bundle --tsconfig-override=tsconfig.json --outfile dist/hive.js --target bun
           cp -r packages/hive-ui/dist dist/ui
           bun packages/cli/scripts/postbuild.ts
-          # Copy build artifacts to packages/cli/ for npm publish
-          rm -rf packages/cli/dist
-          cp -r dist packages/cli/dist
-          cp README.md packages/cli/
 
       - name: Verify build artifacts
         run: |
           echo "=== Verifying build artifacts ==="
-          echo "packages/cli/dist/ contents:"
-          ls -la packages/cli/dist/
+          echo "dist/ contents:"
+          ls -la dist/
           echo ""
           echo "Checking required files:"
-          test -f packages/cli/dist/hive.js && echo "✓ dist/hive.js exists" || (echo "✗ dist/hive.js missing" && exit 1)
-          test -f packages/cli/dist/hive.cmd && echo "✓ dist/hive.cmd exists (Windows)" || (echo "✗ dist/hive.cmd missing" && exit 1)
-          test -f packages/cli/dist/hive.ps1 && echo "✓ dist/hive.ps1 exists (PowerShell)" || (echo "✗ dist/hive.ps1 missing" && exit 1)
-          test -d packages/cli/dist/ui && echo "✓ dist/ui/ exists" || (echo "✗ dist/ui/ missing" && exit 1)
+          test -f dist/hive.js && echo "✓ dist/hive.js exists" || (echo "✗ dist/hive.js missing" && exit 1)
+          test -f dist/hive.cmd && echo "✓ dist/hive.cmd exists (Windows)" || (echo "✗ dist/hive.cmd missing" && exit 1)
+          test -f dist/hive.ps1 && echo "✓ dist/hive.ps1 exists (PowerShell)" || (echo "✗ dist/hive.ps1 missing" && exit 1)
+          test -d dist/ui && echo "✓ dist/ui/ exists" || (echo "✗ dist/ui/ missing" && exit 1)
           echo "=== All artifacts verified ==="
-
-      - name: Prepare package.json for npm publish
-        run: |
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('packages/cli/package.json', 'utf8'));
-            // Rename to the public npm package name
-            pkg.name = '@johpaz/hive-agents';
-            // Strip workspace:* deps (already bundled)
-            const deps = pkg.dependencies || {};
-            for (const [k, v] of Object.entries(deps)) {
-              if (v.startsWith('workspace:')) delete deps[k];
-            }
-            fs.writeFileSync('packages/cli/package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
-          echo "Prepared package.json:"
-          cat packages/cli/package.json
 
       - uses: actions/setup-node@v4
         with:
@@ -303,6 +282,6 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Publish to npm
-        run: cd packages/cli && npm publish --access public
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -2,7 +2,7 @@
   "name": "@johpaz/hive-agents",
   "version": "0.0.36",
   "description": "Tu colmena de agentes IA. Local-first. Multi-canal. Open source. Construido desde Colombia para el mundo.",
-  "private": true,
+  "private": false,
   "bin": {
     "hive": "dist/hive.js"
   },
@@ -42,7 +42,6 @@
     "./tools/agents/index": "./packages/core/src/tools/agents/index.ts",
     "./tools/filesystem/index": "./packages/core/src/tools/filesystem/index.ts",
     "./tools/web/index": "./packages/core/src/tools/web/index.ts",
-    "./tools/projects/index": "./packages/core/src/tools/projects/index.ts",
     "./tools/cron/index": "./packages/core/src/tools/cron/index.ts",
     "./tools/cli/index": "./packages/core/src/tools/cli/index.ts",
     "./tools/canvas/index": "./packages/core/src/tools/canvas/index.ts",
@@ -68,6 +67,10 @@
     "dist/hive.cmd",
     "dist/hive.ps1",
     "dist/ui",
+    "packages/core/src",
+    "packages/mcp/src",
+    "packages/skills/src",
+    "packages/cli/src",
     "README.md",
     "LICENSE"
   ],
