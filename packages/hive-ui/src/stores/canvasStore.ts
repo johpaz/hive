@@ -4,6 +4,63 @@ import type { A2UISurface, A2UIServerMessage, A2UIActionMessage, ComponentDef } 
 import { updateDataModel } from "@/modules/canvas/a2ui/dataBinding";
 import { useWebSocketStore } from "./useWebSocketStore";
 
+function normalizeA2UIComponent(component: ComponentDef): ComponentDef {
+  const rawComponent = component.component as unknown;
+  if (!rawComponent || typeof rawComponent !== "object" || Array.isArray(rawComponent)) {
+    return component;
+  }
+
+  const entries = Object.entries(rawComponent as Record<string, unknown>);
+  const [type, props] = entries[0] ?? [];
+  if (!type) return component;
+
+  const normalizedProps = props && typeof props === "object" && !Array.isArray(props)
+    ? props as Record<string, unknown>
+    : {};
+
+  return {
+    ...component,
+    ...normalizedProps,
+    component: type,
+  };
+}
+
+function collectA2UIChildIds(component: ComponentDef, referencedIds: Set<string>): void {
+  const add = (id: unknown) => {
+    if (typeof id === "string" && id.length > 0) referencedIds.add(id);
+  };
+  const addList = (ids: unknown) => {
+    if (Array.isArray(ids)) ids.forEach(add);
+  };
+
+  const children = component.children;
+  if (typeof children === "string") {
+    add(children);
+  } else if (Array.isArray(children)) {
+    addList(children);
+  } else if (children && typeof children === "object") {
+    if ("explicitList" in children) addList((children as { explicitList?: unknown }).explicitList);
+    if ("array" in children) addList((children as { array?: unknown }).array);
+    if ("componentId" in children) add((children as { componentId?: unknown }).componentId);
+    if ("template" in children) {
+      add((children as { template?: { componentId?: unknown } }).template?.componentId);
+    }
+  }
+
+  add(component.child);
+  add(component.trigger);
+  add(component.content);
+  add(component.entryPointChild);
+  add(component.contentChild);
+
+  if (Array.isArray(component.tabItems)) {
+    component.tabItems.forEach((tab) => add(tab.child));
+  }
+  if (Array.isArray(component.tabs)) {
+    (component.tabs as Array<{ child?: unknown }>).forEach((tab) => add(tab.child));
+  }
+}
+
 export interface GraphNode {
   id: string;
   name: string;
@@ -133,9 +190,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const surface = s.a2uiSurfaces.get(surfaceId);
       if (!surface) return s;
       const updated = { ...surface };
+      const normalizedComponents = incomingComponents.map(normalizeA2UIComponent);
       // Merge components: add new, update existing
       const existingMap = new Map(updated.components.map((c) => [c.id, c]));
-      for (const comp of incomingComponents) {
+      for (const comp of normalizedComponents) {
         existingMap.set(comp.id, comp);
       }
       updated.components = Array.from(existingMap.values());
@@ -145,16 +203,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         // Collect all child IDs referenced by any component
         const referencedIds = new Set<string>();
         for (const comp of allComponents) {
-          const ch = comp.children;
-          if (typeof ch === "string") referencedIds.add(ch);
-          else if (ch && "array" in ch) ch.array.forEach((id: string) => referencedIds.add(id));
-          else if (ch && "componentId" in ch) referencedIds.add((ch as any).componentId);
-          if (comp.child) referencedIds.add(comp.child);
-          if (comp.entryPointChild) referencedIds.add(comp.entryPointChild as string);
-          if (comp.contentChild) referencedIds.add(comp.contentChild as string);
-          if (Array.isArray(comp.tabItems)) {
-            (comp.tabItems as Array<{ child: string }>).forEach((t) => referencedIds.add(t.child));
-          }
+          collectA2UIChildIds(comp, referencedIds);
         }
         // Root = first component not referenced as a child (true tree root)
         const orphan = allComponents.find((c) => !referencedIds.has(c.id));

@@ -19,20 +19,26 @@ Hive es un Gateway de IA Orquestado — un Enjambre de Agentes Especializados qu
 
 ## Por dentro
 
-51.937 líneas de TypeScript. Sin frameworks de agentes. Sin LangChain. Sin abstracciones intermedias. Todo construido desde cero sobre Bun + SQLite.
+74.917 líneas de TypeScript. Sin frameworks de agentes. Sin LangChain. Sin abstracciones intermedias. Todo construido desde cero sobre Bun + SQLite.
 
 ```
+github.com/AlDanial/cloc v 2.08  T=0.31 s (1932.4 files/s, 319323.0 lines/s)
+
 Language          files     blank   comment      code
 ─────────────────────────────────────────────────────
-TypeScript          434      7671      2683     51937   ← motor, gateway, canales, UI
-Markdown             45      2225         0      8233
-JSON                 15         5         0       575
-CSS                   1       141        29       450
-YAML                  2        35        11       197
-Shell                 2        14         5        61
-Dockerfile            1        19        10        38
+TypeScript          536     11074      4820     74917   ← motor, gateway, canales, UI
+Markdown             33      1167         0      4468
+JSON                 15         5         0       749
+CSS                   1       156        38       592
+YAML                  4        46         9       347
+Bourne Shell          3        20        10        85
+Dockerfile            1        22        16        43
+HTML                  1         4         2        25
+JavaScript            1         1         0        25
+TOML                  1         3         1         6
+SVG                   1         0         0         1
 ─────────────────────────────────────────────────────
-TOTAL               504     10119      2741     61546
+TOTAL               597     12498      4896     81258
 ```
 
 La imagen Docker pesa ~120 MB. El bundle npm pesa ~12 MB. El binario standalone ~50 MB. Todo el runtime cabe en una Raspberry Pi Zero 2W con 512 MB de RAM.
@@ -114,7 +120,7 @@ docker run -d \
   -v hive-data:/root/.hive \
   --name hive \
   --restart unless-stopped \
-  johpaz/hive:0.0.34
+  johpaz/hive:0.0.36
 ```
 
 **Variables de entorno disponibles:**
@@ -188,10 +194,10 @@ En el equipo donde tienes conexión a internet:
 
 ```bash
 # Descargar la imagen si no la tienes
-docker pull johpaz/hive:0.0.34
+docker pull johpaz/hive:0.0.36
 
 # Exportar a archivo tar (cabe en cualquier USB de 512 MB+)
-docker save johpaz/hive:0.0.34 -o /media/usb/hive-image.tar
+docker save johpaz/hive:0.0.36 -o /media/usb/hive-image.tar
 ```
 
 **Paso 2 — Crear la estructura en la USB**
@@ -209,7 +215,7 @@ Crea el `docker-compose.yml` en la USB con el volumen apuntando a la USB:
 ```yaml
 services:
   hive:
-    image: johpaz/hive:0.0.34
+    image: johpaz/hive:0.0.36
     ports:
       - "18790:18790"
     volumes:
@@ -288,11 +294,11 @@ Descarga manual de cualquier plataforma o versión específica.
 
 | Plataforma | Archivo | Descarga directa |
 |------------|---------|------------------|
-| Linux x64 | `hive-v0.0.34-linux-x64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.34-linux-x64) |
-| Linux ARM64 (Raspberry Pi, etc.) | `hive-v0.0.34-linux-arm64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.34-linux-arm64) |
-| macOS Apple Silicon (M1/M2/M3/M4) | `hive-v0.0.34-macos-arm64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.34-macos-arm64) |
-| macOS Intel | `hive-v0.0.34-macos-x64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.34-macos-x64) |
-| Windows x64 | `hive-v0.0.34-windows-x64.exe` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.34-windows-x64.exe) |
+| Linux x64 | `hive-v0.0.36-linux-x64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.36-linux-x64) |
+| Linux ARM64 (Raspberry Pi, etc.) | `hive-v0.0.36-linux-arm64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.36-linux-arm64) |
+| macOS Apple Silicon (M1/M2/M3/M4) | `hive-v0.0.36-macos-arm64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.36-macos-arm64) |
+| macOS Intel | `hive-v0.0.36-macos-x64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.36-macos-x64) |
+| Windows x64 | `hive-v0.0.36-windows-x64.exe` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.36-windows-x64.exe) |
 
 > Los links anteriores siempre apuntan a la última versión publicada. Si necesitas una versión específica, visita la [página de releases](https://github.com/johpaz/hive/releases).
 
@@ -302,7 +308,7 @@ Descarga manual de cualquier plataforma o versión específica.
 
 ```bash
 # 1. Descargar el binario (reemplaza "linux-x64" por "linux-arm64" si es ARM)
-curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.34-linux-x64
+curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.36-linux-x64
 
 # 2. Dar permisos de ejecución
 chmod +x hive
@@ -334,7 +340,7 @@ hive start
 
 ```bash
 # 1. Descargar
-curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.34-macos-arm64
+curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.36-macos-arm64
 
 # 2. Dar permisos de ejecución
 chmod +x hive
@@ -374,7 +380,7 @@ hive start
 Igual que Apple Silicon pero descarga `macos-x64`:
 
 ```bash
-curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.34-macos-x64
+curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.36-macos-x64
 chmod +x hive
 xattr -d com.apple.quarantine hive
 curl -L https://github.com/johpaz/hive/releases/latest/download/ui-dist.tar.gz \
@@ -389,7 +395,7 @@ mkdir -p ~/.hive/ui && cp -r ui-dist/* ~/.hive/ui/
 
 **Paso 1 — Descargar el binario**
 
-Descarga [`hive-v0.0.34-windows-x64.exe`](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.34-windows-x64.exe) desde GitHub o desde [hiveagents.io](https://www.hiveagents.io/#installation).
+Descarga [`hive-v0.0.36-windows-x64.exe`](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.36-windows-x64.exe) desde GitHub o desde [hiveagents.io](https://www.hiveagents.io/#installation).
 
 **Paso 2 — Windows SmartScreen**
 
@@ -419,7 +425,7 @@ tar -xzf ui-dist.tar.gz -C "$env:USERPROFILE\.hive\ui"
 **Paso 4 — Ejecutar**
 
 ```powershell
-.\hive-v0.0.34-windows-x64.exe start
+.\hive-v0.0.36-windows-x64.exe start
 ```
 
 El navegador se abre automáticamente en `http://localhost:18790`.
@@ -428,7 +434,7 @@ El navegador se abre automáticamente en `http://localhost:18790`.
 
 ```powershell
 # Mover a una carpeta ya en el PATH, por ejemplo:
-Move-Item .\hive-v0.0.34-windows-x64.exe C:\Windows\System32\hive.exe
+Move-Item .\hive-v0.0.36-windows-x64.exe C:\Windows\System32\hive.exe
 
 # Luego ejecutar desde cualquier lugar:
 hive start
@@ -479,7 +485,7 @@ El binario standalone es ideal para llevarlo en una USB. Tu agente viaja contigo
 **Preparar la USB:**
 
 ```bash
-cp hive-v0.0.34-linux-x64 /media/usb/hive
+cp hive-v0.0.36-linux-x64 /media/usb/hive
 chmod +x /media/usb/hive
 cp -r ui-dist/* /media/usb/ui/
 
@@ -598,12 +604,30 @@ cp ~/.hive/data/hive.db ~/backup-hive-$(date +%Y%m%d).db
 
 | Pilar | Descripción |
 |-------|-------------|
-| **Tools** | 73 herramientas nativas: navegador, sistema de archivos, cron, canvas, Office (PDF/Word/Excel/PowerPoint). |
-| **Skills** | 30 habilidades incluidas: búsqueda web, shell, memoria, file manager, gestión de documentos Office. |
-| **MCP** | Compatible con Model Context Protocol para extender funcionalidades. |
+| **Tools** | 68 herramientas nativas: filesystem, web, browser automation, cron, agentes/workers, Canvas, A2UI, voz, reuniones y Office. |
+| **Skills** | 28 habilidades incluidas: agentes, A2UI/Canvas, CLI, cron, filesystem, reuniones, Office, voz, web y búsqueda FTS5. |
+| **MCP** | Compatible con Model Context Protocol para extender funcionalidades con tools externas descubiertas en runtime. |
 | **Ética** | Límites claros definidos en ETHICS.md — tu agente siempre sabe qué puede y qué no puede hacer. |
 
 ---
+
+## Capacidades incluidas
+
+| Área | Incluido |
+|------|----------|
+| **Filesystem** | 7 tools para leer, escribir, editar, listar, buscar, verificar y eliminar archivos dentro del workspace seguro. |
+| **Web + Browser** | `web_search`, `web_fetch` y 7 tools de browser automation con Chromium/Puppeteer. |
+| **Cron** | 8 tools para crear, listar, actualizar, pausar, reanudar, borrar, disparar e inspeccionar tareas programadas. |
+| **Agentes** | Memoria persistente, creación/búsqueda/archivo de workers, delegación general/código, estado de tareas y Agent Bus. |
+| **Canvas + A2UI** | Canvas clásico para cards, listas, progreso, formularios y confirmaciones; A2UI v0.9 para superficies interactivas, formularios ricos, dashboards y data binding. |
+| **Office** | 8 tools para leer y escribir PDF, Word, Excel y PowerPoint. |
+| **Reuniones** | Inicio, segmentación, cierre y reporte de reuniones/transcripciones. |
+| **Voz** | Entrada por transcripción y salida TTS. |
+| **Tool Runtime** | Scheduler con Bun Workers para ejecutar tool calls independientes en paralelo y RPC al proceso principal cuando la tool depende de estado vivo. |
+
+**Distribución actual de tools nativas:** filesystem 7, web 2, browser 7, cron 8, CLI 1, memoria 5, agentes/workers/bus/modelos 9, Canvas 7, A2UI 4, voz 2, core 4, Office 8, reuniones 4.
+
+**Distribución actual de skills incluidas:** agentes 5, Canvas/A2UI 6, CLI 2, cron 2, filesystem 3, reuniones 1, Office 1, búsqueda FTS5 1, voz 3, web 4.
 
 ## Arquitectura técnica
 
@@ -642,15 +666,16 @@ El Context Compiler es el componente central del motor. Se ejecuta antes de cada
 - Inyecta máximo 5 reglas relevantes (`active=1`, `helpful_count > harmful_count`)
 - Las reglas son aprendidas automáticamente por el Curator del ACE
 
-**3.4 — Selección de tools en tres niveles (SELECCIONAR)**
+**3.4 — Selección de tools por loadout dinámico (SELECCIONAR)**
 
 | Nivel | Operación |
 |-------|-----------|
-| 1 — Catálogo | `collectNativeTools()` + tools de MCP activos |
-| 2 — Agente | `filterToolsByAgent()` — filtra por `tools_json` del agente. `NULL` = todas permitidas |
-| 3 — Turno | `selectToolLoadout()` — ALWAYS_INCLUDE + scoring por keywords del mensaje (máx. 20) |
+| 1 — Catálogo | `createAllTools(config)` + executors MCP activos |
+| 2 — Mínimo inicial | 4 tools siempre disponibles: `search_knowledge`, `notify`, `save_note`, `report_progress` |
+| 3 — Descubrimiento | El agente usa `search_knowledge(type="tools"|"mcp"|"skills")` para encontrar capacidades relevantes |
+| 4 — Inyección dinámica | `agent-loop` agrega tools nativas/MCP descubiertas al loadout y adjunta skills asociadas |
 
-El límite de 20 tools por turno es crítico para modelos locales con recursos limitados. Las tools del `ALWAYS_INCLUDE` siempre están disponibles sin consumir slots opcionales: `cron_add/list/remove/edit`, `project_create/task_create/task_update`, `read/write/edit`, `save_note`, `notify`, `report_progress`, `create_agent`.
+El turno arranca pequeño para reducir ruido en modelos locales: 4 tools en contexto, 68 executors nativos disponibles para inyección y tools MCP disponibles vía descubrimiento. Las skills mínimas (`busqueda_fts5`, `memory_manager`, `canvas_report`, `task_orchestrator`) enseñan al agente cómo buscar capacidades antes de usarlas. Las skills descubiertas se listan inicialmente y sus cuerpos se inyectan cuando sus tools entran al loadout.
 
 **3.5 — Ética (capa constitucional)**
 - Carga todas las reglas de la tabla `ethics` — sin filtrar, sin comprimir
@@ -673,7 +698,7 @@ El límite de 20 tools por turno es crítico para modelos locales con recursos l
   9. Mensajes recientes (últimos N)
 
 [tools]
-  10. Tools filtradas en tres niveles
+  10. Loadout mínimo de tools + inyección dinámica durante el loop
 ```
 
 ---
@@ -690,11 +715,11 @@ El modelo decide en su system prompt:
 
 **4.2 — Creación de proyecto y asignación de workers**
 
-1. `project_create` — registra el objetivo del proyecto
-2. `task_create` — crea cada subtarea con dependencias
-3. `find_agent` — busca por FTS5 sobre `name+description` del agente vs la tarea
-   - Si existe un worker compatible → `assign_task`
-   - Si no → `create_agent` con system prompt y tools necesarios, luego `assign_task`
+1. `task_delegate` — delega una tarea general a un worker aislado
+2. `task_delegate_code` — delega trabajo de código a un subagente CLI
+3. `task_status` — consulta el estado de tareas delegadas
+4. `agent_find`, `agent_create`, `agent_archive` — reutiliza, crea o archiva workers especializados
+5. `bus_publish` y `bus_read` — comunicación entre workers por Agent Bus
 
 **4.3 — Ejecución respetando dependencias**
 

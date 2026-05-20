@@ -9,6 +9,7 @@
 
 ### Parte I: Core de Inteligencia
 1. [Agent Loop](#1-agent-loop)
+   - [Tool Runtime con Bun Workers](#tool-runtime-con-bun-workers)
 2. [Context Compiler](#2-context-compiler)
 3. [FTS5 (Full-Text Search 5)](#3-fts5-full-text-search-5)
 4. [ACE (Adaptive Context Engine)](#4-ace-adaptive-context-engine)
@@ -116,6 +117,96 @@ Mensaje del usuario
 | `stuck-loop.ts` | Detección de bucles infinitos |
 | `hooks.ts` | Hooks de ciclo de vida del agente |
 | `context-guard.ts` | Guardias de seguridad del contexto |
+
+### Tool Runtime con Bun Workers
+
+El **Tool Runtime** es el subsistema encargado de ejecutar las herramientas que el modelo solicita durante un turno. Vive en `packages/core/src/tool-runtime/` y se integra directamente con el Agent Loop mediante `executeToolBatch(...)`.
+
+Su objetivo es reducir latencia cuando el LLM devuelve varias `tool_calls` en la misma respuesta. En vez de ejecutar cada herramienta una por una, Hive agenda el lote completo y lo ejecuta en paralelo cuando es posible.
+
+```
+LLM devuelve varias tool_calls
+        ↓
+Agent Loop emite tool_call steps
+        ↓
+executeToolBatch(...)
+        ↓
+┌────────────────────────────────────────────┐
+│        Tool Runtime Scheduler              │
+│                                            │
+│  ┌────────────┐  ┌────────────┐            │
+│  │ Worker #1  │  │ Worker #2  │   ...      │
+│  └─────┬──────┘  └─────┬──────┘            │
+│        │               │                   │
+│  tool nativa      tool nativa              │
+│  reconstruible    reconstruible            │
+│                                            │
+│  Si la tool depende de estado vivo:        │
+│  Worker → RPC interno → proceso principal  │
+└────────────────────────────────────────────┘
+        ↓
+Resultados ordenados por response.tool_calls
+        ↓
+Siguiente callLLM()
+```
+
+#### Responsabilidades
+
+| Responsabilidad | Detalle |
+|-----------------|---------|
+| **Scheduling por lote** | Recibe todas las `tool_calls` del turno y las agenda juntas |
+| **Pool persistente** | Mantiene Bun Workers reutilizables, evitando crear procesos por cada tool |
+| **Paralelismo controlado** | Usa `maxWorkers` para limitar concurrencia |
+| **Orden estable** | Devuelve resultados en el orden original, aunque terminen desordenados |
+| **Timeout por tool** | Cancela lógicamente tools que superan `toolTimeoutMs` |
+| **Errores aislados** | Una tool fallida no cancela automáticamente a sus herramientas hermanas |
+| **AbortSignal** | Marca trabajos pendientes/en ejecución como abortados cuando se detiene la generación |
+| **RPC al main thread** | Ejecuta en el proceso principal herramientas con dependencias vivas |
+
+#### Herramientas reconstruibles vs herramientas con estado vivo
+
+No todas las herramientas pueden ejecutarse completamente dentro de un Worker. Algunas dependen de objetos que no se pueden transferir por `postMessage`, como conexiones MCP, WebSockets, estado del navegador o canvas interactivo.
+
+| Tipo | Ejecución | Ejemplos |
+|------|-----------|----------|
+| **Reconstruible** | El Worker reconstruye `createAllTools(config)` y ejecuta localmente | filesystem, web simple, office cuando no depende de estado vivo |
+| **Estado vivo** | El Worker agenda la tool, pero llama al proceso principal por RPC | MCP, Browser, Canvas/A2UI, Cron, notificaciones, voz, delegación |
+
+Regla central:
+
+> Toda tool call pasa por el scheduler. Si no es seguro reconstruirla en Worker, se ejecuta vía RPC controlado en el proceso principal.
+
+#### Configuración
+
+La configuración vive en `tools.workerPool`:
+
+```ts
+tools: {
+  workerPool: {
+    enabled: true,
+    maxWorkers: Math.min(4, availableParallelism()),
+    toolTimeoutMs: 300000,
+    parallelToolCalls: true,
+  }
+}
+```
+
+| Campo | Default | Descripción |
+|-------|---------|-------------|
+| `enabled` | `true` | Activa el runtime de Workers |
+| `maxWorkers` | `min(4, CPUs)` | Máximo de Workers persistentes |
+| `toolTimeoutMs` | `300000` | Timeout por herramienta |
+| `parallelToolCalls` | `true` | Ejecuta en paralelo herramientas del mismo turno |
+
+#### Archivos relacionados
+
+| Archivo | Función |
+|---------|---------|
+| `packages/core/src/tool-runtime/index.ts` | Scheduler, Worker pool, timeout, abort y RPC main-thread |
+| `packages/core/src/tool-runtime/tool-worker.ts` | Código que corre dentro de cada Bun Worker |
+| `packages/core/src/agent/agent-loop.ts` | Integra `executeToolBatch(...)` con streaming, TOON, traces e historial |
+| `packages/core/src/config/loader.ts` | Define defaults de `tools.workerPool` |
+| `tests/tool-runtime.test.ts` | Tests de paralelismo, orden, error isolation, timeout, abort y RPC |
 
 ---
 
@@ -1439,13 +1530,13 @@ La **CLI** es la interfaz de línea de comandos para gestionar Hive. Se encuentr
 │  │  │                        AGENT LOOP                                │  │   │
 │  │  │                                                                  │  │   │
 │  │  │  ┌──────────────────┐  ┌──────────────────┐  ┌────────────────┐ │  │   │
-│  │  │  │ Context Compiler │→ │   LLM Providers  │→ │ Tool Execution │ │  │   │
-│  │  │  │                  │  │  (14 providers)  │  │   (70+ tools)  │ │  │   │
+│  │  │  │ Context Compiler │→ │   LLM Providers  │→ │ Tool Runtime   │ │  │   │
+│  │  │  │                  │  │  (14 providers)  │  │ Bun Workers    │ │  │   │
 │  │  │  │ - Agent Config   │  │                  │  │                │ │  │   │
 │  │  │  │ - Scratchpad     │  │ OpenAI │ Gemini  │  │ search_knowledge│ │  │   │
 │  │  │  │ - MCP Tools      │  │ Claude │ Groq    │  │ create_swarm   │ │  │   │
 │  │  │  │ - Skills (FTS5)  │  │ Ollama │ Mistral │  │ save_note      │ │  │   │
-│  │  │  │ - Playbook (FTS5)│  │ ...    │ ...     │  │ ...            │ │  │   │
+│  │  │  │ - Playbook (FTS5)│  │ ...    │ ...     │  │ RPC main thread│ │  │   │
 │  │  │  │ - History        │  └──────────────────┘  └────────────────┘ │  │   │
 │  │  │  │ - Ethics         │                          │                │  │   │
 │  │  │  │ - User Profile   │                          ↓                │  │   │
@@ -1527,13 +1618,13 @@ La **CLI** es la interfaz de línea de comandos para gestionar Hive. Se encuentr
        ↓
 6. LLM CALL → Proveedor seleccionado (OpenAI, Gemini, etc.)
        ↓
-7. TOOL EXECUTION:
-   ├─ search_knowledge → FTS5 descubre tools/skills → inyección dinámica
-   ├─ create_swarm → DAG Scheduler ejecuta workers en paralelo
-   ├─ canvas_render → Canvas emite UI al frontend vía WebSocket
-   ├─ voice_stt/voice_tts → Pipeline de voz
-   ├─ save_note → Scratchpad persistence
-   └─ 70+ herramientas nativas + MCP
+7. TOOL RUNTIME:
+   ├─ Agent Loop agrupa todas las tool_calls del turno
+   ├─ executeToolBatch() agenda el lote en Bun Workers
+   ├─ Tools reconstruibles corren dentro del Worker
+   ├─ MCP/Browser/Canvas/Cron/voz/notificaciones usan RPC al proceso principal
+   ├─ Resultados se ordenan por response.tool_calls
+   └─ search_knowledge puede inyectar nuevas tools/skills para la siguiente vuelta
        ↓
 8. TRACER registra cada tool call en SQLite
        ↓
@@ -1554,6 +1645,7 @@ La **CLI** es la interfaz de línea de comandos para gestionar Hive. Se encuentr
 | # | Componente | Responsabilidad | Ubicación |
 |---|------------|-----------------|-----------|
 | 1 | **Agent Loop** | Ciclo mensaje → LLM → tools → respuesta | `core/agent/` |
+| 1.1 | **Tool Runtime** | Ejecutar lotes de tools en paralelo con Bun Workers y RPC main-thread | `core/tool-runtime/` |
 | 2 | **Context Compiler** | Ensamblar prompt con contexto relevante | `core/agent/` |
 | 3 | **FTS5** | Búsqueda semántica BM25 para selección dinámica | `core/storage/` |
 | 4 | **ACE** | Auto-aprendizaje: observar, analizar, generar reglas | `core/agent/` |
@@ -1585,6 +1677,10 @@ La **CLI** es la interfaz de línea de comandos para gestionar Hive. Se encuentr
 | Término | Definición |
 |---------|------------|
 | **Agent Loop** | Ciclo iterativo que procesa mensajes y ejecuta herramientas |
+| **Tool Runtime** | Scheduler de herramientas que ejecuta lotes de `tool_calls` con Bun Workers |
+| **Bun Worker** | Hilo de ejecución aislado de Bun usado para correr herramientas en paralelo |
+| **Worker Pool** | Conjunto persistente de Workers reutilizables para evitar overhead por llamada |
+| **RPC main-thread** | Mecanismo interno para ejecutar en el proceso principal tools que dependen de estado vivo |
 | **Context Compiler** | Ensamblador del system prompt del agente |
 | **FTS5** | SQLite Full-Text Search 5 — motor de búsqueda de texto completo |
 | **BM25** | Algoritmo de ranking para búsqueda de texto completo |

@@ -1,6 +1,7 @@
 import * as z from "zod";
 import { mkdirSync, existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
+import { availableParallelism } from "node:os";
 
 const LogLevelSchema = z.enum(["debug", "info", "warn", "error"]);
 const DMPolicySchema = z.enum(["open", "pairing", "allowlist"]);
@@ -126,6 +127,13 @@ const CanvasConfigSchema = z.object({
   port: z.number().optional(),
 });
 
+const WorkerPoolConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  maxWorkers: z.number().optional(),
+  toolTimeoutMs: z.number().optional(),
+  parallelToolCalls: z.boolean().optional(),
+});
+
 const SandboxConfigSchema = z.object({
   dm: ToolRestrictionsSchema.optional(),
   group: ToolRestrictionsSchema.optional(),
@@ -138,6 +146,7 @@ const ToolsConfigSchema = z.object({
   web: WebConfigSchema.optional(),
   browser: BrowserConfigSchema.optional(),
   canvas: CanvasConfigSchema.optional(),
+  workerPool: WorkerPoolConfigSchema.optional(),
   sandbox: SandboxConfigSchema.optional(),
 });
 
@@ -444,6 +453,12 @@ function buildDefaultConfig(): Config {
       canvas: {
         enabled: true,
         port: 18793,
+      },
+      workerPool: {
+        enabled: true,
+        maxWorkers: Math.min(4, availableParallelism()),
+        toolTimeoutMs: 300000,
+        parallelToolCalls: true,
       },
       sandbox: {
         dm: { allow: ["*"], deny: [] },

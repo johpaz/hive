@@ -26,35 +26,8 @@ import { formatToolResult } from "../utils/toon"
 import { getAverageTokenCost } from "../storage/usage"
 import { resolveUserId, resolveAgentId } from "../storage/onboarding"
 import type { ContentPart } from "../multimodal/types"
-
-/**
- * Execute a tool by name from the available tools list
- * This is a local helper function since executeTool is not exported elsewhere
- *
- * Returns: JS object normal (se encodea solo al enviar al LLM)
- */
-async function executeTool(
-  allTools: Array<{ name: string; execute?: (params: Record<string, unknown>, config?: any) => Promise<unknown> }>,
-  toolName: string,
-  args: unknown,
-  config: { user_id?: string; thread_id?: string; channel?: string; workspace?: string | null }
-): Promise<unknown> {
-  const tool = allTools.find(t => t.name === toolName)
-  if (!tool?.execute) {
-    return { error: true, message: `Tool '${toolName}' not found or not executable` }
-  }
-  try {
-    const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args
-    return await tool.execute(parsedArgs as Record<string, unknown>, { configurable: config })
-  } catch (err) {
-    return {
-      error: true,
-      tool: toolName,
-      message: (err as Error).message,
-      timestamp: new Date().toISOString(),
-    }
-  }
-}
+import { loadConfig } from "../config/loader"
+import { executeToolBatch } from "../tool-runtime"
 
 const log = logger.child("agent-loop")
 
@@ -247,20 +220,28 @@ export async function* runAgent(
           message: `Calling tool: \`${toolName}\``,
         })
       }
+    }
 
-      const tTool = performance.now()
-      const toolResultJS = await executeTool(
-        ctx.allTools,
-        toolName,
-        tc.function.arguments,
-        {
-          user_id: opts.userId,
-          thread_id: opts.threadId,
-          channel: opts.channel,
-          workspace: agent.workspace ?? null,
-        }
-      )
-      const toolMs = Math.round(performance.now() - tTool)
+    const hiveConfig = loadConfig()
+    const toolResults = await executeToolBatch({
+      toolCalls: response.tool_calls,
+      allTools: ctx.allTools,
+      toolConfig: {
+        user_id: opts.userId,
+        thread_id: opts.threadId,
+        channel: opts.channel,
+        workspace: agent.workspace ?? null,
+      },
+      hiveConfig,
+      workerPool: hiveConfig.tools?.workerPool,
+      signal: opts.signal,
+    })
+
+    for (const batchResult of toolResults) {
+      const tc = batchResult.toolCall
+      const toolName = batchResult.toolName
+      const toolResultJS = batchResult.result
+      const toolMs = batchResult.durationMs
 
       // Encode TOON only for LLM consumption (with cost calculation)
       const toolResultLLM = formatToolResult(toolResultJS, cleanModel)
@@ -483,7 +464,6 @@ export async function* runAgent(
           log.warn(`[agent-loop] Loop detected: "${toolName}" x${consecutiveRepeat + 1} with same args. Breaking.`)
           finalContent = "No pude completar la tarea porque no encontré las herramientas necesarias para ello."
           loopDetected = true
-          break
         }
       } else {
         lastToolSignature = sig

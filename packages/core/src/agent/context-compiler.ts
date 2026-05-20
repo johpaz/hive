@@ -43,7 +43,7 @@ const log = logger.child("context-compiler")
 const KEEP_LAST_N_MESSAGES = 15      // Always keep last N messages (Strategy: SELECT) — increased because tool calls/results are now persisted
 const DEFAULT_CONTEXT_WINDOW = 250000 // Default context window when model is unknown
 const COMPACT_RATIO = 0.80           // Compact when estimated input exceeds 70% of context window
-const MAX_SYSTEM_PROMPT_CHARS = 8000 // Truncate system prompt to this max
+const MAX_SYSTEM_PROMPT_CHARS_CAP = 128000 // Hard cap for pathological prompts; normal budget is model-aware
 
 // MINIMAL TOOL SET — fixed always-available tools
 // The agent discovers the rest via search_knowledge
@@ -424,12 +424,16 @@ export async function compileContext(opts: {
       `\n# CURRENT TASK\n${opts.taskContext}\n\nFocus ONLY on this task. Do not deviate.`
   }
 
-  // Truncate system prompt if it exceeds the max allowed chars
-  if (systemPrompt.length > MAX_SYSTEM_PROMPT_CHARS) {
+  // Truncate system prompt only when it exceeds a model-aware budget.
+  const maxSystemPromptChars = Math.min(
+    MAX_SYSTEM_PROMPT_CHARS_CAP,
+    Math.max(8000, Math.floor(modelContextWindow * COMPACT_RATIO * 4))
+  )
+  if (systemPrompt.length > maxSystemPromptChars) {
     const originalLen = systemPrompt.length
-    systemPrompt = systemPrompt.substring(0, MAX_SYSTEM_PROMPT_CHARS) +
-      `\n\n[... System prompt truncated (${originalLen} chars → ${MAX_SYSTEM_PROMPT_CHARS} chars) ...]`
-    log.info(`[context-compiler] System prompt truncated: ${originalLen} → ${MAX_SYSTEM_PROMPT_CHARS} chars`)
+    systemPrompt = systemPrompt.substring(0, maxSystemPromptChars) +
+      `\n\n[... System prompt truncated (${originalLen} chars → ${maxSystemPromptChars} chars) ...]`
+    log.info(`[context-compiler] System prompt truncated: ${originalLen} → ${maxSystemPromptChars} chars`)
   }
 
   const estimatedSystemTokens = estimateTokens(systemPrompt)

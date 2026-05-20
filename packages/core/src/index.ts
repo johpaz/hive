@@ -33,6 +33,7 @@ export * from "./storage/onboarding.ts";
 // Tools (main index)
 export { createAllTools, createToolsByCategory } from "./tools/index.ts";
 export type { Tool, ToolResult } from "./tools/types.ts";
+export * from "./tool-runtime/index.ts";
 
 // Config
 export * from "./config/index.ts";

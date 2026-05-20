@@ -48,6 +48,29 @@ Se removió completamente el subsistema de gestión de proyectos y tareas. La de
 
 ## Mejoras del Core
 
+### Tool Runtime con Bun Workers (nuevo)
+
+- **Ejecución paralela de herramientas**: cuando el modelo devuelve varias `tool_calls` en el mismo turno, Hive ahora las agenda como lote y las ejecuta en paralelo cuando es posible
+- **Worker pool persistente**: nuevo subsistema `tool-runtime` con pool de Bun Workers reutilizable para reducir latencia entre llamadas
+- **Configuración nueva**: añadido `tools.workerPool` con:
+  - `enabled` default `true`
+  - `maxWorkers` default `min(4, CPUs)`
+  - `toolTimeoutMs` default `300000`
+  - `parallelToolCalls` default `true`
+- **Orden compatible con LLMs**: los resultados se entregan y persisten en el mismo orden de `response.tool_calls`, aunque las herramientas terminen desordenadas
+- **Errores aislados por herramienta**: si una herramienta falla, devuelve un resultado de error propio sin cancelar automáticamente las demás
+- **Timeout por herramienta**: cada tool call tiene límite de ejecución configurable y el Worker afectado se reinicia al expirar
+- **Cancelación con `AbortSignal`**: los trabajos pendientes y en ejecución se marcan como abortados cuando se detiene la generación
+- **RPC al proceso principal**: herramientas que dependen de estado vivo, como MCP, Browser, Canvas, Cron, voz, notificaciones y delegación, pasan por el scheduler pero se resuelven vía RPC controlado al hilo principal
+- **Export público**: el runtime queda disponible como `@johpaz/hive/tool-runtime` y `@johpaz/hive-agents-core/tool-runtime`
+
+### Agent Loop (`agent-loop.ts`)
+
+- **Reemplazada ejecución secuencial** de tools por `executeToolBatch(...)`
+- **Streaming preservado**: se siguen emitiendo pasos `tool_call` al iniciar y `tool_result` al finalizar
+- **Compatibilidad preservada** con trace, TOON formatting, persistencia de historial, inyección dinámica de `search_knowledge` y detección de loops
+- **Métricas por herramienta**: los traces conservan duración por tool usando el resultado del runtime paralelo
+
 ### Context Compiler (`context-compiler.ts`)
 
 - **Ventana de contexto** aumentada de 128K a 250K tokens por defecto
@@ -190,14 +213,28 @@ Se removió completamente el subsistema de gestión de proyectos y tareas. La de
 ## Documentación nueva
 
 - `docs/DOCUMENTO-EXPLICATIVO-COMPONENTES.md` — Documentación explicativa de componentes
+- `docs/BUN-WORKER-TOOLS-MANUAL-USUARIO.md` — Manual de usuario para la ejecución paralela de herramientas con Bun Workers
 - `packages/hive-ui/src/modules/chat/ChatHistory.test.tsx` — Tests de ChatHistory
 - `packages/hive-ui/src/types/bridge.ts` — Tipos de bridge
 
 ---
 
+## Tests nuevos
+
+- `tests/tool-runtime.test.ts` — Cobertura del nuevo runtime de herramientas:
+  - ejecución paralela de múltiples herramientas
+  - preservación del orden original
+  - aislamiento de errores por herramienta
+  - RPC al proceso principal para herramientas no reconstruibles
+  - timeout por herramienta
+  - cancelación con `AbortSignal`
+
+---
+
 ## Estadísticas
 
-- **56 archivos** modificados
-- **+265 líneas** añadidas
-- **-3,706 líneas** eliminadas
-- **Neto: -3,441 líneas** (simplificación significativa)
+- **62 archivos** modificados/añadidos
+- **Nuevo subsistema** `packages/core/src/tool-runtime/`
+- **Nuevo manual** `docs/BUN-WORKER-TOOLS-MANUAL-USUARIO.md`
+- **Nuevo test suite** `tests/tool-runtime.test.ts`
+- **Neto principal de la versión**: simplificación significativa por eliminación de Projects/Tasks, más mejora de rendimiento en ejecución de herramientas

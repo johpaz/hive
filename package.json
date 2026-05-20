@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-monorepo",
-  "version": "0.0.35",
+  "version": "0.0.36",
   "description": "Tu colmena de agentes IA. Local-first. Multi-canal. Open source. Construido desde Colombia para el mundo.",
   "private": true,
   "bin": {
@@ -38,6 +38,7 @@
     "./storage/onboarding": "./packages/core/src/storage/onboarding.ts",
     "./tools/index": "./packages/core/src/tools/index.ts",
     "./tools/types": "./packages/core/src/tools/types.ts",
+    "./tool-runtime": "./packages/core/src/tool-runtime/index.ts",
     "./tools/agents/index": "./packages/core/src/tools/agents/index.ts",
     "./tools/filesystem/index": "./packages/core/src/tools/filesystem/index.ts",
     "./tools/web/index": "./packages/core/src/tools/web/index.ts",

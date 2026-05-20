@@ -100,11 +100,41 @@ export const canvasAskTool: Tool = {
           },
         },
       },
+      fields: {
+        type: "array",
+        description: "Form fields to ask directly. Alias accepted for compatibility with canvas_interact skill.",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            label: { type: "string" },
+            type: { type: "string", enum: ["text", "email", "textarea", "select"] },
+            required: { type: "boolean" },
+            options: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  label: { type: "string" },
+                  value: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+      },
     },
-    required: ["questions"],
+    required: [],
   },
   execute: async (params: Record<string, unknown>, config?: any) => {
-    const questions = params.questions as any[];
+    const questions = Array.isArray(params.questions) ? params.questions as any[] : [];
+    const directFields = Array.isArray(params.fields) ? params.fields as Array<{
+      name?: string;
+      label?: string;
+      type?: string;
+      required?: boolean;
+      options?: Array<{ label: string; value: string }>;
+    }> : [];
     const userId = config?.configurable?.user_id;
     const threadId = config?.configurable?.thread_id;
     // Use threadId (session) if available, then userId, then default
@@ -112,13 +142,28 @@ export const canvasAskTool: Tool = {
     const sessionId = threadId ? `canvas:${threadId}` : userId ? `canvas:${userId}` : "canvas:default";
 
     // Convert questions to form fields
-    const fields = questions.map((q, idx) => ({
-      name: `field_${idx}`,
-      label: q.question,
-      type: q.type === "select" ? "select" : q.type === "confirm" ? "text" : "text",
-      required: true,
-      options: q.options?.map((opt: string) => ({ label: opt, value: opt })),
-    }));
+    const fields = directFields.length > 0
+      ? directFields.map((field, idx) => ({
+        name: field.name ?? `field_${idx}`,
+        label: field.label ?? field.name ?? `Field ${idx + 1}`,
+        type: field.type ?? "text",
+        required: field.required ?? true,
+        options: field.options,
+      }))
+      : questions.map((q, idx) => ({
+        name: `field_${idx}`,
+        label: q.question,
+        type: q.type === "select" ? "select" : q.type === "confirm" ? "text" : "text",
+        required: true,
+        options: q.options?.map((opt: string) => ({ label: opt, value: opt })),
+      }));
+
+    if (fields.length === 0) {
+      return {
+        ok: false,
+        error: "canvas_ask requires either questions[] or fields[]",
+      };
+    }
 
     const formId = `form-${Date.now()}`;
 

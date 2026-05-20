@@ -306,7 +306,7 @@ function renderDialog(props: Record<string, unknown>) {
           <Button variant="outline">{String(props.trigger)}</Button>
         </DialogTrigger>
       )}
-      <DialogContent aria-describedby={props.description ? undefined : undefined}>
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{String(props.title || "")}</DialogTitle>
           {props.description ? (
@@ -333,7 +333,11 @@ function renderDrawer(props: Record<string, unknown>) {
       <DrawerContent>
         <DrawerHeader>
           <DrawerTitle>{String(props.title || "")}</DrawerTitle>
-          {props.description && <DrawerDescription>{String(props.description)}</DrawerDescription>}
+          {props.description ? (
+            <DrawerDescription>{String(props.description)}</DrawerDescription>
+          ) : (
+            <DrawerDescription className="sr-only">Drawer content</DrawerDescription>
+          )}
         </DrawerHeader>
         {props.children && <div className="px-4 pb-4">{String(props.children)}</div>}
       </DrawerContent>
@@ -353,7 +357,11 @@ function renderSheet(props: Record<string, unknown>) {
       <SheetContent side={props.side as "top" | "bottom" | "left" | "right"}>
         <SheetHeader>
           <SheetTitle>{String(props.title || "")}</SheetTitle>
-          {props.description && <SheetDescription>{String(props.description)}</SheetDescription>}
+          {props.description ? (
+            <SheetDescription>{String(props.description)}</SheetDescription>
+          ) : (
+            <SheetDescription className="sr-only">Sheet content</SheetDescription>
+          )}
         </SheetHeader>
         {props.children && <div className="py-2">{String(props.children)}</div>}
       </SheetContent>
