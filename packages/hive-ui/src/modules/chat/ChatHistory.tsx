@@ -110,6 +110,7 @@ export function ChatHistory({
               userName={userName}
               agentName={agentName}
               isStreaming={message.id === streamingMessageId}
+              currentSteps={message.id === streamingMessageId ? currentSteps : EMPTY_STEPS}
               onNarrate={onNarrateMessage}
             />
           ))}

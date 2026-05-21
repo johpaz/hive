@@ -79,7 +79,6 @@
     "./tools/cron": "./src/tools/cron/index.ts",
     "./tools/filesystem": "./src/tools/filesystem/index.ts",
     "./tools/office": "./src/tools/office/index.ts",
-    "./tools/projects": "./src/tools/projects/index.ts",
     "./tools/voice": "./src/tools/voice/index.ts",
     "./tools/web": "./src/tools/web/index.ts",
     "./tool-runtime": "./src/tool-runtime/index.ts",

@@ -17,11 +17,13 @@ export function useChatStreaming(agentId: string, sessionId: string) {
       if (isTranscription) {
         setLoading(true);
       }
-      const messageId = data.id || streamingMessageIdRef.current || generateId();
+      const messageId = streamingMessageIdRef.current || data.id || generateId();
       const { messages } = useChatStore.getState();
       const existingMessage = messages.find((m) => m.id === messageId);
 
       if (data.isChunk && existingMessage) {
+        streamingMessageIdRef.current = messageId;
+        setStreamingMessageId(messageId);
         updateMessage(messageId, {
           content: (existingMessage.content || "") + data.content,
           timestamp: data.timestamp || existingMessage.timestamp,
@@ -85,10 +87,27 @@ export function useChatStreaming(agentId: string, sessionId: string) {
 
   const handleProgress = useCallback((data: any) => {
     if (data.content) {
-      useChatStore.getState().addStep(data.content);
-      useChatStore.getState().setLoading(true);
+      let messageId = streamingMessageIdRef.current;
+      const state = useChatStore.getState();
+
+      if (!messageId) {
+        messageId = generateId();
+        streamingMessageIdRef.current = messageId;
+        state.setStreamingMessageId(messageId);
+        state.addMessage({
+          id: messageId,
+          conversationId: sessionId,
+          type: "agent" as const,
+          content: "",
+          agentId,
+          timestamp: data.timestamp || new Date().toISOString(),
+        });
+      }
+
+      state.addStep(data.content);
+      state.setLoading(true);
     }
-  }, []);
+  }, [agentId, sessionId]);
 
   const handleTyping = useCallback((data: any) => {
     if (data.isTyping === true) {

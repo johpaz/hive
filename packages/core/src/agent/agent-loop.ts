@@ -194,13 +194,9 @@ export async function* runAgent(
       tool_calls: response.tool_calls,
       reasoning_content: response.reasoning_content,
     })
-    if (!opts.isolated) {
-      addMessage(opts.threadId, "assistant", response.content || "", {
-        channel: opts.channel,
-        tool_calls: response.tool_calls,
-        reasoning_content: response.reasoning_content,
-      })
-    }
+    // Note: assistant messages with tool_calls are NOT persisted to DB.
+    // Only the final text response to the user is saved.
+    // Tool-call round-tripping happens in-memory via the 'messages' array above.
 
     for (const tc of response.tool_calls) {
       const toolName = tc.function.name
@@ -284,18 +280,12 @@ export async function* runAgent(
         await opts.onStep({ type: "tool_result", message: toolResultLLM })
       }
 
-      // Add tool result to messages for next model call AND persist (TOON encoded)
+      // Add tool result to messages for next model call (in-memory only, NOT persisted to DB)
       messages.push({
         role: "tool",
         content: toolResultLLM,
         tool_call_id: tc.id,
       })
-      if (!opts.isolated) {
-        addMessage(opts.threadId, "tool", toolResultLLM, {
-          channel: opts.channel,
-          tool_call_id: tc.id,
-        })
-      }
 
       // Dynamic tool injection: when search_knowledge finds tools (native or MCP), add them to ctx.tools
       if (toolName === "search_knowledge") {

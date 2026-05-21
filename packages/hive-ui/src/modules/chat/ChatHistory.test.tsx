@@ -6,8 +6,13 @@ import type { Message } from "@/types";
 import { ChatHistory } from "./ChatHistory";
 
 vi.mock("./ChatMessage", () => ({
-  ChatMessage: ({ message }: { message: Message }) => (
-    <article data-testid="chat-message">{message.content}</article>
+  ChatMessage: ({ message, currentSteps = [] }: { message: Message; currentSteps?: string[] }) => (
+    <article data-testid="chat-message">
+      {message.content}
+      {currentSteps.map((step) => (
+        <span key={step}>{step}</span>
+      ))}
+    </article>
   ),
 }));
 
@@ -89,5 +94,19 @@ describe("ChatHistory", () => {
     });
 
     expect(viewport.scrollTop).toBe(0);
+  });
+
+  it("attaches current steps to the streaming message instead of rendering the fallback at the end", () => {
+    const { queryByText, getByText } = render(
+      <ChatHistory
+        messages={[message("user-1"), { ...message("agent-1"), content: "" }]}
+        isLoading
+        currentSteps={["Ejecutando search_knowledge..."]}
+        streamingMessageId="agent-1"
+      />
+    );
+
+    expect(getByText("Ejecutando search_knowledge...")).toBeTruthy();
+    expect(queryByText("Coordinador")).toBeNull();
   });
 });

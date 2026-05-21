@@ -44,19 +44,7 @@ export const SEED_DATA: SeedData = {
     { id: "browser_wait", name: "browser_wait", category: "web", description: "Esperar a que aparezca un elemento o se cumpla una condición. Sinónimos: esperar, condición, elemento, selector, pausa" },
 
     // ─────────────────────────────────────────
-    // 3. PROJECTS — Proyectos y tareas en BD
-    // ─────────────────────────────────────────
-    { id: "project_create", name: "project_create", category: "projects", description: "Crear un nuevo proyecto con tareas en la base de datos. Sinónimos: nuevo proyecto, iniciar plan, crear proyecto" },
-    { id: "project_list", name: "project_list", category: "projects", description: "Listar todos los proyectos con su estado. Sinónimos: ver proyectos, historial, listar proyectos, mostrar proyectos" },
-    { id: "project_update", name: "project_update", category: "projects", description: "Actualizar progreso o metadatos del proyecto. Sinónimos: avance, porcentaje, estado, actualizar proyecto" },
-    { id: "project_done", name: "project_done", category: "projects", description: "Marcar proyecto como completado y archivarlo. Sinónimos: proyecto terminado, cerrar proyecto, completado, finalizar" },
-    { id: "project_fail", name: "project_fail", category: "projects", description: "Marcar proyecto como fallido y registrar razón. Sinónimos: proyecto fallido, marcar fracaso, error, falló proyecto" },
-    { id: "task_create", name: "task_create", category: "projects", description: "Agregar una tarea o subtarea a un proyecto existente. Sinónimos: crear tarea, agregar tarea, subtarea, pendiente" },
-    { id: "task_update", name: "task_update", category: "projects", description: "Actualizar estado de tarea (pendiente, en_progreso, hecho). Sinónimos: actualizar tarea, marcar completa, en progreso" },
-    { id: "task_evaluate", name: "task_evaluate", category: "projects", description: "Evaluar resultado de tarea contra criterios de aceptación. Sinónimos: validar resultado, criterios de aceptación, revisar tarea" },
-
-    // ─────────────────────────────────────────
-    // 4. CRON — Tareas programadas (Croner-based)
+    // 3. CRON — Tareas programadas (Croner-based)
     // ─────────────────────────────────────────
     { id: "cron.create", name: "cron.create", category: "cron", description: "Crear tarea programada: recurrente (expresión cron) o única (fire_at). Requiere campo 'task' con instrucción para el agente. Sinónimos: programar tarea, crear recordatorio, agendar, automatizar horario, tarea recurrente, una vez" },
     { id: "cron.list", name: "cron.list", category: "cron", description: "Listar todas las tareas programadas con próximos horarios de ejecución. Sinónimos: ver tareas programadas, listar cronograma, próximas ejecuciones" },
@@ -68,12 +56,12 @@ export const SEED_DATA: SeedData = {
     { id: "cron.history", name: "cron.history", category: "cron", description: "Obtener historial de ejecuciones y logs de una tarea programada. Sinónimos: historial ejecuciones, logs tarea, registro ejecuciones" },
 
     // ─────────────────────────────────────────
-    // 5. CLI — Ejecución de comandos
+    // 4. CLI — Ejecución de comandos
     // ─────────────────────────────────────────
     { id: "cli_exec", name: "cli_exec", category: "cli", description: "Ejecutar comandos shell/bash en el entorno del agente. NOTA: NO usar para tareas programadas, usar cron.create. Sinónimos: ejecutar comando, terminal, bash, script, consola" },
 
     // ─────────────────────────────────────────
-    // 6. AGENTS — Memoria, workers y delegación
+    // 5. AGENTS — Memoria, workers y delegación
     // ─────────────────────────────────────────
     { id: "memory_write", name: "memory_write", category: "agents", description: "Guardar información en memoria persistente a largo plazo. Sinónimos: guardar memoria, recordar, guardar dato, memoria persistente" },
     { id: "memory_read", name: "memory_read", category: "agents", description: "Recuperar una entrada de memoria por identificador. Sinónimos: leer memoria, recuperar dato, obtener memoria" },
@@ -89,10 +77,9 @@ export const SEED_DATA: SeedData = {
     { id: "task_status", name: "task_status", category: "agents", description: "Obtener estado de ejecución de tareas delegadas. Sinónimos: estado tarea delegada, verificar progreso, consultar tarea" },
     { id: "bus_publish", name: "bus_publish", category: "agents", description: "Publicar mensaje en el Agent Bus para comunicación worker-to-worker. Sinónimos: publicar mensaje, comunicar workers, enviar bus" },
     { id: "bus_read", name: "bus_read", category: "agents", description: "Leer mensajes no leídos del Agent Bus. Sinónimos: leer mensajes bus, recibir mensajes, verificar bus" },
-    { id: "project_updates", name: "project_updates", category: "agents", description: "Obtener actualizaciones recientes de workers en el mismo proyecto. Sinónimos: actualizaciones proyecto, estado workers, progreso equipo" },
 
     // ─────────────────────────────────────────
-    // 7. CANVAS — UI interactiva
+    // 6. CANVAS — UI interactiva
     // ─────────────────────────────────────────
     { id: "canvas_render", name: "canvas_render", category: "canvas", description: "Renderizar un componente o visualización en el canvas. Sinónimos: renderizar, visualizar, gráfico, diagrama" },
     { id: "canvas_ask", name: "canvas_ask", category: "canvas", description: "Mostrar formulario interactivo y esperar input del usuario. Sinónimos: formulario interactivo, preguntar usuario, input" },
@@ -103,7 +90,7 @@ export const SEED_DATA: SeedData = {
     { id: "canvas_clear", name: "canvas_clear", category: "canvas", description: "Limpiar contenido actual del canvas. Sinónimos: limpiar canvas, borrar visualización, resetear" },
 
     // ─────────────────────────────────────────
-    // 7b. CANVAS A2UI v0.9 — Superficies interactivas ricas
+    // 6b. CANVAS A2UI v0.9 — Superficies interactivas ricas
     // ─────────────────────────────────────────
     { id: "a2ui_create_surface", name: "a2ui_create_surface", category: "a2ui", description: "Crear superficie A2UI v0.9 para UI interactiva rica: formularios, dashboards, wizards, flujos multi-paso. Siempre llamar ANTES de a2ui_update_components. Requiere surfaceId y catalogId='https://a2ui.org/specification/v0_9/basic_catalog.json'. Sinónimos: crear superficie A2UI, iniciar UI A2UI, crear form A2UI, interfaz interactiva, crear dashboard A2UI" },
     { id: "a2ui_update_components", name: "a2ui_update_components", category: "a2ui", description: "Enviar componentes A2UI v0.9 como lista plana (adjacency list). Tipos: Text, Button, TextField, Row, Column, Card, List, Tabs, Modal, ChoicePicker, Slider, CheckBox, DateTimeInput, Image, Divider. Reglas: children usa explicitList (NO array), ChoicePicker usa selections (NO value), TextField usa textFieldType (NO variant), Tabs.tabItems.title es string plano. Sinónimos: actualizar componentes A2UI, enviar UI A2UI, renderizar componentes A2UI, layout A2UI" },
@@ -111,21 +98,21 @@ export const SEED_DATA: SeedData = {
     { id: "a2ui_delete_surface", name: "a2ui_delete_surface", category: "a2ui", description: "Eliminar superficie A2UI v0.9 del canvas. Usar al completar o cancelar el flujo para liberar recursos. Sinónimos: eliminar superficie A2UI, borrar UI A2UI, cerrar formulario A2UI, limpiar canvas A2UI" },
 
     // ─────────────────────────────────────────
-    // 8. VOICE — Voz
+    // 7. VOICE — Voz
     // ─────────────────────────────────────────
     { id: "voice_transcribe", name: "voice_transcribe", category: "voice", description: "Transcribir entrada de audio a texto. Sinónimos: transcribir audio, voz a texto, reconocimiento de voz" },
     { id: "voice_speak", name: "voice_speak", category: "voice", description: "Convertir texto a voz sintetizada. Sinónimos: texto a voz, sintetizar, hablar, leer en voz alta" },
 
-    // 10. SEARCH-KNOWLEDGE
+    // 8. SEARCH-KNOWLEDGE
     { id: "search_knowledge", name: "search_knowledge", category: "search-knowledge", description: "Buscar en la base de conocimientos. Sinónimos: buscar conocimiento, buscar en la base" },
 
-    // 11. CORE — Notificaciones y notas
+    // 9. CORE — Notificaciones y notas
     { id: "notify", name: "notify", category: "core", description: "Enviar notificación al usuario. Sinónimos: notificar, enviar notificación, alertar, aviso" },
     { id: "save_note", name: "save_note", category: "core", description: "Guardar nota persistente en el scratchpad. Sinónimos: guardar nota, escribir nota, recordatorio rápido, apuntar" },
     { id: "report_progress", name: "report_progress", category: "core", description: "Reportar progreso actual al usuario. Sinónimos: reportar progreso, informar estado, actualizar progreso, porcentaje" },
 
     // ─────────────────────────────────────────
-    // 12. OFFICE — Archivos Office (PDF, DOCX, XLSX, PPTX)
+    // 10. OFFICE — Archivos Office (PDF, DOCX, XLSX, PPTX)
     // ─────────────────────────────────────────
     { id: "office_leer_pdf", name: "office_leer_pdf", category: "office", description: "Leer contenido de un archivo PDF y retornar texto plano con metadata. Sinónimos: leer pdf, abrir pdf, extraer texto de pdf, contenido pdf, pdf a texto" },
     { id: "office_escribir_pdf", name: "office_escribir_pdf", category: "office", description: "Generar un archivo PDF desde texto con configuración de márgenes y tamaño de página. Sinónimos: crear pdf, generar pdf, escribir pdf, exportar a pdf" },
@@ -361,9 +348,9 @@ const INITIAL_PLAYBOOK_RULES = [
     applicable_to: JSON.stringify(["code", "development"]),
   },
   {
-    rule: "Al crear proyectos, divide las tareas en pasos atómicos que puedan ejecutarse independientemente",
+    rule: "Al delegar trabajo complejo a workers, divide el objetivo en pasos atómicos que puedan ejecutarse independientemente",
     category: "agent_creation",
-    applicable_to: JSON.stringify(["project_management", "tasks"]),
+    applicable_to: JSON.stringify(["delegation", "workers", "tasks"]),
   },
   {
     rule: "Guarda las preferencias importantes del usuario en el scratchpad usando la herramienta save_note para persistencia entre sesiones",
@@ -552,24 +539,43 @@ export function seedAllData(): void {
     log.info("[seed] ✅ webchat activado por defecto");
 
     // 🔟 ACE Playbook - Initial rules for Agentic Context Engineering
+    db.query(`DELETE FROM playbook WHERE rule = ?`).run(
+      "Al crear proyectos, divide las tareas en pasos atómicos que puedan ejecutarse independientemente"
+    );
+
     let playbookCount = 0
     for (const rule of INITIAL_PLAYBOOK_RULES) {
-      db.query(`
-        INSERT OR REPLACE INTO playbook (rule, category, applicable_to, helpful_count, harmful_count, active)
-        VALUES (?, ?, ?, 1, 0, 1)
-      `).run(rule.rule, rule.category, rule.applicable_to)
+      const existing = db.query(`SELECT id FROM playbook WHERE rule = ?`).get(rule.rule) as { id: number } | null;
+      if (existing) {
+        db.query(`
+          UPDATE playbook
+          SET category = ?, applicable_to = ?, active = 1, updated_at = unixepoch()
+          WHERE id = ?
+        `).run(rule.category, rule.applicable_to, existing.id);
+      } else {
+        db.query(`
+          INSERT INTO playbook (rule, category, applicable_to, helpful_count, harmful_count, active)
+          VALUES (?, ?, ?, 1, 0, 1)
+        `).run(rule.rule, rule.category, rule.applicable_to);
+      }
       playbookCount++
     }
     log.info(`[seed] ✅ ${playbookCount} ACE playbook rules seeded`);
 
+    db.run(`DELETE FROM playbook_fts`);
+    const activePlaybook = db.query(`
+      SELECT id, rule, category, applicable_to
+      FROM playbook
+      WHERE active = 1
+    `).all() as Array<{ id: number; rule: string; category: string; applicable_to: string | null }>;
     const insertPlaybookFts = db.prepare(`
-      INSERT OR REPLACE INTO playbook_fts(rule, category, applicable_to)
-      VALUES (?, ?, ?)
+      INSERT OR REPLACE INTO playbook_fts(rowid, rule, category, applicable_to)
+      VALUES (?, ?, ?, ?)
     `);
-    for (const rule of INITIAL_PLAYBOOK_RULES) {
-      insertPlaybookFts.run(rule.rule, rule.category, rule.applicable_to);
+    for (const rule of activePlaybook) {
+      insertPlaybookFts.run(rule.id, rule.rule, rule.category, rule.applicable_to);
     }
-    log.info(`[seed] ✅ ${playbookCount} reglas playbook sincronizadas a playbook_fts`);
+    log.info(`[seed] ✅ ${activePlaybook.length} reglas playbook sincronizadas a playbook_fts`);
 
     log.info("[seed] ✨ Seed completado exitosamente.");
   } catch (err) {

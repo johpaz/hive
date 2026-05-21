@@ -139,6 +139,26 @@ function toolErrorResult(
 }
 
 const DEFAULT_MAIN_THREAD_TOOL_NAMES = new Set([
+  // These tools depend on process-local singleton state (SQLite DB, live
+  // channel senders, schedulers, browser sessions, or in-memory services).
+  "search_knowledge",
+  "save_note",
+  "memory_write",
+  "memory_read",
+  "memory_list",
+  "memory_search",
+  "memory_delete",
+  "agent_create",
+  "agent_find",
+  "agent_archive",
+  "task_status",
+  "bus_publish",
+  "bus_read",
+  "get_available_models",
+  "meeting_start",
+  "meeting_add_segment",
+  "meeting_stop",
+  "meeting_report",
   "browser_navigate",
   "browser_screenshot",
   "browser_click",

@@ -2,6 +2,7 @@ import { getDb } from "../storage/sqlite"
 
 export interface ResolveContextResult {
   userId: string
+  threadId: string
   agentId: string
   isNewUser: boolean
 }
@@ -51,8 +52,11 @@ export function resolveContext(options: ResolveContextOptions): ResolveContextRe
     .get()
 
   const agentId = coordinatorAgent?.id || "bee"
+  // One canonical conversation thread is shared across channels. Transport
+  // session IDs route replies; conversations.thread_id owns agent context.
+  const threadId = userId
 
-  return { userId, agentId, isNewUser }
+  return { userId, threadId, agentId, isNewUser }
 }
 
 export function getDefaultAgentId(): string {

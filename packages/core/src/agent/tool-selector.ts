@@ -29,7 +29,6 @@
  * 
  * 6. Tool categorization: Tools are categorized by semantic domain:
  *    - scheduling (cron tools)
- *    - projects (project/task management)
  *    - filesystem (file operations)
  *    - web (search/fetch)
  *    - browser (browser automation)
@@ -527,10 +526,10 @@ function enrichToolDescription(tool: ToolDescriptor): string {
  *
  * Canonical format: `{safeServer}__{safeTool}` (double underscore as separator)
  */
-export function mcpToolFullName(_serverName: string, toolName: string): string {
+export function mcpToolFullName(serverName: string, toolName: string): string {
     const safe = (s: string) => s.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-]/g, '_')
-    const sanitized = safe(toolName)
-    const trimmed = sanitized.length > 64 ? sanitized.substring(0, 64) : sanitized
+    const full = `${safe(serverName)}__${safe(toolName)}`
+    const trimmed = full.length > 64 ? full.substring(0, 64) : full
     return /^[a-zA-Z_]/.test(trimmed) ? trimmed : `_${trimmed}`.substring(0, 64)
 }
 

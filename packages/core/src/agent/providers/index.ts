@@ -7,7 +7,6 @@
 
 import type { Config } from "../../config/loader.ts"
 import { logger } from "../../utils/logger.ts"
-import { getDb } from "../../storage/sqlite.ts"
 import { getAgentLoop } from "../agent-loop"
 import { resolveUserId, resolveAgentId } from "../../storage/onboarding"
 import type { ContentPart } from "../../multimodal/types"
@@ -34,6 +33,7 @@ export interface ModelOptions {
   onStep?: (step: StepEvent) => Promise<void>
   threadId?: string
   userId?: string
+  agentId?: string
   channel?: string
   rawUserMessage?: string
   signal?: AbortSignal
@@ -62,9 +62,8 @@ export class AgentRunner {
   }
 
   async generate(options: ModelOptions): Promise<ModelResponse> {
-    const db = getDb()
-    // Resolve agentId from database (coordinator or first enabled)
-    const agentId = resolveAgentId(null) || "main"
+    // Resolve agentId from explicit option or database (coordinator/first enabled)
+    const agentId = options.agentId || resolveAgentId(null) || "main"
 
     // Resolve userId from database
     const userId = options.userId || resolveUserId({})

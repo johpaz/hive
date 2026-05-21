@@ -4,7 +4,7 @@
  * POST /api/chat
  * {
  *   "message": "Mensaje para el coordinador",
- *   "thread_id": "ID de sesión (opcional, se genera si no existe)",
+ *   "thread_id": "conversations.thread_id (opcional, usa el thread canónico del usuario si no existe)",
  *   "channel": "canal (opcional, default: webchat)"
  * }
  */
@@ -12,12 +12,11 @@
 import { getDb } from "../../storage/sqlite";
 import { resolveUserId, resolveAgentId } from "../../storage/onboarding";
 import { laneQueue } from "../lane-queue";
-import { getRecentMessages } from "../../agent/conversation-store";
 import { AgentRunner } from "../../agent/providers";
 import { logger } from "../../utils/logger";
-import { getUserDate, getUserTime } from "../../utils/date";
 
 const log = logger.child("api:chat");
+export const DEFAULT_CHAT_HISTORY_LIMIT = 40;
 
 export interface ChatRequest {
   message: string;
@@ -32,6 +31,11 @@ export interface ChatResponse {
   thread_id: string;
   content?: string;
   error?: string;
+}
+
+export function resolveChatThreadId(finalUserId: string, requestedThreadId?: string): string {
+  const trimmedThreadId = requestedThreadId?.trim();
+  return trimmedThreadId || finalUserId || "default";
 }
 
 export async function handleChat(
@@ -60,8 +64,8 @@ export async function handleChat(
     // Resolve agent ID (coordinator by default)
     const finalAgentId = agentId || resolveAgentId(null) || "main";
 
-    // Generate or use provided thread_id
-    const threadId = thread_id || `${finalUserId}-${Date.now()}`;
+    // conversations.thread_id is the context key; never generate a per-request thread.
+    const threadId = resolveChatThreadId(finalUserId, thread_id);
 
     log.info(`[chat] Processing message from user=${finalUserId} agent=${finalAgentId} thread=${threadId}`);
 
@@ -86,15 +90,10 @@ export async function handleChat(
     // Format message with timestamp
     const messageContent = `[Timestamp: ${exactTime} (${userTimezone})]\n${message}`;
 
-    // Get recent conversation history
-    const history = getRecentMessages(threadId, 15);
-    const messages = [
-      ...history.map((row) => ({
-        role: row.role as "user" | "assistant" | "system",
-        content: row.content,
-      })),
-      { role: "user" as const, content: messageContent }
-    ];
+    // AgentLoop persists this user message, then compileContext loads the last
+    // 15 messages from conversations by threadId. Prepending history here is
+    // ineffective because AgentLoop.stream only consumes the latest user input.
+    const messages = [{ role: "user" as const, content: messageContent }];
 
     // Get provider config from DB
     const agent = db.query<any, [string]>(
@@ -124,6 +123,7 @@ export async function handleChat(
           maxSteps: 15,
           threadId,
           userId: finalUserId,
+          agentId: finalAgentId,
           channel,
           onStep: async (step) => {
             if (step.type === "text" && step.message) {
@@ -200,12 +200,12 @@ export async function handleChat(
 export async function handleGetChatHistory(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const url = new URL(req.url)
   const threadId = url.searchParams.get("sessionId") || url.searchParams.get("threadId") || "default"
-  const limit = parseInt(url.searchParams.get("limit") || "15")
+  const limit = parseInt(url.searchParams.get("limit") || String(DEFAULT_CHAT_HISTORY_LIMIT))
 
   const messages = getDb().query(`
     SELECT id, thread_id, channel, role, content, tool_calls_json, tool_call_id, reasoning_content, token_count, created_at, updated_at FROM conversations
     WHERE thread_id = ? AND role IN ('user', 'assistant')
-    ORDER BY created_at DESC
+    ORDER BY id DESC
     LIMIT ?
   `).all(threadId, limit) as Record<string, unknown>[]
 

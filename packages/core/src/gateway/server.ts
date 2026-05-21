@@ -373,7 +373,7 @@ export async function startGateway(config: Config): Promise<void> {
 
     log.info(` Content: ${messageContent.substring(0, 150)}${messageContent.length > 150 ? "..." : ""}`);
 
-    const { userId } = resolveContext({
+    const { userId, threadId: conversationThreadId } = resolveContext({
       channel: message.channel,
       channelUserId: message.sessionId,
     });
@@ -385,8 +385,8 @@ export async function startGateway(config: Config): Promise<void> {
       channelManager.startTyping(message.channel, message.sessionId),
     ]);
 
-    // unifiedSessionId = userId del onboarding → historial y thread LangGraph unificados
-    const unifiedSessionId = userId;
+    // conversationThreadId = conversations.thread_id canónico compartido por todos los canales
+    const unifiedSessionId = conversationThreadId;
     // routingSessionId = peerId del canal → para enviar respuestas de vuelta al canal correcto
     const routingSessionId = message.sessionId;
 
@@ -1940,7 +1940,7 @@ export async function startGateway(config: Config): Promise<void> {
               return;
             }
             try {
-              const { userId } = resolveContext({ channel: "webchat", channelUserId: sessionId });
+              const { userId, threadId: conversationThreadId } = resolveContext({ channel: "webchat", channelUserId: sessionId });
               const messages = [{ role: "user" as const, content: interactionMsg }];
               let streamedContent = "";
               const messageId = crypto.randomUUID();
@@ -1949,9 +1949,9 @@ export async function startGateway(config: Config): Promise<void> {
                 provider: dbProvider as any,
                 messages,
                 maxTokens: 4096,
-                tools: prepareTools(agent, sessionId),
+                tools: prepareTools(agent, conversationThreadId),
                 maxSteps: 15,
-                threadId: sessionId,
+                threadId: conversationThreadId,
                 userId,
                 onToken: async (token: string) => {
                   if (signal.aborted) return;
@@ -2015,7 +2015,7 @@ export async function startGateway(config: Config): Promise<void> {
                 return;
               }
               try {
-                const { userId } = resolveContext({ channel: "webchat", channelUserId: sessionId });
+                const { userId, threadId: conversationThreadId } = resolveContext({ channel: "webchat", channelUserId: sessionId });
                 const messages = [{ role: "user" as const, content: interactionMsg }];
                 let streamedContent = "";
                 const messageId = crypto.randomUUID();
@@ -2024,9 +2024,9 @@ export async function startGateway(config: Config): Promise<void> {
                   provider: dbProvider as any,
                   messages,
                   maxTokens: 4096,
-                  tools: prepareTools(agent, sessionId),
+                  tools: prepareTools(agent, conversationThreadId),
                   maxSteps: 15,
-                  threadId: sessionId,
+                  threadId: conversationThreadId,
                   userId,
                   onToken: async (token: string) => {
                     if (signal.aborted) return;
@@ -2157,14 +2157,14 @@ export async function startGateway(config: Config): Promise<void> {
               }
 
               try {
-                const unifiedSessionId = msg.sessionId;
-                const messages = [{ role: "user" as const, content: messageContent }];
-                log.info(`Generating response for session ${unifiedSessionId}...`);
-
-                const { userId } = resolveContext({
+                const { userId, threadId: conversationThreadId } = resolveContext({
                   channel: "webchat",
                   channelUserId: msg.sessionId,
                 });
+                const unifiedSessionId = conversationThreadId;
+                const routingSessionId = msg.sessionId;
+                const messages = [{ role: "user" as const, content: messageContent }];
+                log.info(`Generating response for session ${unifiedSessionId}...`);
 
                 // Streaming: send tokens as they arrive
                 let streamedContent = "";
@@ -2185,7 +2185,7 @@ export async function startGateway(config: Config): Promise<void> {
                     ws.send(JSON.stringify({
                       type: "message",
                       id: messageId,
-                      sessionId: unifiedSessionId,
+                      sessionId: routingSessionId,
                       content: token,
                       isChunk: true,
                       isStep: false,
@@ -2200,7 +2200,7 @@ export async function startGateway(config: Config): Promise<void> {
                       if (trimmedMessage) {
                         ws.send(JSON.stringify({
                           type: "progress",
-                          sessionId: unifiedSessionId,
+                          sessionId: routingSessionId,
                           content: trimmedMessage,
                         } as OutboundMessage));
                       }
@@ -2212,7 +2212,7 @@ export async function startGateway(config: Config): Promise<void> {
                       const narration = getNarration(step.toolName);
                       ws.send(JSON.stringify({
                         type: "progress",
-                        sessionId: unifiedSessionId,
+                        sessionId: routingSessionId,
                         content: narration,
                       } as OutboundMessage));
                       return;
@@ -2227,7 +2227,7 @@ export async function startGateway(config: Config): Promise<void> {
                           if (userMessage) {
                             ws.send(JSON.stringify({
                               type: "progress",
-                              sessionId: unifiedSessionId,
+                              sessionId: routingSessionId,
                               content: userMessage,
                             } as OutboundMessage));
                           }
@@ -2248,7 +2248,7 @@ export async function startGateway(config: Config): Promise<void> {
                 let ttsProviderUsed: string | null = null;
                 let ttsMimeType: string | null = null;
 
-                ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId: unifiedSessionId } as OutboundMessage));
+                ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId: routingSessionId } as OutboundMessage));
 
                 // Don't send text message if already streamed (content came via onToken)
                 const alreadyStreamed = streamedContent.length > 0;
@@ -2258,7 +2258,7 @@ export async function startGateway(config: Config): Promise<void> {
                     if (!voiceCfg.ttsProvider) {
                       ws.send(JSON.stringify({
                         type: "message",
-                        sessionId: unifiedSessionId,
+                        sessionId: routingSessionId,
                         content: `${content}\n\n🔊 Para recibir respuestas en audio, configura el proveedor TTS en Configuración > Canales > WebChat (ej: elevenlabs)`,
                         isStep: false,
                       } as OutboundMessage));
@@ -2273,7 +2273,7 @@ export async function startGateway(config: Config): Promise<void> {
                         log.info(`Audio generated: ${base64Audio.length} bytes, mimeType: ${audioOutput.mimeType}`);
                         ws.send(JSON.stringify({
                           type: "message",
-                          sessionId: unifiedSessionId,
+                          sessionId: routingSessionId,
                           content,
                           audio: base64Audio,
                           mimeType: audioOutput.mimeType,
@@ -2281,11 +2281,11 @@ export async function startGateway(config: Config): Promise<void> {
                         } as OutboundMessage));
                       } catch (ttsError) {
                         log.error(`TTS failed: ${(ttsError as Error).message}), sending text instead`);
-                        ws.send(JSON.stringify({ type: "message", sessionId: unifiedSessionId, content, isStep: false } as OutboundMessage));
+                        ws.send(JSON.stringify({ type: "message", sessionId: routingSessionId, content, isStep: false } as OutboundMessage));
                       }
                     }
                   } else {
-                    ws.send(JSON.stringify({ type: "message", sessionId: unifiedSessionId, content, isStep: false } as OutboundMessage));
+                    ws.send(JSON.stringify({ type: "message", sessionId: routingSessionId, content, isStep: false } as OutboundMessage));
                   }
                 } else if (alreadyStreamed && shouldSpeak && voiceCfg.ttsProvider) {
                   try {
@@ -2295,7 +2295,7 @@ export async function startGateway(config: Config): Promise<void> {
                     log.info(`Audio generated after streaming: ${base64Audio.length} bytes`);
                     ws.send(JSON.stringify({
                       type: "message",
-                      sessionId: unifiedSessionId,
+                      sessionId: routingSessionId,
                       content,
                       audio: base64Audio,
                       mimeType: audioOutput.mimeType,
@@ -2349,7 +2349,12 @@ export async function startGateway(config: Config): Promise<void> {
             }
 
             try {
-              const unifiedSessionId = msg.sessionId;
+              const { userId, threadId: conversationThreadId } = resolveContext({
+                channel: "webchat",
+                channelUserId: msg.sessionId,
+              });
+              const unifiedSessionId = conversationThreadId;
+              const routingSessionId = msg.sessionId;
 
               // Multimodal: process image/document if present
               let finalMessageContent = msg.content;
@@ -2418,11 +2423,6 @@ export async function startGateway(config: Config): Promise<void> {
 
               log.info(`Generating response for session ${unifiedSessionId} (multimodal: ${!!(msg.image || msg.document)})...`);
 
-              const { userId } = resolveContext({
-                channel: "webchat",
-                channelUserId: msg.sessionId,
-              });
-
               // Streaming: send tokens as they arrive
               let streamedContent = "";
               let messageId = crypto.randomUUID();
@@ -2443,7 +2443,7 @@ export async function startGateway(config: Config): Promise<void> {
                   ws.send(JSON.stringify({
                     type: "message",
                     id: messageId,
-                    sessionId: unifiedSessionId,
+                    sessionId: routingSessionId,
                     content: token,
                     isChunk: true,
                     isStep: false,
@@ -2458,7 +2458,7 @@ export async function startGateway(config: Config): Promise<void> {
                     if (trimmedMessage) {
                       ws.send(JSON.stringify({
                         type: "progress",
-                        sessionId: unifiedSessionId,
+                        sessionId: routingSessionId,
                         content: trimmedMessage,
                       } as OutboundMessage));
                     }
@@ -2470,7 +2470,7 @@ export async function startGateway(config: Config): Promise<void> {
                     const narration = getNarration(step.toolName);
                     ws.send(JSON.stringify({
                       type: "progress",
-                      sessionId: unifiedSessionId,
+                      sessionId: routingSessionId,
                       content: narration,
                     } as OutboundMessage));
                     return;
@@ -2485,7 +2485,7 @@ export async function startGateway(config: Config): Promise<void> {
                         if (userMessage) {
                           ws.send(JSON.stringify({
                             type: "progress",
-                            sessionId: unifiedSessionId,
+                            sessionId: routingSessionId,
                             content: userMessage,
                           } as OutboundMessage));
                         }
@@ -2506,7 +2506,7 @@ export async function startGateway(config: Config): Promise<void> {
               let ttsProviderUsed: string | null = null;
               let ttsMimeType: string | null = null;
 
-              ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId: unifiedSessionId } as OutboundMessage));
+              ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId: routingSessionId } as OutboundMessage));
 
               // Don't send text message if already streamed (content came via onToken)
               const alreadyStreamed = streamedContent.length > 0;
@@ -2516,7 +2516,7 @@ export async function startGateway(config: Config): Promise<void> {
                   if (!voiceConfig.ttsProvider) {
                     ws.send(JSON.stringify({
                       type: "message",
-                      sessionId: unifiedSessionId,
+                      sessionId: routingSessionId,
                       content: `${content}\n\n🔊 Para recibir respuestas en audio, configura el proveedor TTS en Configuración > Canales > WebChat (ej: elevenlabs)`,
                       isStep: false
                     } as OutboundMessage));
@@ -2530,7 +2530,7 @@ export async function startGateway(config: Config): Promise<void> {
                       const base64Audio = (audioOutput.data as Buffer).toString("base64");
                       ws.send(JSON.stringify({
                         type: "message",
-                        sessionId: unifiedSessionId,
+                        sessionId: routingSessionId,
                         content,
                         audio: base64Audio,
                         mimeType: audioOutput.mimeType,
@@ -2538,11 +2538,11 @@ export async function startGateway(config: Config): Promise<void> {
                       } as OutboundMessage));
                     } catch (ttsError) {
                       log.error(`TTS failed: ${(ttsError as Error).message}), sending text instead`);
-                      ws.send(JSON.stringify({ type: "message", sessionId: unifiedSessionId, content, isStep: false } as OutboundMessage));
+                      ws.send(JSON.stringify({ type: "message", sessionId: routingSessionId, content, isStep: false } as OutboundMessage));
                     }
                   }
                 } else {
-                  ws.send(JSON.stringify({ type: "message", sessionId: unifiedSessionId, content, isStep: false } as OutboundMessage));
+                  ws.send(JSON.stringify({ type: "message", sessionId: routingSessionId, content, isStep: false } as OutboundMessage));
                 }
               } else if (alreadyStreamed && shouldSpeak && voiceConfig.ttsProvider) {
                 try {
@@ -2552,7 +2552,7 @@ export async function startGateway(config: Config): Promise<void> {
                   log.info(`Audio generated after streaming: ${base64Audio.length} bytes`);
                   ws.send(JSON.stringify({
                     type: "message",
-                    sessionId: unifiedSessionId,
+                    sessionId: routingSessionId,
                     content,
                     audio: base64Audio,
                     mimeType: audioOutput.mimeType,
@@ -2563,15 +2563,14 @@ export async function startGateway(config: Config): Promise<void> {
                 }
               }
             } catch (error) {
-              const unifiedSessionId = msg.sessionId;
               // Detener typing aunque falle — nunca dejar el spinner infinito
-              ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId: unifiedSessionId } as OutboundMessage));
+              ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId: msg.sessionId } as OutboundMessage));
               ws.send(JSON.stringify({
                 type: "error",
-                sessionId: unifiedSessionId,
+                sessionId: msg.sessionId,
                 error: (error as Error).message,
               } as OutboundMessage));
-              log.error(`Error for session ${unifiedSessionId}: ${(error as Error).message}`);
+              log.error(`Error for session ${msg.sessionId}: ${(error as Error).message}`);
             }
           });
 

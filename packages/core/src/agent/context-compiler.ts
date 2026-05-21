@@ -40,7 +40,7 @@ import { getUserDate, getUserTime } from "../utils/date"
 const log = logger.child("context-compiler")
 
 // Configuration constants
-const KEEP_LAST_N_MESSAGES = 15      // Always keep last N messages (Strategy: SELECT) — increased because tool calls/results are now persisted
+const KEEP_LAST_N_MESSAGES = 30      // Always keep last N messages (Strategy: SELECT) — only user+assistant text, no tool results
 const DEFAULT_CONTEXT_WINDOW = 250000 // Default context window when model is unknown
 const COMPACT_RATIO = 0.80           // Compact when estimated input exceeds 70% of context window
 const MAX_SYSTEM_PROMPT_CHARS_CAP = 128000 // Hard cap for pathological prompts; normal budget is model-aware

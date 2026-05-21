@@ -183,12 +183,12 @@ const MINIMAL_SKILL_NAMES = [
 
 **Configuración**:
 ```typescript
-const KEEP_LAST_N_MESSAGES = 40  // Últimos mensajes siempre cargados
+const KEEP_LAST_N_MESSAGES = 15  // Últimos mensajes siempre cargados
 const TOKEN_COMPACT_THRESHOLD = 6000  // Threshold para compactación
 ```
 
 **Proceso**:
-1. Query: `SELECT * FROM conversations WHERE thread_id = ? ORDER BY id DESC LIMIT 40`
+1. Query: `SELECT * FROM conversations WHERE thread_id = ? ORDER BY id DESC LIMIT 15`
 2. Filtra mensajes huérfanos de tool results (sin assistant message previo)
 3. Calcula tokens: `estimateTokens(content)` de `utils/toon.ts`
 4. Si `totalTokens > 6000` → usa resumen (STEP-9b)
@@ -213,7 +213,7 @@ WHERE thread_id = ?
   ```
   messages = [
     { role: "system", content: "[Conversation Summary]: {summary}" },
-    ...recentMessages (últimos 40)
+    ...recentMessages (últimos 15)
   ]
   ```
 
@@ -391,7 +391,7 @@ El Context Compiler implementa 4 estrategias:
 ### 2. SELECCIONAR (Select)
 - **Tool Loadout**: Máx 4 tools mínimas + descubrimiento dinámico
 - **Playbook Filtering**: Reglas ACE aplicables vía FTS5
-- **Historial Selectivo**: Últimos 40 mensajes + resumen
+- **Historial Selectivo**: Últimos 15 mensajes + resumen
 
 ### 3. COMPRIMIR (Compress)
 - **Compaction**: Resumen de mensajes viejos cuando `tokens > 6000`
@@ -515,7 +515,7 @@ Agent Loop inyecta:
 
 ### Context Compiler (`context-compiler.ts`)
 ```typescript
-const KEEP_LAST_N_MESSAGES = 40
+const KEEP_LAST_N_MESSAGES = 15
 const TOKEN_COMPACT_THRESHOLD = 6000
 
 const MINIMAL_TOOLS = ["save_note", "notify", "report_progress", "search_knowledge"]
@@ -605,7 +605,7 @@ const maxIterations = agent.max_iterations || 10
 
 2. **Historial** (~2000-6000 tokens):
    - Resumen de conversación (si > 6000 tokens)
-   - Últimos 40 mensajes
+   - Últimos 15 mensajes
 
 3. **Herramientas en contexto LLM** (4 tools):
    - save_note, notify, report_progress, search_knowledge
@@ -674,7 +674,7 @@ agent-loop.ts
 
 2. **FTS5 para Selección**: Usa SQLite FTS5 bm25() scoring para selección semántica de tools/skills/playbook.
 
-3. **Compresión Inteligente**: Cuando el historial > 6000 tokens, usa resumen + últimos 40 mensajes.
+3. **Compresión Inteligente**: Cuando el historial > 6000 tokens, usa resumen + últimos 15 mensajes.
 
 4. **Isolation Pattern**: Workers reciben contexto mínimo; coordinador ve el panorama completo.
 

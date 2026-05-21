@@ -119,6 +119,39 @@ describe("tool runtime worker pool", () => {
     expect(results[0].result).toEqual({ echoed: "ok" })
   })
 
+  it("routes singleton-backed native tools through main-thread RPC", async () => {
+    const executed = new Set<string>()
+    const tools: RuntimeTool[] = [
+      "search_knowledge",
+      "save_note",
+      "memory_write",
+      "meeting_start",
+    ].map((name) => ({
+      name,
+      execute: async () => {
+        executed.add(name)
+        return { name, mainThread: true }
+      },
+    }))
+
+    const results = await executeToolBatch({
+      toolCalls: [
+        toolCall("1", "search_knowledge", { query: "canvas" }),
+        toolCall("2", "save_note", { key: "k", value: "v" }),
+        toolCall("3", "memory_write", { key: "m", value: "v" }),
+        toolCall("4", "meeting_start", { title: "sync" }),
+      ],
+      allTools: tools,
+      toolConfig: {},
+      hiveConfig: loadConfig(),
+      workerPool: { enabled: true, maxWorkers: 2, toolTimeoutMs: 1000, parallelToolCalls: true },
+    })
+
+    expect(results.every((result) => result.ok)).toBe(true)
+    expect(executed).toEqual(new Set(["search_knowledge", "save_note", "memory_write", "meeting_start"]))
+    expect(results.map((result) => (result.result as any).mainThread)).toEqual([true, true, true, true])
+  })
+
   it("marks timed out tools and keeps completed tools", async () => {
     const tools: RuntimeTool[] = [
       { name: "fast", execute: async () => ({ done: true }) },

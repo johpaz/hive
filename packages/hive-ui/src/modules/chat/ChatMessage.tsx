@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import type { Message } from "@/types";
 import { 
   Bot, AlertTriangle, Play, Pause, Volume2, Volume1, VolumeX, 
-  FileText, Image as ImageIcon, RotateCcw, Gauge 
+  FileText, Image as ImageIcon, RotateCcw, Gauge, Zap
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import ReactMarkdown from "react-markdown";
@@ -13,6 +13,7 @@ interface ChatMessageProps {
   userName?: string;
   agentName?: string;
   isStreaming?: boolean;
+  currentSteps?: string[];
   onNarrate?: (text: string) => void;
 }
 
@@ -187,11 +188,13 @@ function AudioPlayer({ audio, mimeType = "audio/webm" }: { audio: string; mimeTy
   );
 }
 
-export function ChatMessage({ message, userName = "Tú", agentName = "Agente", isStreaming, onNarrate }: ChatMessageProps) {
+export function ChatMessage({ message, userName = "Tú", agentName = "Agente", isStreaming, currentSteps = [], onNarrate }: ChatMessageProps) {
   const isUser = message.type === "user";
   const isError = message.type === "error";
   const isSystem = message.type === "system";
   const hasAudio = !!message.audio?.base64 || !!message.audio?.url;
+  const hasContent = message.content.trim().length > 0;
+  const showActivity = !!isStreaming && (currentSteps.length > 0 || !hasContent);
 
   if (isSystem) {
     return (
@@ -281,14 +284,48 @@ export function ChatMessage({ message, userName = "Tú", agentName = "Agente", i
           </div>
         )}
 
-        <div className="text-white/80 text-[15px] leading-relaxed prose prose-invert max-w-none font-newsreader">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {message.content}
-          </ReactMarkdown>
-          {isStreaming && (
-            <span className="inline-block w-2 h-4 bg-blue-400 ml-1 align-text-bottom rounded-sm opacity-70" />
-          )}
-        </div>
+        {showActivity && (
+          <div className="flex flex-col gap-2 mb-2 ml-1">
+            {currentSteps.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                {currentSteps.map((step, i) => {
+                  const isLatest = i === currentSteps.length - 1;
+                  return (
+                    <div
+                      key={`${step}-${i}`}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all w-fit max-w-full ${
+                        isLatest
+                          ? "bg-blue-500/10 border-blue-500/20 text-blue-400"
+                          : "bg-white/5 border-white/10 text-white/50"
+                      }`}
+                    >
+                      <Zap className={`h-3 w-3 shrink-0 ${isLatest ? "text-blue-400" : "text-white/30"}`} />
+                      <span className="leading-tight break-words">{step}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {!hasContent && (
+              <div className="bg-white/5 border border-white/10 px-4 py-3.5 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-1.5 w-fit">
+                <span className="h-2 w-2 rounded-full bg-white/30 animate-bounce [animation-delay:0ms]" />
+                <span className="h-2 w-2 rounded-full bg-white/30 animate-bounce [animation-delay:150ms]" />
+                <span className="h-2 w-2 rounded-full bg-white/30 animate-bounce [animation-delay:300ms]" />
+              </div>
+            )}
+          </div>
+        )}
+
+        {hasContent && (
+          <div className="text-white/80 text-[15px] leading-relaxed prose prose-invert max-w-none font-newsreader">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {message.content}
+            </ReactMarkdown>
+            {isStreaming && (
+              <span className="inline-block w-2 h-4 bg-blue-400 ml-1 align-text-bottom rounded-sm opacity-70" />
+            )}
+          </div>
+        )}
         {hasAudio && message.audio?.base64 && (
           <AudioPlayer audio={message.audio.base64} mimeType={message.audio.mimeType} />
         )}

@@ -1,4 +1,4 @@
-# CHANGELOG v0.0.36 — Hive
+# CHANGELOG v0.0.37 — Hive
 
 ## Resumen
 

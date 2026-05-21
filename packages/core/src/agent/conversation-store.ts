@@ -97,7 +97,7 @@ export function getRecentMessages(threadId: string, n: number): StoredMessage[] 
   const db = getDb()
   const rows = db.query(`
     SELECT * FROM conversations
-    WHERE thread_id = ?
+    WHERE thread_id = ? AND role != 'tool'
     ORDER BY id DESC
     LIMIT ?
   `).all(threadId, n) as StoredMessage[]
@@ -170,10 +170,9 @@ export function toAPIMessages(rows: StoredMessage[]): LLMMessage[] {
       try { content = JSON.parse(r.content_multimodal) } catch { /* ignore */ }
     }
     const msg: LLMMessage = { role: r.role, content }
-    if (r.tool_calls_json) {
-      try { msg.tool_calls = JSON.parse(r.tool_calls_json) } catch { /* ignore */ }
-    }
-    if (r.tool_call_id) msg.tool_call_id = r.tool_call_id
+    // Note: tool_calls and tool_call_id are NOT reconstructed from DB.
+    // Tool results are kept in-memory during iteration but not persisted,
+    // so historical messages only contain text conversation.
     if (r.reasoning_content) msg.reasoning_content = r.reasoning_content
     return msg
   })

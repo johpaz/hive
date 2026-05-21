@@ -12,6 +12,8 @@ import { apiClient } from "@/lib/api";
 import { generateId } from "@/lib/utils";
 import { Bot, Volume2, VolumeX, AlertCircle, RefreshCw } from "lucide-react";
 
+const WEBCHAT_HISTORY_LIMIT = 40;
+
 export function WebChatPage() {
   const agentId = "main";
   const { messages, addMessage, setMessages, isLoading, currentSteps, streamingMessageId, connectionWarning, setConnectionWarning } = useChatStore();
@@ -38,7 +40,9 @@ export function WebChatPage() {
     if (!sessionId) return;
     const fetchHistory = async () => {
       try {
-        const response = await apiClient<{ messages: any[] }>(`/api/chat/history?sessionId=${sessionId}&limit=15`);
+        const response = await apiClient<{ messages: any[] }>(
+          `/api/chat/history?sessionId=${sessionId}&limit=${WEBCHAT_HISTORY_LIMIT}`
+        );
         if (response.messages) {
           const formattedMessages = response.messages
             .filter((m: any) => m.role === "user" || m.role === "assistant")

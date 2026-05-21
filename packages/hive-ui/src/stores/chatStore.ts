@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Message } from "@/types";
 
+const CHAT_HISTORY_LIMIT = 40;
+
 interface ChatState {
   messages: Message[];
   isLoading: boolean;
@@ -57,7 +59,7 @@ export const useChatStore = create<ChatState>()(
     {
       name: "hive-chat-storage",
       partialize: (state) => ({
-        messages: state.messages.slice(-15),
+        messages: state.messages.slice(-CHAT_HISTORY_LIMIT),
       }),
     }
   )
