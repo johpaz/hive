@@ -14,7 +14,7 @@ const log = logger.child("browser-extract");
 
 export const browserExtractTool: Tool = {
   name: "browser_extract",
-  description: "Extract text, links, or structured data from page using CSS selectors or XPath. Spanish: extraer datos, obtener información, scraping, selectores",
+  description: "Extract text, links, or structured data from page using CSS selectors or XPath. For general page overview without specific selectors, returns compact accessibility snapshot. Spanish: extraer datos, obtener información, scraping, selectores",
   parameters: {
     type: "object",
     properties: {
@@ -24,7 +24,7 @@ export const browserExtractTool: Tool = {
       },
       selector: {
         type: "string",
-        description: "CSS selector or XPath (prefix with 'xpath:') to match elements",
+        description: "CSS selector or XPath (prefix with 'xpath:') to match elements. Use 'body' or omit for compact accessibility snapshot.",
       },
       attribute: {
         type: "string",
@@ -43,7 +43,7 @@ export const browserExtractTool: Tool = {
   },
   execute: async (params: Record<string, unknown>) => {
     const url = params.url as string | undefined;
-    const selector = params.selector as string;
+    const selector = (params.selector as string) || "body";
     const attribute = (params.attribute as string) ?? "text";
     const all = (params.all as boolean) ?? true;
     const timeout = (params.timeout as number) ?? 30000;
@@ -53,7 +53,7 @@ export const browserExtractTool: Tool = {
       log.warn("Browser not available");
       return {
         ok: false,
-        error: "Browser automation not available. Install Chrome/Chromium.",
+        error: "Browser automation not available. Install agent-browser.",
       };
     }
 
@@ -61,11 +61,28 @@ export const browserExtractTool: Tool = {
 
     try {
       const view = await browserService.getView();
-      if (!view) return { ok: false, error: "Browser automation not available. Install Chrome/Chromium." };
+      if (!view) return { ok: false, error: "Browser automation not available. Install agent-browser." };
 
       if (url) {
         await view.navigate(url);
         await Bun.sleep(500);
+      }
+
+      const currentUrl = view.url;
+
+      // If selector is broad (body, html, *, :root) and attribute is text, return compact snapshot
+      const isBroadSelector = ["body", "html", "*", ":root", "document"].includes(selector.toLowerCase());
+      if (isBroadSelector && attribute === "text") {
+        const snapshot = await view.snapshot({ compact: true, depth: 3 });
+        log.info(`Snapshot extracted from ${currentUrl} (${snapshot.length} chars)`);
+        return {
+          ok: true,
+          url: currentUrl,
+          selector,
+          attribute: "snapshot",
+          count: 1,
+          data: [snapshot],
+        };
       }
 
       const isXPath = selector.startsWith("xpath:");
@@ -117,7 +134,6 @@ export const browserExtractTool: Tool = {
         })()
       `) as string[];
 
-      const currentUrl = view.url;
       log.info(`Extracted ${extracted.length} element(s) from ${currentUrl}`);
 
       return {

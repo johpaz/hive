@@ -10,6 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from "bun:test";
+import { writeFileSync, rmSync } from "fs";
 
 // ─── Tipos mínimos para el mock ───────────────────────────────────────────────
 
@@ -18,12 +19,17 @@ interface MockView {
   title: string;
   navigate: ReturnType<typeof mock>;
   evaluate: ReturnType<typeof mock>;
+  snapshot: ReturnType<typeof mock>;
   screenshot: ReturnType<typeof mock>;
   click: ReturnType<typeof mock>;
   type: ReturnType<typeof mock>;
+  typeIn: ReturnType<typeof mock>;
+  fill: ReturnType<typeof mock>;
   press: ReturnType<typeof mock>;
   scroll: ReturnType<typeof mock>;
   scrollTo: ReturnType<typeof mock>;
+  resize: ReturnType<typeof mock>;
+  run: ReturnType<typeof mock>;
   cdp: ReturnType<typeof mock>;
   close: ReturnType<typeof mock>;
 }
@@ -34,12 +40,17 @@ function createMockView(overrides: Partial<MockView> = {}): MockView {
     title: "Example",
     navigate: mock(async () => {}),
     evaluate: mock(async () => ""),
+    snapshot: mock(async () => "- document\n  - link \"Example\" [ref=e1]"),
     screenshot: mock(async () => "base64encodedpng=="),
     click: mock(async () => {}),
     type: mock(async () => {}),
+    typeIn: mock(async () => {}),
+    fill: mock(async () => {}),
     press: mock(async () => {}),
     scroll: mock(async () => {}),
     scrollTo: mock(async () => {}),
+    resize: mock(async () => {}),
+    run: mock(async () => ({ success: true, data: { path: "/tmp/mock.png" } })),
     cdp: mock(async () => ({ data: "base64png==" })),
     close: mock(() => {}),
     ...overrides,
@@ -120,26 +131,28 @@ describe("waitForCondition", () => {
 
 describe("screenshotElement", () => {
   it("retorna base64 del screenshot cuando el elemento existe", async () => {
+    const tmpPath = "/tmp/test-screenshot.png";
+    writeFileSync(tmpPath, "fake-png-data");
+
     const { screenshotElement } = await import("../packages/core/src/tools/web/browser-service.ts");
     const view = createMockView({
-      evaluate: mock(async () => ({ x: 10, y: 20, width: 100, height: 50 })),
-      screenshot: mock(async () => "elementbase64=="),
+      run: mock(async () => ({ success: true, data: { path: tmpPath } })),
     });
 
     const result = await screenshotElement(view as any, "#logo");
-    expect(result).toBe("elementbase64==");
-    expect(view.screenshot).toHaveBeenCalledWith(expect.objectContaining({
-      clip: { x: 10, y: 20, width: 100, height: 50, scale: 1 },
-    }));
+    expect(typeof result).toBe("string");
+    expect(view.run).toHaveBeenCalledWith(["screenshot", "#logo"]);
+
+    try { rmSync(tmpPath); } catch { /* already cleaned by screenshotElement */ }
   });
 
   it("lanza error cuando el elemento no existe", async () => {
     const { screenshotElement } = await import("../packages/core/src/tools/web/browser-service.ts");
     const view = createMockView({
-      evaluate: mock(async () => null),
+      run: mock(async () => ({ success: false, error: "Element not found" })),
     });
 
-    await expect(screenshotElement(view as any, ".missing")).rejects.toThrow("Elemento no encontrado");
+    await expect(screenshotElement(view as any, ".missing")).rejects.toThrow("Element not found");
   });
 });
 
@@ -164,10 +177,7 @@ describe("browser_navigate", () => {
 
     const view = createMockView({
       url: "https://example.com",
-      evaluate: mock(async (script: string) => {
-        if (script.includes("innerText")) return "Hello World content";
-        return null;
-      }),
+      snapshot: mock(async () => "- document\n  - link \"Example\" [ref=e1]"),
     });
     const service = createMockService(view);
     const spy = spyOn(browserServiceMod, "getBrowserService").mockReturnValue(service as any);
@@ -176,6 +186,7 @@ describe("browser_navigate", () => {
     expect(result.ok).toBe(true);
     expect(result.url).toBe("https://example.com");
     expect(result.finalUrl).toBe("https://example.com");
+    expect(result.contentType).toBe("snapshot");
     expect(view.navigate).toHaveBeenCalledWith("https://example.com");
 
     spy.mockRestore();
@@ -190,6 +201,7 @@ describe("browser_navigate", () => {
         if (script.includes("querySelector")) return true; // selector encontrado
         return "contenido";
       }),
+      snapshot: mock(async () => "- document\n  - link \"Example\" [ref=e1]"),
     });
     const service = createMockService(view);
     const spy = spyOn(browserServiceMod, "getBrowserService").mockReturnValue(service as any);
@@ -291,7 +303,7 @@ describe("browser_script", () => {
 });
 
 describe("browser_type", () => {
-  it("hace click, limpia y escribe cuando clear=true", async () => {
+  it("usa fill cuando clear=true", async () => {
     const mod = await import("../packages/core/src/tools/web/browser-type.ts");
     const browserServiceMod = await import("../packages/core/src/tools/web/browser-service.ts");
 
@@ -306,15 +318,12 @@ describe("browser_type", () => {
     }) as any;
 
     expect(result.ok).toBe(true);
-    expect(view.click).toHaveBeenCalledWith("input#search", expect.any(Object));
-    expect(view.press).toHaveBeenCalledWith("a", { modifiers: ["Control"] });
-    expect(view.press).toHaveBeenCalledWith("Backspace");
-    expect(view.type).toHaveBeenCalledWith("Hola mundo");
+    expect(view.fill).toHaveBeenCalledWith("input#search", "Hola mundo");
 
     spy.mockRestore();
   });
 
-  it("omite el clear cuando clear=false", async () => {
+  it("usa typeIn cuando clear=false", async () => {
     const mod = await import("../packages/core/src/tools/web/browser-type.ts");
     const browserServiceMod = await import("../packages/core/src/tools/web/browser-service.ts");
 
@@ -328,8 +337,7 @@ describe("browser_type", () => {
       clear: false,
     });
 
-    expect(view.press).not.toHaveBeenCalled();
-    expect(view.type).toHaveBeenCalledWith("texto");
+    expect(view.typeIn).toHaveBeenCalledWith("input", "texto");
 
     spy.mockRestore();
   });
@@ -349,28 +357,31 @@ describe("browser_screenshot", () => {
     const result = await mod.browserScreenshotTool.execute({}) as any;
     expect(result.ok).toBe(true);
     expect(result.screenshot).toBe("fullpagebase64==");
-    expect(result.format).toBe("png");
+    expect(result.format).toBe("jpeg");
     expect(result.encoding).toBe("base64");
 
     spy.mockRestore();
   });
 
   it("usa screenshotElement cuando se pasa selector", async () => {
+    const tmpPath = "/tmp/test-screenshot-hero.png";
+    writeFileSync(tmpPath, "fake-png-data");
+
     const mod = await import("../packages/core/src/tools/web/browser-screenshot.ts");
     const browserServiceMod = await import("../packages/core/src/tools/web/browser-service.ts");
 
     const view = createMockView({
-      evaluate: mock(async () => ({ x: 0, y: 0, width: 200, height: 100 })),
-      screenshot: mock(async () => "elementshot=="),
+      run: mock(async () => ({ success: true, data: { path: tmpPath } })),
     });
     const service = createMockService(view);
     const spy = spyOn(browserServiceMod, "getBrowserService").mockReturnValue(service as any);
 
     const result = await mod.browserScreenshotTool.execute({ selector: "#hero" }) as any;
     expect(result.ok).toBe(true);
-    expect(result.screenshot).toBe("elementshot==");
+    expect(typeof result.screenshot).toBe("string");
 
     spy.mockRestore();
+    try { rmSync(tmpPath); } catch { /* already cleaned by screenshotElement */ }
   });
 
   it("navega a la url antes del screenshot si se proporciona", async () => {

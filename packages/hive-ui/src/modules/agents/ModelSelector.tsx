@@ -4,6 +4,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useProviders } from "@/hooks/useProviders";
+import { useGlobalConfigStore } from "@/stores/useGlobalConfigStore";
+import { toast } from "@/components/ui/sonner";
 
 interface ModelSelectorProps {
   selectedProviderId?: string;
@@ -23,6 +25,19 @@ export function ModelSelector({
   typeFilter,
 }: ModelSelectorProps) {
   const { providers, models } = useProviders();
+  const localLLM = useGlobalConfigStore((state) => state.localLLM);
+  const fetchLocalLLMStatus = useGlobalConfigStore((state) => state.fetchLocalLLMStatus);
+
+  // Load local LLM status on mount so we know which models are downloaded
+  useEffect(() => {
+    fetchLocalLLMStatus();
+  }, [fetchLocalLLMStatus]);
+
+  // Map of downloaded local model IDs
+  const downloadedLocalModelIds = useMemo(() => {
+    if (!localLLM?.models) return new Set<string>();
+    return new Set(localLLM.models.filter((m) => m.downloaded).map((m) => m.id));
+  }, [localLLM.models]);
 
   const hasApiKey = (p: typeof providers[number]) => {
     if (p.id === "ollama") return true;
@@ -59,6 +74,11 @@ export function ModelSelector({
   const modelOptions = useMemo(() => {
     return allModelsForProvider.filter(m => m.enabled || m.active);
   }, [allModelsForProvider]);
+
+  const isModelDownloaded = (modelId: string, providerId?: string) => {
+    if (providerId !== "local-llama") return true;
+    return downloadedLocalModelIds.has(modelId);
+  };
 
   // Configured model (even if inactive) for display in trigger
   const configuredModel = allModelsForProvider.find(m => m.id === selectedModelId);
@@ -150,7 +170,16 @@ export function ModelSelector({
           <Label htmlFor="model">Modelo</Label>
           <Select
             value={selectedModelId || ""}
-            onValueChange={onModelChange}
+            onValueChange={(value) => {
+              const model = allModelsForProvider.find((m) => m.id === value);
+              if (model && !isModelDownloaded(model.id, selectedProviderId)) {
+                toast.error(`"${model.name}" no está descargado`, {
+                  description: "Ve a Providers > Local LLM para descargarlo primero.",
+                });
+                return;
+              }
+              onModelChange(value);
+            }}
             disabled={disabled || modelOptions.length === 0}
           >
             <SelectTrigger id="model" className="w-full">
@@ -173,18 +202,26 @@ export function ModelSelector({
                   No hay modelos disponibles
                 </SelectItem>
               ) : (
-                modelOptions.map((model) => (
-                  <SelectItem key={model.id} value={model.id}>
-                    <div className="flex items-center gap-2">
-                      <span>{model.name}</span>
-                      {model.contextWindow && (
-                        <Badge variant="secondary" className="text-[10px]">
-                          {(model.contextWindow / 1000).toFixed(0)}K ctx
-                        </Badge>
-                      )}
-                    </div>
-                  </SelectItem>
-                ))
+                modelOptions.map((model) => {
+                  const downloaded = isModelDownloaded(model.id, selectedProviderId);
+                  return (
+                    <SelectItem key={model.id} value={model.id}>
+                      <div className="flex items-center gap-2">
+                        <span>{model.name}</span>
+                        {model.contextWindow && (
+                          <Badge variant="secondary" className="text-[10px]">
+                            {(model.contextWindow / 1000).toFixed(0)}K ctx
+                          </Badge>
+                        )}
+                        {selectedProviderId === "local-llama" && !downloaded && (
+                          <Badge variant="destructive" className="text-[9px]">
+                            No descargado
+                          </Badge>
+                        )}
+                      </div>
+                    </SelectItem>
+                  );
+                })
               )}
             </SelectContent>
           </Select>

@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { homedir } from "node:os";
 
 /**
  * Expands a path that starts with ~ to the user's home directory.
@@ -7,7 +8,7 @@ import * as path from "node:path";
  */
 export function expandPath(p: string): string {
   if (p.startsWith("~")) {
-    return path.join(process.env.HOME ?? "", p.slice(1));
+    return path.join(homedir(), p.slice(1));
   }
   return p;
 }

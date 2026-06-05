@@ -1,7 +1,7 @@
 import * as z from "zod";
 import { mkdirSync, existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
-import { availableParallelism } from "node:os";
+import { availableParallelism, homedir } from "node:os";
 
 const LogLevelSchema = z.enum(["debug", "info", "warn", "error"]);
 const DMPolicySchema = z.enum(["open", "pairing", "allowlist"]);
@@ -33,7 +33,7 @@ export function getHiveDir(): string {
   // Priority 1: HIVE_HOME explicitly set
   if (process.env.HIVE_HOME) {
     const hiveDir = process.env.HIVE_HOME.startsWith("~")
-      ? path.join(process.env.HOME || "", process.env.HIVE_HOME.slice(1))
+      ? path.join(homedir(), process.env.HIVE_HOME.slice(1))
       : process.env.HIVE_HOME;
     loadEnv(hiveDir);
     return hiveDir;
@@ -49,7 +49,7 @@ export function getHiveDir(): string {
   }
 
   // Priority 3: Default ~/.hive
-  const defaultDir = path.join(process.env.HOME || "", ".hive");
+  const defaultDir = path.join(homedir(), ".hive");
   loadEnv(defaultDir);
   return defaultDir;
 }
@@ -60,7 +60,7 @@ const expandPath = (p: string): string => {
     return p.replace("~/.hive", hiveDir);
   }
   if (p.startsWith("~")) {
-    return path.join(process.env.HOME || "", p.slice(1));
+    return path.join(homedir(), p.slice(1));
   }
   return p;
 };
@@ -117,9 +117,9 @@ const WebConfigSchema = z.object({
 
 const BrowserConfigSchema = z.object({
   enabled: z.boolean().optional(),
-  cdpUrl: z.string().optional(),
   headless: z.boolean().optional(),
   timeoutMs: z.number().optional(),
+  sessionName: z.string().optional(),
 });
 
 const CanvasConfigSchema = z.object({
@@ -437,7 +437,7 @@ function buildDefaultConfig(): Config {
         allowlist: [],
         denylist: ["rm -rf /", "sudo", "chmod 777", "> /dev/", "mkfs"],
         timeoutSeconds: 30,
-        workDir: path.join(process.env.HOME || "", "exec"), // Points to home for exec by default
+        workDir: path.join(homedir(), "exec"), // Points to home for exec by default
       },
       web: {
         allowlist: [],
@@ -446,9 +446,9 @@ function buildDefaultConfig(): Config {
       },
       browser: {
         enabled: true,
-        cdpUrl: "ws://127.0.0.1:9222",
         headless: true,
         timeoutMs: 30000,
+        sessionName: "hive",
       },
       canvas: {
         enabled: true,

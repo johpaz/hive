@@ -38,6 +38,9 @@ import * as office from "./office/index.ts";
 // Meeting (4)
 import * as meeting from "./meeting/index.ts";
 
+// API (1) - HTTP client for REST APIs
+import * as api from "./api/index.ts";
+
 /**
  * Creates all tools with proper configuration
  */
@@ -72,6 +75,9 @@ export function createAllTools(config: Config): Tool[] {
 
     // MEETING (4)
     ...meeting.createTools(),
+
+    // API (1)
+    ...api.createTools(),
   ];
 }
 
@@ -100,6 +106,8 @@ export function createToolsByCategory(category: string, config: Config): Tool[] 
       return office.createTools();
     case "meeting":
       return meeting.createTools();
+    case "api":
+      return api.createTools();
     default:
       return [];
   }
@@ -195,3 +203,7 @@ export {
   officeLeerPptxTool,
   officeEscribirPptxTool,
 } from "./office/index.ts";
+
+export {
+  apiRequestTool,
+} from "./api/index.ts";

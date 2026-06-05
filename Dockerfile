@@ -47,6 +47,14 @@ RUN bun build --compile \
       --outfile=/app/hive-server \
       ./packages/cli/src/index.ts
 
+# Bundle the tool worker as a standalone script. The binary spawns it via
+# `new Worker(path)` at runtime, so it must exist on disk next to the binary
+# in the final image (it is not embedded by `bun build --compile`).
+RUN bun build \
+      --target=bun \
+      --outfile=/app/tool-worker.js \
+      ./packages/core/src/tool-runtime/tool-worker.ts
+
 # ─── Stage 3: Minimal Alpine runtime ──────────────────────────────────────────
 FROM docker.io/alpine:3.21
 
@@ -59,6 +67,9 @@ WORKDIR /app
 
 # Copy compiled binary (self-contained, includes Bun runtime)
 COPY --from=binary-builder /app/hive-server ./hive-server
+
+# Copy tool worker (loaded at runtime by `new Worker()` from packages/core/src/tool-runtime/index.ts)
+COPY --from=binary-builder /app/tool-worker.js ./tool-worker.js
 
 # Copy bundled skills (.md files read at runtime via fs — not embedded in binary)
 # Bun preserves original __dirname in compiled binary: packages/skills/src/bundled

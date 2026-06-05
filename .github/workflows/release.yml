@@ -119,6 +119,13 @@ jobs:
             --outfile=hive-v${{ steps.version.outputs.VERSION }}-${{ matrix.platform.name }}${EXT} \
             ./packages/cli/src/index.ts
 
+      - name: Bundle tool worker
+        run: |
+          bun build \
+            --target=bun \
+            --outfile=tool-worker.js \
+            ./packages/core/src/tool-runtime/tool-worker.ts
+
       - name: Make executable (Unix)
         if: matrix.platform.name != 'windows-x64'
         run: chmod +x hive-v${{ steps.version.outputs.VERSION }}-${{ matrix.platform.name }}
@@ -127,7 +134,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.platform.name }}
-          path: hive-v${{ steps.version.outputs.VERSION }}-${{ matrix.platform.name }}*
+          path: |
+            hive-v${{ steps.version.outputs.VERSION }}-${{ matrix.platform.name }}*
+            tool-worker.js
           retention-days: 1
 
   # ─── GitHub Release ────────────────────────────────────────────────────────
@@ -161,8 +170,11 @@ jobs:
           find . -name "hive-v*" -type f | while read f; do
             cp "$f" "../$(basename $f)"
           done
+          # Ship a single tool-worker.js next to the binaries so standalone
+          # users get the worker file the runtime spawns via `new Worker()`.
+          cp "$(find . -name tool-worker.js -type f | head -n 1)" ../tool-worker.js
           cd ..
-          sha256sum hive-v* ui-dist.tar.gz > checksums.txt
+          sha256sum hive-v* tool-worker.js ui-dist.tar.gz > checksums.txt
           cat checksums.txt
 
       - name: Create GitHub Release
@@ -191,6 +203,7 @@ jobs:
             Ver el [README](https://github.com/johpaz/hive#instalaci%C3%B3n) para todas las opciones de instalación.
           files: |
             hive-v*
+            tool-worker.js
             ui-dist.tar.gz
             checksums.txt
           generate_release_notes: true

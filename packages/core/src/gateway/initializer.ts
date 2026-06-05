@@ -250,11 +250,11 @@ export async function initializeGateway(
     const agent = createAgentService();
     await agent.initialize();
 
-    // 5b. Initialize Browser Service (Chrome via Bun.WebView nativo)
+    // 5b. Initialize Browser Service (agent-browser CLI)
     let browserAvailable = false;
 
     try {
-      log.info("Detecting browser (lazy launch — will open on first agent use)...");
+      log.info("Initializing browser automation (agent-browser)...");
 
       const browserService = initializeBrowserService(config);
       browserAvailable = await browserService.start();
@@ -262,8 +262,8 @@ export async function initializeGateway(
       if (browserAvailable) {
         activateBrowserTools();
       } else {
-        log.warn("⚠️  No se encontró Chrome/Chromium - browser tools desactivadas");
-        log.warn("   Linux: sudo dnf install chromium  |  macOS: brew install --cask google-chrome");
+        log.warn("⚠️  agent-browser no disponible - browser tools desactivadas");
+        log.warn("   Se instalará automáticamente en primer uso o manual: bun add -g agent-browser");
       }
     } catch (error) {
       log.warn(`Browser Service initialization skipped: ${(error as Error).message}`);

@@ -1,6 +1,6 @@
-# Browser Automation — CDPClient
+# Browser Automation — agent-browser
 
-Hive incluye 7 herramientas de automatización web que lanzan **Chrome o Brave de forma visible** y los controlan mediante Chrome DevTools Protocol (CDP) vía WebSocket. El usuario ve en tiempo real cada acción que el agente realiza.
+Hive incluye 7 herramientas de automatización web que usan **[agent-browser](https://agent-browser.dev/)**, un CLI de Rust que gestiona Chrome internamente vía Chrome DevTools Protocol (CDP). El motor es autocontenido: se instala automáticamente al primer uso y no requiere Chrome/Chromium pre-instalado.
 
 ---
 
@@ -10,23 +10,13 @@ Hive incluye 7 herramientas de automatización web que lanzan **Chrome o Brave d
 Agent
   └─ browser_navigate / browser_click / ...
         └─ BrowserService  (browser-service.ts)
-              └─ CDPClient
-                    ├─ Bun.spawn → flatpak run com.brave.Browser (o Chrome nativo)
-                    │                  └─ --remote-debugging-port=9222
-                    └─ WebSocket → ws://localhost:9222/devtools/page/...
-                                        └─ Chrome DevTools Protocol (CDP)
+              └─ AgentBrowserView
+                    └─ agent-browser CLI (daemon Rust + Chrome via CDP)
 ```
 
-**El browser abre visible:** El usuario ve cada navegación, clic y escritura en tiempo real.
+**El browser es headless por defecto:** Las acciones se ejecutan en segundo plano. agent-browser gestiona el daemon y las sesiones automáticamente.
 
-**Detección automática del browser** (en orden de prioridad):
-1. Variable de entorno `BUN_CHROME_PATH=/ruta/a/chrome`
-2. Binarios nativos: `/usr/bin/google-chrome`, `/usr/bin/brave-browser`, `/usr/bin/chromium`, etc.
-3. Flatpak: `com.google.Chrome`, `com.brave.Browser`, `org.chromium.Chromium`, `com.microsoft.Edge`
-4. macOS: `/Applications/Google Chrome.app/...`, `/Applications/Brave Browser.app/...`
-5. Windows: `%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe`, etc.
-
-**Puerto CDP:** 9222 (singleton — una instancia a la vez).
+**Instalación automática:** Al primer uso, BrowserService detecta si agent-browser está instalado. Si no, lo instala en `~/.hive/agent-browser/` y descarga Chrome si es necesario.
 
 ---
 
@@ -276,9 +266,9 @@ browser_script(
 
 ---
 
-## CDPClient — API de bajo nivel
+## AgentBrowserView — API de bajo nivel
 
-El `CDPClient` es el motor que usa `BrowserService` internamente. Los tools del agente lo usan via `getBrowserService().getView()`.
+El `AgentBrowserView` es el motor que usa `BrowserService` internamente. Los tools del agente lo usan via `getBrowserService().getView()`. Es compatible con la API anterior de `CDPClient`.
 
 ### Métodos
 
@@ -294,40 +284,43 @@ reload(): Promise<void>     // Recargar página
 // Evaluación
 evaluate<T>(script: string): Promise<T>
   // Ejecuta script como función async en la página. Soporta await.
-  // Wrap automático: (async () => { return (script) })()
 
 // Interacción
 click(selector: string): Promise<void>
-  // Scroll al elemento + eventos reales de mouse via CDP.
-  // Lanza error si el selector no existe.
+  // Hace clic en el elemento via agent-browser. Lanza error si no existe.
 
 type(text: string): Promise<void>
-  // Escribe en el campo enfocado. Usa Input.insertText (CDP).
+  // Escribe en el campo enfocado (keyboard inserttext).
+
+typeIn(selector: string, text: string): Promise<void>
+  // Escribe texto en un selector específico.
+
+fill(selector: string, text: string): Promise<void>
+  // Limpia y rellena un campo de formulario.
 
 press(key: string, options?: { modifiers?: string[] }): Promise<void>
   // Tecla. Modificadores: "Alt", "Control", "Meta", "Shift".
   // Ejemplo: press("a", { modifiers: ["Control"] }) → Ctrl+A
 
 scroll(dx: number, dy: number): Promise<void>     // window.scrollBy
-scrollTo(selector: string): Promise<void>         // scrollIntoView smooth
+scrollTo(selector: string): Promise<void>         // scrollIntoView
 
 // Visual
 screenshot(options?: {
   format?: "png" | "jpeg" | "webp"    // default: "png"
   quality?: number
-  clip?: { x, y, width, height, scale }
 }): Promise<string>   // Retorna base64
 
 resize(width: number, height: number): Promise<void>
-  // Cambia viewport via Emulation.setDeviceMetricsOverride
+  // Cambia viewport
 
-// CDP raw
+// CDP raw (limitado por agent-browser CLI)
 cdp<T>(method: string, params?: Record<string, unknown>): Promise<T>
-  // Comando CDP directo. Ejemplo: cdp("Page.enable")
+  // Comando CDP directo. Algunos métodos pueden no estar disponibles.
 
 // Ciclo de vida
 close(): void
-CDPClient.closeAll(): void   // Cierra todas las instancias
+CDPClient.closeAll(): void   // Cierra todas las instancias (compatibilidad)
 ```
 
 ### Propiedades
@@ -369,24 +362,25 @@ screenshotElement(view, selector): Promise<string>
 
 ---
 
-## Instalación del browser
+## Instalación de agent-browser
 
-El sistema detecta automáticamente el browser. Si no hay ninguno:
+agent-browser se instala automáticamente al primer uso en `~/.hive/agent-browser/`. Si la instalación automática falla:
 
 ```bash
-# Fedora / RHEL
-sudo dnf install chromium
+# Instalar manualmente (global)
+bun add -g agent-browser
 
-# Ubuntu / Debian
-sudo apt install chromium-browser
+# O instalar en el proyecto
+bun add agent-browser
 
-# Flatpak (cualquier distro)
-flatpak install flathub com.google.Chrome
-flatpak install flathub com.brave.Browser
-
-# Manual — indicar ruta explícita
-export BUN_CHROME_PATH=/ruta/a/chrome
+# Descargar Chrome (primera vez)
+agent-browser install
 ```
+
+**Requisitos del sistema:**
+- Linux: GLibc (no musl en arquitecturas x64/arm64 sin soporte musl específico)
+- macOS: 11+ (ARM64 o x64)
+- Windows: 10+ (x64)
 
 ---
 
@@ -394,7 +388,7 @@ export BUN_CHROME_PATH=/ruta/a/chrome
 
 | Archivo | Descripción |
 |---------|-------------|
-| `packages/core/src/tools/web/browser-service.ts` | `CDPClient` + `BrowserService` singleton + helpers |
+| `packages/core/src/tools/web/browser-service.ts` | `AgentBrowserView` + `BrowserService` singleton + helpers |
 | `packages/core/src/tools/web/browser-navigate.ts` | Tool `browser_navigate` |
 | `packages/core/src/tools/web/browser-click.ts` | Tool `browser_click` |
 | `packages/core/src/tools/web/browser-type.ts` | Tool `browser_type` |

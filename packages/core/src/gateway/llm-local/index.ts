@@ -15,9 +15,11 @@ export {
   listLocalModels,
   isModelDownloaded,
   getModelPath,
+  getModelMMProjId,
   BIN_DIR,
   MODELS_DIR,
   HF_MODEL_URLS,
+  MODEL_MMPROJ_MAP,
 } from "./downloader"
 export type { ModelId } from "./downloader"
 

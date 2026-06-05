@@ -14,6 +14,7 @@ import {
   StickyNote,
   Clock,
   Video,
+  Globe,
   type LucideProps,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
@@ -45,6 +46,7 @@ const navItems = [
   { title: "Providers", url: "/providers", icon: Brain },
   { title: "Canvas", url: "/canvas", icon: Layers },
   { title: "Reuniones", url: "/meeting", icon: Video },
+  { title: "API Client", url: "/api-client", icon: Globe },
 
 ];
 

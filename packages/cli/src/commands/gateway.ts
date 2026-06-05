@@ -113,7 +113,11 @@ function cleanup() {
   for (const child of children) {
     if (child.pid) {
       try {
-        process.kill(-child.pid, "SIGTERM");
+        if (process.platform !== "win32") {
+          process.kill(-child.pid, "SIGTERM");
+        } else {
+          child.kill("SIGTERM");
+        }
       } catch {
         child.kill("SIGTERM");
       }
@@ -213,9 +217,51 @@ async function isSetupMode(): Promise<boolean> {
 }
 
 /**
+ * Kill any process listening on a given TCP port (cross-platform)
+ */
+async function killPortProcess(port: number): Promise<void> {
+  try {
+    if (process.platform === "win32") {
+      const result = Bun.spawnSync(["netstat", "-ano"], { stderr: "pipe" });
+      for (const line of result.stdout.toString().split("\n")) {
+        if (line.includes(`:${port} `) && line.includes("LISTENING")) {
+          const pid = line.trim().split(/\s+/).pop();
+          if (pid && !isNaN(parseInt(pid, 10))) {
+            Bun.spawnSync(["taskkill", "/PID", pid, "/F"], { stderr: "pipe" });
+          }
+        }
+      }
+    } else {
+      const result = Bun.spawnSync(["fuser", "-k", `${port}/tcp`], { stderr: "pipe" });
+      if (result.exitCode !== 0) {
+        const lsof = Bun.spawnSync(["lsof", "-ti", `tcp:${port}`], { stderr: "pipe" });
+        const pids = lsof.stdout.toString().trim().split("\n").filter(Boolean);
+        for (const pid of pids) {
+          try { process.kill(parseInt(pid, 10), "SIGTERM"); } catch { }
+        }
+      }
+    }
+    await Bun.sleep(500);
+  } catch { }
+}
+
+/**
  * Check if gateway is running using the adapter
  */
 async function isRunning(): Promise<boolean> {
+  // HTTP health check first — if the port responds, something is running
+  // regardless of PID file or adapter state
+  try {
+    const coreConfig = await loadConfig().catch(() => null);
+    const port = coreConfig?.gateway?.port ?? 18790;
+    const res = await fetch(`http://127.0.0.1:${port}/health`, {
+      signal: AbortSignal.timeout(600),
+    });
+    if (res.ok) return true;
+  } catch {
+    // Nothing listening on the port — continue to other checks
+  }
+
   try {
     // Try adapter first
     const adapter = await getAdapter();
@@ -319,7 +365,7 @@ export async function start(flags: string[]): Promise<void> {
  ║   ██║  ██║██║ ╚████╔╝ ███████╗             ║
  ║   ╚═╝  ╚═╝╚═╝  ╚═══╝  ╚══════╝             ║
  ║                                            ║
- ║   Personal Swarm AI Gateway — v0.0.38       ║
+ ║   Personal Swarm AI Gateway — v0.0.39       ║
  ╚════════════════════════════════════════════╝
 
 📦 Installation: ${adapter.name}
@@ -405,7 +451,40 @@ async function handleDevMode(
     }
   }
 
+  // Verify port is free before spawning children
+  {
+    const portBusy = await (async () => {
+      try {
+        const r = await fetch(`http://127.0.0.1:${gatewayConfig.port}/health`, { signal: AbortSignal.timeout(500) });
+        return r.ok;
+      } catch { return false; }
+    })();
+    if (portBusy) {
+      // Try to free it (works for local processes; silently fails for Docker/root processes)
+      await killPortProcess(gatewayConfig.port);
+      await Bun.sleep(800);
+      const stillBusy = await (async () => {
+        try {
+          const r = await fetch(`http://127.0.0.1:${gatewayConfig.port}/health`, { signal: AbortSignal.timeout(500) });
+          return r.ok;
+        } catch { return false; }
+      })();
+      if (stillBusy) {
+        const manualCmd = process.platform === "win32"
+          ? `netstat -ano | findstr :${gatewayConfig.port}  → taskkill /PID <pid> /F`
+          : `sudo fuser -k ${gatewayConfig.port}/tcp`;
+        console.error(`\n❌ El puerto ${gatewayConfig.port} está ocupado por otro proceso (Docker u otro servicio).`);
+        console.error(`   Detén el servicio antes de iniciar el modo dev:`);
+        console.error(`   • Docker:  docker stop $(docker ps -q --filter publish=${gatewayConfig.port})`);
+        console.error(`   • Hive:    hive stop`);
+        console.error(`   • Manual:  ${manualCmd}\n`);
+        return;
+      }
+    }
+  }
+
   // Spawn Gateway child process
+  let gwExitedEarly = false;
   const spawnGateway = (): ReturnType<typeof spawn> => {
     const gw = spawn(process.execPath, [process.argv[1] || "", "start", "--skip-check", "--dev-internal"], {
       detached: true,
@@ -437,6 +516,8 @@ async function handleDevMode(
         const newGw = spawnGateway();
         const idx = children.indexOf(gw);
         if (idx !== -1) children.splice(idx, 1, newGw);
+      } else if (code !== null) {
+        gwExitedEarly = true;
       }
     });
 
@@ -458,6 +539,19 @@ async function handleDevMode(
     waitForHttpPort(18790, "/health", 30000),
   ]);
 
+  // Give the child a moment to potentially fail before we declare success
+  await Bun.sleep(600);
+
+  if (gwExitedEarly) {
+    const portCheckCmd = process.platform === "win32"
+      ? `netstat -ano | findstr :${gatewayConfig.port}`
+      : `sudo fuser ${gatewayConfig.port}/tcp`;
+    console.error(`\n❌ El proceso Gateway terminó inesperadamente.`);
+    console.error(`   El puerto ${gatewayConfig.port} puede estar ocupado por otro servicio.`);
+    console.error(`   Revisa con: ${portCheckCmd}\n`);
+    return;
+  }
+
   if (!viteReady && hasVite) {
     console.error("⚠️  Vite no respondió a tiempo");
   }
@@ -466,15 +560,30 @@ async function handleDevMode(
     return;
   }
 
-  // Additional wait: ensure Gateway is fully initialized and serving UI
-  // In dev mode, Gateway needs a moment to set up HMR proxy
-  await Bun.sleep(500);
-
   console.log("✅ Servicios listos\n");
 
-  // Open browser - en desarrollo, Gateway sirve la UI igual que en producción
-  const setupMode = await isSetupMode();
-  const browserPort = gatewayConfig.port; // 18790, igual que producción
+  // Open browser - en desarrollo, Gateway sirve la UI igual que en producción.
+  // Poll /api/setup/status (same as production mode) so the decision is based on
+  // the gateway's own check (users count == 0), not just whether the DB file exists.
+  const browserPort = gatewayConfig.port;
+  let setupMode = await isSetupMode(); // fallback default
+  {
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${browserPort}/api/setup/status`, {
+          signal: AbortSignal.timeout(1000),
+        });
+        if (res.ok) {
+          const body = await res.json() as { setupMode?: boolean };
+          setupMode = body.setupMode === true;
+          break;
+        }
+        // 503 = gateway still initializing ("starting" phase) — retry
+      } catch { }
+      await Bun.sleep(300);
+    }
+  }
   const url = setupMode ? `http://localhost:${browserPort}/setup` : `http://localhost:${browserPort}`;
 
   console.log(`
@@ -704,6 +813,11 @@ export async function status(flags: string[]): Promise<void> {
 export async function reload(): Promise<void> {
   if (!(await isRunning())) {
     console.log("⚠️  Hive Gateway no está corriendo");
+    return;
+  }
+
+  if (process.platform === "win32") {
+    console.log("⚠️  Recarga en caliente no disponible en Windows. Reinicia el gateway para aplicar cambios.");
     return;
   }
 

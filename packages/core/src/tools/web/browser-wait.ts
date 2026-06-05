@@ -54,7 +54,7 @@ export const browserWaitTool: Tool = {
       log.warn("Browser not available");
       return {
         ok: false,
-        error: "Browser automation not available. Install Chrome/Chromium.",
+        error: "Browser automation not available. Install agent-browser.",
       };
     }
 
@@ -69,7 +69,7 @@ export const browserWaitTool: Tool = {
 
     try {
       const view = await browserService.getView();
-      if (!view) return { ok: false, error: "Browser automation not available. Install Chrome/Chromium." };
+      if (!view) return { ok: false, error: "Browser automation not available. Install agent-browser." };
 
       if (url) {
         await view.navigate(url);

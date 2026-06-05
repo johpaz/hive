@@ -202,7 +202,11 @@ export class BunGlobalAdapter implements InstallationAdapter {
       } else {
         // Try to kill by process name
         try {
-          execSync("pkill -f 'bun.*hive.*start'", { stdio: "ignore" });
+          if (process.platform === "win32") {
+            execSync("taskkill /IM bun.exe /F", { stdio: "ignore" });
+          } else {
+            execSync("pkill -f 'bun.*hive.*start'", { stdio: "ignore" });
+          }
           console.log("✅ Hive Gateway detenido");
         } catch {
           console.log("⚠️  Hive Gateway no está corriendo");

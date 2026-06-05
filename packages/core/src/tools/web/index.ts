@@ -1,7 +1,7 @@
 /**
  * Web Tools - Browser automation + Web utilities
  * 
- * Browser tools use Puppeteer/Chromium (auto-managed).
+ * Browser tools use agent-browser (Rust CLI, auto-managed).
  */
 
 import type { Tool } from "../types.ts";

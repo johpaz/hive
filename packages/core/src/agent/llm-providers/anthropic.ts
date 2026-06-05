@@ -1,4 +1,5 @@
 import { logger } from "../../utils/logger"
+import { normalizeToolName } from "./interface"
 import type { LLMCallOptions, LLMProvider, LLMResponse, LLMToolCall } from "./interface"
 import type { ContentPart, LLMMessage } from "../llm-client"
 
@@ -55,6 +56,10 @@ export class AnthropicProvider implements LLMProvider {
     const Anthropic = await import("@anthropic-ai/sdk")
     const client = new Anthropic.default({ apiKey: options.apiKey })
 
+    // Anthropic requires tool names to match ^[a-zA-Z0-9_-]{1,128}$
+    // Native Hive tools use dots (e.g. cron.create) which violate this.
+    const toolNameMap = new Map<string, string>() // wireName -> originalName
+
     const systemText = options.messages
       .filter((m) => m.role === "system")
       .map((m) => m.content)
@@ -82,7 +87,9 @@ export class AnthropicProvider implements LLMProvider {
         for (const tc of msg.tool_calls) {
           let input: Record<string, unknown>
           try { input = JSON.parse(tc.function.arguments || "{}") } catch { input = {} }
-          content.push({ type: "tool_use", id: tc.id, name: tc.function.name, input })
+          const wireName = normalizeToolName(tc.function.name, "_")
+          if (wireName !== tc.function.name) toolNameMap.set(wireName, tc.function.name)
+          content.push({ type: "tool_use", id: tc.id, name: wireName, input })
         }
         anthropicMessages.push({ role: "assistant", content })
         continue
@@ -91,11 +98,16 @@ export class AnthropicProvider implements LLMProvider {
       anthropicMessages.push({ role: msg.role, content: Array.isArray(msg.content) ? this._convertUserContent(msg) : msg.content })
     }
 
-    const tools: any[] = (options.tools ?? []).map((t) => ({
-      name: t.function.name,
-      description: t.function.description,
-      input_schema: t.function.parameters,
-    }))
+    const tools: any[] = (options.tools ?? []).map((t) => {
+      const originalName = t.function.name
+      const wireName = normalizeToolName(originalName, "_")
+      if (wireName !== originalName) toolNameMap.set(wireName, originalName)
+      return {
+        name: wireName,
+        description: t.function.description,
+        input_schema: t.function.parameters,
+      }
+    })
 
     const body: any = {
       model: options.model,
@@ -132,7 +144,9 @@ export class AnthropicProvider implements LLMProvider {
       for await (const event of stream) {
         if (event.type === "content_block_start") {
           if (event.content_block.type === "tool_use") {
-            toolMeta[event.index] = { id: event.content_block.id, name: event.content_block.name }
+            const wireName = event.content_block.name
+            const originalName = toolNameMap.get(wireName) ?? wireName
+            toolMeta[event.index] = { id: event.content_block.id, name: originalName }
             partialInputs[event.index] = ""
           }
         } else if (event.type === "content_block_delta") {
@@ -187,10 +201,11 @@ export class AnthropicProvider implements LLMProvider {
       if (block.type === "tool_use") {
         let args: string
         try { args = JSON.stringify(block.input) } catch { args = "{}" }
+        const originalName = toolNameMap.get(block.name) ?? block.name
         tool_calls.push({
           id: block.id,
           type: "function",
-          function: { name: block.name, arguments: args },
+          function: { name: originalName, arguments: args },
         })
       }
     }

@@ -19,6 +19,15 @@ let installing = false
 let installLogs: string[] = []
 let downloadingModelId: string | null = null
 
+interface DownloadProgress {
+  modelId: string
+  downloaded: number
+  total: number
+  percent: number
+}
+
+let currentDownloadProgress: DownloadProgress | null = null
+
 async function getInstalledStatus() {
   const { LLAMA_CPP_DEFAULT_VER } = await import("../llm-local/detector")
   const gpu = await detectGPU()
@@ -183,7 +192,12 @@ export async function handleDownloadLLMModel(
   ;(async () => {
     try {
       await downloadModel(modelId, (d, t) => {
-        // Opcional: Podríamos emitir eventos por WS si quisiéramos progreso real en UI
+        currentDownloadProgress = {
+          modelId,
+          downloaded: d,
+          total: t,
+          percent: t > 0 ? Math.round((d / t) * 100) : 0,
+        }
       })
       installLogs.push(`✓ Modelo ${modelId} descargado exitosamente`)
     } catch (err) {
@@ -191,6 +205,7 @@ export async function handleDownloadLLMModel(
       installLogs.push(`[error] Error descargando ${modelId}: ${msg}`)
     } finally {
       downloadingModelId = null
+      currentDownloadProgress = null
     }
   })()
 
@@ -207,7 +222,15 @@ export async function handleStartLocalLLM(
   } catch { /* ignore if no body */ }
 
   const mode = body.mode || "TEXT"
-  const modelId = body.modelId || getRecommendedModel(mode.toLowerCase() as any)
+  // If no modelId specified, prefer the recommended model; fall back to the
+  // first downloaded model so the user doesn't get an error when they only
+  // downloaded a non-default model.
+  const recommended = getRecommendedModel(mode.toLowerCase() as any)
+  const allModels = listLocalModels()
+  const downloadedModels = allModels.filter(m => m.downloaded)
+  const resolvedModelId: string =
+    body.modelId ||
+    (downloadedModels.find(m => m.id === recommended) ? recommended : (downloadedModels[0]?.id ?? recommended))
 
   const status = await getInstalledStatus()
   if (!status.installed && !status.binaryExists) {
@@ -217,11 +240,18 @@ export async function handleStartLocalLLM(
     )
   }
 
+  if (downloadedModels.length === 0) {
+    return addCors(
+      Response.json({ started: false, reason: "No hay modelos descargados. Descarga un modelo primero desde la sección de modelos." }, { status: 400 }),
+      req
+    )
+  }
+
   try {
-    installLogs.push(`[llm-server] Iniciando servidor en modo ${mode} con modelo ${modelId}...`)
-    await llamaManager.start(mode, modelId as any)
+    installLogs.push(`[llm-server] Iniciando servidor en modo ${mode} con modelo ${resolvedModelId}...`)
+    await llamaManager.start(mode, resolvedModelId as any)
     installLogs.push(`[llm-server] Servidor ${mode} iniciado correctamente.`)
-    return addCors(Response.json({ started: true, mode }), req)
+    return addCors(Response.json({ started: true, mode, modelId: resolvedModelId }), req)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     installLogs.push(`[error] Servidor LLM falló al iniciar: ${msg}`)
@@ -251,6 +281,22 @@ export async function handleStopLocalLLM(
  * Verifica el estado del LLM local al iniciar el gateway.
  * NO auto-inicia el servidor ni descarga nada — el usuario debe hacerlo manualmente.
  */
+export async function handleGetDownloadProgress(
+  req: Request,
+  addCors: (r: Response, req: Request) => Response
+): Promise<Response> {
+  if (!currentDownloadProgress) {
+    return addCors(Response.json({ active: false }), req)
+  }
+  return addCors(
+    Response.json({
+      active: true,
+      ...currentDownloadProgress,
+    }),
+    req
+  )
+}
+
 export async function initializeLocalLLM() {
   try {
     const status = await getInstalledStatus()

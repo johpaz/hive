@@ -1,8 +1,9 @@
 import * as fs from "fs";
 import * as path from "path";
+import { homedir } from "os";
 import { spawn } from "child_process";
 
-const LOG_DIR = path.join(process.env.HOME || "", ".hive", "logs");
+const LOG_DIR = path.join(homedir(), ".hive", "logs");
 const LOG_FILE = path.join(LOG_DIR, "gateway.log");
 
 export async function logs(flags: string[]): Promise<void> {

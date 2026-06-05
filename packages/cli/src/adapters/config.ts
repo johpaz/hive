@@ -7,6 +7,7 @@
 
 import { z } from "zod";
 import * as path from "node:path";
+import { homedir } from "node:os";
 import { existsSync, readFileSync } from "node:fs";
 import type { GatewayConfig, InstallationConfig, InstallationPaths } from "./types";
 import { DEFAULT_GATEWAY_CONFIG, PORTS, gatewayConfigSchema, installationConfigSchema } from "./types";
@@ -26,11 +27,11 @@ export function getHiveDir(customDir?: string): string {
   
   // Development mode
   if (process.env.HIVE_DEV === "true") {
-    return path.join(process.env.HOME || "", ".hive-dev");
+    return path.join(homedir(), ".hive-dev");
   }
   
   // Default production location
-  return path.join(process.env.HOME || "", ".hive");
+  return path.join(homedir(), ".hive");
 }
 
 /**
@@ -230,7 +231,7 @@ export function expandPath(input: string): string {
   
   // Expand ~ to home directory
   if (input.startsWith("~/")) {
-    return path.join(process.env.HOME || "", input.slice(2));
+    return path.join(homedir(), input.slice(2));
   }
   
   // Expand environment variables ${VAR} or $VAR

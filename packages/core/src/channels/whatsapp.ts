@@ -11,6 +11,7 @@ import type { ChannelConfig, IncomingMessage, OutboundMessage } from "./base.ts"
 import { BaseChannel } from "./base.ts";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import * as path from "node:path";
+import { homedir } from "node:os";
 import { logger } from "../utils/logger.ts";
 import { getDb } from "../storage/sqlite.ts";
 // @ts-ignore — no type definitions for qrcode-terminal
@@ -69,7 +70,7 @@ export class WhatsAppChannel extends BaseChannel {
   }
 
   private getAuthPath(agentId: string, accountId: string): string {
-    const baseDir = process.env.HOME ?? "";
+    const baseDir = homedir();
     const authDir = path.join(baseDir, ".hive", "agents", agentId, "whatsapp", accountId);
 
     if (!existsSync(authDir)) {
@@ -117,11 +118,22 @@ export class WhatsAppChannel extends BaseChannel {
       this.connectionState.waVersion = version.join(".");
       this.log.info(`Using WhatsApp Web v${version.join(".")}`);
 
+      const baileysLogger = {
+        level: "silent",
+        child: () => baileysLogger,
+        trace: () => {},
+        debug: () => {},
+        info:  (msg: unknown) => { if (typeof msg === "object" && msg !== null) this.log.debug((msg as any).msg ?? JSON.stringify(msg)); },
+        warn:  (msg: unknown) => { if (typeof msg === "object" && msg !== null) this.log.warn((msg as any).msg ?? JSON.stringify(msg)); },
+        error: (msg: unknown) => { if (typeof msg === "object" && msg !== null) this.log.error((msg as any).msg ?? JSON.stringify(msg)); },
+      };
+
       this.socket = makeWASocket({
         version,
         auth: state,
         printQRInTerminal: false,
         syncFullHistory: false,
+        logger: baileysLogger as any,
         getMessage: async () => ({ conversation: "" }),
       });
 

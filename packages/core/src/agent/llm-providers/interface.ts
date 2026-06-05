@@ -27,7 +27,9 @@ export const OPENAI_COMPAT_BASE_URLS: Record<string, string> = {
   kimi: "https://api.moonshot.ai/v1",
   "local-llama": "http://localhost:8081/v1",
   nvidia: "https://integrate.api.nvidia.com/v1",
-  qwen: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+  qwen: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+  minimax: "https://api.minimaxi.com/v1",
+  "opencode-go": "https://opencode.ai/zen/go/v1",
 }
 
 // ─── Provider profiles ────────────────────────────────────────────────────────
@@ -66,6 +68,8 @@ export const PROVIDER_PROFILES: Record<string, ProviderProfile> = {
   nvidia: { ...DEFAULT_PROFILE, normalizeToolNames: true },
   qwen: { ...DEFAULT_PROFILE, normalizeToolNames: true, retryWithoutToolsOnCodes: [400, 422] },
   "local-llama": { ...DEFAULT_PROFILE },
+  minimax: { ...DEFAULT_PROFILE, normalizeToolNames: true, retryWithoutToolsOnCodes: [400, 422] },
+  "opencode-go": { ...DEFAULT_PROFILE, normalizeToolNames: true, retryWithoutToolsOnCodes: [400, 422] },
 }
 
 export function getProviderProfile(provider: string): ProviderProfile {

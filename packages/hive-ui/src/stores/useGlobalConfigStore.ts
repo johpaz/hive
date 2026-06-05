@@ -842,6 +842,7 @@ interface LocalLLMState {
   startLocalLLM: (mode?: string, modelId?: string) => Promise<void>;
   stopLocalLLM: (mode?: string) => Promise<void>;
   downloadLLMModel: (modelId: string) => Promise<void>;
+  fetchDownloadProgress: () => Promise<{ active: boolean; modelId?: string; downloaded?: number; total?: number; percent?: number } | null>;
   fetchLocalLLMLogs: () => Promise<void>;
 }
 
@@ -972,14 +973,19 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
         get().fetchVoiceProvidersInternal(),
       ]);
 
-      // If providers returned models but modelsData is empty or missing them, 
-      // we merge them to ensure consistency
+      // Merge provider models into the global models array.
+      // Provider models take precedence over DB models (e.g. local-llama dynamically
+      // injects downloaded models as active=true, which must overwrite seed rows active=0).
       const mergedModels = [...modelsData.models];
       providersData.providers.forEach(p => {
         if (p.models && p.models.length > 0) {
           p.models.forEach(m => {
-            if (!mergedModels.find(mm => mm.id === m.id)) {
+            const idx = mergedModels.findIndex(mm => mm.id === m.id);
+            if (idx === -1) {
               mergedModels.push(m);
+            } else {
+              // Overwrite with provider version so dynamic activation is respected
+              mergedModels[idx] = { ...mergedModels[idx], ...m };
             }
           });
         }
@@ -1235,6 +1241,14 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
     });
     set((state) => ({ localLLM: { ...state.localLLM, downloadingModelId: modelId } }));
   },
+  fetchDownloadProgress: async () => {
+    try {
+      const data = await apiClient<{ active: boolean; modelId?: string; downloaded?: number; total?: number; percent?: number }>("/api/llm-local/download-progress");
+      return data;
+    } catch {
+      return null;
+    }
+  },
   fetchLocalLLMLogs: async () => {
     try {
       const data = await apiClient<{ logs: string[] }>("/api/llm-local/logs");
@@ -1486,6 +1500,7 @@ export function useLocalLLM() {
   const fetchLocalLLMStatus = useGlobalConfigStore((state) => state.fetchLocalLLMStatus);
   const installLocalLLM = useGlobalConfigStore((state) => state.installLocalLLM);
   const downloadLLMModel = useGlobalConfigStore((state) => state.downloadLLMModel);
+  const fetchDownloadProgress = useGlobalConfigStore((state) => state.fetchDownloadProgress);
   const fetchLocalLLMLogs = useGlobalConfigStore((state) => state.fetchLocalLLMLogs);
 
   return {
@@ -1496,6 +1511,7 @@ export function useLocalLLM() {
     startLocalLLM: useGlobalConfigStore((state) => state.startLocalLLM),
     stopLocalLLM: useGlobalConfigStore((state) => state.stopLocalLLM),
     downloadLLMModel,
+    fetchDownloadProgress,
     fetchLocalLLMLogs,
   };
 }

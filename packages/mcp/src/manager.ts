@@ -3,6 +3,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { MCPConfig, MCPServerConfig } from "./config";
 import { logger, type LogHandler } from "./logger";
 import * as path from "node:path";
+import { homedir } from "node:os";
 import {
   createTransport,
   type TransportType,
@@ -139,7 +140,7 @@ export class MCPClientManager {
 
   private expandPath(p: string): string {
     if (p.startsWith("~")) {
-      return path.join(process.env.HOME ?? "", p.slice(1));
+      return path.join(homedir(), p.slice(1));
     }
     return p;
   }

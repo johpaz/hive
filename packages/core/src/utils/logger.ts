@@ -1,5 +1,6 @@
 import { mkdirSync, unlinkSync, renameSync, existsSync } from "node:fs";
 import * as path from "node:path";
+import { homedir } from "node:os";
 import { getHiveDir, loadConfig } from "../config/loader.ts";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
@@ -81,7 +82,7 @@ const COLORS = {
 
 function expandPath(p: string): string {
   if (p.startsWith("~")) {
-    return path.join(process.env.HOME || "", p.slice(1));
+    return path.join(homedir(), p.slice(1));
   }
   return p;
 }

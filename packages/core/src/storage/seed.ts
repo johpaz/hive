@@ -139,6 +139,8 @@ export const SEED_DATA: SeedData = {
     { id: "elevenlabs", name: "ElevenLabs", baseUrl: "https://api.elevenlabs.io/v1" },
     { id: "qwen", name: "Qwen (Alibaba)", baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", category: "llm" },
     { id: "nvidia", name: "NVIDIA NIM", baseUrl: "https://integrate.api.nvidia.com/v1" },
+    { id: "minimax", name: "MiniMax", baseUrl: "https://api.minimaxi.com/v1" },
+    { id: "opencode-go", name: "OpenCode Go", baseUrl: "https://opencode.ai/zen/go/v1" },
     { id: "piper", name: "Piper (Local TTS)" },
   ],
 
@@ -249,6 +251,14 @@ export const SEED_DATA: SeedData = {
     { id: "e2b_Q4_K_XL", providerId: "local-llama", name: "Gemma 4 2B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "text", "stt", "local"]) },
     { id: "e4b_Q4_K_XL", providerId: "local-llama", name: "Gemma 4 4B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "text", "vision", "stt", "local"]) },
     { id: "e4b_vision", providerId: "local-llama", name: "Gemma 4 4B Vision (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "vision", "local"]) },
+    { id: "gemma4_12b_Q4_K_XL", providerId: "local-llama", name: "Gemma 4 12B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "vision", "local"]) },
+    { id: "gemma4_26b_Q4_K_M", providerId: "local-llama", name: "Gemma 4 26B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "vision", "local"]) },
+    { id: "gemma4_31b_Q4_K_XL", providerId: "local-llama", name: "Gemma 4 31B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "vision", "local"]) },
+    { id: "qwen3_5_2b_Q4_K_XL", providerId: "local-llama", name: "Qwen 3.5 2B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "local"]) },
+    { id: "qwen3_5_4b_Q4_K_XL", providerId: "local-llama", name: "Qwen 3.5 4B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "local"]) },
+    { id: "qwen3_5_9b_Q4_K_XL", providerId: "local-llama", name: "Qwen 3.5 9B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "local"]) },
+    { id: "qwen3_5_27b_Q4_K_XL", providerId: "local-llama", name: "Qwen 3.5 27B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "local"]) },
+    { id: "qwen3_5_35b_Q4_K_XL", providerId: "local-llama", name: "Qwen 3.5 35B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "local"]) },
     { id: "local_stt", providerId: "local-llama", name: "Local STT (Gemma)", modelType: "stt", contextWindow: 16000, capabilities: JSON.stringify(["transcription", "local"]) },
 
 
@@ -282,6 +292,29 @@ export const SEED_DATA: SeedData = {
     { id: "google/gemma-4-31b-it", providerId: "nvidia", name: "Gemma 4 31B (NVIDIA)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
     { id: "google/gemma-3-27b-it", providerId: "nvidia", name: "Gemma 3 27B (NVIDIA)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
     { id: "z-ai/glm-5.1", providerId: "nvidia", name: "GLM 5.1 (NVIDIA)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
+
+    // ── MiniMax (fuente: platform.minimaxi.com) — OpenAI-compatible endpoint ──
+    { id: "MiniMax-M3", providerId: "minimax", name: "MiniMax M3", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "vision", "function_calling", "streaming", "reasoning"]) },
+    { id: "MiniMax-M2.7", providerId: "minimax", name: "MiniMax M2.7", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "MiniMax-M2.7-highspeed", providerId: "minimax", name: "MiniMax M2.7 Highspeed", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "MiniMax-M2.5", providerId: "minimax", name: "MiniMax M2.5", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "MiniMax-M2.5-highspeed", providerId: "minimax", name: "MiniMax M2.5 Highspeed", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+
+    // ── OpenCode Go (fuente: opencode.ai) — OpenAI-compatible endpoint ──
+    { id: "opencode-go/minimax-m3",         providerId: "opencode-go", name: "MiniMax M3",          modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "vision", "function_calling", "streaming", "reasoning"]) },
+    { id: "opencode-go/minimax-m2.7",       providerId: "opencode-go", name: "MiniMax M2.7",        modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/minimax-m2.5",       providerId: "opencode-go", name: "MiniMax M2.5",        modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/kimi-k2.6",          providerId: "opencode-go", name: "Kimi K2.6",           modelType: "llm", contextWindow: 262144,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/kimi-k2.5",          providerId: "opencode-go", name: "Kimi K2.5",           modelType: "llm", contextWindow: 262144,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/glm-5.1",            providerId: "opencode-go", name: "GLM-5.1",             modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/glm-5",              providerId: "opencode-go", name: "GLM-5",               modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/deepseek-v4-pro",    providerId: "opencode-go", name: "DeepSeek V4 Pro",     modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming", "reasoning"]) },
+    { id: "opencode-go/deepseek-v4-flash",  providerId: "opencode-go", name: "DeepSeek V4 Flash",   modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/mimo-v2-pro",        providerId: "opencode-go", name: "MiMo-V2 Pro",         modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming", "reasoning"]) },
+    { id: "opencode-go/mimo-v2-omni",       providerId: "opencode-go", name: "MiMo-V2 Omni",        modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/mimo-v2.5-pro",      providerId: "opencode-go", name: "MiMo-V2.5 Pro",       modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming", "reasoning"]) },
+    { id: "opencode-go/mimo-v2.5",          providerId: "opencode-go", name: "MiMo-V2.5",           modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/hy3-preview",        providerId: "opencode-go", name: "Hunyuan 3 Preview",   modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
   ],
 
 
@@ -503,10 +536,13 @@ export function seedAllData(): void {
 
     let modelCount = 0;
     for (const model of SEED_DATA.models) {
+      // Local LLM models are always active so they appear in the selector
+      // (downloaded status is checked separately at runtime)
+      const isLocal = model.providerId === "local-llama";
       db.query(`
         INSERT OR REPLACE INTO models (id, provider_id, name, model_type, context_window, capabilities, enabled, active)
-        VALUES (?, ?, ?, ?, ?, ?, 1, 0)
-      `).run(model.id, model.providerId, model.name, model.modelType, model.contextWindow || null, model.capabilities || null)
+        VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+      `).run(model.id, model.providerId, model.name, model.modelType, model.contextWindow || null, model.capabilities || null, isLocal ? 1 : 0)
       modelCount++;
     }
     db.run("PRAGMA foreign_keys = ON;");

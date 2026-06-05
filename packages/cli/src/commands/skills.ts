@@ -1,8 +1,9 @@
 import * as p from "@clack/prompts";
 import * as fs from "fs";
 import * as path from "path";
+import { homedir } from "os";
 
-const SKILLS_DIR = path.join(process.env.HOME || "", ".hive", "skills");
+const SKILLS_DIR = path.join(homedir(), ".hive", "skills");
 const BUNDLED_SKILLS: Array<{ slug: string; name: string; description: string }> = [
   { slug: "web-search", name: "Web Search", description: "Search the web using multiple search engines" },
   { slug: "code-exec", name: "Code Execution", description: "Execute code snippets safely" },

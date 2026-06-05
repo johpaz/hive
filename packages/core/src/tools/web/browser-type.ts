@@ -53,7 +53,7 @@ export const browserTypeTool: Tool = {
       log.warn("Browser not available");
       return {
         ok: false,
-        error: "Browser automation not available. Install Chrome/Chromium.",
+        error: "Browser automation not available. Install agent-browser.",
       };
     }
 
@@ -61,23 +61,18 @@ export const browserTypeTool: Tool = {
 
     try {
       const view = await browserService.getView();
-      if (!view) return { ok: false, error: "Browser automation not available. Install Chrome/Chromium." };
+      if (!view) return { ok: false, error: "Browser automation not available. Install agent-browser." };
 
       if (url) {
         await view.navigate(url);
         await Bun.sleep(500);
       }
 
-      // click(selector) waits for actionability then focuses the element
-      await view.click(selector, { timeout });
-
       if (clear) {
-        // Ctrl+A → Backspace to clear existing content
-        await view.press("a", { modifiers: ["Control"] });
-        await view.press("Backspace");
+        await (view as any).fill(selector, text);
+      } else {
+        await (view as any).typeIn(selector, text);
       }
-
-      await view.type(text);
 
       const currentUrl = view.url;
       log.info(`Type successful: "${text.substring(0, 50)}${text.length > 50 ? "..." : ""}" into ${selector}`);

@@ -73,12 +73,13 @@ import { handleGetModels, handleCreateModel, handleToggleModel, handleGetModelsC
 import { handleGetVoiceProviders, handleGetConfiguredVoiceProviders, handleSaveVoiceProviderKey, handleTestVoice, handleGetChannelVoice, handleUpdateChannelVoice, handleGetVoiceProviderVoices } from "./routes/voice";
 import { handleGetVisionProviders, handleGetChannelVision, handleUpdateChannelVision, handleOcrImage } from "./routes/multimodal";
 import { handleGetLocalTTSStatus, handleGetLocalTTSLogs, handleInstallLocalTTS, handleStartLocalTTS, handleStopLocalTTS, handleSpeakLocalTTS, handleGetAvailableModels, handleGetInstalledVoices, handleDownloadModel, handleGetDownloadLogs, initializeLocalTTS } from "./routes/tts-local";
-import { handleGetLocalLLMStatus, handleGetLocalLLMLogs, handleInstallLocalLLM, handleStartLocalLLM, handleStopLocalLLM, handleDownloadLLMModel, initializeLocalLLM } from "./routes/llm-local";
+import { handleGetLocalLLMStatus, handleGetLocalLLMLogs, handleInstallLocalLLM, handleStartLocalLLM, handleStopLocalLLM, handleDownloadLLMModel, handleGetDownloadProgress, initializeLocalLLM } from "./routes/llm-local";
 import { handleCreateMeeting, handleListMeetings, handleGetMeeting, handleAddMeetingSegment, handleStopMeeting } from "./routes/meeting";
 import { handleGetActivityStats, handleGetSystemStats, handleGetUsageStats, handleSystemReload, handleApiReload, handleGetVersion, handleTriggerUpdate } from "./routes/system";
 import { handleGetChatHistory, handleGetCanvas, handleGetNotes, handleUpdateNote } from "./routes/chat";
 import { handleChat as handlePostChat } from "./routes/chat";
 import { handleGetConfig } from "./routes/config";
+import { handleHttpRequest } from "./routes/http-client";
 import { handleGetWorkspace, handleUpdateWorkspace, handleValidateWorkspace, handleCreateWorkspace, handleOpenWorkspace } from "./routes/workspace";
 import { getNarration, expandPath, addCorsHeaders, CORS_ORIGINS } from "./helpers";
 import { redactConfig } from "./helpers";
@@ -961,6 +962,11 @@ export async function startGateway(config: Config): Promise<void> {
           }
         }
 
+        // ── HTTP Client API ────────────────────────────────────────────────
+        if ((url.pathname === "/api/http-request" || url.pathname === "/api/http-request/") && req.method === "POST") {
+          return await handleHttpRequest(req, addCorsHeaders)
+        }
+
         // ── Tasks API ─────────────────────────────────────────────────────
         if ((url.pathname === "/api/tasks" || url.pathname === "/api/tasks/") && req.method === "GET") {
           return await handleGetTasks(req, addCorsHeaders)
@@ -1625,6 +1631,9 @@ export async function startGateway(config: Config): Promise<void> {
         }
         if (url.pathname === "/api/llm-local/download-model" && req.method === "POST") {
           return await handleDownloadLLMModel(req, addCorsHeaders)
+        }
+        if (url.pathname === "/api/llm-local/download-progress" && req.method === "GET") {
+          return await handleGetDownloadProgress(req, addCorsHeaders)
         }
 
         // ── Meeting Transcription API ────────────────────────────────────────
@@ -2729,7 +2738,7 @@ export async function startGateway(config: Config): Promise<void> {
     process.exit(0);
   });
 
-  process.on("SIGHUP", async () => {
+  if (process.platform !== "win32") process.on("SIGHUP", async () => {
     log.info("Received SIGHUP, reloading configuration...");
     try {
       const newConfig = await loadConfig();

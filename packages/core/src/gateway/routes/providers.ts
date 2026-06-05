@@ -4,6 +4,7 @@ import {
   loadProviderApiKey, storeProviderApiKey,
   loadProviderHeaders, storeProviderHeaders,
 } from "../../storage/crypto"
+import { listLocalModels } from "../llm-local/downloader"
 
 export async function handleGetProviders(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const rawProviders = getDb().query(`
@@ -24,20 +25,60 @@ export async function handleGetProviders(req: Request, addCorsHeaders: (r: Respo
     })
   }
 
+  // Inyectar modelos locales descargados dinámicamente para local-llama
+  try {
+    const localModels = listLocalModels()
+    const downloadedLocalModels = localModels.filter(m => m.downloaded)
+    if (downloadedLocalModels.length > 0) {
+      const existingLocalModels = modelsByProvider["local-llama"] || []
+      for (const localModel of downloadedLocalModels) {
+        const existingIdx = existingLocalModels.findIndex((m: any) => m.id === localModel.id)
+        if (existingIdx === -1) {
+          existingLocalModels.push({
+            id: localModel.id,
+            name: localModel.name,
+            provider_id: "local-llama",
+            model_type: "llm",
+            context_window: 16000,
+            capabilities: JSON.stringify(["chat", "local"]),
+            enabled: true,
+            active: true,
+          })
+        } else {
+          // Modelo del seed ya existe pero está descargado: forzar activo
+          existingLocalModels[existingIdx] = {
+            ...existingLocalModels[existingIdx],
+            enabled: true,
+            active: true,
+          }
+        }
+      }
+      modelsByProvider["local-llama"] = existingLocalModels
+    }
+  } catch {
+    // Ignorar si no se pueden obtener modelos locales
+  }
+
   const providers = await Promise.all(rawProviders.map(async (p) => {
     const apiKey = await loadProviderApiKey(p.id as string)
     const headers = await loadProviderHeaders(p.id as string)
+    const providerModels = modelsByProvider[p.id as string] || []
+    // Auto-activar local-llama si tiene modelos descargados dinámicamente
+    let active = p.active
+    if (p.id === "local-llama" && providerModels.some((m: any) => m.active || m.enabled)) {
+      active = true
+    }
     return {
       id: p.id,
       name: p.name,
       base_url: p.base_url,
       enabled: p.enabled,
-      active: p.active,
+      active,
       num_ctx: p.num_ctx ?? null,
       has_api_key: apiKey ? 1 : 0,
       has_headers: Object.keys(headers).length > 0 ? 1 : 0,
       masked_api_key: apiKey ? maskApiKey(apiKey) : null,
-      models: modelsByProvider[p.id as string] || [],
+      models: providerModels,
     }
   }))
 

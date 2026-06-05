@@ -8,6 +8,7 @@
 
 import { spawn, execSync } from "node:child_process";
 import * as path from "node:path";
+import { homedir } from "node:os";
 import { existsSync, readFileSync, unlinkSync, chmodSync } from "node:fs";
 import type {
   InstallationAdapter,
@@ -93,8 +94,8 @@ export class BinaryAdapter implements InstallationAdapter {
       path.join(process.cwd(), "dist", "hive.exe"),
       "/usr/local/bin/hive",
       "/usr/bin/hive",
-      path.join(process.env.HOME || "", ".local", "bin", "hive"),
-      path.join(process.env.HOME || "", ".bun", "bin", "hive"),
+      path.join(homedir(), ".local", "bin", "hive"),
+      path.join(homedir(), ".bun", "bin", "hive"),
     ];
 
     for (const binaryPath of commonPaths) {
@@ -279,8 +280,11 @@ export class BinaryAdapter implements InstallationAdapter {
       } else {
         // Try to kill by process name
         try {
-          const pattern = process.platform === "win32" ? "hive.exe" : "hive";
-          execSync(`pkill -f "${pattern}"`, { stdio: "ignore" });
+          if (process.platform === "win32") {
+            execSync("taskkill /IM hive.exe /F", { stdio: "ignore" });
+          } else {
+            execSync('pkill -f "hive"', { stdio: "ignore" });
+          }
           console.log("✅ Hive Gateway detenido");
         } catch {
           console.log("⚠️  Hive Gateway no está corriendo");

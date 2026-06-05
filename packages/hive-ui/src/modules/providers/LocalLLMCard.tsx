@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useLocalLLM, useGlobalConfigStore } from "@/stores/useGlobalConfigStore";
 import { Download, RefreshCw, Terminal, Package, Cpu, Binary, Play, Square } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { apiClient } from "@/lib/api";
 
 interface LogsResponse {
@@ -19,19 +20,37 @@ export function LocalLLMCard() {
     installLocalLLM, 
     startLocalLLM,
     stopLocalLLM,
-    downloadLLMModel, 
+    downloadLLMModel,
+    fetchDownloadProgress,
     fetchLocalLLMLogs 
   } = useLocalLLM();
+
+  const { installed, binaryExists, anyModelExists, installing, downloadingModelId, gpu, models } = localLLM;
   
   const [isActing, setIsActing] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const [llmRoot, setLlmRoot] = useState("");
+  const [selectedModelId, setSelectedModelId] = useState<string>("");
+  const [downloadProgress, setDownloadProgress] = useState<{ percent: number; downloaded: number; total: number } | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const logsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchLocalLLMStatus();
   }, [fetchLocalLLMStatus]);
+
+  // Sincronizar modelo seleccionado cuando cambian los modelos disponibles
+  useEffect(() => {
+    const downloaded = models.filter(m => m.downloaded);
+    if (downloaded.length === 0) {
+      setSelectedModelId("");
+      return;
+    }
+    // Si el modelo seleccionado ya no está descargado, elegir el primero
+    if (!selectedModelId || !downloaded.find(m => m.id === selectedModelId)) {
+      setSelectedModelId(downloaded[0].id);
+    }
+  }, [models, selectedModelId]);
 
   // Polling para status
   useEffect(() => {
@@ -46,6 +65,30 @@ export function LocalLLMCard() {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [localLLM.installing, localLLM.downloadingModelId, fetchLocalLLMStatus]);
+
+  // Polling para progreso de descarga
+  useEffect(() => {
+    if (!localLLM.downloadingModelId) {
+      setDownloadProgress(null);
+      return;
+    }
+    const interval = setInterval(async () => {
+      const progress = await fetchDownloadProgress();
+      if (progress?.active) {
+        setDownloadProgress({
+          percent: progress.percent ?? 0,
+          downloaded: progress.downloaded ?? 0,
+          total: progress.total ?? 0,
+        });
+      } else {
+        setDownloadProgress(null);
+        // Download finished (or never started) — refresh status so downloadingModelId
+        // is cleared and the other download buttons re-enable immediately.
+        await fetchLocalLLMStatus();
+      }
+    }, 800);
+    return () => clearInterval(interval);
+  }, [localLLM.downloadingModelId, fetchDownloadProgress, fetchLocalLLMStatus]);
 
   // Auto-scroll logs
   useEffect(() => {
@@ -101,9 +144,10 @@ export function LocalLLMCard() {
   };
 
   const handleStartServer = async (mode: string = "TEXT") => {
+    if (!selectedModelId) return;
     setIsActing(true);
     try {
-      await startLocalLLM(mode);
+      await startLocalLLM(mode, selectedModelId);
     } finally {
       setIsActing(false);
     }
@@ -121,8 +165,6 @@ export function LocalLLMCard() {
   const handleShowLogs = () => {
     setShowLogs((v) => !v);
   };
-
-  const { installed, binaryExists, anyModelExists, installing, downloadingModelId, gpu, models } = localLLM;
 
   return (
     <Card className={`relative overflow-hidden col-span-full ${installed ? "border-amber-500/30 bg-amber-500/[0.02]" : ""}`}>
@@ -208,7 +250,10 @@ export function LocalLLMCard() {
                    <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Servidores Activos</p>
                    {localLLM.activeServers.map(srv => (
                      <div key={srv.mode} className="flex items-center justify-between text-[11px] bg-zinc-800/30 p-1.5 rounded border border-zinc-700/50">
-                       <span className="text-zinc-300 font-medium">{srv.mode}</span>
+                       <div className="flex flex-col">
+                         <span className="text-zinc-300 font-medium">{srv.mode}</span>
+                         <span className="text-[10px] text-zinc-500 truncate max-w-[180px]" title={srv.modelId}>{srv.modelId}</span>
+                       </div>
                        <div className="flex items-center gap-2">
                          <span className="text-zinc-500">Puerto {srv.port}</span>
                          <Button 
@@ -243,10 +288,20 @@ export function LocalLLMCard() {
                   {model.downloaded ? (
                     <span className="text-green-400 font-medium">✓ Descargado</span>
                   ) : downloadingModelId === model.id ? (
-                    <span className="text-yellow-400 flex items-center gap-1">
-                      <RefreshCw className="h-3 w-3 animate-spin" />
-                      Descargando…
-                    </span>
+                    <div className="flex flex-col items-end gap-1 w-32">
+                      <span className="text-yellow-400 flex items-center gap-1 text-[10px]">
+                        <RefreshCw className="h-3 w-3 animate-spin" />
+                        Descargando…
+                      </span>
+                      {downloadProgress && (
+                        <>
+                          <Progress value={downloadProgress.percent} className="h-1.5 w-full bg-zinc-800" />
+                          <span className="text-[9px] text-zinc-500">
+                            {downloadProgress.percent}% · {(downloadProgress.downloaded / 1024 / 1024).toFixed(0)} MB / {(downloadProgress.total / 1024 / 1024).toFixed(0)} MB
+                          </span>
+                        </>
+                      )}
+                    </div>
                   ) : (
                     <Button variant="outline" size="sm" onClick={() => handleDownload(model.id)} disabled={isActing || !!downloadingModelId} className="h-7 text-[10px] px-2 border-zinc-700">
                       Descargar
@@ -268,7 +323,28 @@ export function LocalLLMCard() {
           )}
 
           {binaryExists && !installing && (
-            <div className="flex flex-wrap gap-2 w-full">
+            <div className="flex flex-wrap gap-2 w-full items-center">
+              {/* Selector de modelo */}
+              <div className="w-full sm:w-auto">
+                <select
+                  value={selectedModelId}
+                  onChange={(e) => setSelectedModelId(e.target.value)}
+                  disabled={isActing || localLLM.activeServers.length > 0}
+                  className="h-8 text-xs w-full sm:w-[260px] bg-zinc-900 border border-zinc-700 text-zinc-200 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-amber-500/50 disabled:opacity-50"
+                >
+                  {models.filter((m) => m.downloaded).length === 0 && (
+                    <option value="">No hay modelos descargados</option>
+                  )}
+                  {models
+                    .filter((m) => m.downloaded)
+                    .map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.name} ({model.size})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
               <div className="flex gap-1 bg-zinc-900/80 p-1 rounded-lg border border-zinc-800">
                 {["TEXT", "IMAGE", "AUDIO"].map((m) => {
                   const isActive = localLLM.activeServers.some(s => s.mode === m);

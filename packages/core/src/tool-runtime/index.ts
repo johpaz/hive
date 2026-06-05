@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs"
 import { fileURLToPath } from "node:url"
+import { dirname, join } from "node:path"
 import { availableParallelism } from "node:os"
 import type { Config } from "../config/loader.ts"
 import { loadConfig } from "../config/loader.ts"
@@ -110,8 +111,28 @@ function resolveWorkerEntry(): string {
     }
   }
 
+  const fallbacks: string[] = []
+  const envPath = process.env.HIVE_TOOL_WORKER_PATH
+  if (envPath) fallbacks.push(envPath)
+
+  try {
+    const execDir = dirname(process.execPath)
+    fallbacks.push(join(execDir, "tool-worker.js"))
+    fallbacks.push(join(execDir, "packages", "core", "src", "tool-runtime", "tool-worker.js"))
+  } catch {
+    // process.execPath is not available — skip execDir-based fallbacks
+  }
+
+  fallbacks.push("/app/tool-worker.js")
+
+  for (const filePath of fallbacks) {
+    if (existsSync(filePath)) {
+      return filePath
+    }
+  }
+
   throw new Error(
-    `Tool worker entry not found. Tried: ${candidates.map((candidate) => fileURLToPath(candidate)).join(", ")}`
+    `Tool worker entry not found. Tried: ${[...candidates.map((candidate) => fileURLToPath(candidate)), ...fallbacks].join(", ")}`
   )
 }
 

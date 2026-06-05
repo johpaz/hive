@@ -1,7 +1,8 @@
 import * as fs from "fs";
 import * as path from "path";
+import { homedir } from "os";
 
-const HIVE_DIR = path.join(process.env.HOME || "", ".hive");
+const HIVE_DIR = path.join(homedir(), ".hive");
 const SESSIONS_DIR = path.join(HIVE_DIR, "sessions");
 
 export async function sessions(subcommand: string | undefined, args: string[]): Promise<void> {

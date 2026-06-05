@@ -18,6 +18,7 @@ const ChannelsPage = lazy(() => import("@/pages/ChannelsPage").then(m => ({ defa
 const ProvidersPage = lazy(() => import("@/pages/ProvidersPage").then(m => ({ default: m.ProvidersPage })));
 const WebChatPage = lazy(() => import("@/pages/WebChatPage").then(m => ({ default: m.WebChatPage })));
 const MeetingPage = lazy(() => import("@/pages/MeetingPage").then(m => ({ default: m.MeetingPage })));
+const ApiClientPage = lazy(() => import("@/pages/ApiClientPage").then(m => ({ default: m.ApiClientPage })));
 const SetupPage = lazy(() => import("@/pages/SetupPage"));
 const LoginPage = lazy(() => import("@/pages/LoginPage"));
 const RecoverPage = lazy(() => import("@/pages/RecoverPage"));
@@ -163,6 +164,7 @@ const AppContent = () => {
           <Route path="/channels" element={<ChannelsPage />} />
           <Route path="/providers" element={<ProvidersPage />} />
           <Route path="/logs" element={<LogsPage />} />
+          <Route path="/api-client" element={<ApiClientPage />} />
         </Route>
         <Route path="*" element={<NotFound />} />
       </Routes>

@@ -4,7 +4,7 @@
  * Los datos se guardan en $HIVE_HOME/tts/ (por defecto ~/.hive/tts/).
  */
 
-import { existsSync, mkdirSync, readdirSync, renameSync } from "fs"
+import { existsSync, mkdirSync, readdirSync, renameSync, unlinkSync, rmSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
 import {
@@ -37,16 +37,24 @@ async function extractTarGz(archivePath: string, destDir: string): Promise<void>
     stderr: "inherit",
   }).exited
   if (code !== 0) throw new Error(`tar falló con código ${code}`)
-  await Bun.spawn(["rm", "-f", archivePath]).exited
+  unlinkSync(archivePath)
 }
 
 async function extractZip(archivePath: string, destDir: string): Promise<void> {
-  const code = await Bun.spawn(["unzip", "-q", archivePath, "-d", destDir], {
-    stdout: "inherit",
-    stderr: "inherit",
-  }).exited
-  if (code !== 0) throw new Error(`unzip falló con código ${code}`)
-  await Bun.spawn(["rm", "-f", archivePath]).exited
+  let code: number
+  if (process.platform === "win32") {
+    code = await Bun.spawn(
+      ["powershell", "-Command", `Expand-Archive -Path "${archivePath}" -DestinationPath "${destDir}" -Force`],
+      { stdout: "inherit", stderr: "inherit" }
+    ).exited
+  } else {
+    code = await Bun.spawn(["unzip", "-q", archivePath, "-d", destDir], {
+      stdout: "inherit",
+      stderr: "inherit",
+    }).exited
+  }
+  if (code !== 0) throw new Error(`Extracción ZIP falló con código ${code}`)
+  unlinkSync(archivePath)
 }
 
 /**
@@ -86,7 +94,7 @@ export async function runInstall(ttsRoot: string): Promise<void> {
       for (const entry of readdirSync(tempDir)) {
         renameSync(join(tempDir, entry), join(BIN_DIR, entry))
       }
-      await Bun.spawn(["rm", "-rf", tempDir]).exited
+      rmSync(tempDir, { recursive: true, force: true })
     }
 
     if (!existsSync(binaryPath)) {

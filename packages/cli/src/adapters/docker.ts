@@ -7,6 +7,7 @@
 
 import { spawn, execSync } from "node:child_process";
 import * as path from "node:path";
+import { homedir } from "node:os";
 import { existsSync } from "node:fs";
 import type {
   InstallationAdapter,
@@ -55,7 +56,7 @@ export class DockerAdapter implements InstallationAdapter {
     const standardPaths = [
       "/opt/hive/docker-compose.yml",
       "/usr/local/share/hive/docker-compose.yml",
-      path.join(process.env.HOME || "", ".hive", "docker-compose.yml"),
+      path.join(homedir(), ".hive", "docker-compose.yml"),
     ];
 
     for (const composePath of standardPaths) {

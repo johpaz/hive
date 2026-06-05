@@ -5,7 +5,7 @@
 
 
 import { existsSync } from "fs"
-import { MODELS_DIR, getModelPath, type ModelId } from "./downloader"
+import { MODELS_DIR, getModelPath, getModelMMProjId, type ModelId } from "./downloader"
 
 export interface ModelConfig {
   modelPath: string
@@ -43,8 +43,9 @@ export function getModelConfig(modelId: ModelId, port: number = 8081): ModelConf
     throw new Error(`Modelo no descargado: ${modelId}. Ejecuta downloadModel("${modelId}") primero.`)
   }
 
-  const mmprojPath = getModelPath("mmproj")
-  const hasMMProj = existsSync(mmprojPath)
+  const mmprojId = getModelMMProjId(modelId)
+  const mmprojPath = mmprojId ? getModelPath(mmprojId) : undefined
+  const hasMMProj = mmprojPath ? existsSync(mmprojPath) : false
 
   return {
     modelPath,
