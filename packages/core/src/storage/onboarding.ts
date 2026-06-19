@@ -1500,6 +1500,34 @@ export function runStartupMigrations(): void {
     markApplied("v0.0.32");
     log.info("✅ Migration v0.0.32: vision columns added to channels");
   }
+
+  // v0.0.33 — add HiveAgents LLM provider + 5 local GGUF models
+  if (!applied("v0.0.33")) {
+    const db = getDb();
+    log.info("[migration v0.0.33] Adding HiveAgents LLM provider and models...");
+
+    db.query(`
+      INSERT OR IGNORE INTO providers (id, name, base_url, category, enabled, active)
+      VALUES ('hiveagents', 'HiveAgents LLM (Cloudflare)', 'https://llm.hiveagents.io/v1', 'llm', 1, 1)
+    `).run();
+
+    const hiveModels = [
+      { id: "Qwen3.6-35B-A3B-UD-Q6_K.gguf",       name: "Qwen3.6 35B MoE (Recomendado)", ctx: 8192, caps: '["chat","streaming","reasoning"]' },
+      { id: "gemma-4-26B-A4B-it-UD-Q6_K_XL.gguf", name: "Gemma 4 26B MoE",               ctx: 8192, caps: '["chat","streaming"]' },
+      { id: "gemma-4-12b-it-UD-Q4_K_XL.gguf",     name: "Gemma 4 12B Dense",             ctx: 8192, caps: '["chat","streaming"]' },
+      { id: "Qwen3.6-27B-UD-Q6_K_XL.gguf",         name: "Qwen3.6 27B + MTP",             ctx: 8192, caps: '["chat","streaming","reasoning"]' },
+      { id: "gemma-4-31B-it-UD-Q6_K_XL.gguf",     name: "Gemma 4 31B Dense",             ctx: 8192, caps: '["chat","streaming"]' },
+    ];
+    for (const m of hiveModels) {
+      db.query(`
+        INSERT OR IGNORE INTO models (id, provider_id, name, model_type, context_window, capabilities, enabled, active)
+        VALUES (?, 'hiveagents', ?, 'llm', ?, ?, 1, 1)
+      `).run(m.id, m.name, m.ctx, m.caps);
+    }
+
+    markApplied("v0.0.33");
+    log.info("✅ Migration v0.0.33: HiveAgents LLM provider + 5 models added");
+  }
   } catch (e) {
     log.error("⚠️ runStartupMigrations failed:", { error: (e as Error).message });
   }

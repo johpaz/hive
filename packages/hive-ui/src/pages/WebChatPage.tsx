@@ -22,7 +22,7 @@ export function WebChatPage() {
   const agents = useGlobalConfigStore((s) => s.agents);
   const fetchAgents = useGlobalConfigStore((s) => s.fetchAgents);
   const sessionId = currentUser?.id || "default";
-  const { handleStreamingChunk, handleAudioMessage, handleProgress, handleTyping, resetStreamingRef } = useChatStreaming(agentId, sessionId);
+  const { handleStreamingChunk, handleAudioMessage, handleProgress, handleProcess, handleTyping, resetStreamingRef } = useChatStreaming(agentId, sessionId);
   const narration = useNarration();
 
   const isConnected = status === "connected";
@@ -68,15 +68,17 @@ export function WebChatPage() {
     const unsubResp = subscribe("response", handleStreamingChunk);
     const unsubAudio = subscribe("audio", handleAudioMessage);
     const unsubProgress = subscribe("progress", handleProgress);
+    const unsubProcess = subscribe("process", handleProcess);
     const unsubTyping = subscribe("typing", handleTyping);
     return () => {
       unsubMsg();
       unsubResp();
       unsubAudio();
       unsubProgress();
+      unsubProcess();
       unsubTyping();
     };
-  }, [subscribe, handleStreamingChunk, handleAudioMessage, handleProgress, handleTyping]);
+  }, [subscribe, handleStreamingChunk, handleAudioMessage, handleProgress, handleProcess, handleTyping]);
 
   useEffect(() => {
     if (isConnected) {
@@ -180,6 +182,7 @@ export function WebChatPage() {
         </div>
 
         <button
+          type="button"
           onClick={narration.toggle}
           className={`h-8 w-8 rounded-full flex items-center justify-center transition-all ${
             narration.isEnabled
@@ -187,6 +190,7 @@ export function WebChatPage() {
               : "text-white/40 hover:text-white/70 hover:bg-white/5"
           }`}
           title={narration.isEnabled ? "Desactivar narracion" : "Activar narracion"}
+          aria-label={narration.isEnabled ? "Desactivar narracion" : "Activar narracion"}
         >
           {narration.isEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
         </button>
@@ -197,6 +201,7 @@ export function WebChatPage() {
           <AlertCircle className="h-3.5 w-3.5 text-rose-500 shrink-0" />
           <span className="text-xs text-rose-600 flex-1 font-medium">{connectionWarning}</span>
           <button
+            type="button"
             onClick={() => {
               const { connect } = useWebSocketStore.getState();
               if (currentUser?.id) connect(currentUser.id);
@@ -218,7 +223,7 @@ export function WebChatPage() {
             <span className="h-1.5 w-0.5 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: "300ms" }} />
           </div>
           <span className="text-[10px] text-blue-400 font-medium font-manrope">Narrando{narration.currentText ? `: ${narration.currentText}...` : "..."}</span>
-          <button onClick={narration.stop} className="text-[10px] text-blue-500 hover:text-blue-300 ml-auto font-bold uppercase tracking-wider">
+          <button type="button" onClick={narration.stop} className="text-[10px] text-blue-500 hover:text-blue-300 ml-auto font-bold uppercase tracking-wider">
             Detener
           </button>
         </div>

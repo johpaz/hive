@@ -1,10 +1,11 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useCallback } from "react";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useProviders } from "@/hooks/useProviders";
 import { useGlobalConfigStore } from "@/stores/useGlobalConfigStore";
+import { loader } from "@/stores/useLoaderStore";
 import { toast } from "@/components/ui/sonner";
 
 interface ModelSelectorProps {
@@ -15,6 +16,10 @@ interface ModelSelectorProps {
   disabled?: boolean;
   typeFilter?: string;
 }
+
+const HIVEAGENTS_POLL_INTERVAL_MS = 2500;
+const HIVEAGENTS_LOAD_TIMEOUT_MS = 300000;
+const HIVEAGENTS_LOAD_CTX = 50000;
 
 export function ModelSelector({
   selectedProviderId,
@@ -27,6 +32,10 @@ export function ModelSelector({
   const { providers, models } = useProviders();
   const localLLM = useGlobalConfigStore((state) => state.localLLM);
   const fetchLocalLLMStatus = useGlobalConfigStore((state) => state.fetchLocalLLMStatus);
+  const loadHiveAgentsModel = useGlobalConfigStore((state) => state.loadHiveAgentsModel);
+  const getHiveAgentsModelStatus = useGlobalConfigStore((state) => state.getHiveAgentsModelStatus);
+
+  const hiveagentsAbortRef = useRef<{ abort: boolean } | null>(null);
 
   // Load local LLM status on mount so we know which models are downloaded
   useEffect(() => {
@@ -99,6 +108,69 @@ export function ModelSelector({
     }
   };
 
+  const waitForHiveAgentsModel = useCallback(async (modelId: string): Promise<boolean> => {
+    const abortRef = { abort: false };
+    hiveagentsAbortRef.current = abortRef;
+    const start = Date.now();
+
+    try {
+      await loadHiveAgentsModel(modelId, HIVEAGENTS_LOAD_CTX);
+    } catch {
+      return false;
+    }
+
+    while (!abortRef.abort && Date.now() - start < HIVEAGENTS_LOAD_TIMEOUT_MS) {
+      try {
+        const status = await getHiveAgentsModelStatus();
+        if (status.loaded && status.model?.name === modelId) {
+          return true;
+        }
+      } catch {
+        // ignore polling errors
+      }
+      await new Promise((resolve) => setTimeout(resolve, HIVEAGENTS_POLL_INTERVAL_MS));
+    }
+
+    return false;
+  }, [loadHiveAgentsModel, getHiveAgentsModelStatus]);
+
+  const handleModelChange = async (modelId: string) => {
+    const model = allModelsForProvider.find((m) => m.id === modelId);
+    if (model && !isModelDownloaded(model.id, selectedProviderId)) {
+      toast.error(`"${model.name}" no está descargado`, {
+        description: "Ve a Providers > Local LLM para descargarlo primero.",
+      });
+      return;
+    }
+
+    if (selectedProviderId === "hiveagents" && modelId) {
+      loader.show("Cargando modelo en HiveAgents…");
+      const loaded = await waitForHiveAgentsModel(modelId);
+      loader.hide();
+      if (!loaded) {
+        toast.error("No se pudo confirmar la carga del modelo", {
+          description: "Intenta seleccionar el modelo nuevamente o verifica la conexión.",
+        });
+        return;
+      }
+      toast.success("Modelo listo", {
+        description: "El modelo de HiveAgents ya está cargado y listo para usar.",
+      });
+    }
+
+    onModelChange(modelId);
+  };
+
+  // Cancel any in-flight hiveagents polling when provider/model changes
+  useEffect(() => {
+    return () => {
+      if (hiveagentsAbortRef.current) {
+        hiveagentsAbortRef.current.abort = true;
+        hiveagentsAbortRef.current = null;
+      }
+    };
+  }, [selectedProviderId, selectedModelId]);
+
   return (
     <div className="space-y-4">
       {/* Provider Selection */}
@@ -170,16 +242,7 @@ export function ModelSelector({
           <Label htmlFor="model">Modelo</Label>
           <Select
             value={selectedModelId || ""}
-            onValueChange={(value) => {
-              const model = allModelsForProvider.find((m) => m.id === value);
-              if (model && !isModelDownloaded(model.id, selectedProviderId)) {
-                toast.error(`"${model.name}" no está descargado`, {
-                  description: "Ve a Providers > Local LLM para descargarlo primero.",
-                });
-                return;
-              }
-              onModelChange(value);
-            }}
+            onValueChange={handleModelChange}
             disabled={disabled || modelOptions.length === 0}
           >
             <SelectTrigger id="model" className="w-full">

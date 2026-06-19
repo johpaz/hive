@@ -11,7 +11,7 @@ import { getAgentLoop } from "../agent-loop"
 import { resolveUserId, resolveAgentId } from "../../storage/onboarding"
 import type { ContentPart } from "../../multimodal/types"
 
-export type Provider = "openai" | "anthropic" | "gemini" | "mistral" | "kimi" | "ollama" | "openrouter" | "deepseek" | "nvidia"
+export type Provider = "openai" | "anthropic" | "gemini" | "mistral" | "kimi" | "ollama" | "openrouter" | "deepseek" | "nvidia" | "hiveagents"
 
 export interface StepEvent {
   type: "text" | "plan" | "tool_call" | "tool_result"
@@ -96,6 +96,7 @@ export class AgentRunner {
             raw_user_message: options.rawUserMessage,
           },
           signal: options.signal,
+          onToken: options.onToken,
         }
       )
 
@@ -126,7 +127,7 @@ export class AgentRunner {
             } else {
               logger.debug(`[STREAM] Content empty or whitespace only, skipping accumulation`)
             }
-            if (options.onToken) options.onToken(content)
+            if (options.onToken && !chunk.agent.streamed) options.onToken(content)
           } else {
             logger.debug(`[STREAM] No content in chunk, lastMsg.content is falsy`)
           }

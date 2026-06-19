@@ -1,12 +1,18 @@
 export interface OutboundMessage {
-  type: "message" | "stream" | "status" | "error" | "pong" | "command_result" | "log" | "typing" | "audio";
+  type: "message" | "stream" | "status" | "error" | "pong" | "command_result" | "log" | "typing" | "audio" | "process";
   sessionId: string;
   id?: string; // Message ID for streaming
+  messageId?: string;
   content?: string;
   chunk?: string;
   isChunk?: boolean; // True if this is a streaming chunk
   isLast?: boolean;
   isStep?: boolean;
+  processKind?: "analysis" | "tool" | "observation" | "writing";
+  processStatus?: "thinking" | "done" | "error";
+  label?: string;
+  detail?: string;
+  summary?: string;
   stepType?: "plan" | "tool_call" | "tool_result" | "text";
   audio?: {
     buffer?: Buffer;

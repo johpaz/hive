@@ -290,7 +290,7 @@ const GatewayConfigSchema = z.object({
 });
 
 const ModelsConfigSchema = z.object({
-  defaultProvider: z.enum(["openai", "anthropic", "gemini", "mistral", "kimi", "ollama", "openrouter", "deepseek"]).optional(),
+  defaultProvider: z.enum(["openai", "anthropic", "gemini", "mistral", "kimi", "ollama", "openrouter", "deepseek", "hiveagents"]).optional(),
   defaults: z.record(z.string(), z.string()).optional(),
   providers: z.record(z.string(), ProviderConfigSchema).optional(),
 });

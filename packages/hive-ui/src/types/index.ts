@@ -1,7 +1,7 @@
 export type { Agent, AgentConfig, AgentStatus, AgentActivity } from "./agent";
 export type { CanvasComponent, CanvasComponentType, CanvasEvent, InteractionEvent } from "./canvas";
 export type { BridgeProcess, BridgeLog, CLIAdapter, BridgeProcessStatus } from "./bridge";
-export type { Message, Conversation, MessageType } from "./chat";
+export type { Message, Conversation, MessageType, MessageProcess, MessageProcessItem, MessageProcessKind, MessageProcessStatus } from "./chat";
 export type { WebSocketMessage, WebSocketStatus, WebSocketConfig } from "./websocket";
 export type { EthicsConfig, EthicsRule, EthicsLevel, EthicsTemplate, EthicsConflict } from "./ethics";
 export type { UserConfig, UserPreference, UserMemory } from "./user";

@@ -41,7 +41,7 @@ import { handleSetupStatus, handleVerifyProvider, handleCompleteSetup, handleSet
 import { handleAuthStatus, handleLogin, handleSetupCredentials, handleChangePassword, handleRecover, handleDisableAuth, handleRecoveryKey } from "./routes/auth";
 import { resolveUserId } from "../storage/onboarding";
 import { handleGetAgents, handleCreateAgent, handleUpdateAgent, handleDeleteAgent } from "./routes/agents";
-import { handleGetProviders, handleCreateProvider, handleToggleProvider, handleUpdateProvider, handleSyncProviderModels } from "./routes/providers";
+import { handleGetProviders, handleCreateProvider, handleToggleProvider, handleUpdateProvider, handleSyncProviderModels, handleLoadHiveAgentsModel, handleGetHiveAgentsModelStatus } from "./routes/providers";
 import { handleGetUsers, handleCreateUser, handleUpdateUserSettings, handleGetUserChannels, handleLinkUserChannel } from "./routes/users";
 import { handleGetSkills, handleActivateSkill, handleUpdateSkill, handleDeleteSkill, handleCreateSkill } from "./routes/skills";
 import { handleGetEthics, handleActivateEthics, handleDeleteEthics } from "./routes/ethics";
@@ -255,6 +255,82 @@ export async function startGateway(config: Config): Promise<void> {
   function prepareTools(agentInstance: AgentService, sessionId: string) {
     // Tools are now handled by the native agent-loop internally
     return undefined;
+  }
+
+  type WebChatProcessKind = "analysis" | "tool" | "observation" | "writing";
+  type WebChatProcessStatus = "thinking" | "done" | "error";
+
+  function createWebChatProcessReporter(ws: { send: (payload: string) => void }, sessionId: string, messageId: string) {
+    const sent = new Set<string>();
+
+    const send = (event: {
+      kind?: WebChatProcessKind;
+      label?: string;
+      detail?: string;
+      status?: WebChatProcessStatus;
+      summary?: string;
+    }) => {
+      ws.send(JSON.stringify({
+        type: "process",
+        sessionId,
+        id: messageId,
+        messageId,
+        processKind: event.kind,
+        processStatus: event.status,
+        label: event.label,
+        detail: event.detail,
+        summary: event.summary,
+        timestamp: new Date().toISOString(),
+      } as OutboundMessage));
+    };
+
+    const sendOnce = (key: string, event: Parameters<typeof send>[0]) => {
+      if (sent.has(key)) return;
+      sent.add(key);
+      send(event);
+    };
+
+    return {
+      start(label = "Revisando tu solicitud") {
+        sendOnce("start", { kind: "analysis", label, status: "thinking" });
+      },
+      writing() {
+        sendOnce("writing", { kind: "writing", label: "Preparando la respuesta", status: "thinking" });
+      },
+      step(step: { type: string; message?: string; toolName?: string }) {
+        if (step.type === "tool_call" && step.toolName) {
+          sendOnce(`tool:${step.toolName}`, {
+            kind: "tool",
+            label: getNarration(step.toolName),
+            status: "thinking",
+          });
+          return;
+        }
+
+        if (step.type === "tool_result") {
+          sendOnce(`tool_result:${sent.size}`, {
+            kind: "observation",
+            label: "Revisando la informacion obtenida",
+            status: "thinking",
+          });
+          return;
+        }
+
+        if (step.type === "text") {
+          sendOnce("analysis:text", {
+            kind: "analysis",
+            label: "Organizando la informacion",
+            status: "thinking",
+          });
+        }
+      },
+      done(summary = "Proceso completado") {
+        send({ status: "done", summary });
+      },
+      error(summary = "No se pudo completar el proceso") {
+        send({ status: "error", summary });
+      },
+    };
   }
 
   // Set up hot reload watchers
@@ -1160,6 +1236,14 @@ export async function startGateway(config: Config): Promise<void> {
         const providerIdMatch = url.pathname.match(/^\/api\/providers\/([^/]+)$/)
         if (providerIdMatch && (req.method === "PUT" || req.method === "PATCH")) {
           return await handleUpdateProvider(req, addCorsHeaders)
+        }
+
+        // ── HiveAgents model loading ───────────────────────────────────────
+        if (url.pathname === "/api/providers/hiveagents/load-model" && req.method === "POST") {
+          return await handleLoadHiveAgentsModel(req, addCorsHeaders)
+        }
+        if (url.pathname === "/api/providers/hiveagents/model-status" && req.method === "GET") {
+          return await handleGetHiveAgentsModelStatus(req, addCorsHeaders)
         }
 
         // ── Models API ───────────────────────────────────────────────────
@@ -2159,6 +2243,7 @@ export async function startGateway(config: Config): Promise<void> {
             } as OutboundMessage));
 
             laneQueue.enqueue(msg.sessionId, async (_task, signal) => {
+              let processReporter: ReturnType<typeof createWebChatProcessReporter> | null = null;
               if (signal.aborted) {
                 ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId: msg.sessionId } as OutboundMessage));
                 ws.send(JSON.stringify({ type: "error", sessionId: msg.sessionId, error: "Task cancelled" } as OutboundMessage));
@@ -2173,11 +2258,14 @@ export async function startGateway(config: Config): Promise<void> {
                 const unifiedSessionId = conversationThreadId;
                 const routingSessionId = msg.sessionId;
                 const messages = [{ role: "user" as const, content: messageContent }];
+                const messageId = crypto.randomUUID();
+                processReporter = createWebChatProcessReporter(ws, routingSessionId, messageId);
+                processReporter.start("Revisando la transcripcion");
                 log.info(`Generating response for session ${unifiedSessionId}...`);
 
                 // Streaming: send tokens as they arrive
                 let streamedContent = "";
-                let messageId = crypto.randomUUID();
+                let reportedWriting = false;
 
                 const response = await runner.generate({
                   provider: dbProvider as any,
@@ -2189,6 +2277,10 @@ export async function startGateway(config: Config): Promise<void> {
                   userId,
                   onToken: async (token: string) => {
                     if (signal.aborted) return;
+                    if (!reportedWriting && token.trim()) {
+                      reportedWriting = true;
+                      processReporter?.writing();
+                    }
                     streamedContent += token;
                     // Send chunk to client
                     ws.send(JSON.stringify({
@@ -2202,30 +2294,7 @@ export async function startGateway(config: Config): Promise<void> {
                   },
                   onStep: async (step) => {
                     if (signal.aborted) return;
-
-                    // "text" = el agente narra lo que esta pensando/haciendo
-                    if (step.type === "text" && step.message) {
-                      const trimmedMessage = (typeof step.message === "string" ? step.message : "").trim();
-                      if (trimmedMessage) {
-                        ws.send(JSON.stringify({
-                          type: "progress",
-                          sessionId: routingSessionId,
-                          content: trimmedMessage,
-                        } as OutboundMessage));
-                      }
-                      return;
-                    }
-
-                    // "tool_call" = el agente va a ejecutar una herramienta → narrar al usuario
-                    if (step.type === "tool_call" && step.toolName) {
-                      const narration = getNarration(step.toolName);
-                      ws.send(JSON.stringify({
-                        type: "progress",
-                        sessionId: routingSessionId,
-                        content: narration,
-                      } as OutboundMessage));
-                      return;
-                    }
+                    processReporter?.step(step);
 
                     // "tool_result" = resultado de herramienta → solo si pide enviarse al usuario
                     if (step.type === "tool_result" && step.message) {
@@ -2267,6 +2336,7 @@ export async function startGateway(config: Config): Promise<void> {
                     if (!voiceCfg.ttsProvider) {
                       ws.send(JSON.stringify({
                         type: "message",
+                        id: messageId,
                         sessionId: routingSessionId,
                         content: `${content}\n\n🔊 Para recibir respuestas en audio, configura el proveedor TTS en Configuración > Canales > WebChat (ej: elevenlabs)`,
                         isStep: false,
@@ -2282,6 +2352,7 @@ export async function startGateway(config: Config): Promise<void> {
                         log.info(`Audio generated: ${base64Audio.length} bytes, mimeType: ${audioOutput.mimeType}`);
                         ws.send(JSON.stringify({
                           type: "message",
+                          id: messageId,
                           sessionId: routingSessionId,
                           content,
                           audio: base64Audio,
@@ -2290,11 +2361,11 @@ export async function startGateway(config: Config): Promise<void> {
                         } as OutboundMessage));
                       } catch (ttsError) {
                         log.error(`TTS failed: ${(ttsError as Error).message}), sending text instead`);
-                        ws.send(JSON.stringify({ type: "message", sessionId: routingSessionId, content, isStep: false } as OutboundMessage));
+                        ws.send(JSON.stringify({ type: "message", id: messageId, sessionId: routingSessionId, content, isStep: false } as OutboundMessage));
                       }
                     }
                   } else {
-                    ws.send(JSON.stringify({ type: "message", sessionId: routingSessionId, content, isStep: false } as OutboundMessage));
+                    ws.send(JSON.stringify({ type: "message", id: messageId, sessionId: routingSessionId, content, isStep: false } as OutboundMessage));
                   }
                 } else if (alreadyStreamed && shouldSpeak && voiceCfg.ttsProvider) {
                   try {
@@ -2304,6 +2375,7 @@ export async function startGateway(config: Config): Promise<void> {
                     log.info(`Audio generated after streaming: ${base64Audio.length} bytes`);
                     ws.send(JSON.stringify({
                       type: "message",
+                      id: messageId,
                       sessionId: routingSessionId,
                       content,
                       audio: base64Audio,
@@ -2314,7 +2386,9 @@ export async function startGateway(config: Config): Promise<void> {
                     log.error(`TTS after streaming failed: ${(ttsError as Error).message}), skipping audio`);
                   }
                 }
+                processReporter.done("Listo");
               } catch (error) {
+                processReporter?.error("No se pudo completar la respuesta");
                 ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId: msg.sessionId } as OutboundMessage));
                 ws.send(JSON.stringify({
                   type: "error",
@@ -2351,6 +2425,7 @@ export async function startGateway(config: Config): Promise<void> {
           } as OutboundMessage));
 
           laneQueue.enqueue(msg.sessionId, async (_task, signal) => {
+            let processReporter: ReturnType<typeof createWebChatProcessReporter> | null = null;
             if (signal.aborted) {
               ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId: msg.sessionId } as OutboundMessage));
               ws.send(JSON.stringify({ type: "error", sessionId: msg.sessionId, error: "Task cancelled" } as OutboundMessage));
@@ -2364,6 +2439,9 @@ export async function startGateway(config: Config): Promise<void> {
               });
               const unifiedSessionId = conversationThreadId;
               const routingSessionId = msg.sessionId;
+              const messageId = crypto.randomUUID();
+              processReporter = createWebChatProcessReporter(ws, routingSessionId, messageId);
+              processReporter.start(msg.image || msg.document ? "Revisando tu solicitud y adjuntos" : "Revisando tu solicitud");
 
               // Multimodal: process image/document if present
               let finalMessageContent = msg.content;
@@ -2372,6 +2450,7 @@ export async function startGateway(config: Config): Promise<void> {
 
               if (msg.image || msg.document) {
                 log.info(`🖼️ Multimodal content detected from WebChat session ${unifiedSessionId}`);
+                processReporter.step({ type: "tool_result" });
 
                 if (msg.image) {
                   try {
@@ -2434,7 +2513,7 @@ export async function startGateway(config: Config): Promise<void> {
 
               // Streaming: send tokens as they arrive
               let streamedContent = "";
-              let messageId = crypto.randomUUID();
+              let reportedWriting = false;
 
               const response = await runner.generate({
                 provider: dbProvider as any,
@@ -2447,6 +2526,10 @@ export async function startGateway(config: Config): Promise<void> {
                 signal,
                 onToken: async (token: string) => {
                   if (signal.aborted) return;
+                  if (!reportedWriting && token.trim()) {
+                    reportedWriting = true;
+                    processReporter?.writing();
+                  }
                   streamedContent += token;
                   // Send chunk to client
                   ws.send(JSON.stringify({
@@ -2460,30 +2543,7 @@ export async function startGateway(config: Config): Promise<void> {
                 },
                 onStep: async (step) => {
                   if (signal.aborted) return;
-
-                  // "text" = el agente narra lo que esta pensando/haciendo
-                  if (step.type === "text" && step.message) {
-                    const trimmedMessage = (typeof step.message === "string" ? step.message : "").trim();
-                    if (trimmedMessage) {
-                      ws.send(JSON.stringify({
-                        type: "progress",
-                        sessionId: routingSessionId,
-                        content: trimmedMessage,
-                      } as OutboundMessage));
-                    }
-                    return;
-                  }
-
-                  // "tool_call" = el agente va a ejecutar una herramienta → narrar al usuario
-                  if (step.type === "tool_call" && step.toolName) {
-                    const narration = getNarration(step.toolName);
-                    ws.send(JSON.stringify({
-                      type: "progress",
-                      sessionId: routingSessionId,
-                      content: narration,
-                    } as OutboundMessage));
-                    return;
-                  }
+                  processReporter?.step(step);
 
                   // "tool_result" = resultado de herramienta → solo si pide enviarse al usuario
                   if (step.type === "tool_result" && step.message) {
@@ -2525,6 +2585,7 @@ export async function startGateway(config: Config): Promise<void> {
                   if (!voiceConfig.ttsProvider) {
                     ws.send(JSON.stringify({
                       type: "message",
+                      id: messageId,
                       sessionId: routingSessionId,
                       content: `${content}\n\n🔊 Para recibir respuestas en audio, configura el proveedor TTS en Configuración > Canales > WebChat (ej: elevenlabs)`,
                       isStep: false
@@ -2539,6 +2600,7 @@ export async function startGateway(config: Config): Promise<void> {
                       const base64Audio = (audioOutput.data as Buffer).toString("base64");
                       ws.send(JSON.stringify({
                         type: "message",
+                        id: messageId,
                         sessionId: routingSessionId,
                         content,
                         audio: base64Audio,
@@ -2547,11 +2609,11 @@ export async function startGateway(config: Config): Promise<void> {
                       } as OutboundMessage));
                     } catch (ttsError) {
                       log.error(`TTS failed: ${(ttsError as Error).message}), sending text instead`);
-                      ws.send(JSON.stringify({ type: "message", sessionId: routingSessionId, content, isStep: false } as OutboundMessage));
+                      ws.send(JSON.stringify({ type: "message", id: messageId, sessionId: routingSessionId, content, isStep: false } as OutboundMessage));
                     }
                   }
                 } else {
-                  ws.send(JSON.stringify({ type: "message", sessionId: routingSessionId, content, isStep: false } as OutboundMessage));
+                  ws.send(JSON.stringify({ type: "message", id: messageId, sessionId: routingSessionId, content, isStep: false } as OutboundMessage));
                 }
               } else if (alreadyStreamed && shouldSpeak && voiceConfig.ttsProvider) {
                 try {
@@ -2561,6 +2623,7 @@ export async function startGateway(config: Config): Promise<void> {
                   log.info(`Audio generated after streaming: ${base64Audio.length} bytes`);
                   ws.send(JSON.stringify({
                     type: "message",
+                    id: messageId,
                     sessionId: routingSessionId,
                     content,
                     audio: base64Audio,
@@ -2571,7 +2634,9 @@ export async function startGateway(config: Config): Promise<void> {
                   log.error(`TTS after streaming failed: ${(ttsError as Error).message}), skipping audio`);
                 }
               }
+              processReporter.done("Listo");
             } catch (error) {
+              processReporter?.error("No se pudo completar la respuesta");
               // Detener typing aunque falle — nunca dejar el spinner infinito
               ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId: msg.sessionId } as OutboundMessage));
               ws.send(JSON.stringify({

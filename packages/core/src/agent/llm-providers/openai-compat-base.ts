@@ -17,6 +17,12 @@ export abstract class OpenAICompatBase implements LLMProvider {
   /** Override to true for providers running on localhost. */
   protected isLocalProvider(): boolean { return false }
 
+  /** Override to customize the OpenAI client (e.g. strip unwanted headers, add custom fetch). */
+  protected async resolveOpenAIClient(apiKey: string, baseURL: string | undefined): Promise<any> {
+    const { default: OpenAI } = await import("openai")
+    return new OpenAI({ apiKey, baseURL })
+  }
+
   /** Hook called before each request. Override for e.g. auto-starting a local server. */
   protected async beforeCall(_options: LLMCallOptions): Promise<void> {}
 
@@ -26,6 +32,9 @@ export abstract class OpenAICompatBase implements LLMProvider {
    * (for local models whose chat templates don't support native tool calling).
    */
   protected injectToolsIntoPrompt(_body: any, _preparedTools: any[]): void {}
+
+  /** Override to add provider-specific fields to the request body (e.g. extra_body for llama.cpp chat_template_kwargs). */
+  protected modifyRequestBody(body: any, _options: LLMCallOptions): any { return body }
 
   private _convertContentPart(part: ContentPart): any {
     switch (part.type) {
@@ -51,8 +60,6 @@ export abstract class OpenAICompatBase implements LLMProvider {
   }
 
   async call(options: LLMCallOptions): Promise<LLMResponse> {
-    const { default: OpenAI } = await import("openai")
-
     const baseURL = options.baseUrl?.trim() || OPENAI_COMPAT_BASE_URLS[this.providerName] || undefined
     const isLocal = this.isLocalProvider()
 
@@ -63,7 +70,7 @@ export abstract class OpenAICompatBase implements LLMProvider {
       throw new Error(`API key missing for provider: ${this.providerName}. Configure it in Settings → Providers.`)
     }
 
-    const client = new OpenAI({ apiKey, baseURL })
+    const client = await this.resolveOpenAIClient(apiKey, baseURL)
 
     const sanitized = sanitizeMessages(options.messages)
     const rawMessages = this.needsReasoningRoundtrip()
@@ -121,7 +128,7 @@ export abstract class OpenAICompatBase implements LLMProvider {
 
     let response
     try {
-      response = await client.chat.completions.create(body)
+      response = await client.chat.completions.create(this.modifyRequestBody(body, options))
     } catch (err: any) {
       const status = err?.status ?? err?.response?.status
       const errMsg = (err?.error?.message ?? err?.message ?? "").toLowerCase()
@@ -133,7 +140,7 @@ export abstract class OpenAICompatBase implements LLMProvider {
         delete bodyNoTools.tools
         delete bodyNoTools.tool_choice
         delete bodyNoTools.parallel_tool_calls
-        response = await client.chat.completions.create(bodyNoTools)
+        response = await client.chat.completions.create(this.modifyRequestBody(bodyNoTools, options))
       }
       // Retry 2: context overflow — compact messages and retry
       else if (status === 400 && (errMsg.includes("context length") || errMsg.includes("input_tokens") || errMsg.includes("maximum input length"))) {
@@ -153,7 +160,7 @@ export abstract class OpenAICompatBase implements LLMProvider {
         if (body.max_tokens) body.max_tokens = Math.min(body.max_tokens, 4096)
 
         log.info(`[llm-client] ${this.providerName}: compacted ${compacted.length} msgs → ${body.messages.length} msgs, max_tokens=${body.max_tokens}`)
-        response = await client.chat.completions.create(body)
+        response = await client.chat.completions.create(this.modifyRequestBody(body, options))
       }
       else {
         throw err
@@ -207,7 +214,7 @@ export abstract class OpenAICompatBase implements LLMProvider {
   ): Promise<LLMResponse> {
     let stream
     try {
-      stream = await client.chat.completions.create({ ...body, stream: true })
+      stream = await client.chat.completions.create({ ...this.modifyRequestBody(body, options), stream: true })
     } catch (err: any) {
       const status = err?.status ?? err?.response?.status
       const errMsg = (err?.error?.message ?? err?.message ?? "").toLowerCase()
@@ -218,7 +225,7 @@ export abstract class OpenAICompatBase implements LLMProvider {
         delete bodyNoTools.tools
         delete bodyNoTools.tool_choice
         delete bodyNoTools.parallel_tool_calls
-        stream = await client.chat.completions.create({ ...bodyNoTools, stream: true })
+        stream = await client.chat.completions.create({ ...this.modifyRequestBody(bodyNoTools, options), stream: true })
       } else if (status === 400 && (errMsg.includes("context length") || errMsg.includes("input_tokens") || errMsg.includes("maximum input length"))) {
         log.warn(`[llm-client] ${this.providerName}: context overflow — compacting messages and retrying stream`)
         const compacted = [...body.messages]
@@ -233,7 +240,7 @@ export abstract class OpenAICompatBase implements LLMProvider {
         body.messages = systemMsg ? [systemMsg, ...trimmed] : trimmed
         if (body.max_tokens) body.max_tokens = Math.min(body.max_tokens, 4096)
         log.info(`[llm-client] ${this.providerName}: compacted ${compacted.length} msgs → ${body.messages.length} msgs, max_tokens=${body.max_tokens}`)
-        stream = await client.chat.completions.create({ ...body, stream: true })
+        stream = await client.chat.completions.create({ ...this.modifyRequestBody(body, options), stream: true })
       } else {
         throw err
       }
@@ -325,6 +332,7 @@ export function extractToolCallsFromText(
   const tool_calls: LLMToolCall[] = []
   let extractedContent = content
 
+  // Regexes for wrapped tool-call blocks.
   const regexes = [
     /<tool_call>\s*({[\s\S]*?})\s*<\/tool_call>/g,
     /<function_call>\s*({[\s\S]*?})\s*<\/function_call>/g,
@@ -336,13 +344,20 @@ export function extractToolCallsFromText(
     while ((match = regex.exec(content)) !== null) {
       try {
         const json = JSON.parse(match[1])
-        if (json.name) {
+        const calls = Array.isArray(json) ? json : [json]
+        for (const call of calls) {
+          if (!call) continue
+          // Accept both { name, arguments } and { function: { name, arguments } }
+          const fn = call.function || call
+          const name = fn.name ?? call.name
+          let args = fn.arguments ?? call.arguments ?? call.parameters
+          if (!name) continue
           tool_calls.push({
             id: crypto.randomUUID(),
             type: "function",
             function: {
-              name: toolNameMap.get(json.name) ?? json.name,
-              arguments: typeof json.arguments === "object" ? JSON.stringify(json.arguments) : (json.arguments || "{}"),
+              name: toolNameMap.get(name) ?? name,
+              arguments: typeof args === "object" ? JSON.stringify(args) : (args || "{}"),
             },
           })
           extractedContent = extractedContent.replace(match[0], "").trim()
@@ -356,19 +371,28 @@ export function extractToolCallsFromText(
   // Fallback: entire output is a bare JSON tool call — only if name matches a known tool
   if (tool_calls.length === 0 && knownToolNames && knownToolNames.size > 0) {
     try {
-      const json = JSON.parse(content.trim())
-      const resolvedName = toolNameMap.get(json.name) ?? json.name
-      if (json.name && knownToolNames.has(resolvedName) && (json.arguments || json.parameters)) {
-        const args = json.arguments || json.parameters
-        tool_calls.push({
-          id: crypto.randomUUID(),
-          type: "function",
-          function: {
-            name: resolvedName,
-            arguments: typeof args === "object" ? JSON.stringify(args) : (args || "{}"),
-          },
-        })
-        extractedContent = ""
+      const trimmed = content.trim()
+      // Strip common markdown fences before parsing.
+      const jsonText = trimmed.replace(/^```(?:json|tool_call)?\s*|\s*```$/g, "").trim()
+      const json = JSON.parse(jsonText)
+      const calls = Array.isArray(json) ? json : [json]
+      for (const call of calls) {
+        if (!call) continue
+        const fn = call.function || call
+        const name = fn.name ?? call.name
+        let args = fn.arguments ?? call.arguments ?? call.parameters
+        const resolvedName = toolNameMap.get(name) ?? name
+        if (name && knownToolNames.has(resolvedName) && (args !== undefined || calls.length === 1)) {
+          tool_calls.push({
+            id: crypto.randomUUID(),
+            type: "function",
+            function: {
+              name: resolvedName,
+              arguments: typeof args === "object" ? JSON.stringify(args) : (args || "{}"),
+            },
+          })
+          extractedContent = ""
+        }
       }
     } catch {
       // not valid JSON

@@ -142,6 +142,7 @@ export const SEED_DATA: SeedData = {
     { id: "minimax", name: "MiniMax", baseUrl: "https://api.minimaxi.com/v1" },
     { id: "opencode-go", name: "OpenCode Go", baseUrl: "https://opencode.ai/zen/go/v1" },
     { id: "piper", name: "Piper (Local TTS)" },
+    { id: "hiveagents", name: "HiveAgents LLM (Cloudflare)", baseUrl: "https://llm.hiveagents.io/v1", category: "llm" },
   ],
 
   models: [
@@ -315,6 +316,19 @@ export const SEED_DATA: SeedData = {
     { id: "opencode-go/mimo-v2.5-pro",      providerId: "opencode-go", name: "MiMo-V2.5 Pro",       modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming", "reasoning"]) },
     { id: "opencode-go/mimo-v2.5",          providerId: "opencode-go", name: "MiMo-V2.5",           modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
     { id: "opencode-go/hy3-preview",        providerId: "opencode-go", name: "Hunyuan 3 Preview",   modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+
+    // ── HiveAgents (llama.cpp local, acceso vía Cloudflare) ──
+    // IDs actualizados según modelos disponibles en https://llm.hiveagents.io
+    // contextWindow = 50000 porque así se cargan en el backend.
+    { id: "Qwen3.6-35B-A3B-UD-Q6_K.gguf",      providerId: "hiveagents", name: "Qwen3.6 35B MoE (Recomendado)", modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "reasoning"]) },
+    { id: "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",    providerId: "hiveagents", name: "Qwen3.6 35B MoE (Q4_K_M)",     modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "reasoning"]) },
+    { id: "Qwen3.6-27B-UD-Q4_K_XL.gguf",       providerId: "hiveagents", name: "Qwen3.6 27B + MTP",            modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "reasoning"]) },
+    { id: "Qwen3-Coder-Next-UD-Q4_K_M.gguf",    providerId: "hiveagents", name: "Qwen3 Coder Next",             modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "code"]) },
+    { id: "Qwopus3.6-27B-v2-MTP-Q6_K.gguf",    providerId: "hiveagents", name: "Qwopus3.6 27B v2 (Q6_K)",      modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "reasoning"]) },
+    { id: "Qwopus3.6-27B-v2-MTP-Q4_K_S.gguf",  providerId: "hiveagents", name: "Qwopus3.6 27B v2 (Q4_K_S)",    modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "reasoning"]) },
+    { id: "gemma-4-31B-it-UD-Q4_K_XL.gguf",    providerId: "hiveagents", name: "Gemma 4 31B Dense",            modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming"]) },
+    { id: "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf", providerId: "hiveagents", name: "Gemma 4 26B MoE",              modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming"]) },
+    { id: "gemma-4-12b-it-UD-Q4_K_XL.gguf",    providerId: "hiveagents", name: "Gemma 4 12B Dense",            modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming"]) },
   ],
 
 

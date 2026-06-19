@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import type { Message } from "@/types";
 import { 
   Bot, AlertTriangle, Play, Pause, Volume2, Volume1, VolumeX, 
-  FileText, Image as ImageIcon, RotateCcw, Gauge, Zap
+  FileText, RotateCcw, Gauge, Zap, ChevronDown, ChevronRight, CheckCircle2, Loader2
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import ReactMarkdown from "react-markdown";
@@ -21,21 +21,85 @@ function formatTime(ts: string) {
   return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function formatAudioTime(time: number) {
+  if (isNaN(time)) return "0:00";
+  const mins = Math.floor(time / 60);
+  const secs = Math.floor(time % 60);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
+const EMPTY_STEPS: string[] = [];
+
+function ProcessBlock({
+  process,
+  fallbackSteps,
+  isStreaming,
+}: {
+  process?: Message["process"];
+  fallbackSteps: string[];
+  isStreaming?: boolean;
+}) {
+  const fallbackItems = fallbackSteps.map((step, index) => ({
+    id: `fallback-${index}-${step}`,
+    kind: "observation" as const,
+    label: step,
+    timestamp: new Date().toISOString(),
+  }));
+  const items = process?.items?.length ? process.items : fallbackItems;
+  const status = process?.status || (isStreaming ? "thinking" : "done");
+  const isActive = status === "thinking";
+  const [manuallyOpen, setManuallyOpen] = useState(false);
+  const open = isActive || manuallyOpen;
+
+  if (!items.length && !isActive) return null;
+
+  const title = isActive ? "Pensando" : status === "error" ? "Proceso interrumpido" : "Proceso";
+  const summary = process?.summary || (isActive ? "Trabajando en la respuesta" : `${items.length} pasos`);
+  const ToggleIcon = open ? ChevronDown : ChevronRight;
+  const StatusIcon = isActive ? Loader2 : status === "error" ? AlertTriangle : CheckCircle2;
+
+  return (
+    <div className="mb-3 w-full max-w-full rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setManuallyOpen((value) => !value)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-white/[0.03] transition-colors"
+      >
+        <StatusIcon className={`h-3.5 w-3.5 shrink-0 ${isActive ? "animate-spin text-blue-400" : status === "error" ? "text-rose-400" : "text-emerald-400"}`} />
+        <span className="text-xs font-semibold text-white/75">{title}</span>
+        <span className="min-w-0 flex-1 truncate text-[11px] text-white/40">{summary}</span>
+        <ToggleIcon className="h-3.5 w-3.5 shrink-0 text-white/35" />
+      </button>
+      {open && (
+        <div className="space-y-2 border-t border-white/10 px-3 py-2">
+          {items.length > 0 ? items.map((item) => (
+            <div key={item.id} className="flex min-w-0 items-start gap-2 text-xs text-white/60">
+              <Zap className="mt-0.5 h-3 w-3 shrink-0 text-blue-400/70" />
+              <div className="min-w-0">
+                <div className="break-words leading-snug">{item.label}</div>
+                {item.detail && <div className="mt-0.5 break-words text-[11px] text-white/35">{item.detail}</div>}
+              </div>
+            </div>
+          )) : (
+            <div className="flex items-center gap-2 text-xs text-white/45">
+              <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
+              Analizando la solicitud
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AudioPlayer({ audio, mimeType = "audio/webm" }: { audio: string; mimeType?: string }) {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [speed, setSpeed] = useState(1);
   const audioRef = useRef<HTMLAudioElement>(null);
-
-  useEffect(() => {
-    if (audio && !audioUrl) {
-      const url = `data:${mimeType};base64,${audio}`;
-      setAudioUrl(url);
-    }
-  }, [audio, audioUrl, mimeType]);
+  const audioUrl = audio ? `data:${mimeType};base64,${audio}` : null;
 
   useEffect(() => {
     if (audioRef.current) {
@@ -79,13 +143,6 @@ function AudioPlayer({ audio, mimeType = "audio/webm" }: { audio: string; mimeTy
     setSpeed(speeds[nextIndex]);
   };
 
-  const formatAudioTime = (time: number) => {
-    if (isNaN(time)) return "0:00";
-    const mins = Math.floor(time / 60);
-    const secs = Math.floor(time % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
   if (!audio) return null;
 
   const VolumeIcon = volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
@@ -94,7 +151,9 @@ function AudioPlayer({ audio, mimeType = "audio/webm" }: { audio: string; mimeTy
     <div className="flex flex-col gap-2 mt-3 p-3 bg-zinc-900/50 border border-white/5 rounded-2xl w-full max-w-sm shadow-xl backdrop-blur-sm">
       <div className="flex items-center gap-3">
         <button
+          type="button"
           onClick={togglePlay}
+          aria-label={isPlaying ? "Pausar audio" : "Reproducir audio"}
           className="h-10 w-10 rounded-full bg-blue-600 hover:bg-blue-500 flex items-center justify-center transition-all active:scale-95 shadow-lg shadow-blue-600/20"
         >
           {isPlaying ? (
@@ -139,7 +198,9 @@ function AudioPlayer({ audio, mimeType = "audio/webm" }: { audio: string; mimeTy
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 group/vol">
             <button 
+              type="button"
               onClick={() => setVolume(volume === 0 ? 1 : 0)}
+              aria-label={volume === 0 ? "Activar volumen" : "Silenciar audio"}
               className="text-white/40 hover:text-white transition-colors"
             >
               <VolumeIcon className="h-4 w-4" />
@@ -155,6 +216,7 @@ function AudioPlayer({ audio, mimeType = "audio/webm" }: { audio: string; mimeTy
           </div>
 
           <button
+            type="button"
             onClick={cycleSpeed}
             className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-white/5 text-white/40 hover:text-blue-400 transition-all"
           >
@@ -164,7 +226,9 @@ function AudioPlayer({ audio, mimeType = "audio/webm" }: { audio: string; mimeTy
         </div>
 
         <button 
+          type="button"
           onClick={() => { if (audioRef.current) audioRef.current.currentTime = 0; }}
+          aria-label="Reiniciar audio"
           className="text-white/20 hover:text-white/60 transition-colors p-1"
           title="Reiniciar"
         >
@@ -181,6 +245,7 @@ function AudioPlayer({ audio, mimeType = "audio/webm" }: { audio: string; mimeTy
           onEnded={() => setIsPlaying(false)}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
+          aria-label="Audio del agente"
           className="hidden"
         />
       )}
@@ -188,13 +253,13 @@ function AudioPlayer({ audio, mimeType = "audio/webm" }: { audio: string; mimeTy
   );
 }
 
-export function ChatMessage({ message, userName = "Tú", agentName = "Agente", isStreaming, currentSteps = [], onNarrate }: ChatMessageProps) {
+export function ChatMessage({ message, userName = "Tú", agentName = "Agente", isStreaming, currentSteps = EMPTY_STEPS, onNarrate }: ChatMessageProps) {
   const isUser = message.type === "user";
   const isError = message.type === "error";
   const isSystem = message.type === "system";
   const hasAudio = !!message.audio?.base64 || !!message.audio?.url;
   const hasContent = message.content.trim().length > 0;
-  const showActivity = !!isStreaming && (currentSteps.length > 0 || !hasContent);
+  const showProcess = !!message.process || currentSteps.length > 0 || (!!isStreaming && !hasContent);
 
   if (isSystem) {
     return (
@@ -284,36 +349,8 @@ export function ChatMessage({ message, userName = "Tú", agentName = "Agente", i
           </div>
         )}
 
-        {showActivity && (
-          <div className="flex flex-col gap-2 mb-2 ml-1">
-            {currentSteps.length > 0 && (
-              <div className="flex flex-col gap-1.5">
-                {currentSteps.map((step, i) => {
-                  const isLatest = i === currentSteps.length - 1;
-                  return (
-                    <div
-                      key={`${step}-${i}`}
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all w-fit max-w-full ${
-                        isLatest
-                          ? "bg-blue-500/10 border-blue-500/20 text-blue-400"
-                          : "bg-white/5 border-white/10 text-white/50"
-                      }`}
-                    >
-                      <Zap className={`h-3 w-3 shrink-0 ${isLatest ? "text-blue-400" : "text-white/30"}`} />
-                      <span className="leading-tight break-words">{step}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {!hasContent && (
-              <div className="bg-white/5 border border-white/10 px-4 py-3.5 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-1.5 w-fit">
-                <span className="h-2 w-2 rounded-full bg-white/30 animate-bounce [animation-delay:0ms]" />
-                <span className="h-2 w-2 rounded-full bg-white/30 animate-bounce [animation-delay:150ms]" />
-                <span className="h-2 w-2 rounded-full bg-white/30 animate-bounce [animation-delay:300ms]" />
-              </div>
-            )}
-          </div>
+        {showProcess && (
+          <ProcessBlock process={message.process} fallbackSteps={currentSteps} isStreaming={isStreaming} />
         )}
 
         {hasContent && (
@@ -333,7 +370,9 @@ export function ChatMessage({ message, userName = "Tú", agentName = "Agente", i
           <span className="text-[10px] font-medium text-white/40">{formatTime(message.timestamp)}</span>
           {onNarrate && (
             <button
+              type="button"
               onClick={() => onNarrate(message.content)}
+              aria-label="Narrar mensaje"
               className="h-6 w-6 rounded flex items-center justify-center text-white/40 hover:text-blue-400 hover:bg-white/5 transition-colors"
               title="Narrar mensaje"
             >

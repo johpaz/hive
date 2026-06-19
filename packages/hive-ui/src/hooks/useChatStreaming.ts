@@ -1,6 +1,7 @@
 import { useCallback, useRef } from "react";
 import { useChatStore } from "@/stores/chatStore";
 import { generateId } from "@/lib/utils";
+import type { Message, MessageProcessItem, MessageProcessKind, MessageProcessStatus } from "@/types";
 
 export function useChatStreaming(agentId: string, sessionId: string) {
   const addMessage = useChatStore((s) => s.addMessage);
@@ -10,6 +11,60 @@ export function useChatStreaming(agentId: string, sessionId: string) {
   const clearSteps = useChatStore((s) => s.clearSteps);
   const setStreamingMessageId = useChatStore((s) => s.setStreamingMessageId);
   const streamingMessageIdRef = useRef<string | null>(null);
+
+  const ensureAgentMessage = useCallback(
+    (messageId: string, timestamp?: string) => {
+      const state = useChatStore.getState();
+      const existingMessage = state.messages.find((m) => m.id === messageId);
+      if (existingMessage) return existingMessage;
+
+      const message: Message = {
+        id: messageId,
+        conversationId: sessionId,
+        type: "agent" as const,
+        content: "",
+        agentId,
+        timestamp: timestamp || new Date().toISOString(),
+      };
+      state.addMessage(message);
+      return message;
+    },
+    [agentId, sessionId]
+  );
+
+  const upsertProcessItem = useCallback(
+    (
+      messageId: string,
+      item: MessageProcessItem | null,
+      status: MessageProcessStatus = "thinking",
+      summary?: string,
+      timestamp?: string
+    ) => {
+      const state = useChatStore.getState();
+      const existingMessage = state.messages.find((m) => m.id === messageId) || ensureAgentMessage(messageId, timestamp);
+      const currentProcess = existingMessage.process || { status: "thinking" as const, items: [] };
+      const items = item
+        ? (() => {
+            const last = currentProcess.items[currentProcess.items.length - 1];
+            if (last?.kind === item.kind && last.label === item.label && last.detail === item.detail) {
+              return currentProcess.items;
+            }
+            return [...currentProcess.items, item].slice(-12);
+          })()
+        : currentProcess.items;
+
+      state.updateMessage(messageId, {
+        process: {
+          ...currentProcess,
+          status,
+          items,
+          summary: summary ?? currentProcess.summary,
+        },
+        timestamp: timestamp || existingMessage.timestamp,
+      });
+    },
+    [ensureAgentMessage]
+  );
 
   const handleStreamingChunk = useCallback(
     (data: any) => {
@@ -104,15 +159,56 @@ export function useChatStreaming(agentId: string, sessionId: string) {
         });
       }
 
+      upsertProcessItem(messageId, {
+        id: data.id || generateId(),
+        kind: "observation",
+        label: data.content,
+        timestamp: data.timestamp || new Date().toISOString(),
+      });
       state.addStep(data.content);
       state.setLoading(true);
     }
-  }, [agentId, sessionId]);
+  }, [agentId, sessionId, upsertProcessItem]);
+
+  const handleProcess = useCallback((data: any) => {
+    const messageId = data.messageId || data.id || streamingMessageIdRef.current || generateId();
+    const status = (data.processStatus || data.status || "thinking") as MessageProcessStatus;
+    const kind = (data.processKind || data.kind || "analysis") as MessageProcessKind;
+    const timestamp = data.timestamp || new Date().toISOString();
+
+    if (status === "thinking") {
+      streamingMessageIdRef.current = messageId;
+      setStreamingMessageId(messageId);
+      setLoading(true);
+    }
+
+    const label = data.label || data.content;
+    const item = label
+      ? {
+          id: data.itemId || generateId(),
+          kind,
+          label,
+          detail: data.detail,
+          timestamp,
+        }
+      : null;
+
+    upsertProcessItem(messageId, item, status, data.summary, timestamp);
+
+    if (status === "done" || status === "error") {
+      streamingMessageIdRef.current = null;
+      setStreamingMessageId(null);
+      clearSteps();
+      setLoading(false);
+    }
+  }, [clearSteps, setLoading, setStreamingMessageId, upsertProcessItem]);
 
   const handleTyping = useCallback((data: any) => {
     if (data.isTyping === true) {
       useChatStore.getState().setLoading(true);
     } else if (data.isTyping === false) {
+      streamingMessageIdRef.current = null;
+      useChatStore.getState().setStreamingMessageId(null);
       useChatStore.getState().clearSteps();
       useChatStore.getState().setLoading(false);
     }
@@ -127,6 +223,7 @@ export function useChatStreaming(agentId: string, sessionId: string) {
     handleStreamingChunk,
     handleAudioMessage,
     handleProgress,
+    handleProcess,
     handleTyping,
     resetStreamingRef,
   };

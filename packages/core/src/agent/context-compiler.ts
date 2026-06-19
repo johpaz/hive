@@ -183,6 +183,12 @@ export async function compileContext(opts: {
             // Sanitized name valid for all LLM providers (no spaces, max 64 chars)
             const fullName = mcpToolFullName(server.name, mcpTool.name)
 
+            // Skip tools whose sanitized name is empty or fails provider validation
+            if (!fullName || !/^[a-zA-Z0-9_-]{1,64}$/.test(fullName)) {
+              log.warn(`[context-compiler] Skipping MCP tool with unsupported name: "${mcpTool.name}" (server: ${server.name}, sanitized: "${fullName}")`)
+              continue
+            }
+
             // Executor for agent-loop (has the real call)
             mcpToolExecutors.push({
               name: fullName,

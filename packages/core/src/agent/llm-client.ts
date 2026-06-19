@@ -26,6 +26,7 @@ import { NvidiaProvider } from "./llm-providers/nvidia"
 import { QwenProvider } from "./llm-providers/qwen"
 import { MiniMaxProvider } from "./llm-providers/minimax"
 import { OpenCodeGoProvider } from "./llm-providers/opencode-go"
+import { HiveAgentsProvider } from "./llm-providers/hiveagents"
 import type { LLMProvider } from "./llm-providers/interface"
 
 const log = logger.child("llm-client")
@@ -113,6 +114,7 @@ function getProvider(provider: string): LLMProvider {
     case "qwen":        return new QwenProvider()
     case "minimax":     return new MiniMaxProvider()
     case "opencode-go": return new OpenCodeGoProvider()
+    case "hiveagents":  return new HiveAgentsProvider()
     default:
       log.warn(`[llm-client] Unknown provider "${provider}" — falling back to OpenAI-compatible endpoint`)
       return new OpenAIProvider()

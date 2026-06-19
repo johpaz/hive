@@ -5,6 +5,10 @@ import {
   loadProviderHeaders, storeProviderHeaders,
 } from "../../storage/crypto"
 import { listLocalModels } from "../llm-local/downloader"
+import { loadHiveAgentsModel, getHiveAgentsModelStatus } from "../../agent/llm-providers/hiveagents"
+import { logger } from "../../utils/logger"
+
+const log = logger.child("gateway")
 
 export async function handleGetProviders(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const rawProviders = getDb().query(`
@@ -258,4 +262,56 @@ export async function handleSyncProviderModels(
       error: `${hint}: ${errorMsg}`
     }, { status: 502 }), req)
   }
+}
+
+export async function handleLoadHiveAgentsModel(
+  req: Request,
+  addCorsHeaders: (r: Response, req: Request) => Response
+): Promise<Response> {
+  const body = await req.json().catch(() => ({}))
+  const modelId = body.model_id || body.modelId
+  const ctx = typeof body.ctx === "number" && body.ctx > 0 ? body.ctx : 50000
+  if (!modelId) {
+    return addCorsHeaders(Response.json({ error: "model_id is required" }, { status: 400 }), req)
+  }
+
+  const providerRow = getDb().query("SELECT * FROM providers WHERE id = ?").get("hiveagents") as Record<string, unknown> | undefined
+  if (!providerRow) {
+    return addCorsHeaders(Response.json({ error: "Provider not found" }, { status: 404 }), req)
+  }
+
+  const apiKey = await loadProviderApiKey("hiveagents")
+  if (!apiKey) {
+    return addCorsHeaders(Response.json({ error: "API key not configured for hiveagents" }, { status: 400 }), req)
+  }
+
+  const baseUrl = providerRow.base_url as string | undefined
+  log.info(`[gateway] Loading hiveagents model ${modelId} with ctx=${ctx} via ${baseUrl || "https://llm.hiveagents.io"}`)
+
+  const result = await loadHiveAgentsModel(modelId as string, apiKey, baseUrl, ctx)
+  if (!result.success) {
+    log.error(`[gateway] Failed to load hiveagents model ${modelId}: ${result.error}`)
+    return addCorsHeaders(Response.json({ error: result.error }, { status: 502 }), req)
+  }
+  const isLoading = (result as any).loading === true
+  log.info(`[gateway] hiveagents load request accepted for ${modelId} with ctx=${ctx}${isLoading ? " (timeout/backend still loading)" : ""}`)
+  return addCorsHeaders(Response.json({ success: true, loading: isLoading, model_id: modelId, ctx }), req)
+}
+
+export async function handleGetHiveAgentsModelStatus(
+  req: Request,
+  addCorsHeaders: (r: Response, req: Request) => Response
+): Promise<Response> {
+  const providerRow = getDb().query("SELECT * FROM providers WHERE id = ?").get("hiveagents") as Record<string, unknown> | undefined
+  if (!providerRow) {
+    return addCorsHeaders(Response.json({ error: "Provider not found" }, { status: 404 }), req)
+  }
+
+  const apiKey = await loadProviderApiKey("hiveagents")
+  if (!apiKey) {
+    return addCorsHeaders(Response.json({ error: "API key not configured for hiveagents" }, { status: 400 }), req)
+  }
+
+  const status = await getHiveAgentsModelStatus(apiKey, providerRow.base_url as string | undefined)
+  return addCorsHeaders(Response.json({ success: true, ...status }), req)
 }

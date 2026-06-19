@@ -43,7 +43,18 @@ export const AVAILABLE_MODELS: Record<ProviderType, Partial<ModelDefinition>[]> 
     mistral: [],
     groq: [],
     cohere: [],
-    nvidia: []
+    nvidia: [],
+    hiveagents: [
+        { id: "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf", name: "Qwen3.6 35B MoE Q4 (Recomendado)", description: "MoE 22.7GB — 62.8 t/s, el más rápido", contextWindow: 200000, isAvailable: true, isDefault: true, supportsThinking: true },
+        { id: "Qwen3.6-35B-A3B-UD-Q6_K.gguf", name: "Qwen3.6 35B MoE Q6", description: "MoE 30GB — 57.7 t/s", contextWindow: 200000, isAvailable: true, isDefault: false, supportsThinking: true },
+        { id: "Qwen3-Coder-Next-UD-Q4_K_M.gguf", name: "Qwen3 Coder Next MoE Q4", description: "MoE 49.3GB — 50.9 t/s, ocupa toda la VRAM", contextWindow: 200000, isAvailable: true, isDefault: false, supportsThinking: true },
+        { id: "gemma-4-26B-A4B-UD-Q4_K_M.gguf", name: "Gemma 4 26B MoE Q4", description: "MoE 16.9GB — 51.5 t/s", contextWindow: 200000, isAvailable: true, isDefault: false, supportsThinking: true },
+        { id: "gemma-4-26B-A4B-UD-Q6_K_XL.gguf", name: "Gemma 4 26B MoE Q6", description: "MoE 23.3GB — 47.8 t/s", contextWindow: 200000, isAvailable: true, isDefault: false, supportsThinking: true },
+        { id: "gemma-4-12b-it-UD-Q4_K_XL.gguf", name: "Gemma 4 12B Dense Q4", description: "Dense 7.4GB — 27.7 t/s", contextWindow: 200000, isAvailable: true, isDefault: false, supportsThinking: true },
+        { id: "Qwopus3.6-27B-v2-MTP-Q6_K.gguf", name: "Qwopus 27B Dense+MTP Q6", description: "Dense+MTP 22.4GB — 17.9 t/s, speculative decoding", contextWindow: 200000, isAvailable: true, isDefault: false, supportsThinking: true },
+        { id: "Qwen3.6-27B-UD-Q6_K_XL.gguf", name: "Qwen3.6 27B Dense+MTP Q6", description: "Dense+MTP 26GB — 16 t/s, speculative decoding", contextWindow: 200000, isAvailable: true, isDefault: false, supportsThinking: true },
+        { id: "gemma-4-31B-it-UD-Q6_K_XL.gguf", name: "Gemma 4 31B Dense Q6", description: "Dense 27.5GB — 7.6 t/s, mayor calidad", contextWindow: 200000, isAvailable: true, isDefault: false, supportsThinking: true },
+    ],
 };
 
 // Map these simplified partial models into full ModelDefinition objects

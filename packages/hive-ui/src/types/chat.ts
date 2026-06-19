@@ -1,4 +1,20 @@
 export type MessageType = "user" | "agent" | "system" | "error";
+export type MessageProcessStatus = "thinking" | "done" | "error";
+export type MessageProcessKind = "analysis" | "tool" | "observation" | "writing";
+
+export interface MessageProcessItem {
+  id: string;
+  kind: MessageProcessKind;
+  label: string;
+  detail?: string;
+  timestamp: string;
+}
+
+export interface MessageProcess {
+  status: MessageProcessStatus;
+  items: MessageProcessItem[];
+  summary?: string;
+}
 
 export interface Message {
   id: string;
@@ -8,6 +24,7 @@ export interface Message {
   agentId?: string;
   timestamp: string;
   metadata?: Record<string, unknown>;
+  process?: MessageProcess;
   audio?: {
     base64?: string;
     url?: string;

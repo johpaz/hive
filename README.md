@@ -11,7 +11,7 @@
 
 ## ¿Qué es Hive?
 
-Hive es un Gateway de IA Orquestado — un Enjambre de Agentes Especializados que trabajan juntos bajo la coordinación de un gateway central. A diferencia de un asistente personal único, Hive implementa una arquitectura de enjambre donde múltiples agentes especializados trabajan en equipo.
+Hive es un Agent Harness para agentes locales — un Enjambre de Agentes Especializados que trabajan juntos bajo la coordinación de un harness central. A diferencia de un asistente personal único, Hive implementa una arquitectura de enjambre donde múltiples agentes especializados trabajan en equipo.
 
 **El problema que resolvemos**: Necesitas un asistente de IA que funcione en múltiples canales (Telegram, Discord, WhatsApp), que pueda ejecutar tareas automáticamente, que respete tu privacidad con datos locales, y que sea extensible con herramientas propias.
 
@@ -26,7 +26,7 @@ github.com/AlDanial/cloc v 2.08  T=0.31 s (1932.4 files/s, 319323.0 lines/s)
 
 Language          files     blank   comment      code
 ─────────────────────────────────────────────────────
-TypeScript          536     11074      4820     74917   ← motor, gateway, canales, UI
+TypeScript          536     11074      4820     74917   ← motor, harness, canales, UI
 Markdown             33      1167         0      4468
 JSON                 15         5         0       749
 CSS                   1       156        38       592
@@ -87,7 +87,7 @@ chmod +x hive-docker.sh
 ./hive-docker.sh
 ```
 
-El script levanta el contenedor, espera a que el gateway esté listo y abre el navegador directamente en `/setup` (primera vez) o en el dashboard (si ya está configurado).
+El script levanta el contenedor, espera a que el harness esté listo y abre el navegador directamente en `/setup` (primera vez) o en el dashboard (si ya está configurado).
 
 #### Raspberry Pi, VPS o servidor headless
 
@@ -120,15 +120,15 @@ docker run -d \
   -v hive-data:/root/.hive \
   --name hive \
   --restart unless-stopped \
-  johpaz/hive:0.0.39
+  johpaz/hive:0.0.40
 ```
 
 **Variables de entorno disponibles:**
 
 | Variable | Default | Descripción |
 |----------|---------|-------------|
-| `HIVE_HOST` | `0.0.0.0` | Interfaz de red donde escucha el gateway |
-| `HIVE_PORT` | `18790` | Puerto del gateway |
+| `HIVE_HOST` | `0.0.0.0` | Interfaz de red donde escucha el harness |
+| `HIVE_PORT` | `18790` | Puerto del harness |
 | `HIVE_AUTH_TOKEN` | — | Token de autenticación (opcional) |
 | `HIVE_LOG_LEVEL` | `info` | Nivel de logs (`debug`, `info`, `warn`, `error`) |
 
@@ -194,10 +194,10 @@ En el equipo donde tienes conexión a internet:
 
 ```bash
 # Descargar la imagen si no la tienes
-docker pull johpaz/hive:0.0.39
+docker pull johpaz/hive:0.0.40
 
 # Exportar a archivo tar (cabe en cualquier USB de 512 MB+)
-docker save johpaz/hive:0.0.39 -o /media/usb/hive-image.tar
+docker save johpaz/hive:0.0.40 -o /media/usb/hive-image.tar
 ```
 
 **Paso 2 — Crear la estructura en la USB**
@@ -215,7 +215,7 @@ Crea el `docker-compose.yml` en la USB con el volumen apuntando a la USB:
 ```yaml
 services:
   hive:
-    image: johpaz/hive:0.0.39
+    image: johpaz/hive:0.0.40
     ports:
       - "18790:18790"
     volumes:
@@ -294,11 +294,11 @@ Descarga manual de cualquier plataforma o versión específica.
 
 | Plataforma | Archivo | Descarga directa |
 |------------|---------|------------------|
-| Linux x64 | `hive-v0.0.39-linux-x64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.39-linux-x64) |
-| Linux ARM64 (Raspberry Pi, etc.) | `hive-v0.0.39-linux-arm64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.39-linux-arm64) |
-| macOS Apple Silicon (M1/M2/M3/M4) | `hive-v0.0.39-macos-arm64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.39-macos-arm64) |
-| macOS Intel | `hive-v0.0.39-macos-x64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.39-macos-x64) |
-| Windows x64 | `hive-v0.0.39-windows-x64.exe` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.39-windows-x64.exe) |
+| Linux x64 | `hive-v0.0.40-linux-x64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.40-linux-x64) |
+| Linux ARM64 (Raspberry Pi, etc.) | `hive-v0.0.40-linux-arm64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.40-linux-arm64) |
+| macOS Apple Silicon (M1/M2/M3/M4) | `hive-v0.0.40-macos-arm64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.40-macos-arm64) |
+| macOS Intel | `hive-v0.0.40-macos-x64` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.40-macos-x64) |
+| Windows x64 | `hive-v0.0.40-windows-x64.exe` | [Descargar](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.40-windows-x64.exe) |
 
 > Los links anteriores siempre apuntan a la última versión publicada. Si necesitas una versión específica, visita la [página de releases](https://github.com/johpaz/hive/releases).
 
@@ -308,7 +308,7 @@ Descarga manual de cualquier plataforma o versión específica.
 
 ```bash
 # 1. Descargar el binario (reemplaza "linux-x64" por "linux-arm64" si es ARM)
-curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.39-linux-x64
+curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.40-linux-x64
 
 # 2. Dar permisos de ejecución
 chmod +x hive
@@ -325,7 +325,7 @@ cp -r ui-dist/* ~/.hive/ui/
 ./hive start
 ```
 
-El gateway levanta en `http://localhost:18790`. El navegador se abre automáticamente.
+El harness levanta en `http://localhost:18790`. El navegador se abre automáticamente.
 
 **Agregar al PATH (opcional)** para ejecutar `hive` desde cualquier directorio:
 
@@ -340,7 +340,7 @@ hive start
 
 ```bash
 # 1. Descargar
-curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.39-macos-arm64
+curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.40-macos-arm64
 
 # 2. Dar permisos de ejecución
 chmod +x hive
@@ -380,7 +380,7 @@ hive start
 Igual que Apple Silicon pero descarga `macos-x64`:
 
 ```bash
-curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.39-macos-x64
+curl -L -o hive https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.40-macos-x64
 chmod +x hive
 xattr -d com.apple.quarantine hive
 curl -L https://github.com/johpaz/hive/releases/latest/download/ui-dist.tar.gz \
@@ -395,7 +395,7 @@ mkdir -p ~/.hive/ui && cp -r ui-dist/* ~/.hive/ui/
 
 **Paso 1 — Descargar el binario**
 
-Descarga [`hive-v0.0.39-windows-x64.exe`](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.39-windows-x64.exe) desde GitHub o desde [hiveagents.io](https://www.hiveagents.io/#installation).
+Descarga [`hive-v0.0.40-windows-x64.exe`](https://github.com/johpaz/hive/releases/latest/download/hive-v0.0.40-windows-x64.exe) desde GitHub o desde [hiveagents.io](https://www.hiveagents.io/#installation).
 
 **Paso 2 — Windows SmartScreen**
 
@@ -425,7 +425,7 @@ tar -xzf ui-dist.tar.gz -C "$env:USERPROFILE\.hive\ui"
 **Paso 4 — Ejecutar**
 
 ```powershell
-.\hive-v0.0.39-windows-x64.exe start
+.\hive-v0.0.40-windows-x64.exe start
 ```
 
 El navegador se abre automáticamente en `http://localhost:18790`.
@@ -434,7 +434,7 @@ El navegador se abre automáticamente en `http://localhost:18790`.
 
 ```powershell
 # Mover a una carpeta ya en el PATH, por ejemplo:
-Move-Item .\hive-v0.0.39-windows-x64.exe C:\Windows\System32\hive.exe
+Move-Item .\hive-v0.0.40-windows-x64.exe C:\Windows\System32\hive.exe
 
 # Luego ejecutar desde cualquier lugar:
 hive start
@@ -461,7 +461,7 @@ Todos los datos (base de datos, configuración, logs) se guardan en `~/.hive/`:
 | Variable | Default | Descripción |
 |----------|---------|-------------|
 | `HIVE_HOME` | `~/.hive` | Directorio raíz de datos |
-| `HIVE_PORT` | `18790` | Puerto del gateway |
+| `HIVE_PORT` | `18790` | Puerto del harness |
 | `HIVE_HOST` | `127.0.0.1` | Interfaz de red |
 | `HIVE_UI_DIR` | `~/.hive/ui` | Ruta alternativa para la UI |
 
@@ -485,7 +485,7 @@ El binario standalone es ideal para llevarlo en una USB. Tu agente viaja contigo
 **Preparar la USB:**
 
 ```bash
-cp hive-v0.0.39-linux-x64 /media/usb/hive
+cp hive-v0.0.40-linux-x64 /media/usb/hive
 chmod +x /media/usb/hive
 cp -r ui-dist/* /media/usb/ui/
 
@@ -529,7 +529,7 @@ bun install -g @johpaz/hive-agents
 hive start
 ```
 
-Al arrancar por primera vez, el gateway levanta en `http://localhost:18790` y la UI en un puerto libre (normalmente `5173`). **El navegador se abre automáticamente** en la pantalla de setup.
+Al arrancar por primera vez, el harness levanta en `http://localhost:18790` y la UI en un puerto libre (normalmente `5173`). **El navegador se abre automáticamente** en la pantalla de setup.
 
 #### Setup inicial — asistente web
 
@@ -540,7 +540,7 @@ El wizard de configuración tiene 4 pasos:
 3. **Ética** — elige las reglas de comportamiento predefinidas.
 4. **Canales** — activa WebChat, Telegram o Discord.
 
-Al terminar, el gateway se reinicia automáticamente y el navegador redirige al dashboard.
+Al terminar, el harness se reinicia automáticamente y el navegador redirige al dashboard.
 
 > Si prefieres configurar sin browser (VPS headless, SSH, etc.):
 > ```bash
@@ -550,9 +550,9 @@ Al terminar, el gateway se reinicia automáticamente y el navegador redirige al 
 **Comandos útiles:**
 
 ```bash
-hive status          # estado del gateway
+hive status          # estado del harness
 hive logs --follow   # logs en tiempo real
-hive stop            # detener el gateway
+hive stop            # detener el harness
 hive doctor          # diagnóstico del sistema
 ```
 
@@ -703,41 +703,6 @@ El turno arranca pequeño para reducir ruido en modelos locales: 4 tools en cont
 
 ---
 
-### FASE 4 — Proyectos, Tareas y Workers
-
-El Coordinador puede descomponer problemas complejos en proyectos con tareas paralelas ejecutadas por workers autónomos.
-
-**4.1 — Decisión simple vs proyecto**
-
-El modelo decide en su system prompt:
-- **Tarea simple** → el Coordinador la resuelve directamente o despacha a un worker existente
-- **Tarea compleja** → crea un proyecto con subtareas y dependencias
-
-**4.2 — Creación de proyecto y asignación de workers**
-
-1. `task_delegate` — delega una tarea general a un worker aislado
-2. `task_delegate_code` — delega trabajo de código a un subagente CLI
-3. `task_status` — consulta el estado de tareas delegadas
-4. `agent_find`, `agent_create`, `agent_archive` — reutiliza, crea o archiva workers especializados
-5. `bus_publish` y `bus_read` — comunicación entre workers por Agent Bus
-
-**4.3 — Ejecución respetando dependencias**
-
-- Tareas sin dependencias (o con dependencias ya `completed`) se ejecutan primero
-- Tareas independientes entre sí corren en paralelo (`Promise.all`)
-- Si una tarea falla: el Coordinador puede reintentar, reasignar a otro agente, o marcar el proyecto como `failed`
-
-**4.4 — Contexto aislado por worker (AISLAR)**
-
-Cada worker recibe **solo** lo necesario para su tarea:
-- Reglas de ética + su system prompt propio
-- Descripción de la tarea asignada
-- Resultados de las tareas de las que depende
-
-El worker **no** recibe la conversación completa del usuario. Esto mantiene el contexto mínimo y evita contaminación entre agentes.
-
----
-
 ### FASE 5 — ACE (Adaptive Context Engine)
 
 El ACE convierte a Hive en un sistema que aprende automáticamente de sus propias ejecuciones.
@@ -764,11 +729,6 @@ Transforma insights en reglas operativas:
 - Si es nueva → la inserta con `confidence` proporcional a cuántas trazas la respaldan
 - Si `harmful_count > helpful_count` → marca la regla como `active=0`
 - Si hay reglas duplicadas o contradictorias → fusiona o poda
-
-Poda de agentes:
-- Workers sin actividad por más de 14 días → `status='archived'`
-- Workers con tasa de fallo alta → `archived` + regla en playbook explicando por qué fallaba
-- Workers duplicados (skills similares) → archiva el menos exitoso
 
 **Ciclo completo del ACE:**
 
@@ -940,8 +900,8 @@ Hive es software libre construido desde Colombia. Si te ha sido útil, puedes ap
 ## Links
 
 - 🌐 [hiveagents.io](https://hiveagents.io)
-- 💬 [Discord](https://discord.gg/hive)
-- 📱 [Telegram](https://t.me/hive_agents)
+- 💬 [Discord](https://discord.gg/Tzfdmgju)
+- 📱 [Telegram](https://t.me/agents_hive)
 
 ---
 

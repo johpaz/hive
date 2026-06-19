@@ -28,8 +28,11 @@ import { resolveUserId, resolveAgentId } from "../storage/onboarding"
 import type { ContentPart } from "../multimodal/types"
 import { loadConfig } from "../config/loader"
 import { executeToolBatch } from "../tool-runtime"
+import { createStuckLoopDetector, getInterventionMessage, type StuckLoopState } from "./stuck-loop"
 
 const log = logger.child("agent-loop")
+
+const DEFAULT_MAX_WALL_CLOCK_MS = 5 * 60 * 1000
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,13 +48,18 @@ export interface AgentLoopOptions {
   isolated?: boolean
   taskContext?: string | ContentPart[]
   onStep?: (step: StepEvent) => Promise<void>
+  onToken?: (token: string) => void
   /** User ID for context propagation */
   userId?: string
   /** Abort signal to stop generation mid-execution */
   signal?: AbortSignal
   /** Clean text for FTS5 and tracing (extracted from userMessage if multimodal) */
   rawUserMessage?: string
+  /** Extra tools to force into the LLM loadout (used by tests/evals). */
+  extraTools?: any[]
 }
+
+export type { StepEvent as AgentStepEvent }
 
 export interface StepEvent {
   type: "text" | "tool_call" | "tool_result"
@@ -63,7 +71,7 @@ export interface StepEvent {
 // ─── Stream chunk types (compatible with providers/index.ts) ─────────────────
 
 export interface StreamChunk {
-  agent?: { messages: any[] }
+  agent?: { messages: any[]; streamed?: boolean }
   tools?: { messages: any[] }
   usage?: { input_tokens: number; output_tokens: number }
 }
@@ -82,6 +90,12 @@ export async function* runAgent(
 
   const agentName = agent.name || opts.agentId
   const maxIterations = agent.max_iterations || 10
+  const maxWallClockMs = agent.max_wall_clock_ms || DEFAULT_MAX_WALL_CLOCK_MS
+  const wallClockDeadline = Date.now() + maxWallClockMs
+
+  // Stuck-loop protection
+  const stuckDetector = createStuckLoopDetector(loadConfig())
+  let stuckState: StuckLoopState | undefined
 
   // Resolve LLM provider config
   const providerCfg = await resolveProviderConfig(
@@ -122,6 +136,19 @@ export async function* runAgent(
     userId: opts.userId,
   })
 
+  // Force extra tools into the loadout (tests/evals)
+  if (opts.extraTools?.length) {
+    const existingNames = new Set(ctx.tools.map((t: any) => t.function?.name))
+    for (const tool of opts.extraTools) {
+      const name = tool.function?.name || tool.name
+      if (name && !existingNames.has(name)) {
+        ctx.tools.push(tool)
+        existingNames.add(name)
+        log.info(`[agent-loop] Force-injected tool into loadout: ${name}`)
+      }
+    }
+  }
+
   const systemPrompt = opts.systemPromptOverride || ctx.systemPrompt
 
   // Build initial messages array for the model
@@ -143,6 +170,9 @@ export async function* runAgent(
   let lastToolSignature = ""
   let consecutiveRepeat = 0
   let loopDetected = false
+  // Stall detection: iterations without a forward-progress tool call (write/click/navigate)
+  let idleIterations = 0
+  const PROGRESS_TOOLS = new Set(["browser_type", "browser_click", "browser_navigate"])
 
   // ── The loop ────────────────────────────────────────────────────────────
   while (iterations < maxIterations) {
@@ -152,12 +182,25 @@ export async function* runAgent(
       break
     }
 
+    if (Date.now() > wallClockDeadline) {
+      log.warn(`[agent-loop] Wall-clock timeout exceeded (${maxWallClockMs}ms). Breaking.`)
+      finalContent = "La tarea tomó demasiado tiempo. Te sugiero dividirla en pasos más pequeños o darme más detalles para continuar."
+      break
+    }
+
     iterations++
 
+    let streamedThisCall = false
     const response = await callLLM({
       ...providerCfg,
       messages: clearOldToolResults(messages) as LLMMessage[],
       tools: ctx.tools.length > 0 ? ctx.tools : undefined,
+      onToken: opts.onToken
+        ? (token: string) => {
+          streamedThisCall = true
+          opts.onToken?.(token)
+        }
+        : undefined,
     })
 
     // Accumulate usage
@@ -169,7 +212,7 @@ export async function* runAgent(
     // Emit agent chunk (compatible with providers/index.ts)
     const agentMsg: any = { content: response.content }
     if (response.tool_calls?.length) agentMsg.tool_calls = response.tool_calls
-    yield { agent: { messages: [agentMsg] } }
+    yield { agent: { messages: [agentMsg], streamed: streamedThisCall } }
 
     // Notify onStep for narration text
     if (opts.onStep && response.content) {
@@ -286,6 +329,10 @@ export async function* runAgent(
         content: toolResultLLM,
         tool_call_id: tc.id,
       })
+
+      // Record tool call for stuck-loop detection
+      const errorMessage = toolResultLLM.startsWith("[Tool Error]") ? toolResultLLM : undefined
+      stuckDetector.recordToolCall(opts.threadId, toolName, tc.function.arguments as Record<string, unknown>, errorMessage)
 
       // Dynamic tool injection: when search_knowledge finds tools (native or MCP), add them to ctx.tools
       if (toolName === "search_knowledge") {
@@ -463,6 +510,54 @@ export async function* runAgent(
 
     if (loopDetected) break
 
+    // Check for stuck loop after each iteration
+    stuckState = stuckDetector.check(opts.threadId)
+    if (stuckState.detected) {
+      const intervention = getInterventionMessage(stuckState)
+      log.warn(`[agent-loop] ${intervention}`)
+
+      if (stuckState.count >= 4) {
+        // Critical: break and notify user instead of looping forever
+        finalContent = intervention
+        loopDetected = true
+        emitCanvas("canvas:node_update", {
+          nodeId: opts.agentId,
+          changes: { status: "stuck", currentTool: stuckState.toolName },
+        })
+        break
+      } else {
+        // Warning: inject intervention message so the model changes strategy
+        messages.push({
+          role: "user",
+          content: intervention,
+        })
+      }
+    }
+
+    // Stall detection: no forward-progress tool for several iterations
+    const hadProgress = toolResults.some(
+      (r) => PROGRESS_TOOLS.has(r.toolName) && !String(r.result).startsWith("[Tool Error]")
+    )
+    if (hadProgress) {
+      idleIterations = 0
+    } else if (toolResults.length > 0) {
+      idleIterations++
+    }
+    if (idleIterations >= 3 && idleIterations < 5) {
+      const stallMsg = "ADVERTENCIA: Llevas varios pasos sin modificar la página. Si ya completaste el formulario, responde al usuario. Si no, avanza con browser_type/browser_click en lugar de seguir inspeccionando."
+      log.warn(`[agent-loop] ${stallMsg}`)
+      messages.push({ role: "user", content: stallMsg })
+    } else if (idleIterations >= 5) {
+      const stallMsg = "No logré avanzar en el formulario después de varios intentos. Puede que la página no sea compatible o que falten instrucciones. Te sugiero revisar la URL o darme más detalles."
+      log.warn(`[agent-loop] Stall break: ${stallMsg}`)
+      finalContent = stallMsg
+      emitCanvas("canvas:node_update", {
+        nodeId: opts.agentId,
+        changes: { status: "stuck", currentTool: "NO_PROGRESS" },
+      })
+      break
+    }
+
     emitCanvas("canvas:node_update", {
       nodeId: opts.agentId,
       changes: { status: "thinking", currentTool: null },
@@ -603,6 +698,10 @@ export class AgentLoop {
         raw_user_message?: string
       }
       signal?: AbortSignal
+      onToken?: (token: string) => void
+      onStep?: (step: StepEvent) => Promise<void>
+      /** Extra tools to force into the LLM loadout (tests/evals). */
+      extraTools?: any[]
     }
   ): AsyncIterable<StreamChunk> {
     // Resolve from database with priority: explicit param → DB lookup → single user/agent
@@ -647,6 +746,9 @@ export class AgentLoop {
       mcpManager: this.mcpManager,
       userId,
       signal: config.signal,
+      onToken: config.onToken,
+      onStep: config.onStep,
+      extraTools: config.extraTools,
     })
   }
 

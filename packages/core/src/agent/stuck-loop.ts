@@ -9,18 +9,26 @@ interface ToolCallRecord {
   timestamp: number;
 }
 
-interface StuckLoopState {
+interface ProgressRecord {
+  hash: string;
+  timestamp: number;
+}
+
+export interface StuckLoopState {
   detected: boolean;
   toolName: string;
   count: number;
   lastError?: string;
+  kind: "loop" | "stall";
 }
 
 export class StuckLoopDetector {
   private log = logger.child("stuck-loop");
   private history: Map<string, ToolCallRecord[]> = new Map();
+  private progressHistory: Map<string, ProgressRecord[]> = new Map();
   private readonly maxHistoryPerSession = 50;
   private readonly triggerThreshold = 3;
+  private readonly progressThreshold = 3;
 
   constructor(_config: Config) {}
 
@@ -54,9 +62,9 @@ export class StuckLoopDetector {
 
   check(sessionId: string): StuckLoopState {
     const sessionHistory = this.history.get(sessionId) ?? [];
-    
+
     if (sessionHistory.length < this.triggerThreshold) {
-      return { detected: false, toolName: "", count: 0 };
+      return { detected: false, toolName: "", count: 0, kind: "loop" };
     }
 
     const recent = sessionHistory.slice(-10);
@@ -65,7 +73,7 @@ export class StuckLoopDetector {
     for (const record of recent) {
       const key = `${record.toolName}:${record.argsHash}`;
       const existing = counts.get(key);
-      
+
       if (existing) {
         existing.count++;
         if (record.errorMessage) {
@@ -79,33 +87,73 @@ export class StuckLoopDetector {
     for (const [key, data] of counts) {
       if (data.count >= this.triggerThreshold && data.error) {
         const toolName = key.split(":")[0] ?? "unknown";
-        
+
         this.log.warn(`Stuck loop detected: ${toolName} called ${data.count} times with same args and error`);
-        
+
         return {
           detected: true,
           toolName,
           count: data.count,
           lastError: data.error,
+          kind: "loop",
         };
       }
     }
 
-    return { detected: false, toolName: "", count: 0 };
+    return { detected: false, toolName: "", count: 0, kind: "loop" };
   }
 
-  getInterventionMessage(state: StuckLoopState): string | null {
-    if (!state.detected) return null;
-
-    if (state.count >= this.triggerThreshold + 1) {
-      return `CRITICAL: You have called ${state.toolName} ${state.count} times with the same arguments and it keeps failing with: "${state.lastError}". The user has been notified. You MUST try a completely different approach or ask the user for guidance.`;
+  /**
+   * Record a progress snapshot hash. Use this to detect when the agent is not
+   * advancing even though no tool errors are occurring.
+   */
+  recordProgress(sessionId: string, progressHash: string): void {
+    let sessionProgress = this.progressHistory.get(sessionId);
+    if (!sessionProgress) {
+      sessionProgress = [];
+      this.progressHistory.set(sessionId, sessionProgress);
     }
 
-    return `WARNING: You have called ${state.toolName} ${state.count} times with the same arguments and it keeps failing. You MUST try a completely different approach instead of repeating the same action.`;
+    sessionProgress.push({ hash: progressHash, timestamp: Date.now() });
+
+    if (sessionProgress.length > this.maxHistoryPerSession) {
+      sessionProgress.shift();
+    }
+
+    this.log.debug(`Recorded progress hash for session ${sessionId}: ${progressHash}`);
+  }
+
+  /**
+   * Detect lack of progress when the same hash appears repeatedly.
+   */
+  checkProgress(sessionId: string, threshold?: number): StuckLoopState {
+    const sessionProgress = this.progressHistory.get(sessionId) ?? [];
+    const required = threshold ?? this.progressThreshold;
+
+    if (sessionProgress.length < required) {
+      return { detected: false, toolName: "", count: 0, kind: "stall" };
+    }
+
+    const recent = sessionProgress.slice(-required);
+    const firstHash = recent[0]?.hash;
+    const allSame = recent.every((r) => r.hash === firstHash);
+
+    if (allSame && firstHash) {
+      this.log.warn(`Stall detected: no progress for ${required} checks (hash ${firstHash})`);
+      return {
+        detected: true,
+        toolName: "NO_PROGRESS",
+        count: required,
+        kind: "stall",
+      };
+    }
+
+    return { detected: false, toolName: "", count: 0, kind: "stall" };
   }
 
   clear(sessionId: string): void {
     this.history.delete(sessionId);
+    this.progressHistory.delete(sessionId);
     this.log.debug(`Cleared stuck loop history for session ${sessionId}`);
   }
 
@@ -114,13 +162,24 @@ export class StuckLoopDetector {
     let pruned = 0;
 
     for (const [sessionId, history] of this.history) {
-      const filtered = history.filter(r => now - r.timestamp < maxAgeMs);
-      
+      const filtered = history.filter((r) => now - r.timestamp < maxAgeMs);
+
       if (filtered.length === 0) {
         this.history.delete(sessionId);
         pruned++;
       } else if (filtered.length !== history.length) {
         this.history.set(sessionId, filtered);
+      }
+    }
+
+    for (const [sessionId, history] of this.progressHistory) {
+      const filtered = history.filter((r) => now - r.timestamp < maxAgeMs);
+
+      if (filtered.length === 0) {
+        this.progressHistory.delete(sessionId);
+        pruned++;
+      } else if (filtered.length !== history.length) {
+        this.progressHistory.set(sessionId, filtered);
       }
     }
 
@@ -130,4 +189,21 @@ export class StuckLoopDetector {
 
 export function createStuckLoopDetector(config: Config): StuckLoopDetector {
   return new StuckLoopDetector(config);
+}
+
+/**
+ * Build a human-readable intervention message for the model.
+ */
+export function getInterventionMessage(state: StuckLoopState): string {
+  if (!state.detected) return "";
+
+  if (state.kind === "stall") {
+    return `WARNING: Has estado sin avanzar durante ${state.count} ciclos consecutivos. Revisa tu plan, intenta una herramienta diferente o pide aclaración al usuario en lugar de repetir la misma secuencia.`;
+  }
+
+  if (state.count >= 4) {
+    return `CRITICAL: Has llamado ${state.toolName} ${state.count} veces con los mismos argumentos y sigue fallando con: "${state.lastError}". El usuario será notificado. Debes cambiar completamente de estrategia o pedir ayuda.`;
+  }
+
+  return `WARNING: Has llamado ${state.toolName} ${state.count} veces con los mismos argumentos y sigue fallando. Debes probar un enfoque diferente en lugar de repetir la misma acción.`;
 }

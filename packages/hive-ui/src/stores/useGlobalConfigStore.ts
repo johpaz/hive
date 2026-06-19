@@ -135,6 +135,8 @@ interface ModelsState {
   getModelsByProvider: (providerId: string) => Model[];
   deleteModel: (id: string) => Promise<void>;
   updateModel: (id: string, data: { name?: string; id?: string }) => Promise<void>;
+  loadHiveAgentsModel: (modelId: string, ctx?: number) => Promise<{ success: boolean; loading: boolean; model_id?: string; ctx?: number }>;
+  getHiveAgentsModelStatus: () => Promise<{ success: boolean; loaded: boolean; model?: { name?: string; ctx?: number } }>;
 }
 
 const createModelsSlice = (set: any, get: any) => ({
@@ -251,6 +253,30 @@ const createModelsSlice = (set: any, get: any) => ({
     return models.filter((m: any) => {
       const mProviderId = m.providerId || m.provider_id;
       return mProviderId === providerId;
+    });
+  },
+
+  loadHiveAgentsModel: async (modelId: string, ctx = 50000) => {
+    return await apiClient<{ success: boolean; loading: boolean; model_id?: string; ctx?: number }>(
+      "/api/providers/hiveagents/load-model",
+      {
+        method: "POST",
+        body: { model_id: modelId, ctx },
+        showLoader: false,
+        showError: true,
+      }
+    );
+  },
+
+  getHiveAgentsModelStatus: async () => {
+    return await apiClient<{
+      success: boolean;
+      loaded: boolean;
+      model?: { name?: string; ctx?: number };
+    }>("/api/providers/hiveagents/model-status", {
+      method: "GET",
+      showLoader: false,
+      showError: false,
     });
   },
 
@@ -1078,6 +1104,8 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
   getModelsByProvider: (...args: any[]) => (createModelsSlice(set, get).getModelsByProvider as any)(...args),
   deleteModel: (...args: any[]) => (createModelsSlice(set, get).deleteModel as any)(...args),
   updateModel: (...args: any[]) => (createModelsSlice(set, get).updateModel as any)(...args),
+  loadHiveAgentsModel: (...args: any[]) => (createModelsSlice(set, get).loadHiveAgentsModel as any)(...args),
+  getHiveAgentsModelStatus: (...args: any[]) => (createModelsSlice(set, get).getHiveAgentsModelStatus as any)(...args),
 
   // Agents methods
   fetchAgents: async () => {

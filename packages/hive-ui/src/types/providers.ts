@@ -9,7 +9,8 @@ export type ProviderType =
   | "mistral"
   | "groq"
   | "cohere"
-  | "nvidia";
+  | "nvidia"
+  | "hiveagents";
 
 export type ProviderStatus = "active" | "fallback" | "error" | "disabled";
 
@@ -94,6 +95,7 @@ export interface ModelDefinition {
   recommendedFor: string[];
   isAvailable: boolean;
   isDefault: boolean;
+  supportsThinking?: boolean;
 }
 
 export interface Provider {
