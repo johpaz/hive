@@ -268,6 +268,30 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
       }
     }
 
+    if (provider === "hiveagents") {
+      const hiveUrl = (process.env.HIVEAGENTS_BASE_URL || "https://llm.hiveagents.io").replace(/\/+$/, "")
+      try {
+        const response = await fetch(`${hiveUrl}/api/status`, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          signal: AbortSignal.timeout(10000),
+        })
+        const invalidKey = response.status === 401 || response.status === 403
+        return Response.json({
+          success: response.ok,
+          error: response.ok
+            ? null
+            : invalidKey
+              ? "Invalid API key for HiveAgents"
+              : `HiveAgents backend error: ${response.status}`,
+        })
+      } catch {
+        return Response.json({
+          success: false,
+          error: `Could not connect to HiveAgents at ${hiveUrl}`,
+        })
+      }
+    }
+
     if (!testUrl) {
       return Response.json({
         success: false,

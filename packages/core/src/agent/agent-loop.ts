@@ -166,6 +166,9 @@ export async function* runAgent(
   let totalInputTokens = 0
   let totalOutputTokens = 0
   let finalContent = ""
+  // Whether finalContent was already emitted to the stream (normal completion path
+  // yields it at the top of the iteration; internal breaks set finalContent without yielding)
+  let finalEmitted = false
   // Loop detection: track last tool call signature to break identical consecutive calls
   let lastToolSignature = ""
   let consecutiveRepeat = 0
@@ -222,6 +225,7 @@ export async function* runAgent(
     // ── No tool calls → final response ──────────────────────────────────
     if (!response.tool_calls?.length || response.stop_reason !== "tool_calls") {
       finalContent = response.content?.trim() || ""
+      finalEmitted = true // already yielded above as the agent chunk
       // Only save to history if we have real content; empty → synthesis block will handle it
       if (finalContent && !opts.isolated) {
         addMessage(opts.threadId, "assistant", finalContent)
@@ -534,13 +538,16 @@ export async function* runAgent(
       }
     }
 
-    // Stall detection: no forward-progress tool for several iterations
+    // Stall detection: browser task inspecting the page repeatedly without acting on it.
+    // Only iterations that actually used browser tools count — filesystem/knowledge/etc.
+    // tool calls are real progress for non-browser tasks and must not trip this heuristic.
+    const usedBrowserTools = toolResults.some((r) => r.toolName.startsWith("browser_"))
     const hadProgress = toolResults.some(
       (r) => PROGRESS_TOOLS.has(r.toolName) && !String(r.result).startsWith("[Tool Error]")
     )
     if (hadProgress) {
       idleIterations = 0
-    } else if (toolResults.length > 0) {
+    } else if (usedBrowserTools) {
       idleIterations++
     }
     if (idleIterations >= 3 && idleIterations < 5) {
@@ -596,6 +603,13 @@ export async function* runAgent(
       }
       yield { agent: { messages: [{ content: finalContent }] } }
     }
+  } else if (!finalEmitted) {
+    // Internal break (stall, loop detected, stuck, timeout, abort) set finalContent
+    // without yielding it — emit and persist it so the user gets a non-empty response
+    if (!opts.isolated) {
+      addMessage(opts.threadId, "assistant", finalContent)
+    }
+    yield { agent: { messages: [{ content: finalContent }] } }
   }
 
   // Emit final usage so consumers (e.g. AgentRunner) can surface real token counts

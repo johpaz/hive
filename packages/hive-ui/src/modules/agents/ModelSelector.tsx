@@ -49,7 +49,7 @@ export function ModelSelector({
   }, [localLLM.models]);
 
   const hasApiKey = (p: typeof providers[number]) => {
-    if (p.id === "ollama") return true;
+    if (p.id === "ollama" || p.id === "hiveagents") return true;
     const baseUrl = p.base_url || p.baseUrl || "";
     if (baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1")) return true;
     return !!p.has_api_key;
