@@ -14,9 +14,20 @@ export async function handleCreateMeeting(
   try {
     const body = await req.json().catch(() => ({})) as Record<string, unknown>;
     const title = (body.title as string) || "Reunión sin título";
-    const sttModel = (body.stt_model as string) || "whisper-large-v3-turbo";
 
     const db = getDb();
+
+    // Default STT model desde la BD (primer modelo stt activo) cuando el cliente no lo indica
+    let sttModel = body.stt_model as string | undefined;
+    if (!sttModel) {
+      const row = db.query(`
+        SELECT m.id FROM models m
+        JOIN providers p ON p.id = m.provider_id
+        WHERE m.model_type = 'stt' AND m.active = 1 AND p.active = 1
+        LIMIT 1
+      `).get() as { id: string } | undefined;
+      sttModel = row?.id || "whisper-large-v3-turbo";
+    }
     const result = db
       .query(
         `INSERT INTO meeting_sessions (title, stt_model)

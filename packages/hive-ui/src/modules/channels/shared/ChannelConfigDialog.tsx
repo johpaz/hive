@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -14,54 +14,13 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { apiClient } from "@/lib/api";
-import { useChannels, useVoice } from "@/stores/useGlobalConfigStore";
+import { useChannels, useVoice, useModels, useProviders } from "@/stores/useGlobalConfigStore";
 import type { ConnectedChannel } from "@/types";
 import { Settings, AlertCircle, Loader2, CheckCircle2, Eye, EyeOff, QrCode, RefreshCw, X, Plus } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import QRCode from "qrcode";
 
-// ─── Voice models ───────────────────────────────────────────────────────────
-const STT_MODELS = [
-    { id: "whisper-large-v3-turbo", name: "Whisper Large V3 Turbo (Groq)", provider: "groq" },
-    { id: "whisper-large-v3", name: "Whisper Large V3 (Groq)", provider: "groq" },
-    { id: "distil-whisper-large-v3-en", name: "Distil Whisper V3 EN (Groq)", provider: "groq" },
-    { id: "whisper-1", name: "Whisper 1 (OpenAI)", provider: "openai" },
-];
-
-const TTS_MODELS = [
-    { group: "ElevenLabs", provider: "elevenlabs", models: [
-        { id: "eleven_flash_v2_5", name: "Flash v2.5" },
-        { id: "eleven_turbo_v2_5", name: "Turbo v2.5" },
-        { id: "eleven_multilingual_v2", name: "Multilingual v2" },
-        { id: "eleven_v3", name: "V3" },
-    ]},
-    { group: "OpenAI", provider: "openai", models: [
-        { id: "tts-1", name: "TTS-1" },
-        { id: "tts-1-hd", name: "TTS-1 HD" },
-        { id: "gpt-4o-mini-tts", name: "GPT-4o Mini TTS" },
-    ]},
-    { group: "Google Gemini", provider: "gemini", models: [
-        { id: "gemini-2.5-flash-preview-tts", name: "Gemini 2.5 Flash TTS" },
-        { id: "gemini-2.5-pro-preview-tts", name: "Gemini 2.5 Pro TTS" },
-    ]},
-    { group: "Qwen", provider: "qwen", models: [
-        { id: "qwen3-tts-instruct-flash", name: "Qwen3 TTS Instruct Flash" },
-        { id: "qwen3-tts-flash", name: "Qwen3 TTS Flash" },
-        { id: "qwen-tts", name: "Qwen TTS" },
-    ]},
-    { group: "Piper (Local)", provider: "piper", models: [
-        { id: "piper", name: "Piper TTS (es_MX Cortana)" },
-    ]},
-];
-
-function getProviderFromModel(modelId: string): string | null {
-    if (modelId.startsWith("eleven")) return "elevenlabs";
-    if (modelId.startsWith("tts-") || modelId.startsWith("gpt-")) return "openai";
-    if (modelId.startsWith("gemini")) return "gemini";
-    if (modelId.startsWith("qwen")) return "qwen";
-    if (modelId === "piper") return "piper";
-    return null;
-}
+// Los modelos de voz (STT/TTS) se leen de la BD vía el store (tabla models).
 
 const OCR_PROVIDERS = [
     { id: "gemini", name: "Google Gemini", provider: "gemini" },
@@ -109,6 +68,40 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
     const navigate = useNavigate();
     const { createChannel, reconnectChannel, fetchChannels } = useChannels();
     const { configuredVoiceProviders, fetchConfiguredVoiceProviders } = useVoice();
+    const { models } = useModels();
+    const { providers } = useProviders();
+
+    // Modelos de voz desde la BD, limitados a providers con API key configurada
+    const modelProviderId = (m: { provider_id?: string; providerId?: string }) =>
+        (m.provider_id || m.providerId || "") as string;
+
+    const sttModels = useMemo(
+        () => models.filter(m => m.model_type === "stt" && configuredVoiceProviders[modelProviderId(m)]),
+        [models, configuredVoiceProviders]
+    );
+
+    const ttsGroups = useMemo(() => {
+        const byProvider = new Map<string, typeof models>();
+        for (const m of models) {
+            if (m.model_type !== "tts") continue;
+            const pid = modelProviderId(m);
+            if (!configuredVoiceProviders[pid]) continue;
+            if (!byProvider.has(pid)) byProvider.set(pid, []);
+            byProvider.get(pid)!.push(m);
+        }
+        return Array.from(byProvider.entries()).map(([pid, ms]) => ({
+            provider: pid,
+            group: providers.find(p => p.id === pid)?.name || pid,
+            models: ms,
+        }));
+    }, [models, providers, configuredVoiceProviders]);
+
+    // Provider de un modelo TTS guardado en el canal (con fallback a id de provider para canales antiguos)
+    const resolveTTSProvider = useCallback((modelId: string): string | null => {
+        const model = models.find(m => m.id === modelId);
+        if (model) return modelProviderId(model);
+        return providers.some(p => p.id === modelId) ? modelId : null;
+    }, [models, providers]);
 
     // ── new channel wizard state ──────────────────────────────────────────
     const [step, setStep] = useState<Step>(channel ? "settings" : "type");
@@ -216,14 +209,14 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
 
     // ── voice selector for TTS ────────────────────────────────────────────
     useEffect(() => {
-        const provider = formData.tts_provider ? getProviderFromModel(formData.tts_provider) : null;
+        const provider = formData.tts_provider ? resolveTTSProvider(formData.tts_provider) : null;
         if (!provider) { setVoices([]); return; }
         setLoadingVoices(true);
         apiClient<{ voices: Array<{ id: string; name: string }> }>(`/api/voice/${provider}/voices`, { showError: false })
             .then(data => setVoices(data.voices || []))
             .catch(() => setVoices([]))
             .finally(() => setLoadingVoices(false));
-    }, [formData.tts_provider]);
+    }, [formData.tts_provider, resolveTTSProvider]);
 
     // ─── polling helpers ─────────────────────────────────────────────────
     const stopPoll = useCallback(() => {
@@ -871,7 +864,7 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                             <SelectValue placeholder="Selecciona modelo STT" />
                         </SelectTrigger>
                         <SelectContent>
-                            {STT_MODELS.filter(m => configuredVoiceProviders[m.provider]).map(m => (
+                            {sttModels.map(m => (
                                 <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                             ))}
                         </SelectContent>
@@ -888,8 +881,8 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                                 <SelectValue placeholder="Selecciona modelo TTS" />
                             </SelectTrigger>
                             <SelectContent>
-                                {TTS_MODELS.filter(g => configuredVoiceProviders[g.provider]).map(group => (
-                                    <SelectGroup key={group.group}>
+                                {ttsGroups.map(group => (
+                                    <SelectGroup key={group.provider}>
                                         <SelectLabel>{group.group}</SelectLabel>
                                         {group.models.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
                                     </SelectGroup>

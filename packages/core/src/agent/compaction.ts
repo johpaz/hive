@@ -25,7 +25,7 @@ import {
   getMessageCount,
 } from "./conversation-store"
 import { estimateTokens } from "../utils/toon"
-import { callLLM, resolveProviderConfig, type ContentPart } from "./llm-client"
+import { callLLM, resolveProviderConfig, getDefaultLLM, type ContentPart } from "./llm-client"
 import { getDb } from "../storage/sqlite"
 
 const log = logger.child("compaction")
@@ -124,15 +124,10 @@ export async function compactThread(
     })
     .join("\n\n")
 
-  const db = getDb()
-  const coordinator = db.query<any, []>(
-    "SELECT provider_id, model_id FROM agents WHERE role = 'coordinator' LIMIT 1"
-  ).get()
+  const defaultLLM = await getDefaultLLM()
+  if (!defaultLLM) throw new Error("No active LLM providers/models configured in the database")
 
-  const providerCfg = await resolveProviderConfig(
-    coordinator?.provider_id || "openai",
-    coordinator?.model_id || "gpt-4o-mini"
-  )
+  const providerCfg = await resolveProviderConfig(defaultLLM.provider, defaultLLM.model)
 
   const summaryResponse = await callLLM({
     ...providerCfg,

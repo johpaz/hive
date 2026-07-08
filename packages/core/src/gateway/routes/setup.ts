@@ -1,7 +1,6 @@
 import { writeFileSync, mkdirSync } from "node:fs"
 import * as path from "node:path"
 import { getDb } from "../../storage/sqlite"
-import { SEED_DATA } from "../../storage/seed"
 import {
   initOnboardingDb,
   saveUserProfile,
@@ -31,19 +30,25 @@ export function handleSetupProviders(
   addCorsHeaders: (response: Response, request: Request) => Response,
   req: Request
 ): Response {
-  // Build provider+model list directly from SEED_DATA so it's always in sync
-  // with what the CLI onboarding shows, regardless of DB state.
-  const llmModelsByProvider = new Map<string, { id: string; name: string }[]>()
+  // Provider + model list from the DB (seeded at startup). Only text (llm) providers.
+  const db = getDb()
+  const providers = db.query(`
+    SELECT id, name FROM providers WHERE category = 'llm'
+  `).all() as Array<{ id: string; name: string }>
 
-  for (const model of SEED_DATA.models) {
-    if (model.modelType !== "llm") continue
-    if (!llmModelsByProvider.has(model.providerId)) {
-      llmModelsByProvider.set(model.providerId, [])
+  const models = db.query(`
+    SELECT id, name, provider_id FROM models WHERE model_type = 'llm'
+  `).all() as Array<{ id: string; name: string; provider_id: string }>
+
+  const llmModelsByProvider = new Map<string, { id: string; name: string }[]>()
+  for (const model of models) {
+    if (!llmModelsByProvider.has(model.provider_id)) {
+      llmModelsByProvider.set(model.provider_id, [])
     }
-    llmModelsByProvider.get(model.providerId)!.push({ id: model.id, name: model.name })
+    llmModelsByProvider.get(model.provider_id)!.push({ id: model.id, name: model.name })
   }
 
-  const result = SEED_DATA.providers
+  const result = providers
     .filter(p => llmModelsByProvider.has(p.id) || p.id === "ollama")
     .map(p => ({
       id: p.id,
@@ -146,6 +151,17 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
 
     const testMessages = [{ role: "user" as const, content: "Say 'ok' if you can read this." }]
 
+    // Modelo de prueba: el indicado en el request, o el primer modelo LLM del provider en la BD
+    let pingModel: string | undefined = model
+    if (!pingModel) {
+      try {
+        const row = getDb().query(`
+          SELECT id FROM models WHERE provider_id = ? AND model_type = 'llm' ORDER BY active DESC LIMIT 1
+        `).get(provider) as { id: string } | undefined
+        pingModel = row?.id
+      } catch { /* DB may not be initialized yet during early setup — ignore */ }
+    }
+
     if (provider === "ollama") {
       const ollamaUrl = process.env.OLLAMA_HOST || "http://localhost:11434"
       try {
@@ -167,7 +183,7 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
     if (provider === "anthropic") {
       testUrl = "https://api.anthropic.com/v1/messages"
       testBody = {
-        model: model || "claude-sonnet-4-6",
+        model: pingModel || "claude-sonnet-4-6",
         max_tokens: 10,
         messages: testMessages,
       }
@@ -180,7 +196,7 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
     } else if (provider === "openai") {
       testUrl = "https://api.openai.com/v1/chat/completions"
       testBody = {
-        model: model || "gpt-4o-mini",
+        model: pingModel || "gpt-4o-mini",
         max_tokens: 10,
         messages: testMessages,
       }
@@ -189,7 +205,7 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
         "Authorization": `Bearer ${apiKey}`,
       }
     } else if (provider === "gemini") {
-      testUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model || "gemini-2.5-flash"}:generateContent?key=${apiKey}`
+      testUrl = `https://generativelanguage.googleapis.com/v1beta/models/${pingModel || "gemini-2.5-flash"}:generateContent?key=${apiKey}`
       testBody = {
         contents: [{ parts: [{ text: "Say ok" }] }],
       }
@@ -197,7 +213,7 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
     } else if (provider === "groq") {
       testUrl = "https://api.groq.com/openai/v1/chat/completions"
       testBody = {
-        model: model || "llama-3.3-70b-versatile",
+        model: pingModel || "llama-3.3-70b-versatile",
         max_tokens: 10,
         messages: testMessages,
       }
@@ -208,7 +224,7 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
     } else if (provider === "openrouter") {
       testUrl = "https://openrouter.ai/api/v1/chat/completions"
       testBody = {
-        model: model || "meta-llama/llama-3.3-70b-instruct",
+        model: pingModel || "meta-llama/llama-3.3-70b-instruct",
         max_tokens: 10,
         messages: testMessages,
       }
@@ -219,7 +235,7 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
     } else if (provider === "mistral") {
       testUrl = "https://api.mistral.ai/v1/chat/completions"
       testBody = {
-        model: model || "mistral-small-latest",
+        model: pingModel || "mistral-small-latest",
         max_tokens: 10,
         messages: testMessages,
       }
@@ -230,7 +246,7 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
     } else if (provider === "deepseek") {
       testUrl = "https://api.deepseek.com/v1/chat/completions"
       testBody = {
-        model: model || "deepseek-chat",
+        model: pingModel || "deepseek-chat",
         max_tokens: 10,
         messages: testMessages,
       }
@@ -241,30 +257,13 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
     } else if (provider === "kimi") {
       testUrl = "https://api.moonshot.cn/v1/chat/completions"
       testBody = {
-        model: model || "moonshot-v1-8k",
+        model: pingModel || "moonshot-v1-8k",
         max_tokens: 10,
         messages: testMessages,
       }
       headers = {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`,
-      }
-    } else if (provider === "local-llama") {
-      const llamaUrl = (process.env.LOCAL_LLM_HOST || "http://localhost:8080").replace(/\/+$/, "")
-      try {
-        const response = await fetch(`${llamaUrl}/health`, {
-          signal: AbortSignal.timeout(5000),
-        })
-        const data = await response.json().catch(() => ({}))
-        return Response.json({
-          success: response.ok && data.status === "ok",
-          error: response.ok && data.status === "ok" ? null : `llama-server is running but not healthy (status: ${data.status || "unknown"})`,
-        })
-      } catch {
-        return Response.json({
-          success: false,
-          error: `Could not connect to llama-server at ${llamaUrl}. Make sure it's running with --port 8080`,
-        })
       }
     }
 

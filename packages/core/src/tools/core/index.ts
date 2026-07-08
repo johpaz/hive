@@ -7,6 +7,13 @@
 import type { Tool } from "../types.ts";
 import { getDb } from "../../storage/sqlite.ts";
 import { logger } from "../../utils/logger.ts";
+import {
+  searchCapabilities,
+  type CapabilityHit,
+  type CapabilityType,
+} from "../../agent/capability-search.ts";
+import { CORE_TOOL_CATALOG } from "../../agent/tool-selector.ts";
+import { saveScratchpadNote } from "../../agent/conversation-store.ts";
 
 const log = logger.child("core");
 
@@ -126,15 +133,6 @@ function translateQueryToEnglish(query: string): string {
   return [...new Set(translated)].join(" ");
 }
 
-/**
- * Build an FTS5 MATCH expression from a list of words.
- * Always uses OR + prefix wildcard for maximum recall.
- * A single keyword like "email" finds everything related to email.
- */
-function buildFtsMatch(words: string[]): string {
-  return words.map(w => `${w}*`).join(' OR ');
-}
-
 // ─── search_knowledge ────────────────────────────────────────────────────────
 
 export const searchKnowledgeTool: Tool = {
@@ -166,176 +164,142 @@ export const searchKnowledgeTool: Tool = {
     const limit = (params.limit as number) ?? 10;
     const MIN_RESULTS_FOR_BILINGUAL = 2;
 
+    // Map the tool's `type` param onto capability types
+    const typeMap: Record<string, CapabilityType[] | undefined> = {
+      all: undefined,
+      tools: ["tool"],
+      skills: ["skill"],
+      playbook: ["playbook"],
+      mcp: ["mcp"],
+    };
+    const types = typeMap[type] ?? undefined;
+
     try {
       if (!query) {
         log.info(`[search_knowledge] Empty query — returning empty results`)
         return { query, type, tools: [], skills: [], playbook: [], toolsmcp: [] }
       }
-      const escapedQuery = query.replace(/'/g, "''");
-      const normalizedQuery = escapedQuery.replace(/_/g, " ").trim();
-      const words = normalizedQuery.split(/\s+/).filter(w => w.length > 0);
-      const ftsMatch = buildFtsMatch(words);
+      // HiveDB parses raw text leniently (accents, quotes, operators are all
+      // safe), so the query goes in as-is — only underscores become spaces so
+      // tool ids like "send_email" match their tokens.
+      const normalizedQuery = query.replace(/_/g, " ").trim();
 
       const result: any = { query, type, tools: [], skills: [], playbook: [], toolsmcp: [] };
 
-      // ─── Search functions (reusable for bilingual fallback) ───────────
+      // ─── Hydration from SQLite (index stores only ids + search text) ──
 
-      function searchTools(matchExpr: string): any[] {
-        if (type !== "all" && type !== "tools") return [];
-        try {
-          return db.query(`
-            SELECT
-              COALESCE(t.id, tools_fts.tool_name) as id,
-              COALESCE(t.name, tools_fts.tool_name) as name,
-              COALESCE(t.description, tools_fts.description) as description,
-              COALESCE(t.category, tools_fts.category) as category,
-              COALESCE(t.enabled, 1) as enabled,
-              COALESCE(t.active, 1) as active,
-              bm25(tools_fts) as rank
-            FROM tools_fts
-            LEFT JOIN tools t ON t.name = tools_fts.tool_name
-            WHERE tools_fts MATCH ?
-            ORDER BY rank
-            LIMIT ?
-          `).all(matchExpr, limit) as any[];
-        } catch { return []; }
+      const coreCatalog = new Map(CORE_TOOL_CATALOG.map(t => [t.name, t]));
+
+      function hydrateTool(hit: CapabilityHit): any | null {
+        const row = db.query(`
+          SELECT id, name, description, category, enabled, active
+          FROM tools WHERE name = ?
+        `).get(hit.rawId) as any;
+        if (row) {
+          return {
+            id: row.id, name: row.name, description: row.description, category: row.category,
+            enabled: row.enabled === 1, active: row.active === 1, rank: hit.score,
+          };
+        }
+        // Core catalog tools may not exist in the tools table
+        const cat = coreCatalog.get(hit.rawId);
+        if (!cat) return null;
+        return {
+          id: cat.name, name: cat.name, description: cat.description, category: cat.category,
+          enabled: true, active: true, rank: hit.score,
+        };
       }
 
-      function searchSkills(matchExpr: string): any[] {
-        if (type !== "all" && type !== "skills") return [];
-        try {
-          return db.query(`
-            SELECT s.id, s.name, s.description, s.category, s.tools, s.triggers, s.preferred_agents, s.body, s.active, bm25(skills_fts) as rank
-            FROM skills_fts
-            JOIN skills s ON s.id = skills_fts.id
-            WHERE skills_fts MATCH ?
-            ORDER BY rank
-            LIMIT ?
-          `).all(matchExpr, limit) as any[];
-        } catch { return []; }
+      function hydrateSkill(hit: CapabilityHit): any | null {
+        const s = db.query(`
+          SELECT id, name, description, category, tools, triggers, preferred_agents, body, active
+          FROM skills WHERE id = ? AND active = 1
+        `).get(hit.rawId) as any;
+        if (!s) return null;
+        return {
+          id: s.id, name: s.name, description: s.description, category: s.category,
+          tools: s.tools, triggers: s.triggers,
+          preferred_agents: s.preferred_agents ? JSON.parse(s.preferred_agents) : [],
+          body: s.body ? (s.body.length > 1500 ? s.body.substring(0, 1500) + "…" : s.body) : undefined,
+          active: s.active === 1, rank: hit.score,
+        };
       }
 
-      function searchPlaybook(matchExpr: string): any[] {
-        if (type !== "all" && type !== "playbook") return [];
-        try {
-          return db.query(`
-            SELECT p.id, p.rule, p.category, p.applicable_to, p.helpful_count, p.harmful_count, p.active, bm25(playbook_fts) as rank
-            FROM playbook_fts
-            JOIN playbook p ON p.id = playbook_fts.rowid
-            WHERE playbook_fts MATCH ?
-            ORDER BY rank
-            LIMIT ?
-          `).all(matchExpr, limit) as any[];
-        } catch { return []; }
+      function hydratePlaybook(hit: CapabilityHit): any | null {
+        const p = db.query(`
+          SELECT id, rule, category, applicable_to, helpful_count, harmful_count, active
+          FROM playbook WHERE id = ? AND active = 1
+        `).get(Number.parseInt(hit.rawId, 10)) as any;
+        if (!p) return null;
+        return {
+          id: p.id, rule: p.rule, category: p.category,
+          applicable_to: p.applicable_to ? JSON.parse(p.applicable_to) : null,
+          helpful_count: p.helpful_count, harmful_count: p.harmful_count,
+          active: p.active === 1, rank: hit.score,
+        };
       }
 
-      function searchMcpTools(matchExpr: string): any[] {
-        if (type !== "all" && type !== "mcp") return [];
-        try {
-          return db.query(`
-            SELECT m.id, m.server_name, m.tool_name, m.description, m.category, m.active, bm25(mcp_tools_fts) as rank
-            FROM mcp_tools_fts
-            JOIN mcp_tools m ON m.id = mcp_tools_fts.id
-            WHERE mcp_tools_fts MATCH ?
-            ORDER BY rank
-            LIMIT ?
-          `).all(matchExpr, limit) as any[];
-        } catch { return []; }
+      function hydrateMcp(hit: CapabilityHit): any | null {
+        const t = db.query(`
+          SELECT id, server_name, tool_name, description, category, active
+          FROM mcp_tools WHERE id = ? AND active = 1
+        `).get(hit.rawId) as any;
+        if (!t) return null;
+        return {
+          id: t.id, full_name: t.id, server_name: t.server_name, tool_name: t.tool_name,
+          description: t.description, category: t.category,
+          active: t.active === 1, rank: hit.score,
+        };
+      }
+
+      const seenIds = new Set<string>();
+
+      function mergeHits(hits: CapabilityHit[]): number {
+        let added = 0;
+        for (const hit of hits) {
+          if (seenIds.has(hit.id)) continue;
+          let entry: any = null;
+          let bucket: any[] | null = null;
+          switch (hit.type) {
+            case "tool":
+              if (result.tools.length < limit) { entry = hydrateTool(hit); bucket = result.tools; }
+              break;
+            case "skill":
+              if (result.skills.length < limit) { entry = hydrateSkill(hit); bucket = result.skills; }
+              break;
+            case "playbook":
+              if (result.playbook.length < limit) { entry = hydratePlaybook(hit); bucket = result.playbook; }
+              break;
+            case "mcp":
+              if (result.toolsmcp.length < limit) { entry = hydrateMcp(hit); bucket = result.toolsmcp; }
+              break;
+          }
+          if (entry && bucket) {
+            bucket.push(entry);
+            seenIds.add(hit.id);
+            added++;
+          }
+        }
+        return added;
       }
 
       // ─── Pass 1: Search with original query ─────────────────────────
+      // `rank` is the raw BM25 score: positive, higher = more relevant
+      // (the old FTS5 rank was negative, lower = better).
 
-      const tools1 = searchTools(ftsMatch);
-      const skills1 = searchSkills(ftsMatch);
-      const playbook1 = searchPlaybook(ftsMatch);
-      const mcp1 = searchMcpTools(ftsMatch);
-
-      const totalFirst = tools1.length + skills1.length + playbook1.length + mcp1.length;
-
-      // Map results
-      result.tools = tools1.map((t: any) => ({
-        id: t.id, name: t.name, description: t.description, category: t.category,
-        enabled: t.enabled === 1, active: t.active === 1, rank: t.rank,
-      }));
-      result.skills = skills1.map((s: any) => ({
-        id: s.id, name: s.name, description: s.description, category: s.category,
-        tools: s.tools, triggers: s.triggers,
-        preferred_agents: s.preferred_agents ? JSON.parse(s.preferred_agents) : [],
-        body: s.body ? (s.body.length > 1500 ? s.body.substring(0, 1500) + "…" : s.body) : undefined,
-        active: s.active === 1, rank: s.rank,
-      }));
-      result.playbook = playbook1.map((p: any) => ({
-        id: p.id, rule: p.rule, category: p.category,
-        applicable_to: p.applicable_to ? JSON.parse(p.applicable_to) : null,
-        helpful_count: p.helpful_count, harmful_count: p.harmful_count,
-        active: p.active === 1, rank: p.rank,
-      }));
-      result.toolsmcp = mcp1.map((t: any) => ({
-        id: t.id, full_name: t.id, server_name: t.server_name, tool_name: t.tool_name,
-        description: t.description, category: t.category,
-        active: t.active === 1, rank: t.rank,
-      }));
+      const hits1 = await searchCapabilities(normalizedQuery, { types, k: limit * 4 });
+      const totalFirst = mergeHits(hits1);
 
       // ─── Pass 2: Bilingual fallback (ES → EN) ──────────────────────
+      // HiveDB stems Spanish but does not translate: "correo" still won't
+      // match English-only descriptions ("email") without this dictionary.
 
       if (totalFirst < MIN_RESULTS_FOR_BILINGUAL) {
         const englishQuery = translateQueryToEnglish(normalizedQuery);
         if (englishQuery.length > 0) {
-          const enWords = englishQuery.split(/\s+/).filter(w => w.length > 0);
-          const enMatch = buildFtsMatch(enWords);
-
           log.info(`[search_knowledge] Bilingual fallback: "${normalizedQuery}" → "${englishQuery}" (first pass: ${totalFirst} results)`);
-
-          const existingIds = new Set([
-            ...result.tools.map((t: any) => t.name),
-            ...result.skills.map((s: any) => s.id),
-            ...result.playbook.map((p: any) => p.id),
-            ...result.toolsmcp.map((t: any) => t.id),
-          ]);
-
-          // Merge English results (dedup by id)
-          for (const t of searchTools(enMatch)) {
-            if (!existingIds.has(t.name || t.id)) {
-              result.tools.push({
-                id: t.id, name: t.name, description: t.description, category: t.category,
-                enabled: t.enabled === 1, active: t.active === 1, rank: t.rank,
-              });
-              existingIds.add(t.name || t.id);
-            }
-          }
-          for (const s of searchSkills(enMatch)) {
-            if (!existingIds.has(s.id)) {
-              result.skills.push({
-                id: s.id, name: s.name, description: s.description, category: s.category,
-                tools: s.tools, triggers: s.triggers,
-                preferred_agents: s.preferred_agents ? JSON.parse(s.preferred_agents) : [],
-                body: s.body ? (s.body.length > 1500 ? s.body.substring(0, 1500) + "…" : s.body) : undefined,
-                active: s.active === 1, rank: s.rank,
-              });
-              existingIds.add(s.id);
-            }
-          }
-          for (const p of searchPlaybook(enMatch)) {
-            if (!existingIds.has(p.id)) {
-              result.playbook.push({
-                id: p.id, rule: p.rule, category: p.category,
-                applicable_to: p.applicable_to ? JSON.parse(p.applicable_to) : null,
-                helpful_count: p.helpful_count, harmful_count: p.harmful_count,
-                active: p.active === 1, rank: p.rank,
-              });
-              existingIds.add(p.id);
-            }
-          }
-          for (const t of searchMcpTools(enMatch)) {
-            if (!existingIds.has(t.id)) {
-              result.toolsmcp.push({
-                id: t.id, full_name: t.id, server_name: t.server_name, tool_name: t.tool_name,
-                description: t.description, category: t.category,
-                active: t.active === 1, rank: t.rank,
-              });
-              existingIds.add(t.id);
-            }
-          }
+          const hits2 = await searchCapabilities(englishQuery, { types, k: limit * 4 });
+          mergeHits(hits2);
         }
       }
 
@@ -404,17 +368,12 @@ export const saveNoteTool: Tool = {
     required: ["key", "value"],
   },
   execute: async (params: Record<string, unknown>, config?: any) => {
-    const db = getDb();
     const key = params.key as string;
     const value = params.value as string;
     const threadId = (params.thread_id as string) ?? config?.configurable?.thread_id ?? "default";
 
     try {
-      db.query(`
-        INSERT OR REPLACE INTO scratchpad (thread_id, key, value, source, updated_at)
-        VALUES (?, ?, ?, 'agent', unixepoch())
-      `).run(threadId, key, value);
-
+      await saveScratchpadNote(threadId, key, value, "agent");
       return { ok: true, key, message: "Note saved." };
     } catch (error) {
       return {

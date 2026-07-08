@@ -185,8 +185,6 @@ function ensureSchemaSync(): void {
     ensureColumnExists("conversations", "reasoning_content", "TEXT"); // Kimi K2 thinking round-trip
     ensureColumnExists("summaries", "created_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
     ensureColumnExists("summaries", "updated_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
-    ensureColumnExists("scratchpad", "created_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
-    ensureColumnExists("scratchpad", "updated_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
     ensureColumnExists("traces", "created_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
     ensureColumnExists("reflections", "created_at", "INTEGER NOT NULL DEFAULT (unixepoch())");
     ensureColumnExists("playbook", "created_at", "INTEGER NOT NULL DEFAULT (unixepoch())");

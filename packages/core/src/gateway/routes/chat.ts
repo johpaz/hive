@@ -13,7 +13,9 @@ import { getDb } from "../../storage/sqlite";
 import { resolveUserId, resolveAgentId } from "../../storage/onboarding";
 import { laneQueue } from "../lane-queue";
 import { AgentRunner } from "../../agent/providers";
+import { getDefaultLLM } from "../../agent/llm-client";
 import { logger } from "../../utils/logger";
+import { saveScratchpadNote, listAllScratchpadNotes } from "../../agent/conversation-store";
 
 const log = logger.child("api:chat");
 export const DEFAULT_CHAT_HISTORY_LIMIT = 40;
@@ -100,7 +102,13 @@ export async function handleChat(
       "SELECT provider_id, model_id FROM agents WHERE id = ?"
     ).get(finalAgentId);
 
-    const provider = agent?.provider_id || "gemini";
+    const provider = agent?.provider_id || (await getDefaultLLM())?.provider;
+    if (!provider) {
+      return addCorsHeaders(Response.json(
+        { error: "No active LLM providers configured" },
+        { status: 503 }
+      ), req);
+    }
 
     // Create runner
     const runner = new AgentRunner({} as any);
@@ -217,25 +225,19 @@ export async function handleGetCanvas(req: Request, addCorsHeaders: (r: Response
 }
 
 export async function handleGetNotes(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
-  const notes = getDb().query(`
-    SELECT * FROM scratchpad ORDER BY updated_at DESC LIMIT 50
-  `).all() as Record<string, unknown>[]
-  
+  const notes = await listAllScratchpadNotes(50)
   return addCorsHeaders(Response.json({ notes }), req)
 }
 
 export async function handleUpdateNote(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const body = await req.json().catch(() => ({}))
   const { threadId, content } = body
-  
+
   if (!threadId || !content) {
     return addCorsHeaders(Response.json({ success: false, error: "threadId and content required" }), req)
   }
-  
-  getDb().query(`
-    INSERT OR REPLACE INTO scratchpad(thread_id, key, value, updated_at)
-    VALUES(?, 'note', ?, ?)
-  `).run(threadId, content, Math.floor(Date.now() / 1000))
-  
+
+  await saveScratchpadNote(threadId, "note", content)
+
   return addCorsHeaders(Response.json({ success: true }), req)
 }

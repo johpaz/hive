@@ -197,49 +197,29 @@ async function testSeedSkillsToDB(): Promise<TestResult> {
  * Test 4: Verificar FTS5 sincronizado
  */
 async function testVerifyFTS5(): Promise<TestResult> {
-  printSubHeader("Test 4: Verificar FTS5 Sincronizado");
-  
+  printSubHeader("Test 4: Verificar índice HiveDB sincronizado");
+
   try {
     const db = getDb();
-    
-    // Verificar cantidad en skills
+
     const skillsCount = db.query("SELECT COUNT(*) as count FROM skills WHERE active = 1").get() as { count: number };
-    
-    // Verificar cantidad en FTS5
-    const ftsCount = db.query("SELECT COUNT(*) as count FROM skills_fts").get() as { count: number };
-    
     printSuccess(`Skills en DB: ${skillsCount.count}`);
-    printSuccess(`Skills en FTS5: ${ftsCount.count}`);
-    
-    // Si hay diferencia, sincronizar
-    if (skillsCount.count !== ftsCount.count) {
-      printInfo("Sincronizando FTS5...");
-      await syncSkillsToFTS();
-      const newFtsCount = db.query("SELECT COUNT(*) as count FROM skills_fts").get() as { count: number };
-      printSuccess(`FTS5 sincronizado: ${newFtsCount.count}`);
-    }
-    
-    // Verificar triggers de sincronización automática
-    const triggers = db.query(`
-      SELECT name FROM sqlite_master 
-      WHERE type='trigger' AND name LIKE 'skills_%'
-    `).all() as { name: string }[];
-    
-    printInfo(`Triggers FTS5: ${triggers.map(t => t.name).join(", ")}`);
-    
+
+    // Sincronizar y verificar que la búsqueda responde
+    await syncSkillsToFTS();
+    const { searchCapabilities } = await import("../packages/core/src/agent/capability-search");
+    const hits = await searchCapabilities("skill", { types: ["skill"], k: skillsCount.count || 1 });
+    printSuccess(`Documentos consultables en HiveDB: ${hits.length}`);
+
     return {
       success: true,
-      message: "FTS5 verificado",
-      details: { 
-        skillsCount: skillsCount.count, 
-        ftsCount: ftsCount.count,
-        triggers: triggers.map(t => t.name)
-      }
+      message: "Índice HiveDB verificado",
+      details: { skillsCount: skillsCount.count, indexedHits: hits.length }
     };
   } catch (error) {
     return {
       success: false,
-      message: "Error al verificar FTS5",
+      message: "Error al verificar el índice HiveDB",
       error: (error as Error).message
     };
   }
@@ -417,7 +397,7 @@ async function testTriggerMatching(): Promise<TestResult> {
   let failed = 0;
   
   for (const testCase of testCases) {
-    const skills = selectSkills(testCase.message);
+    const skills = await selectSkills(testCase.message);
     
     if (skills.length > 0 && skills.some(s => s.name === testCase.expectedSkill)) {
       printSuccess(`"${testCase.message}" → ${skills[0].name}`);
@@ -446,7 +426,7 @@ async function testTriggerMatching(): Promise<TestResult> {
  * Test 10: Búsqueda semántica con FTS5
  */
 async function testFTS5Search(): Promise<TestResult> {
-  printSubHeader("Test 10: Búsqueda Semántica con FTS5");
+  printSubHeader("Test 10: Búsqueda Semántica con HiveDB");
   
   const testCases = [
     {
@@ -475,7 +455,7 @@ async function testFTS5Search(): Promise<TestResult> {
   let failed = 0;
   
   for (const testCase of testCases) {
-    const skills = selectSkills(testCase.message);
+    const skills = await selectSkills(testCase.message);
     
     if (skills.length > 0 && skills.some(s => s.category === testCase.expectedCategory)) {
       printSuccess(`"${testCase.description}"`);
@@ -526,7 +506,7 @@ async function testConversationalMessages(): Promise<TestResult> {
   let failed = 0;
   
   for (const message of conversationalMessages) {
-    const skills = selectSkills(message);
+    const skills = await selectSkills(message);
     
     if (skills.length === 0) {
       printSuccess(`"${message}" → [] (correcto, es conversacional)`);
@@ -554,7 +534,7 @@ async function testContextInjection(): Promise<TestResult> {
   
   try {
     const message = "generá un endpoint REST con autenticación JWT";
-    const skills = selectSkills(message);
+    const skills = await selectSkills(message);
     
     if (skills.length === 0) {
       return {
@@ -640,7 +620,7 @@ async function testPerformance(): Promise<TestResult> {
   
   for (const message of testMessages) {
     const start = performance.now();
-    selectSkills(message);
+    await selectSkills(message);
     const end = performance.now();
     const duration = end - start;
     timings.push(duration);

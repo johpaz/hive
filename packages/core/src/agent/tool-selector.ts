@@ -1,32 +1,33 @@
 /**
- * FTS5-based Dynamic Tool Selector Module
- * 
+ * HiveDB-based Dynamic Tool Selector Module
+ *
  * Context Compiler Level 3 - Intelligent Tool Selection
- * 
+ *
  * This module intercepts each message BEFORE calling the LLM and uses
- * SQLite FTS5 bm25() scoring to select the most relevant tools (0-4).
- * 
+ * HiveDB BM25 scoring (Spanish stemming + accent folding, per-field boosts)
+ * to select the most relevant tools.
+ *
  * DESIGN DECISIONS:
- * 
+ *
  * 1. Stateless: No memory between turns - each message is evaluated independently.
  *    Rationale: Prevents cascade effects where a bad selection in one turn affects
  *    future turns. Forces fresh evaluation each time.
- * 
- * 2. Maximum 4 tools per turn: Keeps token count low and prevents overwhelming
+ *
+ * 2. Maximum tools per turn: Keeps token count low and prevents overwhelming
  *    the LLM with irrelevant tools. Forces prioritization.
- * 
- * 3. Relevance threshold: If highest bm25 score < MIN_RELEVANCE_THRESHOLD,
- *    the message is considered conversational and returns empty array.
- *    Rationale: Prevents false positives on generic messages like "hola" or
- *    "cómo estás?" which should not trigger any tools.
- * 
+ *
+ * 3. Relative relevance cutoff: BM25 scores are positive (higher = better) but
+ *    their magnitude depends on corpus and document length, so hits are kept
+ *    only if they score at least RELEVANCE_RATIO of the top hit. Conversational
+ *    messages are short-circuited by pattern matching before any search.
+ *
  * 4. Atomic over orchestration: When ambiguous, prefer individual tools over
  *    compound/manager tools. Rationale: Atomic tools are more predictable and
  *    the LLM can combine them as needed.
- * 
- * 5. Performance: Must complete in under 50ms. FTS5 queries are typically
- *    <5ms for small tool catalogs (<100 tools).
- * 
+ *
+ * 5. Performance: Must complete in under 50ms. HiveDB (tantivy) queries are
+ *    sub-millisecond for small tool catalogs (<100 tools).
+ *
  * 6. Tool categorization: Tools are categorized by semantic domain:
  *    - scheduling (cron tools)
  *    - filesystem (file operations)
@@ -41,6 +42,12 @@
 
 import { getDb } from "../storage/sqlite"
 import { logger } from "../utils/logger"
+import {
+    searchCapabilities,
+    applyRelativeCutoff,
+    replaceCapabilityDocs,
+    type CapabilityDoc,
+} from "./capability-search"
 
 const log = logger.child("tool-selector")
 
@@ -73,16 +80,11 @@ export interface ToolSelectorResult {
 const MAX_TOOLS_PER_TURN = 12
 
 /**
- * Minimum bm25 score threshold. Below this = conversational, no tools needed.
- *
- * CRITICAL: bm25() returns NEGATIVE scores where closer to 0 = more relevant.
- * - Score of -5 is MORE relevant than -20
- * - We use -30 as threshold to filter noise while allowing valid matches
- *
- * Previous values: -25 (too strict), -100 (too permissive)
- * New value: -30 (balanced filtering, FTS5 MATCH handles the heavy lifting)
+ * Relative relevance cutoff: keep a hit only if it scores at least this
+ * fraction of the top hit. HiveDB BM25 scores are positive (higher = better)
+ * but corpus-dependent, so absolute thresholds don't transfer — a ratio does.
  */
-const MIN_RELEVANCE_THRESHOLD = -30
+const RELEVANCE_RATIO = 0.3
 
 /** Stopwords to filter out before FTS5 query construction */
 const STOPWORDS = new Set([
@@ -234,27 +236,6 @@ function isConversational(message: string): boolean {
 }
 
 /**
- * Build FTS5 query from user message
- * 
- * Strips stopwords, special characters, and limits to 8 keywords.
- * Uses OR operator for flexible matching.
- */
-function buildFTSQuery(message: string): string {
-    log.info(`[tool-selector] Building FTS query from message: "${message}"`)
-    const words = message
-        .toLowerCase()
-        .replace(/[^\p{L}\p{N}\s]/gu, " ")
-        .split(/\s+/)
-        .filter((w) => w.length > 2 && !STOPWORDS.has(w))
-        .slice(0, 8)
-
-    if (words.length === 0) return ""
-
-    // Use prefix matching for better recall (e.g., "gener*" matches "generar", "generando", "generación")
-    return words.map(w => `${w}*`).join(" OR ")
-}
-
-/**
  * Determine abstraction level preference
  * 
  * Returns 'atomic' to prefer individual tools, 'orchestration' to prefer
@@ -268,25 +249,25 @@ function getAbstractionPreference(): "atomic" | "orchestration" {
 // ─── Main Selection Function ─────────────────────────────────────────────────
 
 /**
- * Select tools for a given user message using FTS5 bm25() scoring
- * 
+ * Select tools for a given user message using HiveDB BM25 scoring
+ *
  * @param userMessage - The raw user message
  * @param fullToolList - Full list of available tools (for validation/filtering)
- * @returns Array of 0-4 selected tools with scores
- * 
+ * @returns Array of selected tools
+ *
  * ALGORITHM:
  * 1. If conversational → return []
- * 2. Build FTS5 query from message keywords
- * 3. Query tools_fts with bm25() scoring
- * 4. Filter results below MIN_RELEVANCE_THRESHOLD
- * 5. If ambiguous → prefer atomic over orchestration
- * 6. Return top maxTools results (default: MAX_TOOLS_PER_TURN)
+ * 2. Query the HiveDB capability index with the raw message (the engine
+ *    handles Spanish stemming, accent folding and malformed input)
+ * 3. Keep hits scoring at least RELEVANCE_RATIO of the top hit
+ * 4. If ambiguous → prefer atomic over orchestration
+ * 5. Return top maxTools results (default: MAX_TOOLS_PER_TURN)
  */
-export function selectTools(
+export async function selectTools(
     userMessage: string,
     fullToolList: ToolDescriptor[] = CORE_TOOL_CATALOG,
     maxTools: number = MAX_TOOLS_PER_TURN
-): ToolDescriptor[] {
+): Promise<ToolDescriptor[]> {
     const startTime = performance.now()
 
     // Log incoming user message for debugging/validation
@@ -298,76 +279,57 @@ export function selectTools(
         return []
     }
 
-    // Step 2: Build FTS5 query
-    const ftsQuery = buildFTSQuery(userMessage)
-    if (!ftsQuery) {
-        log.debug(`[tool-selector] No valid FTS query terms, returning empty array`)
+    // Step 2: Query the capability index with the raw message.
+    // Get more initially (maxTools * 2) for filtering, then limit to maxTools.
+    let hits
+    try {
+        hits = await searchCapabilities(userMessage, {
+            types: ["tool"],
+            k: maxTools * 2,
+        })
+    } catch (err) {
+        log.error(`[tool-selector] Capability search failed:`, err)
         return []
     }
 
-    log.debug(`[tool-selector] FTS query: "${ftsQuery}"`)
-
-    // Step 3: Execute FTS5 query with bm25 scoring
-    const db = getDb()
-
-    // Use bm25() with column weights for relevance scoring
-    // FTS5 table columns: tool_name, name, description, category
-    // Weights: tool_name=1.0, name=5.0, description=3.0, category=1.0
-    // Higher weight on name (5.0) for exact tool name matching
-    // Get more initially (maxTools * 2) for filtering, then limit to maxTools
-    const ftsResults = db.query(`
-      SELECT tool_name, bm25(tools_fts, 1.0, 5.0, 3.0, 1.0) as bm25_score
-      FROM tools_fts
-      WHERE tools_fts MATCH ?
-      ORDER BY bm25_score ASC
-      LIMIT ?
-    `).all(ftsQuery, maxTools * 2) as { tool_name: string; bm25_score: number }[]
-
-    if (ftsResults.length === 0) {
-        log.debug(`[tool-selector] No FTS matches, returning empty array`)
+    if (hits.length === 0) {
+        log.debug(`[tool-selector] No matches, returning empty array`)
         return []
     }
 
     // Log raw scores for debugging
-    log.info(`[tool-selector] Raw FTS scores: ${ftsResults.slice(0, 10).map(r => `${r.tool_name}=${r.bm25_score.toFixed(2)}`).join(", ")}`)
+    log.info(`[tool-selector] Raw scores: ${hits.slice(0, 10).map(h => `${h.rawId}=${h.score.toFixed(2)}`).join(", ")}`)
 
-    // Step 4: Apply relevance threshold filter
-    // bm25() returns negative scores; threshold is -0.5 (loosened from typical -5)
-    const relevantResults = ftsResults.filter(r => r.bm25_score >= MIN_RELEVANCE_THRESHOLD)
-
-    if (relevantResults.length === 0) {
-        log.debug(`[tool-selector] All results below threshold ${MIN_RELEVANCE_THRESHOLD}, returning empty`)
+    // Step 3: Keep only hits close enough to the best match
+    const relevantHits = applyRelativeCutoff(hits, RELEVANCE_RATIO)
+    if (relevantHits.length === 0) {
+        log.debug(`[tool-selector] All results below ratio cutoff, returning empty`)
         return []
     }
 
-    // Step 5: Map to tool descriptors with additional metadata
+    // Step 4: Map to tool descriptors with additional metadata
     const toolMap = new Map(fullToolList.map(t => [t.name, t]))
 
     const scoredTools: SelectedTool[] = []
-
-    for (const result of relevantResults) {
-        const tool = toolMap.get(result.tool_name)
+    for (const hit of relevantHits) {
+        const tool = toolMap.get(hit.rawId)
         if (tool) {
             scoredTools.push({
                 name: tool.name,
-                score: result.bm25_score,
+                score: hit.score,
                 category: tool.category,
             })
         }
     }
 
-    // Step 6: Prefer atomic over orchestration when ambiguous
-    // If we have more than MAX_TOOLS_PER_TURN, prioritize by abstraction level
+    // Step 5: Prefer atomic over orchestration when ambiguous
     const abstractionPref = getAbstractionPreference()
 
     if (scoredTools.length > MAX_TOOLS_PER_TURN) {
-        // Sort by score first, then by abstraction level preference
-        // CRITICAL FIX: bm25() returns NEGATIVE scores where closer to 0 = more relevant
-        // So we sort ASCENDING (a.score - b.score) to put -8.02 before -5.11
         scoredTools.sort((a, b) => {
-            // First by score (ascending for bm25 - closer to 0 is better)
+            // First by score (descending: HiveDB scores are positive, higher = better)
             if (Math.abs(a.score - b.score) > 0.1) {
-                return a.score - b.score  // ✅ Fixed: ascending for negative bm25 scores
+                return b.score - a.score
             }
             // Then by abstraction preference (preferred type first)
             const aTool = toolMap.get(a.name)
@@ -383,10 +345,10 @@ export function selectTools(
         })
     }
 
-    // Step 7: Take top N tools
+    // Step 6: Take top N tools
     const topTools = scoredTools.slice(0, maxTools)
 
-    // Step 8: Return as ToolDescriptor array
+    // Step 7: Return as ToolDescriptor array
     const result = topTools.map(t => toolMap.get(t.name)!).filter(Boolean)
 
     const timing = performance.now() - startTime
@@ -402,14 +364,14 @@ export function selectTools(
     return result
 }
 
-// ─── Sync Tools to FTS5 ─────────────────────────────────────────────────────
+// ─── Sync Tools to HiveDB ────────────────────────────────────────────────────
 
 /**
- * Sync tool catalog to FTS5 virtual table
+ * Sync tool catalog to the HiveDB capability index.
  *
- * Called on initialization from gateway/initializer.ts to populate the FTS5 index.
- * Assumes the tools_fts table already exists (created by CONTEXT_ENGINE_SCHEMA).
- * Descriptions are enriched with bilingual keywords for better matching.
+ * Called on initialization from gateway/initializer.ts to populate the index.
+ * Replaces all `type=tool` documents atomically (delete-by-filter + one
+ * batch commit). Descriptions are enriched with bilingual keywords.
  *
  * @param tools - Optional array of tools to sync. If not provided, fetches from DB.
  */
@@ -457,38 +419,21 @@ export async function syncToolCatalogToFTS(tools?: ToolDescriptor[]): Promise<vo
 
         const toolCatalog = Array.from(catalogByName.values())
 
-        // Step 2: Atomic transaction for FTS5 sync
-        // We use a transaction to ensure that if sync fails, we don't end up with an empty FTS table
-        const syncTransaction = db.transaction(() => {
-            // Verify table exists inside transaction (optional but safer)
-            const tableCheck = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='tools_fts'").get()
-            if (!tableCheck) {
-                throw new Error("tools_fts table does not exist!")
-            }
+        // Step 2: Replace all tool documents in the HiveDB capability index
+        const docs: CapabilityDoc[] = toolCatalog.map(tool => ({
+            type: "tool" as const,
+            rawId: tool.name,
+            name: tool.name,
+            body: enrichToolDescription(tool),
+            tags: tool.category,
+        }))
 
-            // A: Clear existing data
-            db.run("DELETE FROM tools_fts")
+        await replaceCapabilityDocs("tool", docs)
 
-            // B: Prepare insertion
-            const insert = db.prepare(`
-                INSERT INTO tools_fts(tool_name, name, description, category)
-                VALUES (?, ?, ?, ?)
-            `)
-
-            // C: Re-populate
-            for (const tool of toolCatalog) {
-                const enriched = enrichToolDescription(tool)
-                insert.run(tool.name, tool.name, enriched, tool.category)
-            }
-        })
-
-        // Execute transaction
-        syncTransaction()
-
-        log.info(`[tool-selector] Atomic sync complete: ${toolCatalog.length} tools indexed in FTS5`)
+        log.info(`[tool-selector] Sync complete: ${toolCatalog.length} tools indexed in HiveDB`)
 
     } catch (err) {
-        log.error(`[tool-selector] Transactional sync failed:`, err)
+        log.error(`[tool-selector] Tool index sync failed:`, err)
         throw err // Re-throw to inform initializer
     }
 }
@@ -524,13 +469,28 @@ function enrichToolDescription(tool: ToolDescriptor): string {
  * Gemini (and OpenAI) require: start with letter/underscore, only [a-zA-Z0-9_.-:], max 64 chars.
  * Server names from the UI can contain spaces and special chars (e.g. "X antes twiter").
  *
- * Canonical format: `{safeServer}__{safeTool}` (double underscore as separator)
+ * Canonical format: `{safeServer}__{safeTool}` (double underscore as separator).
+ * The server prefix exists only to disambiguate tools with the same name
+ * across servers — when the 64-char budget is exceeded, the SERVER part is
+ * shortened first so the distinctive tool name survives intact (long server
+ * names must never truncate the tool name).
  */
 export function mcpToolFullName(serverName: string, toolName: string): string {
+    const MAX = 64
+    const MIN_SERVER = 8
     const safe = (s: string) => s.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-]/g, '_')
-    const full = `${safe(serverName)}__${safe(toolName)}`
-    const trimmed = full.length > 64 ? full.substring(0, 64) : full
-    return /^[a-zA-Z_]/.test(trimmed) ? trimmed : `_${trimmed}`.substring(0, 64)
+
+    let server = safe(serverName)
+    const tool = safe(toolName)
+
+    const room = MAX - 2 - tool.length
+    if (server.length > room) {
+        server = server.substring(0, Math.max(room, MIN_SERVER))
+    }
+
+    let full = `${server}__${tool}`
+    if (full.length > MAX) full = full.substring(0, MAX)
+    return /^[a-zA-Z_]/.test(full) ? full : `_${full}`.substring(0, MAX)
 }
 
 /**

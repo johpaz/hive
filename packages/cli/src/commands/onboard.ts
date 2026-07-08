@@ -62,7 +62,7 @@ const DEFAULT_MODELS: Record<string, string> = {
   openrouter: "meta-llama/llama-3.3-70b-instruct",
   ollama: "llama3.3:8b",
   nvidia: "meta/llama-3.3-70b-instruct",
-  hiveagents: "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+  hiveagents: "Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf",
 };
 
 const PROVIDER_BASE_URLS: Record<string, string> = {
@@ -159,15 +159,7 @@ const AVAILABLE_MODELS: Record<string, Array<{ value: string; label: string; hin
     { value: "moonshotai/kimi-k2-thinking", label: "Kimi K2 Thinking", hint: "Razonamiento profundo — 256K" },
   ],
   hiveagents: [
-    { value: "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf", label: "Qwen3.6 35B MoE Q4 (Recomendado)", hint: "MoE 22.7GB — 62.8 t/s, el más rápido" },
-    { value: "Qwen3.6-35B-A3B-UD-Q6_K.gguf", label: "Qwen3.6 35B MoE Q6", hint: "MoE 30GB — 57.7 t/s" },
-    { value: "Qwen3-Coder-Next-UD-Q4_K_M.gguf", label: "Qwen3 Coder Next MoE Q4", hint: "MoE 49.3GB — 50.9 t/s, ocupa toda la VRAM" },
-    { value: "gemma-4-26B-A4B-UD-Q4_K_M.gguf", label: "Gemma 4 26B MoE Q4", hint: "MoE 16.9GB — 51.5 t/s" },
-    { value: "gemma-4-26B-A4B-UD-Q6_K_XL.gguf", label: "Gemma 4 26B MoE Q6", hint: "MoE 23.3GB — 47.8 t/s" },
-    { value: "gemma-4-12b-it-UD-Q4_K_XL.gguf", label: "Gemma 4 12B Dense Q4", hint: "Dense 7.4GB — 27.7 t/s" },
-    { value: "Qwopus3.6-27B-v2-MTP-Q6_K.gguf", label: "Qwopus 27B Dense+MTP Q6", hint: "Dense+MTP 22.4GB — 17.9 t/s" },
-    { value: "Qwen3.6-27B-UD-Q6_K_XL.gguf", label: "Qwen3.6 27B Dense+MTP Q6", hint: "Dense+MTP 26GB — 16 t/s" },
-    { value: "gemma-4-31B-it-UD-Q6_K_XL.gguf", label: "Gemma 4 31B Dense Q6", hint: "Dense 27.5GB — 7.6 t/s, mayor calidad" },
+    { value: "Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf", label: "Qwen-AgentWorld 35B MoE (Recomendado)", hint: "MoE 22.1GB — optimizado para agentes, tool use y MCP" },
   ],
 };
 
@@ -566,7 +558,7 @@ async function runUpdateWizard(existing: ExistingConfig): Promise<void> {
         { value: "nvidia", label: "NVIDIA NIM", hint: "Modelos gratuitos" },
         { value: "openrouter", label: "OpenRouter", hint: "Multi-modelo" },
         { value: "ollama", label: "Ollama (local)", hint: "Sin costo" },
-        { value: "hiveagents", label: "HiveAgents LLM", hint: "Qwen3.6 / Gemma4 vía Cloudflare" },
+        { value: "hiveagents", label: "HiveAgents LLM", hint: "Qwen-AgentWorld vía Cloudflare" },
       ],
     }) as string;
 
@@ -1082,7 +1074,7 @@ async function runFullWizard(): Promise<void> {
             { value: "ollama", label: "Ollama (Local)", hint: "Gratis, corre localmente" },
             { value: "nvidia", label: "NVIDIA NIM", hint: "Modelos gratuitos en build.nvidia.com" },
             { value: "openrouter", label: "OpenRouter", hint: "Múltiples proveedores" },
-            { value: "hiveagents", label: "HiveAgents LLM", hint: "Local — Qwen3.6 / Gemma4 vía Cloudflare" },
+            { value: "hiveagents", label: "HiveAgents LLM", hint: "Local — Qwen-AgentWorld vía Cloudflare" },
           ],
           initialValue: state.provider,
         });

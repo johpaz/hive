@@ -4,7 +4,6 @@ import {
   loadProviderApiKey, storeProviderApiKey,
   loadProviderHeaders, storeProviderHeaders,
 } from "../../storage/crypto"
-import { listLocalModels } from "../llm-local/downloader"
 import { loadHiveAgentsModel, getHiveAgentsModelStatus } from "../../agent/llm-providers/hiveagents"
 import { logger } from "../../utils/logger"
 
@@ -12,7 +11,7 @@ const log = logger.child("gateway")
 
 export async function handleGetProviders(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const rawProviders = getDb().query(`
-    SELECT id, name, base_url, enabled, active, num_ctx FROM providers
+    SELECT id, name, base_url, category, enabled, active, num_ctx FROM providers
   `).all() as Record<string, unknown>[]
 
   const modelsRows = getDb().query(`SELECT * FROM models`).all() as Record<string, unknown>[]
@@ -29,55 +28,17 @@ export async function handleGetProviders(req: Request, addCorsHeaders: (r: Respo
     })
   }
 
-  // Inyectar modelos locales descargados dinámicamente para local-llama
-  try {
-    const localModels = listLocalModels()
-    const downloadedLocalModels = localModels.filter(m => m.downloaded)
-    if (downloadedLocalModels.length > 0) {
-      const existingLocalModels = modelsByProvider["local-llama"] || []
-      for (const localModel of downloadedLocalModels) {
-        const existingIdx = existingLocalModels.findIndex((m: any) => m.id === localModel.id)
-        if (existingIdx === -1) {
-          existingLocalModels.push({
-            id: localModel.id,
-            name: localModel.name,
-            provider_id: "local-llama",
-            model_type: "llm",
-            context_window: 16000,
-            capabilities: JSON.stringify(["chat", "local"]),
-            enabled: true,
-            active: true,
-          })
-        } else {
-          // Modelo del seed ya existe pero está descargado: forzar activo
-          existingLocalModels[existingIdx] = {
-            ...existingLocalModels[existingIdx],
-            enabled: true,
-            active: true,
-          }
-        }
-      }
-      modelsByProvider["local-llama"] = existingLocalModels
-    }
-  } catch {
-    // Ignorar si no se pueden obtener modelos locales
-  }
-
   const providers = await Promise.all(rawProviders.map(async (p) => {
     const apiKey = await loadProviderApiKey(p.id as string)
     const headers = await loadProviderHeaders(p.id as string)
     const providerModels = modelsByProvider[p.id as string] || []
-    // Auto-activar local-llama si tiene modelos descargados dinámicamente
-    let active = p.active
-    if (p.id === "local-llama" && providerModels.some((m: any) => m.active || m.enabled)) {
-      active = true
-    }
     return {
       id: p.id,
       name: p.name,
       base_url: p.base_url,
+      category: p.category ?? "llm",
       enabled: p.enabled,
-      active,
+      active: p.active,
       num_ctx: p.num_ctx ?? null,
       has_api_key: apiKey ? 1 : 0,
       has_headers: Object.keys(headers).length > 0 ? 1 : 0,
@@ -207,7 +168,7 @@ export async function handleSyncProviderModels(
       const data = await res.json() as { models: Array<{ name: string }> }
       modelNames = (data.models || []).map(m => m.name)
     } else {
-      // OpenAI-compatible: local-llama, groq, mistral, etc.
+      // OpenAI-compatible: groq, mistral, etc.
       const res = await fetch(`${baseUrl}/v1/models`, { signal: AbortSignal.timeout(10000) })
       if (!res.ok) {
         return addCorsHeaders(Response.json({ error: `${providerId} responded ${res.status}` }, { status: 502 }), req)
@@ -255,9 +216,7 @@ export async function handleSyncProviderModels(
     const errorMsg = (err as Error).message
     const hint = providerId === "ollama"
       ? "Could not connect to Ollama"
-      : providerId === "local-llama"
-        ? "Could not connect to llama-server. Make sure it's running on :8080"
-        : `Could not connect to provider: ${errorMsg}`
+      : `Could not connect to provider: ${errorMsg}`
     return addCorsHeaders(Response.json({
       error: `${hint}: ${errorMsg}`
     }, { status: 502 }), req)

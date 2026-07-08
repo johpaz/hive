@@ -1,22 +1,29 @@
 /**
- * FTS5-based Dynamic Skill Selector Module
- * 
+ * HiveDB-based Dynamic Skill Selector Module
+ *
  * Context Compiler Level 4 - Intelligent Skill Selection
- * 
- * This module uses SQLite FTS5 bm25() scoring to select the most relevant
- * skills (0-5) based on the user message, similar to tool selection.
- * 
+ *
+ * This module uses HiveDB BM25 scoring (Spanish stemming + accent folding)
+ * to select the most relevant skills based on the user message, similar to
+ * tool selection.
+ *
  * DESIGN DECISIONS:
- * 
+ *
  * 1. Reads from skills table in database (not hardcoded catalog)
- * 2. Maximum 5 skills per turn for balanced context injection
- * 3. Relevance threshold for conversational messages
- * 4. Uses skill descriptions for FTS5 matching
+ * 2. Maximum skills per turn for balanced context injection
+ * 3. Explicit triggers checked first; search is the semantic fallback
+ * 4. Relative score cutoff (fraction of the top hit), never absolute
  * 5. Returns skill content for injection into system prompt
  */
 
 import { getDb } from "../storage/sqlite"
 import { logger } from "../utils/logger"
+import {
+    searchCapabilities,
+    applyRelativeCutoff,
+    replaceCapabilityDocs,
+    type CapabilityDoc,
+} from "./capability-search"
 
 const log = logger.child("skill-selector")
 
@@ -73,13 +80,11 @@ export interface SkillSelectorResult {
 const MAX_SKILLS_PER_TURN = 4  // Increased from 2 to allow more skills
 
 /**
- * Minimum bm25 score threshold. Below this = conversational, no skills needed.
- * 
- * CRITICAL: bm25() returns NEGATIVE scores where closer to 0 = more relevant.
- * - Score of -5 is MORE relevant than -20
- * - We use -15 as threshold to allow reasonable matching while filtering noise
+ * Relative relevance cutoff: keep a hit only if it scores at least this
+ * fraction of the top hit. HiveDB BM25 scores are positive (higher = better)
+ * but corpus-dependent, so absolute thresholds don't transfer — a ratio does.
  */
-const MIN_RELEVANCE_THRESHOLD = -15  // Increased from -5 to allow more matches
+const RELEVANCE_RATIO = 0.3
 
 /** Stopwords to filter out before FTS5 query construction */
 const STOPWORDS = new Set([
@@ -136,27 +141,6 @@ function isConversational(message: string): boolean {
 }
 
 /**
- * Build FTS5 query from user message
- * 
- * Uses prefix matching for better recall:
- * - "generar" matches "generando", "generación", "genera"
- * - "código" matches "codigos", "codificar"
- */
-function buildFTSQuery(message: string): string {
-    const words = message
-        .toLowerCase()
-        .replace(/[^\p{L}\p{N}\s]/gu, " ")
-        .split(/\s+/)
-        .filter((w) => w.length > 2 && !STOPWORDS.has(w))
-        .slice(0, 8)
-
-    if (words.length === 0) return ""
-
-    // Use prefix matching for better recall (e.g., "gener*" matches "generar", "generando", "generación")
-    return words.map(w => `${w}*`).join(" OR ")
-}
-
-/**
  * Check if message matches explicit triggers from a skill
  */
 function matchTriggers(message: string, triggersJson: string | null): boolean {
@@ -182,21 +166,20 @@ function matchTriggers(message: string, triggersJson: string | null): boolean {
 /**
  * Select skills for a given user message using hybrid matching:
  * 1. First check explicit triggers (high confidence match)
- * 2. Fallback to FTS5 bm25() scoring for semantic matching
+ * 2. Fallback to HiveDB BM25 scoring for semantic matching
  *
  * @param userMessage - The raw user message
- * @returns Array of 0-5 selected skills with scores
+ * @returns Array of selected skills
  *
  * ALGORITHM:
  * 1. If conversational → return []
  * 2. Check explicit triggers from all enabled skills
  * 3. If trigger match found → return matching skill immediately
- * 4. Build FTS5 query from message keywords
- * 5. Query skills_fts with bm25() scoring
- * 6. Filter results below MIN_RELEVANCE_THRESHOLD
- * 7. Return top MAX_SKILLS_PER_TURN results
+ * 4. Query the HiveDB capability index with the raw message
+ * 5. Keep hits scoring at least RELEVANCE_RATIO of the top hit
+ * 6. Hydrate skill details from SQLite and return top MAX_SKILLS_PER_TURN
  */
-export function selectSkills(userMessage: string): SkillDescriptor[] {
+export async function selectSkills(userMessage: string): Promise<SkillDescriptor[]> {
     const startTime = performance.now()
 
     log.debug(`[skill-selector] Processing user message: "${userMessage.substring(0, 100)}"`)
@@ -223,84 +206,41 @@ export function selectSkills(userMessage: string): SkillDescriptor[] {
         }
     }
 
-    // Step 3: Build FTS5 query for semantic matching
-    const ftsQuery = buildFTSQuery(userMessage)
-    if (!ftsQuery) {
-        log.debug(`[skill-selector] No valid FTS query terms, returning empty array`)
+    // Step 3: Semantic matching via the HiveDB capability index
+    let hits
+    try {
+        hits = await searchCapabilities(userMessage, { types: ["skill"], k: 20 })
+    } catch (err) {
+        log.error(`[skill-selector] Capability search failed:`, err)
         return []
     }
 
-    log.debug(`[skill-selector] FTS query: "${ftsQuery}"`)
-
-    // Step 4: Execute FTS5 query with bm25 scoring
-    // Use bm25() with column weights for relevance scoring
-    // FTS5 table columns: id, name, description, category, tools, triggers, body
-    // Weights: id=1.0, name=4.0, description=5.0, category=1.0, tools=1.0, triggers=5.0, body=2.0
-    // Higher weight on description (5.0) and triggers (5.0) for best semantic matching
-    const ftsResults = db.query(`
-        SELECT id, bm25(skills_fts, 1.0, 4.0, 5.0, 1.0, 1.0, 5.0, 2.0) as bm25_score
-        FROM skills_fts
-        WHERE skills_fts MATCH ?
-        ORDER BY bm25_score ASC
-        LIMIT 20
-    `).all(ftsQuery) as { id: string; bm25_score: number }[]
-
-    if (ftsResults.length === 0) {
-        log.debug(`[skill-selector] No FTS matches, returning empty array`)
+    if (hits.length === 0) {
+        log.debug(`[skill-selector] No matches, returning empty array`)
         return []
     }
 
     // Log raw scores for debugging
-    log.info(`[skill-selector] Raw FTS scores: ${ftsResults.slice(0, 10).map(r => `id=${r.id}, score=${r.bm25_score.toFixed(2)}`).join(", ")}`)
+    log.info(`[skill-selector] Raw scores: ${hits.slice(0, 10).map(h => `id=${h.rawId}, score=${h.score.toFixed(2)}`).join(", ")}`)
 
-    // Step 5: Apply relevance threshold filter
-    const relevantResults = ftsResults.filter(r => r.bm25_score >= MIN_RELEVANCE_THRESHOLD)
-
-    if (relevantResults.length === 0) {
-        log.debug(`[skill-selector] All results below threshold ${MIN_RELEVANCE_THRESHOLD}, returning empty`)
+    // Step 4: Keep only hits close enough to the best match
+    const relevantHits = applyRelativeCutoff(hits, RELEVANCE_RATIO)
+    if (relevantHits.length === 0) {
+        log.debug(`[skill-selector] All results below ratio cutoff, returning empty`)
         return []
     }
 
-    // Step 6: Fetch full skill details from database
-    const skillIds = relevantResults.map(r => r.id)
+    // Step 5: Hydrate full skill details from SQLite (already loaded above)
+    const skillMap = new Map(allSkills.map(s => [s.id, s]))
+    const result: SkillDescriptor[] = []
 
-    let dbSkills: SkillDescriptor[] = []
-    try {
-        const db = getDb()
-        dbSkills = db.query(`
-            SELECT id, name, description, category, tools, triggers, preferred_agents, body, version, version_num, active
-            FROM skills
-            WHERE id IN (${skillIds.map(() => '?').join(',')})
-            AND active = 1
-        `).all(...skillIds) as SkillDescriptor[]
-    } catch (err) {
-        log.warn(`[skill-selector] Failed to fetch skills from DB:`, err)
-        return []
-    }
-
-    // Map scores to skills
-    const skillMap = new Map(dbSkills.map(s => [s.id, s]))
-    const scoredSkills: SelectedSkill[] = []
-
-    for (const result of relevantResults) {
-        const skill = skillMap.get(result.id)
+    for (const hit of relevantHits) {
+        const skill = skillMap.get(hit.rawId)
         if (skill) {
-            scoredSkills.push({
-                id: skill.id,
-                name: skill.name,
-                score: result.bm25_score,
-                category: skill.category,
-                description: skill.description || "",
-                body: skill.body,
-            })
+            result.push(skill)
+            if (result.length === MAX_SKILLS_PER_TURN) break
         }
     }
-
-    // Step 7: Take top N skills
-    const topSkills = scoredSkills.slice(0, MAX_SKILLS_PER_TURN)
-
-    // Step 8: Return as SkillDescriptor array
-    const result = topSkills.map(t => skillMap.get(t.id)!).filter(Boolean)
 
     const timing = performance.now() - startTime
 
@@ -342,18 +282,19 @@ export function getMinimalSkills(): SkillDescriptor[] {
     }
 }
 
-// ─── Sync Skills to FTS5 ───────────────────────────────────────────────────
+// ─── Sync Skills to HiveDB ───────────────────────────────────────────────────
 
 /**
- * Sync all enabled skills from database to FTS5
- * Should be called on initialization from gateway/initializer.ts
- * The skills_fts table is created by schema.ts (v0.0.28 includes description)
+ * Sync all enabled skills from database to the HiveDB capability index.
+ * Should be called on initialization from gateway/initializer.ts.
+ * Replaces all `type=skill` documents atomically (delete-by-filter + one
+ * batch commit).
  */
 export async function syncSkillsToFTS(): Promise<void> {
     const db = getDb()
 
     try {
-        // Step 1: Get all enabled skills from database (v0.0.28 schema with description)
+        // Step 1: Get all enabled skills from database
         const dbSkills = db.query(`
             SELECT id, name, description, category, tools, triggers, body
             FROM skills
@@ -372,44 +313,24 @@ export async function syncSkillsToFTS(): Promise<void> {
             log.debug(`[skill-selector] No skills found in DB to sync`)
         }
 
-        // Step 2: Atomic transaction for FTS5 sync
-        const syncTransaction = db.transaction(() => {
-            // Verify table exists
-            const tableCheck = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='skills_fts'").get()
-            if (!tableCheck) {
-                throw new Error("skills_fts table does not exist!")
-            }
+        // Step 2: Replace all skill documents in the HiveDB capability index.
+        // name (boost 4.0) = skill name; tags (3.0) = triggers + category +
+        // tools (the strongest semantic signals); body (2.0) = description +
+        // full skill body.
+        const docs: CapabilityDoc[] = dbSkills.map(skill => ({
+            type: "skill" as const,
+            rawId: skill.id,
+            name: skill.name,
+            tags: [skill.triggers, skill.category, skill.tools].filter(Boolean).join(" "),
+            body: [skill.description, skill.body].filter(Boolean).join("\n"),
+        }))
 
-            // A: Clear existing data
-            db.run("DELETE FROM skills_fts")
+        await replaceCapabilityDocs("skill", docs)
 
-            // B: Prepare insertion (v0.0.28 schema with description)
-            const insert = db.prepare(`
-                INSERT INTO skills_fts(id, name, description, category, tools, triggers, body)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            `)
-
-            // C: Re-populate
-            for (const skill of dbSkills) {
-                insert.run(
-                    skill.id,
-                    skill.name,
-                    skill.description || "",
-                    skill.category,
-                    skill.tools,
-                    skill.triggers,
-                    skill.body
-                )
-            }
-        })
-
-        // Execute transaction
-        syncTransaction()
-
-        log.info(`[skill-selector] Atomic sync complete: ${dbSkills.length} skills indexed in FTS5`)
+        log.info(`[skill-selector] Sync complete: ${dbSkills.length} skills indexed in HiveDB`)
 
     } catch (err) {
-        log.error(`[skill-selector] Transactional sync failed:`, err)
+        log.error(`[skill-selector] Skill index sync failed:`, err)
         throw err // Re-throw to inform initializer
     }
 }

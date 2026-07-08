@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-agents-core",
-  "version": "0.0.40",
+  "version": "0.0.41",
   "type": "module",
   "private": true,
   "description": "Hive Gateway — Personal AI agent runtime",
@@ -19,6 +19,7 @@
     "@ag-ui/core": "^0.0.46",
     "@johpaz/hive-agents-mcp": "^0.0.40",
     "@johpaz/hive-agents-skills": "^0.0.40",
+    "@johpaz/hive-db": "^0.2.0",
     "@modelcontextprotocol/sdk": "latest",
     "@sapphire/snowflake": "latest",
     "@slack/bolt": "latest",

@@ -178,8 +178,8 @@ describe("Context Inference Test Suite (Real DB)", () => {
             expect(skills.length).toBe(3)
         })
 
-        test("should discover skills via FTS5", () => {
-            const discovered = selectSkills("test message")
+        test("should discover skills via HiveDB", async () => {
+            const discovered = await selectSkills("test message")
             console.log("🔍 Discovered:", discovered.length)
         })
 
@@ -197,8 +197,8 @@ describe("Context Inference Test Suite (Real DB)", () => {
 
     describe("6. Playbook", () => {
         
-        test("should select playbook rules", () => {
-            const rules = selectPlaybookRules("test query")
+        test("should select playbook rules", async () => {
+            const rules = await selectPlaybookRules("test query")
             console.log("📋 Rules:", rules.length)
         })
 

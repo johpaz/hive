@@ -150,9 +150,9 @@ export async function compileContext(opts: {
 
   // [STEP-2] STRATEGY 1: WRITE — Load scratchpad (persistent notes)
   log.info(`[context-compiler] [STEP-2] Loading scratchpad...`)
-  let scratchpadNotes: ReturnType<typeof getScratchpad> = []
+  let scratchpadNotes: Awaited<ReturnType<typeof getScratchpad>> = []
   try {
-    scratchpadNotes = getScratchpad(threadId)
+    scratchpadNotes = await getScratchpad(threadId)
     log.info(`[context-compiler] [STEP-2] ✅ Loaded ${scratchpadNotes.length} scratchpad notes`)
   } catch (err) {
     log.error(`[context-compiler] [STEP-2] ❌ FAILED loading scratchpad: ${JSON.stringify(err)}`)
@@ -209,7 +209,7 @@ export async function compileContext(opts: {
 
       log.info(`[context-compiler] [STEP-3c] ✅ Loaded ${mcpToolExecutors.length} MCP tools`)
 
-      // Persist MCP tool definitions to DB for search_knowledge and FTS5 search
+      // Persist MCP tool definitions to DB for search_knowledge (HiveDB index)
       if (mcpToolExecutors.length > 0) {
         try {
           for (const server of dbServers) {
@@ -222,7 +222,7 @@ export async function compileContext(opts: {
             }
           }
           await syncMCPToolsToFTS();
-          log.info(`[context-compiler] [STEP-3c] ✅ Persisted MCP tools to DB + FTS5`)
+          log.info(`[context-compiler] [STEP-3c] ✅ Persisted MCP tools to DB + HiveDB index`)
         } catch (syncErr) {
           log.warn(`[context-compiler] [STEP-3c] ⚠️ Failed to persist MCP tools to DB: ${(syncErr as Error).message}`)
         }
@@ -278,7 +278,7 @@ export async function compileContext(opts: {
     minimalSkills = getMinimalSkills()
     log.info(`[context-compiler] [STEP-8b] ✅ Loaded ${minimalSkills.length} minimal skills`)
 
-    // Discover additional skills via FTS5 (coordinator only)
+    // Discover additional skills via HiveDB search (coordinator only)
     if (!isWorker) {
       const inputForSkills = taskContext || userMessage
       const textMessage = typeof inputForSkills === "string"
@@ -286,8 +286,8 @@ export async function compileContext(opts: {
         : Array.isArray(inputForSkills)
           ? inputForSkills.filter(p => p.type === "text").map(p => (p as any).text).join("\n")
           : String(inputForSkills)
-      discoveredSkills = selectSkills(textMessage)
-      log.info(`[context-compiler] [STEP-8b] ✅ Discovered ${discoveredSkills.length} additional skills via FTS5`)
+      discoveredSkills = await selectSkills(textMessage)
+      log.info(`[context-compiler] [STEP-8b] ✅ Discovered ${discoveredSkills.length} additional skills via HiveDB`)
     }
   } catch (err) {
     log.warn(`[context-compiler] [STEP-8b] ⚠️ Skill loadout failed: ${(err as Error).message}`)

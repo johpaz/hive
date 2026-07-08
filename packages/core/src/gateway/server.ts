@@ -73,7 +73,6 @@ import { handleGetModels, handleCreateModel, handleToggleModel, handleGetModelsC
 import { handleGetVoiceProviders, handleGetConfiguredVoiceProviders, handleSaveVoiceProviderKey, handleTestVoice, handleGetChannelVoice, handleUpdateChannelVoice, handleGetVoiceProviderVoices } from "./routes/voice";
 import { handleGetVisionProviders, handleGetChannelVision, handleUpdateChannelVision, handleOcrImage } from "./routes/multimodal";
 import { handleGetLocalTTSStatus, handleGetLocalTTSLogs, handleInstallLocalTTS, handleStartLocalTTS, handleStopLocalTTS, handleSpeakLocalTTS, handleGetAvailableModels, handleGetInstalledVoices, handleDownloadModel, handleGetDownloadLogs, initializeLocalTTS } from "./routes/tts-local";
-import { handleGetLocalLLMStatus, handleGetLocalLLMLogs, handleInstallLocalLLM, handleStartLocalLLM, handleStopLocalLLM, handleDownloadLLMModel, handleGetDownloadProgress, initializeLocalLLM } from "./routes/llm-local";
 import { handleCreateMeeting, handleListMeetings, handleGetMeeting, handleAddMeetingSegment, handleStopMeeting } from "./routes/meeting";
 import { handleGetActivityStats, handleGetSystemStats, handleGetUsageStats, handleSystemReload, handleApiReload, handleGetVersion, handleTriggerUpdate } from "./routes/system";
 import { handleGetChatHistory, handleGetCanvas, handleGetNotes, handleUpdateNote } from "./routes/chat";
@@ -194,9 +193,8 @@ export async function startGateway(config: Config): Promise<void> {
     dbProvider = init.provider;
     dbModel = init.model;
 
-    // Auto-iniciar TTS y LLM local si están instalados
+    // Auto-iniciar TTS local si está instalado
     await initializeLocalTTS();
-    await initializeLocalLLM();
 
     // Conectar channel-notify singleton para que las tools (notify, report_progress) puedan enviar mensajes
     setChannelSendFn(async (channel, sessionId, content) => {
@@ -1697,29 +1695,6 @@ export async function startGateway(config: Config): Promise<void> {
           return await handleGetInstalledVoices(req, addCorsHeaders)
         }
 
-        // ── LLM Local ────────────────────────────────────────────────────────
-        if (url.pathname === "/api/llm-local/status" && req.method === "GET") {
-          return await handleGetLocalLLMStatus(req, addCorsHeaders)
-        }
-        if (url.pathname === "/api/llm-local/logs" && req.method === "GET") {
-          return await handleGetLocalLLMLogs(req, addCorsHeaders)
-        }
-        if (url.pathname === "/api/llm-local/install" && req.method === "POST") {
-          return await handleInstallLocalLLM(req, addCorsHeaders)
-        }
-        if (url.pathname === "/api/llm-local/start" && req.method === "POST") {
-          return await handleStartLocalLLM(req, addCorsHeaders)
-        }
-        if (url.pathname === "/api/llm-local/stop" && req.method === "POST") {
-          return await handleStopLocalLLM(req, addCorsHeaders)
-        }
-        if (url.pathname === "/api/llm-local/download-model" && req.method === "POST") {
-          return await handleDownloadLLMModel(req, addCorsHeaders)
-        }
-        if (url.pathname === "/api/llm-local/download-progress" && req.method === "GET") {
-          return await handleGetDownloadProgress(req, addCorsHeaders)
-        }
-
         // ── Meeting Transcription API ────────────────────────────────────────
         if (url.pathname === "/api/meetings" && req.method === "POST") {
           return await handleCreateMeeting(req, addCorsHeaders);
@@ -1841,13 +1816,6 @@ export async function startGateway(config: Config): Promise<void> {
           return;
         }
 
-        // ── LLM Local ─────────────────────────────────────────────────────────
-        if (data.sessionId.startsWith("llm-local:")) {
-          log.info(`Local LLM client connected: ${data.sessionId}`);
-          ws.send(JSON.stringify({ type: "llm-local:connected", sessionId: data.sessionId }));
-          return;
-        }
-
         log.debug(`WebSocket connected: ${data.sessionId} `);
 
         sessionManager.create(data.sessionId, ws);
@@ -1893,13 +1861,6 @@ export async function startGateway(config: Config): Promise<void> {
 
       async message(ws, message) {
         const data = ws.data;
-
-        // LLM Local
-        if (data.sessionId.startsWith("llm-local:")) {
-          const { handleLLMWebSocket } = await import("./llm-local/server");
-          await handleLLMWebSocket(ws as any, message.toString());
-          return;
-        }
 
         // Bridge events clients are read-only; only respond to ping keepalive
         if (data.sessionId.startsWith("bridge:")) {

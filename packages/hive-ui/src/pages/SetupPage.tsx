@@ -136,7 +136,7 @@ function getDefaultWizardData(): WizardData {
       slack: { enabled: false },
     },
     voiceEnabled: false,
-    sttProvider: "groq-whisper",
+    sttProvider: "whisper-large-v3-turbo",
     ttsProvider: "elevenlabs",
     ttsVoice: "",
     ethicsRules: {},
@@ -874,10 +874,10 @@ export default function SetupPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="groq-whisper">
+                    <SelectItem value="whisper-large-v3-turbo">
                       Groq Whisper (Recomendado)
                     </SelectItem>
-                    <SelectItem value="openai-whisper">
+                    <SelectItem value="whisper-1">
                       OpenAI Whisper
                     </SelectItem>
                   </SelectContent>

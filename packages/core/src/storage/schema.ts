@@ -455,18 +455,9 @@ export const CONTEXT_ENGINE_SCHEMA = `
     updated_at        INTEGER NOT NULL DEFAULT (unixepoch())
   );
 
-  -- SCRATCHPAD: persistent key-value notes per conversation
-  -- Survives context compression. Written by agents via save_note tool.
-  CREATE TABLE IF NOT EXISTS scratchpad (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    thread_id   TEXT NOT NULL,
-    key         TEXT NOT NULL,
-    value       TEXT NOT NULL,
-    source      TEXT,
-    created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
-    updated_at  INTEGER NOT NULL DEFAULT (unixepoch()),
-    UNIQUE(thread_id, key)
-  );
+  -- SCRATCHPAD: persistent key-value notes per conversation now lives in a
+  -- HiveDB document collection (see agent/conversation-store.ts), not SQLite.
+  -- Id = "<thread_id>:<key>"; per-thread listing is a prefix scan.
 
   -- TRACES: execution log for every agent invocation (ACE Generator output)
   -- success: 1 = ok, 0 = failure
@@ -529,30 +520,10 @@ export const CONTEXT_ENGINE_SCHEMA = `
     created_at  INTEGER NOT NULL DEFAULT (unixepoch())
   );
 
-  -- FTS5 indexes for fast semantic search in Context Compiler
-  -- Created by initializeDatabase() via CONTEXT_ENGINE_SCHEMA
-  -- Populated by syncToolsToFTS() and syncSkillsToFTS() from gateway/initializer.ts
-  -- Triggers are NOT used - data is cleared and re-inserted on each sync to avoid schema drift
-
-  CREATE VIRTUAL TABLE IF NOT EXISTS playbook_fts USING fts5(
-    rule,
-    category,
-    applicable_to
-  );
-
-  -- FTS5: tool catalog search (populated by syncToolCatalogToFTS from gateway/initializer.ts)
-  CREATE VIRTUAL TABLE IF NOT EXISTS tools_fts USING fts5(
-    tool_name,
-    name,
-    description,
-    category
-  );
-
-  -- FTS5: skills catalog search (populated by syncSkillsToFTS from gateway/initializer.ts)
-  -- v0.0.28: includes description column for better semantic matching
-  CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(
-    id, name, description, category, tools, triggers, body
-  );
+  -- Capability search (tools, skills, playbook, MCP tools) lives in HiveDB
+  -- (@johpaz/hive-db) — see storage/hivedb.ts and agent/capability-search.ts.
+  -- The old FTS5 virtual tables (tools_fts, skills_fts, playbook_fts,
+  -- mcp_tools_fts) are dropped by a startup migration.
 
   -- MCP Tools: tool definitions discovered from connected MCP servers
   -- Persisted for FTS5 search and offline availability
@@ -572,12 +543,6 @@ export const CONTEXT_ENGINE_SCHEMA = `
 
   CREATE INDEX IF NOT EXISTS idx_mcp_tools_server ON mcp_tools(server_id);
   CREATE INDEX IF NOT EXISTS idx_mcp_tools_active ON mcp_tools(active);
-
-  -- FTS5: MCP tools catalog search (populated by syncMCPToolsToFTS from mcp/tool-sync.ts)
-  -- Separate from tools_fts to avoid polluting native tool search with MCP tools
-  CREATE VIRTUAL TABLE IF NOT EXISTS mcp_tools_fts USING fts5(
-    id, server_name, tool_name, description, category
-  );
 
   -- REFRESH TOKENS: JWT refresh token storage (hash-based for security)
   -- Stores hashed refresh tokens with expiry and user linkage
@@ -615,7 +580,6 @@ export const CONTEXT_ENGINE_SCHEMA = `
   -- INDICES
   CREATE INDEX IF NOT EXISTS idx_conversations_thread ON conversations(thread_id);
   CREATE INDEX IF NOT EXISTS idx_conversations_role   ON conversations(role);
-  CREATE INDEX IF NOT EXISTS idx_scratchpad_thread    ON scratchpad(thread_id);
   CREATE INDEX IF NOT EXISTS idx_traces_thread        ON traces(thread_id);
   CREATE INDEX IF NOT EXISTS idx_traces_agent         ON traces(agent_id);
   CREATE INDEX IF NOT EXISTS idx_traces_success       ON traces(success);

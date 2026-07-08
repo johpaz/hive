@@ -104,7 +104,7 @@ async function syncMCPServers(mcpManager: MCPClientManager): Promise<void> {
           const tools = mcpManager.getServerTools(serverName) || [];
           db.query(`UPDATE mcp_servers SET status = ?, tools_count = ? WHERE id = ?`).run("connected", tools.length, serverName);
 
-          // Persist MCP tool definitions to DB and FTS5
+          // Persist MCP tool definitions to DB and the HiveDB index
           // Use server.name (human-readable) for mcpToolId consistency with context-compiler
           syncMCPToolsToDB(server.id || server.name, server.name || serverName, tools);
           await syncMCPToolsToFTS();
@@ -128,8 +128,8 @@ async function syncMCPServers(mcpManager: MCPClientManager): Promise<void> {
           delete currentConfig.servers[oldServerName];
           await mcpManager.updateConfig(currentConfig);
 
-          // Delete MCP tool definitions from DB and FTS5
-          clearMCPToolsFromDB(oldServerName);
+          // Delete MCP tool definitions from DB and the HiveDB index
+          await clearMCPToolsFromDB(oldServerName);
 
           // Update DB status
           db.query(`UPDATE mcp_servers SET status = ?, tools_count = 0 WHERE id = ?`).run("disconnected", oldServerName);

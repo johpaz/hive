@@ -831,61 +831,8 @@ const DEFAULT_LOCAL_TTS: LocalTTSStatus = {
   voices: [],
 };
 
-// ==================== LOCAL LLM SLICE ====================
-export interface LocalLLMModel {
-  id: string;
-  name: string;
-  downloaded: boolean;
-  size?: string;
-  path?: string;
-}
-
-export interface LocalLLMStatus {
-  installed: boolean;
-  binaryExists: boolean;
-  anyModelExists: boolean;
-  installing: boolean;
-  running: boolean;
-  activeServers: {
-    mode: string;
-    port: number;
-    modelId: string;
-    uptime: number;
-  }[];
-  downloadingModelId: string | null;
-  gpu: {
-    backend: string;
-    deviceName: string;
-  };
-  models: LocalLLMModel[];
-}
-
-interface LocalLLMState {
-  localLLM: LocalLLMStatus;
-  localLLMLogs: string[];
-  fetchLocalLLMStatus: () => Promise<void>;
-  installLocalLLM: () => Promise<void>;
-  startLocalLLM: (mode?: string, modelId?: string) => Promise<void>;
-  stopLocalLLM: (mode?: string) => Promise<void>;
-  downloadLLMModel: (modelId: string) => Promise<void>;
-  fetchDownloadProgress: () => Promise<{ active: boolean; modelId?: string; downloaded?: number; total?: number; percent?: number } | null>;
-  fetchLocalLLMLogs: () => Promise<void>;
-}
-
-const DEFAULT_LOCAL_LLM: LocalLLMStatus = {
-  installed: false,
-  binaryExists: false,
-  anyModelExists: false,
-  installing: false,
-  running: false,
-  activeServers: [],
-  downloadingModelId: null,
-  gpu: { backend: "cpu", deviceName: "CPU" },
-  models: [],
-};
-
 // ==================== GLOBAL STORE ====================
-type GlobalConfigState = ProvidersState & ModelsState & AgentsState & ToolsState & SkillsState & MCPServersState & ChannelsState & VoiceState & LocalTTSState & LocalLLMState & {
+type GlobalConfigState = ProvidersState & ModelsState & AgentsState & ToolsState & SkillsState & MCPServersState & ChannelsState & VoiceState & LocalTTSState & {
   isLoading: boolean;
   isInitialized: boolean;
   error: string | null;
@@ -940,10 +887,6 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
   availableTTSModels: [],
   isDownloadingModel: false,
   downloadLogs: [],
-
-  // Local LLM
-  localLLM: DEFAULT_LOCAL_LLM,
-  localLLMLogs: [],
 
   // Internal fetchers (helper methods to avoid recreating slices constantly)
   fetchProvidersInternal: async () => createProvidersSlice(set, get).fetchProviders(),
@@ -1000,8 +943,7 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
       ]);
 
       // Merge provider models into the global models array.
-      // Provider models take precedence over DB models (e.g. local-llama dynamically
-      // injects downloaded models as active=true, which must overwrite seed rows active=0).
+      // Provider models take precedence over DB models.
       const mergedModels = [...modelsData.models];
       providersData.providers.forEach(p => {
         if (p.models && p.models.length > 0) {
@@ -1226,61 +1168,6 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
     try {
       const data = await apiClient<{ logs: string[]; downloading: boolean }>("/api/tts-local/models/logs");
       set({ downloadLogs: data.logs, isDownloadingModel: data.downloading });
-    } catch {
-      // Ignore
-    }
-  },
-
-  // Local LLM methods
-  fetchLocalLLMStatus: async () => {
-    try {
-      const data = await apiClient<LocalLLMStatus>("/api/llm-local/status");
-      set({ localLLM: data });
-    } catch {
-      // Ignore
-    }
-  },
-  installLocalLLM: async () => {
-    await apiClient("/api/llm-local/install", { method: "POST" });
-    set((state) => ({ localLLM: { ...state.localLLM, installing: true } }));
-  },
-  startLocalLLM: async (mode?: string, modelId?: string) => {
-    await apiClient("/api/llm-local/start", { 
-      method: "POST",
-      body: { mode, modelId }
-    });
-    const data = await apiClient<LocalLLMStatus>("/api/llm-local/status");
-    set({ localLLM: data });
-  },
-  stopLocalLLM: async (mode?: string) => {
-    await apiClient("/api/llm-local/stop", { 
-      method: "POST",
-      body: { mode }
-    });
-    const data = await apiClient<LocalLLMStatus>("/api/llm-local/status");
-    set({ localLLM: data });
-  },
-  downloadLLMModel: async (modelId: string) => {
-    await apiClient("/api/llm-local/download-model", { 
-      method: "POST", 
-      body: { modelId },
-      showError: true,
-      showSuccess: "Descarga iniciada",
-    });
-    set((state) => ({ localLLM: { ...state.localLLM, downloadingModelId: modelId } }));
-  },
-  fetchDownloadProgress: async () => {
-    try {
-      const data = await apiClient<{ active: boolean; modelId?: string; downloaded?: number; total?: number; percent?: number }>("/api/llm-local/download-progress");
-      return data;
-    } catch {
-      return null;
-    }
-  },
-  fetchLocalLLMLogs: async () => {
-    try {
-      const data = await apiClient<{ logs: string[] }>("/api/llm-local/logs");
-      set({ localLLMLogs: data.logs });
     } catch {
       // Ignore
     }
@@ -1522,24 +1409,3 @@ export function useLocalTTS() {
   };
 }
 
-export function useLocalLLM() {
-  const localLLM = useGlobalConfigStore((state) => state.localLLM);
-  const localLLMLogs = useGlobalConfigStore((state) => state.localLLMLogs);
-  const fetchLocalLLMStatus = useGlobalConfigStore((state) => state.fetchLocalLLMStatus);
-  const installLocalLLM = useGlobalConfigStore((state) => state.installLocalLLM);
-  const downloadLLMModel = useGlobalConfigStore((state) => state.downloadLLMModel);
-  const fetchDownloadProgress = useGlobalConfigStore((state) => state.fetchDownloadProgress);
-  const fetchLocalLLMLogs = useGlobalConfigStore((state) => state.fetchLocalLLMLogs);
-
-  return {
-    localLLM,
-    localLLMLogs,
-    fetchLocalLLMStatus,
-    installLocalLLM,
-    startLocalLLM: useGlobalConfigStore((state) => state.startLocalLLM),
-    stopLocalLLM: useGlobalConfigStore((state) => state.stopLocalLLM),
-    downloadLLMModel,
-    fetchDownloadProgress,
-    fetchLocalLLMLogs,
-  };
-}

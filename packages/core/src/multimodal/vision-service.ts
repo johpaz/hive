@@ -136,6 +136,23 @@ class MultimodalService {
     return apiKey || null
   }
 
+  /** Modelo con capacidad de visión del provider según la BD; el literal queda como último recurso. */
+  private getVisionModel(providerId: string, fallback: string): string {
+    try {
+      const db = getDb()
+      const row = db.query(`
+        SELECT id FROM models
+        WHERE provider_id = ? AND model_type = 'llm'
+          AND (capabilities LIKE '%"vision"%' OR capabilities LIKE '%"ocr"%')
+        ORDER BY active DESC
+        LIMIT 1
+      `).get(providerId) as { id: string } | undefined
+      return row?.id || fallback
+    } catch {
+      return fallback
+    }
+  }
+
   private async ocrWithOpenAI(image: ImageInput): Promise<string> {
     const key = await this.getProviderApiKey("openai") || process.env.OPENAI_API_KEY
     if (!key) throw new Error("OPENAI_API_KEY not configured for OCR")
@@ -146,7 +163,7 @@ class MultimodalService {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: this.getVisionModel("openai", "gpt-4o-mini"),
         messages: [{
           role: "user",
           content: [
@@ -183,7 +200,7 @@ class MultimodalService {
     }
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${this.getVisionModel("gemini", "gemini-2.0-flash")}:generateContent?key=${key}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -229,7 +246,7 @@ class MultimodalService {
         "anthropic-dangerous-direct-browser-access": "true",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: this.getVisionModel("anthropic", "claude-haiku-4-5-20251001"),
         max_tokens: 1000,
         messages: [{
           role: "user",

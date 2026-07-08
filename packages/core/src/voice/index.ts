@@ -111,18 +111,53 @@ class VoiceService {
     };
   }
 
-  async transcribe(audio: AudioInput, modelId: string): Promise<string> {
-    const isGroq = modelId.startsWith("whisper");
-    const isOpenAi = modelId === "whisper-1";
-    
-    if (isGroq) {
-      return this.transcribeWithGroq(audio, modelId);
-    } else if (isOpenAi) {
-      return this.transcribeWithOpenAIWhisper(audio);
+  /** Provider de un modelo según la BD; acepta también un id de provider (canales antiguos). */
+  private getModelProvider(modelId: string): string | null {
+    try {
+      const db = getDb();
+      const model = db.query(`SELECT provider_id FROM models WHERE id = ?`).get(modelId) as { provider_id: string } | undefined;
+      if (model?.provider_id) return model.provider_id;
+      const provider = db.query(`SELECT id FROM providers WHERE id = ?`).get(modelId) as { id: string } | undefined;
+      return provider?.id || null;
+    } catch {
+      return null;
     }
-    
-    log.warn(`Unknown STT provider ${modelId}, defaulting to Groq Whisper`);
-    return this.transcribeWithGroq(audio, "whisper-large-v3-turbo");
+  }
+
+  /** Primer modelo STT/TTS activo de un provider activo, como fallback desde la BD. */
+  private getFirstActiveVoiceModel(type: "stt" | "tts"): { id: string; provider: string } | null {
+    try {
+      const db = getDb();
+      const row = db.query(`
+        SELECT m.id, m.provider_id FROM models m
+        JOIN providers p ON p.id = m.provider_id
+        WHERE m.model_type = ? AND m.active = 1 AND p.active = 1
+        LIMIT 1
+      `).get(type) as { id: string; provider_id: string } | undefined;
+      return row ? { id: row.id, provider: row.provider_id } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async transcribe(audio: AudioInput, modelId: string): Promise<string> {
+    let provider = this.getModelProvider(modelId);
+    let resolvedModelId = modelId;
+
+    if (!provider) {
+      const fallback = this.getFirstActiveVoiceModel("stt");
+      if (!fallback) throw new Error(`STT model "${modelId}" not found and no active STT models in the database`);
+      log.warn(`STT model ${modelId} not found in DB, falling back to ${fallback.provider}/${fallback.id}`);
+      provider = fallback.provider;
+      resolvedModelId = fallback.id;
+    }
+
+    switch (provider) {
+      case "groq":   return this.transcribeWithGroq(audio, resolvedModelId);
+      case "openai": return this.transcribeWithOpenAIWhisper(audio);
+      default:
+        throw new Error(`STT not supported for provider "${provider}" (model ${resolvedModelId})`);
+    }
   }
 
   private async getProviderApiKey(providerId: string): Promise<string | null> {
@@ -229,26 +264,26 @@ class VoiceService {
   }
 
   async speak(text: string, modelId: string, voiceId?: string): Promise<AudioOutput> {
-    const isElevenLabs = modelId.startsWith("eleven");
-    const isOpenAI = modelId.startsWith("tts-") || modelId.startsWith("gpt-");
-    const isGemini = modelId.startsWith("gemini");
-    const isQwen = modelId.startsWith("qwen");
-    const isPiper = modelId === "piper" || modelId === "piper-local";
+    let provider = modelId === "piper-local" ? "piper" : this.getModelProvider(modelId);
+    let resolvedModelId = modelId;
 
-    if (isPiper) {
-      return this.speakWithPiper(text, voiceId);
-    } else if (isElevenLabs) {
-      return this.speakWithElevenLabs(text, modelId, voiceId);
-    } else if (isOpenAI) {
-      return this.speakWithOpenAI(text, modelId, voiceId);
-    } else if (isGemini) {
-      return this.speakWithGemini(text, modelId, voiceId);
-    } else if (isQwen) {
-      return this.speakWithQwen(text, modelId, voiceId);
+    if (!provider) {
+      const fallback = this.getFirstActiveVoiceModel("tts");
+      if (!fallback) throw new Error(`TTS model "${modelId}" not found and no active TTS models in the database`);
+      log.warn(`TTS model ${modelId} not found in DB, falling back to ${fallback.provider}/${fallback.id}`);
+      provider = fallback.provider;
+      resolvedModelId = fallback.id;
     }
 
-    log.warn(`Unknown TTS provider ${modelId}, defaulting to ElevenLabs Flash`);
-    return this.speakWithElevenLabs(text, "eleven_flash_v2_5", voiceId);
+    switch (provider) {
+      case "piper":      return this.speakWithPiper(text, voiceId);
+      case "elevenlabs": return this.speakWithElevenLabs(text, resolvedModelId, voiceId);
+      case "openai":     return this.speakWithOpenAI(text, resolvedModelId, voiceId);
+      case "gemini":     return this.speakWithGemini(text, resolvedModelId, voiceId);
+      case "qwen":       return this.speakWithQwen(text, resolvedModelId, voiceId);
+      default:
+        throw new Error(`TTS not supported for provider "${provider}" (model ${resolvedModelId})`);
+    }
   }
 
   private async speakWithPiper(text: string, voiceId?: string): Promise<AudioOutput> {

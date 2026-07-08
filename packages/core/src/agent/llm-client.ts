@@ -5,7 +5,7 @@
  *   anthropic        → @anthropic-ai/sdk
  *   ollama           → ollama npm package
  *   openai           → openai npm package
- *   groq / mistral / openrouter / deepseek / kimi / local-llama / nvidia / qwen
+ *   groq / mistral / openrouter / deepseek / kimi / nvidia / qwen
  *                    → openai npm package (OpenAI-compatible endpoint, per-provider adapter)
  *
  * Public interface (LLMMessage, callLLM, resolveProviderConfig) is stable.
@@ -21,7 +21,6 @@ import { MistralProvider } from "./llm-providers/mistral"
 import { OpenRouterProvider } from "./llm-providers/openrouter"
 import { DeepSeekProvider } from "./llm-providers/deepseek"
 import { KimiProvider } from "./llm-providers/kimi"
-import { LocalLlamaProvider } from "./llm-providers/local-llama"
 import { NvidiaProvider } from "./llm-providers/nvidia"
 import { QwenProvider } from "./llm-providers/qwen"
 import { MiniMaxProvider } from "./llm-providers/minimax"
@@ -109,7 +108,6 @@ function getProvider(provider: string): LLMProvider {
     case "openrouter":  return new OpenRouterProvider()
     case "deepseek":    return new DeepSeekProvider()
     case "kimi":        return new KimiProvider()
-    case "local-llama": return new LocalLlamaProvider()
     case "nvidia":      return new NvidiaProvider()
     case "qwen":        return new QwenProvider()
     case "minimax":     return new MiniMaxProvider()
@@ -135,6 +133,32 @@ export async function callLLM(options: LLMCallOptions): Promise<LLMResponse> {
     log.error(`[llm-client] Error calling ${options.provider}/${cleanModel}: ${msg}`, err)
     return { content: `[LLM Error] ${msg}`, stop_reason: "error" }
   }
+}
+
+/**
+ * Default provider/model resolved from the DB, used when an agent has none configured:
+ * 1. the coordinator agent's config, 2. the first active LLM model of an active provider.
+ * Returns null when the DB has no usable LLM (e.g. fresh install before setup).
+ */
+export async function getDefaultLLM(): Promise<{ provider: string; model: string } | null> {
+  const { getDb } = await import("../storage/sqlite")
+  const db = getDb()
+
+  const coordinator = db.query<any, []>(
+    "SELECT provider_id, model_id FROM agents WHERE role = 'coordinator' LIMIT 1"
+  ).get()
+  if (coordinator?.provider_id && coordinator?.model_id) {
+    return { provider: coordinator.provider_id, model: coordinator.model_id }
+  }
+
+  const row = db.query<any, []>(`
+    SELECT m.provider_id AS provider, m.id AS model
+    FROM models m
+    JOIN providers p ON p.id = m.provider_id
+    WHERE p.active = 1 AND m.active = 1 AND m.model_type = 'llm'
+    LIMIT 1
+  `).get()
+  return row ? { provider: row.provider, model: row.model } : null
 }
 
 /**

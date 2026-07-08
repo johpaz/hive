@@ -135,13 +135,12 @@ export const SEED_DATA: SeedData = {
     { id: "openrouter", name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1" },
     { id: "ollama", name: "Ollama (Local)", baseUrl: "http://localhost:11434" },
     { id: "groq", name: "Groq", baseUrl: "https://api.groq.com/openai/v1" },
-    { id: "local-llama", name: "Local LLM (llama-server)", baseUrl: "http://localhost:8081/v1" },
-    { id: "elevenlabs", name: "ElevenLabs", baseUrl: "https://api.elevenlabs.io/v1" },
+    { id: "elevenlabs", name: "ElevenLabs", baseUrl: "https://api.elevenlabs.io/v1", category: "tts" },
     { id: "qwen", name: "Qwen (Alibaba)", baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", category: "llm" },
     { id: "nvidia", name: "NVIDIA NIM", baseUrl: "https://integrate.api.nvidia.com/v1" },
     { id: "minimax", name: "MiniMax", baseUrl: "https://api.minimaxi.com/v1" },
     { id: "opencode-go", name: "OpenCode Go", baseUrl: "https://opencode.ai/zen/go/v1" },
-    { id: "piper", name: "Piper (Local TTS)" },
+    { id: "piper", name: "Piper (Local TTS)", category: "tts" },
     { id: "hiveagents", name: "HiveAgents LLM (Cloudflare)", baseUrl: "https://llm.hiveagents.io/v1", category: "llm" },
   ],
 
@@ -248,20 +247,6 @@ export const SEED_DATA: SeedData = {
 
     // ── Ollama: models are detected at runtime via /api/setup/ollama-models and inserted dynamically ──
 
-    // ── Local LLM (llama-server): motor nativo para inferencia offline ──
-    { id: "e2b_Q4_K_XL", providerId: "local-llama", name: "Gemma 4 2B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "text", "stt", "local"]) },
-    { id: "e4b_Q4_K_XL", providerId: "local-llama", name: "Gemma 4 4B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "text", "vision", "stt", "local"]) },
-    { id: "e4b_vision", providerId: "local-llama", name: "Gemma 4 4B Vision (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "vision", "local"]) },
-    { id: "gemma4_12b_Q4_K_XL", providerId: "local-llama", name: "Gemma 4 12B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "vision", "local"]) },
-    { id: "gemma4_26b_Q4_K_M", providerId: "local-llama", name: "Gemma 4 26B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "vision", "local"]) },
-    { id: "gemma4_31b_Q4_K_XL", providerId: "local-llama", name: "Gemma 4 31B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "vision", "local"]) },
-    { id: "qwen3_5_2b_Q4_K_XL", providerId: "local-llama", name: "Qwen 3.5 2B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "local"]) },
-    { id: "qwen3_5_4b_Q4_K_XL", providerId: "local-llama", name: "Qwen 3.5 4B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "local"]) },
-    { id: "qwen3_5_9b_Q4_K_XL", providerId: "local-llama", name: "Qwen 3.5 9B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "local"]) },
-    { id: "qwen3_5_27b_Q4_K_XL", providerId: "local-llama", name: "Qwen 3.5 27B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "local"]) },
-    { id: "qwen3_5_35b_Q4_K_XL", providerId: "local-llama", name: "Qwen 3.5 35B (Local)", modelType: "llm", contextWindow: 16000, capabilities: JSON.stringify(["chat", "local"]) },
-    { id: "local_stt", providerId: "local-llama", name: "Local STT (Gemma)", modelType: "stt", contextWindow: 16000, capabilities: JSON.stringify(["transcription", "local"]) },
-
 
     // ── ElevenLabs (TTS) ──
     { id: "eleven_flash_v2_5", providerId: "elevenlabs", name: "Eleven Flash V2.5", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "fast"]) },
@@ -317,18 +302,10 @@ export const SEED_DATA: SeedData = {
     { id: "opencode-go/mimo-v2.5",          providerId: "opencode-go", name: "MiMo-V2.5",           modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
     { id: "opencode-go/hy3-preview",        providerId: "opencode-go", name: "Hunyuan 3 Preview",   modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
 
-    // ── HiveAgents (llama.cpp local, acceso vía Cloudflare) ──
-    // IDs actualizados según modelos disponibles en https://llm.hiveagents.io
-    // contextWindow = 50000 porque así se cargan en el backend.
-    { id: "Qwen3.6-35B-A3B-UD-Q6_K.gguf",      providerId: "hiveagents", name: "Qwen3.6 35B MoE (Recomendado)", modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "reasoning"]) },
-    { id: "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",    providerId: "hiveagents", name: "Qwen3.6 35B MoE (Q4_K_M)",     modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "reasoning"]) },
-    { id: "Qwen3.6-27B-UD-Q4_K_XL.gguf",       providerId: "hiveagents", name: "Qwen3.6 27B + MTP",            modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "reasoning"]) },
-    { id: "Qwen3-Coder-Next-UD-Q4_K_M.gguf",    providerId: "hiveagents", name: "Qwen3 Coder Next",             modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "code"]) },
-    { id: "Qwopus3.6-27B-v2-MTP-Q6_K.gguf",    providerId: "hiveagents", name: "Qwopus3.6 27B v2 (Q6_K)",      modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "reasoning"]) },
-    { id: "Qwopus3.6-27B-v2-MTP-Q4_K_S.gguf",  providerId: "hiveagents", name: "Qwopus3.6 27B v2 (Q4_K_S)",    modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "reasoning"]) },
-    { id: "gemma-4-31B-it-UD-Q4_K_XL.gguf",    providerId: "hiveagents", name: "Gemma 4 31B Dense",            modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming"]) },
-    { id: "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf", providerId: "hiveagents", name: "Gemma 4 26B MoE",              modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming"]) },
-    { id: "gemma-4-12b-it-UD-Q4_K_XL.gguf",    providerId: "hiveagents", name: "Gemma 4 12B Dense",            modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming"]) },
+    // ── HiveAgents (llama.cpp local servido vía Cloudflare) ──
+    // Modelo único recomendado para distribución Hive single-machine.
+    // Ver API.md para detalles de carga e inferencia.
+    { id: "Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf", providerId: "hiveagents", name: "Qwen-AgentWorld 35B MoE (Recomendado)", modelType: "llm", contextWindow: 200000, capabilities: JSON.stringify(["chat", "streaming", "reasoning", "function_calling"]) },
   ],
 
 
@@ -424,50 +401,23 @@ const INITIAL_PLAYBOOK_RULES = [
 function reseedToolsAndSkills(): void {
   const db = getDb();
 
-  // Ensure FTS5 table and triggers exist (v0.0.28 schema with description)
-  try {
-    db.run(`CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(id, name, description, category, tools, triggers, body)`);
-  } catch (err) {
-    if (!(err as Error).message.includes("already exists")) throw err;
-  }
-
-  db.run(`DROP TRIGGER IF EXISTS skills_ai`);
-  db.run(`DROP TRIGGER IF EXISTS skills_au`);
-  db.run(`DROP TRIGGER IF EXISTS skills_ad`);
-  db.run(`CREATE TRIGGER skills_ai AFTER INSERT ON skills BEGIN
-    INSERT INTO skills_fts(id, name, description, category, tools, triggers, body)
-    VALUES (new.id, new.name, new.description, new.category, new.tools, new.triggers, new.body);
-  END`);
-  db.run(`CREATE TRIGGER skills_au AFTER UPDATE ON skills BEGIN
-    DELETE FROM skills_fts WHERE id = old.id;
-    INSERT INTO skills_fts(id, name, description, category, tools, triggers, body)
-    VALUES (new.id, new.name, new.description, new.category, new.tools, new.triggers, new.body);
-  END`);
-  db.run(`CREATE TRIGGER skills_ad AFTER DELETE ON skills BEGIN
-    DELETE FROM skills_fts WHERE id = old.id;
-  END`);
+  // Search indexing happens at startup via the HiveDB sync
+  // (agent/capability-search.ts) — no FTS5 tables or triggers here.
 
   // ── Tools: wipe and re-seed ──
   db.run(`DELETE FROM tools`);
-  try { db.run(`DELETE FROM tools_fts`); } catch { /* FTS may not exist yet */ }
 
   let toolCount = 0;
-  const insertToolFts = db.query(`
-    INSERT OR REPLACE INTO tools_fts(tool_name, name, description, category)
-    VALUES (?, ?, ?, ?)
-  `);
   for (const tool of SEED_DATA.tools) {
     db.query(`
       INSERT INTO tools (id, name, description, category, enabled, active, created_at, updated_at)
       VALUES (?, ?, ?, ?, 1, 1, (unixepoch()), (unixepoch()))
     `).run(tool.id, tool.name, tool.description, tool.category);
-    insertToolFts.run(tool.name, tool.name, tool.description, tool.category);
     toolCount++;
   }
   log.info(`[seed] ✅ ${toolCount} tools re-seeded`);
 
   // ── Skills: wipe and re-seed with full v0.0.28 schema ──
-  // DELETE FROM skills fires skills_ad trigger → auto-cleans skills_fts
   db.run(`DELETE FROM skills`);
 
   const skillLoader = new SkillLoader({ workspacePath: process.env.HIVE_HOME || process.cwd() });
@@ -501,7 +451,7 @@ function reseedToolsAndSkills(): void {
     );
     skillCount++;
   }
-  log.info(`[seed] ✅ ${skillCount} skills re-seeded (skills_fts auto-synced via triggers)`);
+  log.info(`[seed] ✅ ${skillCount} skills re-seeded (search index syncs at startup)`);
 }
 
 
@@ -550,15 +500,26 @@ export function seedAllData(): void {
 
     let modelCount = 0;
     for (const model of SEED_DATA.models) {
-      // Local LLM models are always active so they appear in the selector
-      // (downloaded status is checked separately at runtime)
-      const isLocal = model.providerId === "local-llama";
       db.query(`
         INSERT OR REPLACE INTO models (id, provider_id, name, model_type, context_window, capabilities, enabled, active)
-        VALUES (?, ?, ?, ?, ?, ?, 1, ?)
-      `).run(model.id, model.providerId, model.name, model.modelType, model.contextWindow || null, model.capabilities || null, isLocal ? 1 : 0)
+        VALUES (?, ?, ?, ?, ?, ?, 1, 0)
+      `).run(model.id, model.providerId, model.name, model.modelType, model.contextWindow || null, model.capabilities || null)
       modelCount++;
     }
+
+    // A model catalog entry an agent was pointing at (e.g. a HiveAgents GGUF
+    // variant that got consolidated away) may no longer exist after the
+    // re-seed above. FKs are off during the delete/insert, so nothing blocks
+    // it — unlink dangling references so loadAgentConfigFromDB() falls back
+    // to getDefaultLLM() instead of resolving a model_id that isn't there.
+    const unlinked = db.run(`
+      UPDATE agents SET model_id = NULL
+      WHERE model_id IS NOT NULL AND model_id NOT IN (SELECT id FROM models)
+    `);
+    if (unlinked.changes > 0) {
+      log.info(`[seed] 🔗 Unlinked ${unlinked.changes} agent(s) from model(s) no longer in the catalog`);
+    }
+
     db.run("PRAGMA foreign_keys = ON;");
     log.info(`[seed] ✅ ${modelCount} models procesados`);
 
@@ -612,20 +573,7 @@ export function seedAllData(): void {
     }
     log.info(`[seed] ✅ ${playbookCount} ACE playbook rules seeded`);
 
-    db.run(`DELETE FROM playbook_fts`);
-    const activePlaybook = db.query(`
-      SELECT id, rule, category, applicable_to
-      FROM playbook
-      WHERE active = 1
-    `).all() as Array<{ id: number; rule: string; category: string; applicable_to: string | null }>;
-    const insertPlaybookFts = db.prepare(`
-      INSERT OR REPLACE INTO playbook_fts(rowid, rule, category, applicable_to)
-      VALUES (?, ?, ?, ?)
-    `);
-    for (const rule of activePlaybook) {
-      insertPlaybookFts.run(rule.id, rule.rule, rule.category, rule.applicable_to);
-    }
-    log.info(`[seed] ✅ ${activePlaybook.length} reglas playbook sincronizadas a playbook_fts`);
+    // Playbook search indexing happens at startup via syncPlaybookToFTS (HiveDB)
 
     log.info("[seed] ✨ Seed completado exitosamente.");
   } catch (err) {

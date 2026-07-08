@@ -99,7 +99,7 @@ async function testToolSearch(): Promise<TestResult> {
   printSubHeader("Test 2: Búsqueda de Tool (cli_exec)");
 
   try {
-    const tools = selectTools("generar código API REST", 10);
+    const tools = await selectTools("generar código API REST", undefined, 10);
 
     printInfo(`Tools encontradas: ${tools.length}`);
     tools.forEach(t => {
@@ -139,7 +139,7 @@ async function testSkillSearch(): Promise<TestResult> {
   
   try {
     // Misma consulta que para tools
-    const skills = selectSkills("generar código API REST");
+    const skills = await selectSkills("generar código API REST");
     
     printInfo(`Skills encontradas: ${skills.length}`);
     skills.forEach(s => {
@@ -182,7 +182,7 @@ async function testExplicitTrigger(): Promise<TestResult> {
   
   try {
     // Usar trigger explícito de code_generate
-    const skills = selectSkills("generá código");
+    const skills = await selectSkills("generá código");
     
     printInfo(`Skills encontradas: ${skills.length}`);
     skills.forEach(s => {
@@ -309,11 +309,11 @@ async function testFullFlow(): Promise<TestResult> {
     const userMessage = "generá código para un endpoint de usuarios";
     
     // Paso 1: Búsqueda de tool
-    const tools = selectTools(userMessage, 10);
+    const tools = await selectTools(userMessage, undefined, 10);
     const toolNames = tools.map(t => t.name);
     
     // Paso 2: Búsqueda de skill
-    const skills = selectSkills(userMessage);
+    const skills = await selectSkills(userMessage);
     const skillNames = skills.map(s => s.name);
     
     // Paso 3: Verificar correlación

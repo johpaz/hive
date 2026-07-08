@@ -278,20 +278,20 @@ describe("Benchmark: Context Inference + Tokens + Config", () => {
         })
     })
 
-    describe("8. FTS5 Searches", () => {
+    describe("8. HiveDB Searches", () => {
         
-        test("selectSkills() tokens", () => {
-            const { timing } = measure(() => {
+        test("selectSkills() tokens", async () => {
+            const { timing } = await measureAsync(() => {
                 return selectSkills("desarrollo web react javascript")
-            }, "selectSkills FTS5")
+            }, "selectSkills HiveDB")
             
             results.push(timing)
             console.log(`   🔍 ${timing.name}: ${formatMs(timing.timeMs)}`)
             expect(timing.timeMs).toBeLessThan(50)
         })
 
-        test("selectPlaybookRules()", () => {
-            const { timing } = measure(() => {
+        test("selectPlaybookRules()", async () => {
+            const { timing } = await measureAsync(() => {
                 return selectPlaybookRules("mejores prácticas código")
             }, "selectPlaybookRules")
             
@@ -300,8 +300,8 @@ describe("Benchmark: Context Inference + Tokens + Config", () => {
             expect(timing.timeMs).toBeLessThan(50)
         })
 
-        test("selectTools()", () => {
-            const { timing } = measure(() => {
+        test("selectTools()", async () => {
+            const { timing } = await measureAsync(() => {
                 return selectTools("buscar información internet")
             }, "selectTools")
             

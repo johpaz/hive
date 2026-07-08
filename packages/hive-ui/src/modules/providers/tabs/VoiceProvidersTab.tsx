@@ -11,57 +11,22 @@ import { useProviders } from "@/hooks/useProviders";
 import { ModelCard } from "@/modules/providers/models/ModelCard";
 import { Check, Key, Lock, Unlock, Search, Mic } from "lucide-react";
 import { PiperTTSCard } from "@/modules/agent-config/voice/PiperTTSCard";
+import { parseCapabilities } from "@/lib/capabilities";
 
-const PROVIDER_INFO: Record<string, { name: string; description: string; logo: string; consoleUrl: string; noApiKey?: boolean }> = {
-  groq: {
-    name: "Groq",
-    description: "STT (Speech-to-Text) - Transcripcion de audio ultra-rapida",
-    logo: "🔴",
-    consoleUrl: "https://console.groq.com/keys",
-  },
-  elevenlabs: {
-    name: "ElevenLabs",
-    description: "TTS (Text-to-Speech) - Voces neuronales de alta calidad",
-    logo: "🎙️",
-    consoleUrl: "https://elevenlabs.io/app/settings/api-keys",
-  },
-  openai: {
-    name: "OpenAI",
-    description: "STT/TTS - Whisper y TTS-1",
-    logo: "🟢",
-    consoleUrl: "https://platform.openai.com/api-keys",
-  },
-  gemini: {
-    name: "Google Gemini",
-    description: "TTS - Voces de Gemini",
-    logo: "🔵",
-    consoleUrl: "https://aistudio.google.com/app/apikey",
-  },
-  qwen: {
-    name: "Qwen (Alibaba)",
-    description: "TTS - Voces de Qwen",
-    logo: "🟣",
-    consoleUrl: "https://dashscope.console.aliyun.com/apiKey",
-  },
-  piper: {
-    name: "Piper TTS (Local)",
-    description: "TTS offline — sin internet, sin API key.",
-    logo: "🖥️",
-    consoleUrl: "/settings/voz",
-    noApiKey: true,
-  },
+// Metadata puramente visual (emoji + link a la consola del provider).
+// La lista real de providers de voz y sus nombres vienen de la BD.
+const PROVIDER_VISUALS: Record<string, { logo: string; consoleUrl?: string }> = {
+  groq: { logo: "🔴", consoleUrl: "https://console.groq.com/keys" },
+  elevenlabs: { logo: "🎙️", consoleUrl: "https://elevenlabs.io/app/settings/api-keys" },
+  openai: { logo: "🟢", consoleUrl: "https://platform.openai.com/api-keys" },
+  gemini: { logo: "🔵", consoleUrl: "https://aistudio.google.com/app/apikey" },
+  qwen: { logo: "🟣", consoleUrl: "https://dashscope.console.aliyun.com/apiKey" },
+  piper: { logo: "🖥️" },
 };
 
-function parseCapabilities(caps: string | null | undefined): string[] {
-  if (!caps) return [];
-  if (typeof caps === "string") {
-    try { return JSON.parse(caps); } catch { return []; }
-  }
-  return Array.isArray(caps) ? caps : [];
-}
 
 export function VoiceProvidersTab() {
-  const { availableModels, activeProviders } = useProviders();
+  const { providers, availableModels, activeProviders } = useProviders();
   const {
     voiceProviders,
     configuredVoiceProviders,
@@ -99,7 +64,28 @@ export function VoiceProvidersTab() {
     }
   };
 
-  const voiceProviderList = voiceProviders.length > 0 ? voiceProviders : Object.keys(PROVIDER_INFO);
+
+  // Info de cada provider derivada de la BD (nombre + modelos stt/tts embebidos)
+  const getVoiceProviderInfo = (providerId: string) => {
+    const providerRow = providers.find((p) => p.id === providerId);
+    const pModels = (providerRow?.models || []) as Array<{ model_type?: string; capabilities?: string | null }>;
+    const voiceOnly = pModels.filter((m) => m.model_type === "stt" || m.model_type === "tts");
+    const hasStt = voiceOnly.some((m) => m.model_type === "stt");
+    const hasTts = voiceOnly.some((m) => m.model_type === "tts");
+    const isLocal = voiceOnly.some((m) => parseCapabilities(m.capabilities).includes("local"));
+    const visuals = PROVIDER_VISUALS[providerId] || { logo: "🔌" };
+    return {
+      name: providerRow?.name || providerId,
+      description: [hasStt && "STT (Speech-to-Text)", hasTts && "TTS (Text-to-Speech)"].filter(Boolean).join(" / "),
+      logo: visuals.logo,
+      consoleUrl: visuals.consoleUrl,
+      noApiKey: isLocal,
+    };
+  };
+
+  // Lista de providers de voz desde la BD (vía /api/voice/providers).
+  // Los locales (sin API key, ej. Piper) tienen su propia tarjeta dedicada.
+  const voiceProviderList = voiceProviders.filter((id) => !getVoiceProviderInfo(id).noApiKey);
 
   const voiceModels = useMemo(() => {
     return availableModels.filter((m) => {
@@ -156,12 +142,7 @@ export function VoiceProvidersTab() {
         <div className="grid gap-4 md:grid-cols-2">
           <PiperTTSCard />
           {voiceProviderList.map((providerId) => {
-            const info = PROVIDER_INFO[providerId] || {
-              name: providerId,
-              description: "",
-              logo: "🔌",
-              consoleUrl: "#",
-            };
+            const info = getVoiceProviderInfo(providerId);
             const isConfigured = configuredVoiceProviders[providerId] === true;
             const isEditing = editingProvider === providerId;
 
@@ -240,9 +221,11 @@ export function VoiceProvidersTab() {
                             <Key className="h-3 w-3 mr-2" />Actualizar API Key
                           </Button>
                         )}
-                        <Button size="sm" variant="outline" onClick={() => window.open(info.consoleUrl, "_blank")}>
-                          Obtener Key
-                        </Button>
+                        {info.consoleUrl && (
+                          <Button size="sm" variant="outline" onClick={() => window.open(info.consoleUrl, "_blank")}>
+                            Obtener Key
+                          </Button>
+                        )}
                       </div>
                     </div>
                   )}

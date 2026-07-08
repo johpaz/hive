@@ -35,7 +35,7 @@ A diferencia de las herramientas MCP, las Skills **no son código ejecutable**, 
 
 - **Instrucciones estructuradas**: Formato markdown con YAML frontmatter
 - **Activación por triggers**: Patrones de texto que activan la skill automáticamente
-- **Búsqueda semántica**: Sistema FTS5 para descubrir skills relevantes
+- **Búsqueda semántica**: Índice HiveDB (BM25 con español: acentos + stemming) para descubrir skills relevantes
 - **Multi-fuente**: Skills empaquetadas, gestionadas por DB, o desde directorios personalizados
 - **Workflows definidos**: Pasos secuenciales que el agente debe seguir
 - **Asociación con herramientas**: Cada skill puede vincularse a herramientas específicas
@@ -72,7 +72,7 @@ A diferencia de las herramientas MCP, las Skills **no son código ejecutable**, 
 │  Paso 1: ¿Coincide con algún trigger?                    │
 │           "Busca" → web-research ✅                       │
 │                                                           │
-│  Paso 2: Búsqueda FTS5 (si no hay trigger)               │
+│  Paso 2: Búsqueda HiveDB (si no hay trigger)             │
 │           Keywords: ["busca", "información", "React"]    │
 │           Score BM25 ponderado                            │
 │                                                           │
@@ -104,7 +104,7 @@ A diferencia de las herramientas MCP, las Skills **no son código ejecutable**, 
 |------------|-----------|---------|
 | **SkillLoader** | `packages/skills/src/loader.ts` | Carga skills de 4 fuentes con prioridad |
 | **Skill Selector** | `packages/core/src/agent/skill-selector.ts` | Descubre skills relevantes por mensaje |
-| **FTS5 Index** | `skills_fts` (SQLite) | Búsqueda semántica con ponderación |
+| **Índice HiveDB** | `@johpaz/hive-db` (motor Rust) | Búsqueda semántica con ponderación por campo |
 | **Context Compiler** | `packages/core/src/agent/context-compiler.ts` | Inyecta skills en el prompt |
 
 ---
@@ -364,7 +364,7 @@ Resultado: Base de datos lista con temas de ejemplo para probar HiveLearn
 Skills creadas por el usuario y almacenadas en la tabla `skills`:
 
 - Se pueden crear/editar desde la UI
-- Se buscan mediante FTS5 por relevancia
+- Se buscan mediante HiveDB (BM25) por relevancia
 - Se pueden activar/desactivar individualmente
 
 **Tabla `skills`**:
@@ -426,19 +426,21 @@ Skill activada: web-research (confianza ALTA)
 
 **Ventaja**: Activación inmediata y precisa.
 
-### Paso 2: Búsqueda Semántica FTS5 (Fallback)
+### Paso 2: Búsqueda Semántica HiveDB (Fallback)
 
-Si no hay triggers, se usa el índice FTS5:
+Si no hay triggers, se usa el índice HiveDB (`@johpaz/hive-db`):
 
-1. **Extracción de palabras clave** del mensaje del usuario
-2. **Eliminación de stopwords** (palabras comunes sin valor semántico)
-3. **Búsqueda con prefijo** en el índice FTS5
-4. **Puntuación con `bm25()`** ponderada:
-   - Triggers: **peso 5.0** (más importante)
-   - Nombre: **peso 3.0**
-   - Otros campos: **peso 1.0**
-5. **Filtrado por relevancia**: Solo skills con score > umbral mínimo (-15)
-6. **Límite**: Máximo **4 skills** por turno
+1. El **mensaje crudo** del usuario va directo al motor — no requiere sanitización
+   (comillas, operadores y `¿?` nunca lanzan error)
+2. **Análisis en español**: minúsculas, normalización de acentos
+   ("transacción" ≈ "transaccion") y stemming ("pagos" ≈ "pago")
+3. **Puntuación BM25** ponderada por campo:
+   - Nombre: **peso 4.0** (más importante)
+   - Tags (triggers + categoría + tools): **peso 3.0**
+   - Cuerpo (descripción + contenido): **peso 2.0**
+4. **Filtrado relativo**: se conservan las skills con score ≥ 30% del mejor resultado
+   (los scores son positivos; mayor = más relevante)
+5. **Límite**: Máximo **4 skills** por turno
 
 **Ejemplo**:
 ```
@@ -955,14 +957,12 @@ Haz un reporte con los datos que encuentres y genera algo útil
 
 **Causas**:
 
-1. **Umbral de relevancia muy alto**: El FTS5 filtra por score < -15
+1. **Score muy por debajo del mejor resultado**: el corte relativo descarta skills
+   con score < 30% del top
    - **Solución**: Mejora nombre, descripción y triggers
 
-2. **Skill fuera de índice**:
-   ```bash
-   # Reconstruir índice FTS5
-   hive skills rebuild-index
-   ```
+2. **Skill fuera de índice**: el índice HiveDB se reconstruye en cada arranque
+   del gateway; reinicia el gateway para re-sincronizar
 
 3. **Categoría incorrecta**: Buscar en la categoría equivocada
 

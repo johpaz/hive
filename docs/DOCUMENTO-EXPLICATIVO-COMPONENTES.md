@@ -661,7 +661,6 @@ El sistema de **LLM Providers** es la capa de abstracción que permite a Hive co
 | **Kimi K2** | `kimi.ts` | Cloud |
 | **NVIDIA** | `nvidia.ts` | Cloud |
 | **OpenRouter** | `openrouter.ts` | Cloud (aggregator) |
-| **Local LLaMA** | `local-llama.ts` | Local |
 
 ### Arquitectura
 
@@ -717,7 +716,6 @@ El **Gateway** es el servidor HTTP/WebSocket principal de Hive. Es el punto de e
 | `/api/config` | GET/PUT | Configuración del sistema |
 | `/api/cron` | GET/POST/PUT/DELETE | CRUD de jobs cron |
 | `/api/ethics` | GET/PUT | Gestión de ética |
-| `/api/llm-local` | POST | Gestión de LLM local |
 | `/api/mcp` | GET/POST/PUT/DELETE | Gestión de servidores MCP |
 | `/api/meeting` | GET/POST | Gestión de reuniones |
 | `/api/models` | GET/PUT | Gestión de modelos |
@@ -779,7 +777,6 @@ El **Gateway** es el servidor HTTP/WebSocket principal de Hive. Es el punto de e
 | `helpers/narration.ts` | Textos de narración de tools |
 | `helpers/path.ts` | Expansión de paths |
 | `helpers/redact.ts` | Redacción de config sensible |
-| `llm-local/` | Gestión de LLM local (download, detect, serve) |
 | `tts/` | Servidor TTS local (Piper) |
 
 ---
@@ -1425,7 +1422,7 @@ La **CLI** es la interfaz de línea de comandos para gestionar Hive. Se encuentr
 | `chat/` | ChatHistory, ChatInput, ChatMessage, ThinkingIndicator |
 | `layout/` | AppLayout, Header, HiveSidebar, ConnectionStatus, ThemeToggle |
 | `meeting/` | MeetingPanel |
-| `providers/` | ProviderCard, ProviderConfigForm, FailoverConfig, LocalLLMCard |
+| `providers/` | ProviderCard, ProviderConfigForm, FailoverConfig |
 
 ### Stores Zustand (19)
 

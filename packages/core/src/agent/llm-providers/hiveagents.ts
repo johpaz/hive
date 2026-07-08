@@ -126,6 +126,7 @@ export class HiveAgentsProvider extends OpenAICompatBase {
 
   private _isGemma4(modelId: string): boolean { return /^gemma-?4/i.test(modelId) }
   private _isQwen3(modelId: string): boolean { return /^qwen3?/i.test(modelId) }
+  private _isAgentWorld(modelId: string): boolean { return /agentworld/i.test(modelId) }
 
   // Cloudflare WAF blocks requests carrying x-stainless-* headers from the OpenAI SDK.
   // Strip them via a custom fetch wrapper so they never reach the WAF.
@@ -183,10 +184,10 @@ export class HiveAgentsProvider extends OpenAICompatBase {
     return super.call(callOptions)
   }
 
-  // Gemma 4: inject chat_template_kwargs.enable_thinking via extra_body.
+  // Gemma 4 and Qwen-AgentWorld: inject chat_template_kwargs.enable_thinking via extra_body.
   // Default is true (thinking ON) when options.thinking is not set.
   protected modifyRequestBody(body: any, options: LLMCallOptions): any {
-    if (this._isGemma4(this._currentModelId)) {
+    if (this._isGemma4(this._currentModelId) || this._isAgentWorld(this._currentModelId)) {
       const enableThinking = options.thinking?.enabled !== false
       body.extra_body = {
         ...(body.extra_body ?? {}),

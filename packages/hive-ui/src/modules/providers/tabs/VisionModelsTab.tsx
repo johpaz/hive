@@ -7,14 +7,7 @@ import { ModelCard } from "@/modules/providers/models/ModelCard";
 import { Search, Eye } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { useGlobalConfigStore } from "@/stores/useGlobalConfigStore";
-
-function parseCapabilities(caps: string | null | undefined): string[] {
-  if (!caps) return [];
-  if (typeof caps === "string") {
-    try { return JSON.parse(caps); } catch { return []; }
-  }
-  return Array.isArray(caps) ? caps : [];
-}
+import { parseCapabilities } from "@/lib/capabilities";
 
 export function VisionModelsTab() {
   const { availableModels, activeProviders } = useProviders();

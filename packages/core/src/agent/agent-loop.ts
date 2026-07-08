@@ -15,7 +15,7 @@
 
 import { logger } from "../utils/logger"
 import { getDb } from "../storage/sqlite"
-import { callLLM, resolveProviderConfig, type LLMMessage } from "./llm-client"
+import { callLLM, resolveProviderConfig, getDefaultLLM, type LLMMessage } from "./llm-client"
 import { addMessage } from "./conversation-store"
 import { saveTrace, recordLLMUsage } from "./tracer"
 import { maybeCompact, clearOldToolResults } from "./compaction"
@@ -53,7 +53,7 @@ export interface AgentLoopOptions {
   userId?: string
   /** Abort signal to stop generation mid-execution */
   signal?: AbortSignal
-  /** Clean text for FTS5 and tracing (extracted from userMessage if multimodal) */
+  /** Clean text for search selectors and tracing (extracted from userMessage if multimodal) */
   rawUserMessage?: string
   /** Extra tools to force into the LLM loadout (used by tests/evals). */
   extraTools?: any[]
@@ -97,11 +97,16 @@ export async function* runAgent(
   const stuckDetector = createStuckLoopDetector(loadConfig())
   let stuckState: StuckLoopState | undefined
 
-  // Resolve LLM provider config
-  const providerCfg = await resolveProviderConfig(
-    agent.provider_id || "openai",
-    agent.model_id || "gpt-4o-mini"
-  )
+  // Resolve LLM provider config (default from DB when the agent has none configured)
+  let agentProvider = agent.provider_id
+  let agentModel = agent.model_id
+  if (!agentProvider || !agentModel) {
+    const defaultLLM = await getDefaultLLM()
+    if (!defaultLLM) throw new Error("No active LLM providers/models configured in the database")
+    agentProvider = agentProvider || defaultLLM.provider
+    agentModel = agentModel || defaultLLM.model
+  }
+  const providerCfg = await resolveProviderConfig(agentProvider, agentModel)
 
   const cleanModel = providerCfg.model.replace(new RegExp(`^${providerCfg.provider}\\/`), "")
   log.info(`[agent-loop] Starting: agent=${agentName} thread=${opts.threadId} provider=${providerCfg.provider}/${cleanModel}`)
@@ -746,14 +751,14 @@ export class AgentLoop {
     const lastUserMsg = [...input.messages].reverse().find((m) => m.role === "user")
     const userMessage = lastUserMsg?.content || ""
 
-    // Use clean message (without timestamp) for FTS5 selectors
+    // Use clean message (without timestamp) for the search selectors
     const rawUserMessage = config.configurable?.raw_user_message || 
       (typeof userMessage === "string" ? userMessage : userMessage.filter(p => p.type === "text").map(p => (p as any).text).join("\n"))
 
     return runAgent({
       agentId,
       userMessage, // FULL MULTIMODAL MESSAGE
-      rawUserMessage, // CLEAN TEXT for FTS5
+      rawUserMessage, // CLEAN TEXT for search selectors
       threadId,
       channel,
       systemPromptOverride,

@@ -24,7 +24,7 @@ curl -H "Authorization: Bearer $KEY" $BASE/api/models
 curl -X POST $BASE/api/load \
   -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"}'
+  -d '{"model":"Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf"}'
 
 # 4. Chat con streaming
 curl -N $BASE/v1/chat/completions \
@@ -83,13 +83,13 @@ Devuelve cada modelo con metadata pre-calculada:
 ```json
 [
   {
-    "name": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+    "name": "Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf",
     "path": "/data/models/...",
-    "sizeGb": 22.7,
+    "sizeGb": 22.1,
     "isMoE": true,
     "hasMtp": false,
     "isGemma": false,
-    "recommendedConfig": { "ngl": -1, "ctx": 8192, "kvType": "f16", "flashAttn": false }
+    "recommendedConfig": { "ngl": -1, "ctx": 200000, "kvType": "f16", "flashAttn": false, "jinja": true }
   }
 ]
 ```
@@ -109,22 +109,16 @@ La respuesta llega **solo cuando el modelo está 100% listo** (espera antes de i
 curl -X POST https://llm.hiveagents.io/api/load \
   -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"}'
+  -d '{"model": "Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf"}'
 
 # Con config personalizada (ctx=200000 para contexto largo)
 curl -X POST https://llm.hiveagents.io/api/load \
   -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+    "model": "Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf",
     "config": { "ctx": 200000, "kvType": "f16" }
   }'
-
-# Gemma 4 (auto-detecta --jinja)
-curl -X POST https://llm.hiveagents.io/api/load \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "gemma-4-12b-it-UD-Q4_K_XL.gguf", "config": {"ctx": 8192}}'
 ```
 
 **Parámetros de config:**
@@ -132,14 +126,14 @@ curl -X POST https://llm.hiveagents.io/api/load \
 | Parámetro | Default | Descripción |
 |-----------|---------|-------------|
 | `ngl` | -1 | GPU layers (-1 = todos) |
-| `ctx` | 8192 | Contexto en tokens. **Máximo probado: 200000** |
+| `ctx` | 200000 | Contexto en tokens. **Probado y recomendado para cargas de contexto largo** |
 | `batch` | 2048 | Batch size |
 | `ubatch` | 512 | Micro-batch |
 | `kvType` | `"f16"` | KV cache: `f16` · `q8_0` · `q4_0`. **Usar `f16`** — q8_0/q4_0 caen rendimiento en Vulkan AMD |
 | `flashAttn` | `false` | Flash attention (no mejora TGS en Vulkan AMD) |
 | `mtp` | `false` | MTP speculative decoding |
 | `mtpDraftN` | 3 | Tokens draft MTP |
-| `jinja` | `false` | **Auto-true para Gemma 4.** Habilita chat template Jinja |
+| `jinja` | `false` | **Auto-true para Qwen-AgentWorld.** Habilita chat template Jinja |
 
 ---
 
@@ -166,7 +160,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="https://llm.hiveagents.io/v1",
-    api_key="17707bdfbeb77965f89d1ab266c4e68ec6896b0bdbcd8c0cc398a022b053f3bf"
+    api_key="**************************"
 )
 
 # Chat simple
@@ -242,67 +236,342 @@ print(response.content)
 
 ## 6. Thinking / Reasoning
 
-### Qwen3 — Control via system prompt
+### Qwen-AgentWorld — Control via `chat_template_kwargs`
 
 ```python
-# Desactivar thinking (respuestas rápidas)
+# Desactivar thinking (respuestas rápidas) — jinja debe estar activo
 response = client.chat.completions.create(
     model="local",
-    messages=[
-        {"role": "system", "content": "/no_think"},
-        {"role": "user", "content": "Lista 5 frameworks"}
-    ],
-    max_tokens=256
-)
-```
-
-### Gemma 4 — Control via `chat_template_kwargs`
-
-```python
-# Desactivar thinking en Gemma 4
-stream = client.chat.completions.create(
-    model="local",
-    messages=[{"role": "user", "content": "¿Qué es un transformer?"}],
-    stream=True,
+    messages=[{"role": "user", "content": "Lista 5 frameworks"}],
     max_tokens=256,
     extra_body={"chat_template_kwargs": {"enable_thinking": False}}
 )
+# → content: "1. React  2. Vue ..."  |  reasoning_content: null  |  10 tokens vs 463
 
-# Con thinking activado (por defecto) — el stream envía reasoning_content
-stream = client.chat.completions.create(
+# Con thinking (por defecto) — más tokens pero razonamiento visible
+response = client.chat.completions.create(
     model="local",
-    messages=[{"role": "user", "content": "Resuelve paso a paso"}],
-    stream=True,
-    max_tokens=512
+    messages=[{"role": "user", "content": "Lista 5 frameworks"}],
+    max_tokens=4096   # ← necesario para que el thinking no agote el presupuesto
 )
-# El frontend debe manejar:
-# chunk.choices[0].delta.reasoning_content  ← thinking
-# chunk.choices[0].delta.content            ← respuesta final
+# → reasoning_content: "Let me think..."  |  content: "1. React..."
 ```
 
-> **Sin `--jinja`, Gemma 4 genera todo en `reasoning_content` y `content` aparece vacío.** La API auto-activa `--jinja` al cargar modelos Gemma.
+> **Nota:** En tool calls, `reasoning_content` aparece siempre aunque `enable_thinking=False`.
+> El modelo razona internamente cómo usar la herramienta — es comportamiento esperado y no se puede desactivar.
+
+> La API auto-activa `--jinja` al cargar `Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf`.
 
 ---
 
-## 7. Modelos y rendimiento
+## 7. Tool Calls desde el frontend
 
-| Modelo | Tipo | Tamaño | Prompt corto TGS | Contexto largo |
-|--------|------|--------|-----------------|----------------|
-| `Qwen3.6-35B-A3B-UD-Q4_K_M` | MoE | 22.7 GB | **62.8 t/s** | **37.1 t/s** @ 39K ctx |
-| `Qwen3.6-35B-A3B-UD-Q6_K` | MoE | 30.0 GB | **57.7 t/s** | — |
-| `Qwen3-Coder-Next-UD-Q4_K_M` | MoE | 49.3 GB | **50.9 t/s** | — |
-| `gemma-4-26B-A4B-UD-Q4_K_M` | MoE | 16.9 GB | **51.5 t/s** | — |
-| `gemma-4-26B-A4B-UD-Q6_K_XL` | MoE | 23.3 GB | **47.8 t/s** | — |
-| `gemma-4-12b-it-UD-Q4_K_XL` | Dense | 7.4 GB | **27.7 t/s** | — |
-| `Qwopus3.6-27B-v2-MTP-Q6_K` | Dense+MTP | 22.4 GB | **17.9 t/s** | — |
-| `Qwen3.6-27B-UD-Q6_K_XL` | Dense+MTP | 26.0 GB | **16.0 t/s** | — |
-| `gemma-4-31B-it-UD-Q6_K_XL` | Dense | 27.5 GB | **7.6 t/s** | — |
+`Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf` soporta tool calls en formato OpenAI con `--jinja` activo. La API actúa como proxy transparente — **el loop de herramientas lo implementa el cliente**.
 
-**ctx máximo probado:** 200,000 tokens. El modelo carga sin OOM y genera a 37 t/s con 39K tokens de prompt.
+### Flujo completo
+
+```
+Turno 1: cliente envía tools[] + mensaje
+         ↓
+         modelo responde con finish_reason="tool_calls"
+         ↓
+Turno 2: cliente ejecuta la tool y envía el resultado
+         ↓
+         modelo responde con finish_reason="stop" y la respuesta final
+```
+
+### ⚠️ Gotcha crítico: `max_tokens`
+
+Qwen-AgentWorld es un modelo de **razonamiento**. Antes de responder, consume tokens en `reasoning_content` (el bloque de pensamiento). Si `max_tokens` es muy bajo (~50-512), el modelo nunca llega a generar el `content` real.
+
+**Regla:** usar `max_tokens: 4096` como mínimo para inferencia normal, más si la tarea es compleja.
 
 ---
 
-## 8. Completions (texto plano)
+### TypeScript / JavaScript completo
+
+```typescript
+const BASE_URL = "https://llm.hiveagents.io";
+const API_KEY = "17707bdfbeb77965f89d1ab266c4e68ec6896b0bdbcd8c0cc398a022b053f3bf";
+
+// Definición de tools (formato OpenAI)
+const tools = [
+  {
+    type: "function",
+    function: {
+      name: "get_weather",
+      description: "Get the current weather for a city",
+      parameters: {
+        type: "object",
+        properties: {
+          location: { type: "string", description: "City name" },
+          units: {
+            type: "string",
+            enum: ["celsius", "fahrenheit"],
+            description: "Temperature units",
+          },
+        },
+        required: ["location"],
+      },
+    },
+  },
+];
+
+// Tu implementación real de cada tool
+async function executeTool(name: string, args: Record<string, unknown>) {
+  if (name === "get_weather") {
+    const { location } = args as { location: string };
+    // llamar a tu API del clima aquí
+    return { temperature: 28, units: "celsius", condition: "sunny", humidity: 45 };
+  }
+  throw new Error(`Tool desconocida: ${name}`);
+}
+
+// Loop agentic completo
+async function chatWithTools(userMessage: string) {
+  const messages: any[] = [
+    { role: "system", content: "You are a helpful assistant. Use tools when needed." },
+    { role: "user", content: userMessage },
+  ];
+
+  while (true) {
+    const response = await fetch(`${BASE_URL}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf", // modelo único de HiveAgents
+        messages,
+        tools,
+        tool_choice: "auto",
+        max_tokens: 4096,   // ← importante para modelos de razonamiento
+        stream: false,
+      }),
+    });
+
+    const data = await response.json();
+    const choice = data.choices[0];
+    const assistantMessage = choice.message;
+
+    // Añadir respuesta del modelo al historial
+    messages.push(assistantMessage);
+
+    // ── Caso 1: el modelo quiere llamar tools ──
+    if (choice.finish_reason === "tool_calls") {
+      // Ejecutar todas las tools en PARALELO (el modelo puede pedir varias a la vez)
+      const toolResults = await Promise.all(
+        assistantMessage.tool_calls.map(async (toolCall: any) => {
+          const args = JSON.parse(toolCall.function.arguments);
+          const result = await executeTool(toolCall.function.name, args);
+          return { id: toolCall.id, result };
+        })
+      );
+
+      // Añadir resultados al historial (un mensaje "tool" por cada tool_call)
+      for (const { id, result } of toolResults) {
+        messages.push({
+          role: "tool",
+          tool_call_id: id,
+          content: JSON.stringify(result),
+        });
+      }
+      // Volver a llamar al modelo con los resultados
+      continue;
+    }
+
+    // ── Caso 2: respuesta final ──
+    // choice.finish_reason === "stop"
+    return assistantMessage.content;
+  }
+}
+
+// Uso
+const answer = await chatWithTools("¿Qué tiempo hace en Madrid?");
+console.log(answer); // "The current weather in Madrid is sunny with 28°C and 45% humidity."
+```
+
+---
+
+### Respuestas reales de la API (datos de prueba)
+
+**Turno 1 — modelo llama a una tool:**
+```json
+{
+  "choices": [{
+    "finish_reason": "tool_calls",
+    "index": 0,
+    "message": {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [{
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "arguments": "{\"location\":\"Madrid\"}"
+        },
+        "id": "wfUZtb334zKZpvZn36P6ORzq8skjmSok"
+      }]
+    }
+  }],
+  "usage": { "prompt_tokens": 114, "completion_tokens": 122, "total_tokens": 236 }
+}
+```
+
+**Turno 2 — modelo entrega respuesta final:**
+```json
+{
+  "choices": [{
+    "finish_reason": "stop",
+    "index": 0,
+    "message": {
+      "role": "assistant",
+      "content": "The current weather in Madrid is sunny with a temperature of 28°C and 45% humidity."
+    }
+  }],
+  "usage": { "prompt_tokens": 168, "completion_tokens": 28, "total_tokens": 196 }
+}
+```
+
+---
+
+### Streaming con tool calls — formato de los chunks
+
+En streaming, los chunks de tool calls llegan con `delta.tool_calls[]`:
+
+```typescript
+const stream = await fetch(`${BASE_URL}/v1/chat/completions`, {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${API_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    model: "Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf",
+    messages,
+    tools,
+    tool_choice: "auto",
+    max_tokens: 4096,
+    stream: true,
+  }),
+});
+
+const reader = stream.body!.getReader();
+const decoder = new TextDecoder();
+
+let thinkingText = "";
+let contentText = "";
+const toolCallsAccumulator: Record<string, { name: string; arguments: string }> = {};
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+
+  for (const line of decoder.decode(value).split("\n")) {
+    if (!line.startsWith("data: ") || line === "data: [DONE]") continue;
+
+    const chunk = JSON.parse(line.slice(6));
+    const delta = chunk.choices[0]?.delta;
+    if (!delta) continue;
+
+    // Razonamiento interno del modelo (no mostrar al usuario o mostrar como "thinking...")
+    if (delta.reasoning_content) {
+      thinkingText += delta.reasoning_content;
+    }
+
+    // Respuesta final al usuario
+    if (delta.content) {
+      contentText += delta.content;
+      // renderizar contentText en UI
+    }
+
+    // Acumular tool calls (vienen fragmentados)
+    if (delta.tool_calls) {
+      for (const tc of delta.tool_calls) {
+        const idx = tc.index ?? 0;
+        if (!toolCallsAccumulator[idx]) {
+          toolCallsAccumulator[idx] = { name: "", arguments: "" };
+        }
+        if (tc.function?.name) toolCallsAccumulator[idx].name += tc.function.name;
+        if (tc.function?.arguments) toolCallsAccumulator[idx].arguments += tc.function.arguments;
+      }
+    }
+
+    // fin de turno
+    if (chunk.choices[0]?.finish_reason === "tool_calls") {
+      // ejecutar toolCallsAccumulator y continuar el loop
+    }
+  }
+}
+```
+
+---
+
+### Formato de los mensajes de historial
+
+```typescript
+// Mensaje de usuario
+{ role: "user", content: "texto" }
+
+// Mensaje de sistema
+{ role: "system", content: "instrucciones" }
+
+// Respuesta del modelo sin tools
+{ role: "assistant", content: "respuesta" }
+
+// Respuesta del modelo con tool call — usar null en content, no omitirlo
+{
+  role: "assistant",
+  content: null,
+  tool_calls: [{
+    type: "function",
+    function: { name: "nombre", arguments: '{"key":"value"}' },
+    id: "id_unico"
+  }]
+}
+
+// Resultado de la tool — tool_call_id debe coincidir con el id del tool_call
+{
+  role: "tool",
+  tool_call_id: "id_unico",
+  content: JSON.stringify({ resultado: "..." })  // ← siempre string
+}
+```
+
+---
+
+## 8. Modelo y rendimiento
+
+HiveAgents distribuye un único modelo optimizado para agentes en una sola máquina:
+
+| Modelo | Tipo | Tamaño | Contexto | Uso recomendado |
+|--------|------|--------|----------|-----------------|
+| `Qwen-AgentWorld-35B-A3B-UD-Q4_K_M` | MoE | 22.1 GB | 200,000 tokens | Agentes, tool use, MCP, terminal, web, SWE |
+
+### ¿Por qué este modelo?
+
+`Qwen-AgentWorld-35B-A3B` es un **language world model** entrenado para simular y razonar sobre entornos agenticos. La release oficial cubre siete dominios relevantes para agentes: **MCP, Search, Terminal, SWE, Android, Web y OS**, y está diseñada para trayectorias multi-turn de acción-observación, que es justo el patrón de un agente con tools.
+
+Configuración recomendada:
+
+```bash
+curl -X POST https://llm.hiveagents.io/api/load \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf",
+    "config": { "ctx": 200000, "kvType": "f16", "jinja": true }
+  }'
+```
+
+- **ctx máximo probado:** 200,000 tokens.
+- El modelo carga sin OOM y genera a ~37 t/s con 39K tokens de prompt.
+- La API auto-activa `--jinja` para Qwen-AgentWorld.
+
+---
+
+## 9. Completions (texto plano)
 
 ```bash
 curl https://llm.hiveagents.io/v1/completions \
@@ -337,5 +606,4 @@ El proxy Elysia reenvía `request.body` directamente a llama-server vía `fetch(
 ### Limitaciones conocidas
 - **KV q8_0 / q4_0:** No mejoran rendimiento en Vulkan AMD. Usar `f16`.
 - **Flash-attn:** No mejora TGS en Vulkan AMD. Mantener `off`.
-- **Gemma 4 sin `--jinja`:** Todo el output va a `reasoning_content`, `content` vacío.
-
+- **Sin `--jinja`:** Qwen-AgentWorld puede enviar todo a `reasoning_content` (`content` vacío) o aumentar el TTFT. La API lo activa automáticamente.

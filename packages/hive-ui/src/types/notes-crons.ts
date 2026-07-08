@@ -1,5 +1,5 @@
 export interface ScratchpadNote {
-    id: number;
+    id: string;
     thread_id: string;
     key: string;
     value: string;

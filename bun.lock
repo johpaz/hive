@@ -38,7 +38,7 @@
     },
     "packages/cli": {
       "name": "@johpaz/hive-cli",
-      "version": "0.0.38",
+      "version": "0.0.40",
       "bin": {
         "hive": "./dist/hive.js",
       },
@@ -54,11 +54,12 @@
     },
     "packages/core": {
       "name": "@johpaz/hive-agents-core",
-      "version": "0.0.38",
+      "version": "0.0.40",
       "dependencies": {
         "@ag-ui/core": "^0.0.46",
-        "@johpaz/hive-agents-mcp": "workspace:*",
-        "@johpaz/hive-agents-skills": "workspace:*",
+        "@johpaz/hive-agents-mcp": "^0.0.40",
+        "@johpaz/hive-agents-skills": "^0.0.40",
+        "@johpaz/hive-db": "^0.2.0",
         "@modelcontextprotocol/sdk": "latest",
         "@sapphire/snowflake": "latest",
         "@slack/bolt": "latest",
@@ -84,7 +85,7 @@
     },
     "packages/hive-ui": {
       "name": "@johpaz/hive-agents-ui",
-      "version": "0.0.38",
+      "version": "0.0.40",
       "dependencies": {
         "@hookform/resolvers": "^3.10.0",
         "@radix-ui/react-accordion": "^1.2.11",
@@ -170,7 +171,7 @@
     },
     "packages/mcp": {
       "name": "@johpaz/hive-agents-mcp",
-      "version": "0.0.38",
+      "version": "0.0.40",
       "dependencies": {
         "@modelcontextprotocol/sdk": "latest",
         "zod": "latest",
@@ -182,7 +183,7 @@
     },
     "packages/skills": {
       "name": "@johpaz/hive-agents-skills",
-      "version": "0.0.38",
+      "version": "0.0.40",
       "devDependencies": {
         "@types/bun": "^1.3.13",
         "typescript": "6.0.2",
@@ -376,6 +377,20 @@
     "@johpaz/hive-agents-ui": ["@johpaz/hive-agents-ui@workspace:packages/hive-ui"],
 
     "@johpaz/hive-cli": ["@johpaz/hive-cli@workspace:packages/cli"],
+
+    "@johpaz/hive-db": ["@johpaz/hive-db@0.2.0", "", { "optionalDependencies": { "@johpaz/hive-db-darwin-arm64": "0.2.0", "@johpaz/hive-db-darwin-x64": "0.2.0", "@johpaz/hive-db-linux-arm64-gnu": "0.2.0", "@johpaz/hive-db-linux-x64-gnu": "0.2.0", "@johpaz/hive-db-linux-x64-musl": "0.2.0", "@johpaz/hive-db-win32-x64-msvc": "0.2.0" } }, "sha512-3ZJ/UM/lxWDV5O2hpKtsucXptFDl3T1Idwc/sK/Bscx+sKGB1FUEvgZJ1zqajtfNm69AbRIgpDiq9QUV65SipA=="],
+
+    "@johpaz/hive-db-darwin-arm64": ["@johpaz/hive-db-darwin-arm64@0.2.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-e+WPo3Tk+5d9DwQd4zRm/Kca7FurFgRhYd1nhvT7o7gJAU4vFWc8X3o1EugHKk11hrod71sJfqVMEwgX1GMwQw=="],
+
+    "@johpaz/hive-db-darwin-x64": ["@johpaz/hive-db-darwin-x64@0.2.0", "", { "os": "darwin", "cpu": "x64" }, "sha512-v/GXWGrNy+qZmy5ubXQjHw5lIf8494dwvG6UmRmER9xoitjmCy1URQVfCgI8LgJN5/7yCd9OBwmIgK039OhSmA=="],
+
+    "@johpaz/hive-db-linux-arm64-gnu": ["@johpaz/hive-db-linux-arm64-gnu@0.2.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-+qxwKqy9Ign3/Fb26k8IjqnmiriqcRbrVl2cZ7HSVjO2xgoQzW7IsPZ4UfT4BXwnEUcBtLcOocuiQLNU8lPZrA=="],
+
+    "@johpaz/hive-db-linux-x64-gnu": ["@johpaz/hive-db-linux-x64-gnu@0.2.0", "", { "os": "linux", "cpu": "x64" }, "sha512-27VoAut4MZ/Hz2viS493qilFSC/ns0xFbnkHXSeXEsBsTDT0OrFRFqElVsWS6bu8iGJ8sledXrNWQb65+SWzdw=="],
+
+    "@johpaz/hive-db-linux-x64-musl": ["@johpaz/hive-db-linux-x64-musl@0.2.0", "", { "os": "linux", "cpu": "x64" }, "sha512-hmzGqaH17Vi1ZydAfZj4Yo5/7wvb/rsp5fTqaYjlB12FC3WU8kMPBr5PqqFOixRPAp897vi1uXg+SsPpnGP3nw=="],
+
+    "@johpaz/hive-db-win32-x64-msvc": ["@johpaz/hive-db-win32-x64-msvc@0.2.0", "", { "os": "win32", "cpu": "x64" }, "sha512-izkJrIzdrHZVoaOm95stCIjOdbmzmYV7rsMnreadSPIB51ANf4bxHqR0ESRq1hEukbDhpdLDNL+Tj5NhpNdQzA=="],
 
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 
@@ -2059,6 +2074,12 @@
 
     "@eslint/eslintrc/globals": ["globals@14.0.0", "", {}, "sha512-oahGvuMGQlPw/ivIYBjVSrWAfWLBeku5tpPE2fOPLi+WHffIWbuh2tCjhyQhTBPMf5E9jDEH4FOmTYgYwbKwtQ=="],
 
+    "@johpaz/hive-agents-core/@slack/bolt": ["@slack/bolt@4.7.3", "", { "dependencies": { "@slack/logger": "^4.0.1", "@slack/oauth": "^3.0.5", "@slack/socket-mode": "^2.0.7", "@slack/types": "^2.21.1", "@slack/web-api": "^7.16.0", "axios": "^1.12.0", "express": "^5.0.0", "path-to-regexp": "^8.1.0", "raw-body": "^3", "tsscmp": "^1.0.6" }, "peerDependencies": { "@types/express": "^5.0.0" } }, "sha512-bODs8q/yNDWUPoxmQhFrRqLMA5vhB/PDizYWqb6CkQhLWEUo5JFtfJcmeU4ElGl6qSt++OKjSYNa4MPc77CleQ=="],
+
+    "@johpaz/hive-agents-core/@whiskeysockets/baileys": ["@whiskeysockets/baileys@7.0.0-rc13", "", { "dependencies": { "@cacheable/node-cache": "^1.4.0", "@hapi/boom": "^9.1.3", "async-mutex": "^0.5.0", "libsignal": "^6.0.0", "lru-cache": "^11.1.0", "music-metadata": "^11.12.3", "p-queue": "^9.0.0", "pino": "^9.6", "protobufjs": "^7.5.6", "whatsapp-rust-bridge": "0.5.4", "ws": "^8.13.0" }, "peerDependencies": { "audio-decode": "^2.1.3", "jimp": "^1.6.1", "link-preview-js": "^3.0.0", "sharp": "*" }, "optionalPeers": ["audio-decode", "jimp", "link-preview-js"] }, "sha512-8JPc8gaaCRykkjW2jxLGQ7/RZGrc7awO7WU+QJocf58eSUI9jAdcuYLynzhAbyU4UWvJJsHImZ+5E/JaZj5ypA=="],
+
+    "@johpaz/hive-agents-core/grammy": ["grammy@1.44.0", "", { "dependencies": { "@grammyjs/types": "3.28.0", "abort-controller": "^3.0.0", "debug": "^4.4.3", "node-fetch": "^2.7.0" } }, "sha512-gGVykS5+c5f1tPV97LuU6IDRMawE2NzpwM9pNz58HQ35IZXDnYL3VOLvNzYognPSeBIOSzQXRu5w96V0aY8y8A=="],
+
     "@johpaz/hive-agents-ui/zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
 
     "@johpaz/hive-cli/@clack/prompts": ["@clack/prompts@1.1.0", "", { "dependencies": { "@clack/core": "1.1.0", "sisteransi": "^1.0.5" } }, "sha512-pkqbPGtohJAvm4Dphs2M8xE29ggupihHdy1x84HNojZuMtFsHiUlRvqD24tM2+XmI+61LlfNceM3Wr7U5QES5g=="],
@@ -2219,6 +2240,10 @@
 
     "@eslint/eslintrc/ajv/json-schema-traverse": ["json-schema-traverse@0.4.1", "", {}, "sha512-xbbCH5dCYU5T8LcEhhuh7HJ88HXuW3qsI3Y0zOZFKfZEHcpWiHU/Jxzk629Brsab/mMiHQti9wMP+845RPe3Vg=="],
 
+    "@johpaz/hive-agents-core/@slack/bolt/@slack/web-api": ["@slack/web-api@7.18.0", "", { "dependencies": { "@slack/logger": "^4.0.1", "@slack/types": "^2.21.0", "@types/node": ">=18", "@types/retry": "0.12.0", "axios": "^1.16.0", "eventemitter3": "^5.0.1", "form-data": "^4.0.4", "is-electron": "2.2.2", "is-stream": "^2", "p-queue": "^6", "p-retry": "^4", "retry": "^0.13.1" } }, "sha512-EWBsKUhOFFp87beQg/ToSC+asWB7BrGHuh7uPC1ZI9vr41GjS+3WmmyWIMqs+mF6U+mh4d6HhtFlv67TrJFsvw=="],
+
+    "@johpaz/hive-agents-core/grammy/@grammyjs/types": ["@grammyjs/types@3.28.0", "", {}, "sha512-4JvXCdxRZHCje0M4gHzLwtB4bLno3WD28xd8CNfk4POWIu73BFnSvGeW6OQ5gPem4eYTEwkD9yDaXssixl6tMQ=="],
+
     "@johpaz/hive-cli/@clack/prompts/@clack/core": ["@clack/core@1.1.0", "", { "dependencies": { "sisteransi": "^1.0.5" } }, "sha512-SVcm4Dqm2ukn64/8Gub2wnlA5nS2iWJyCkdNHcvNHPIeBTGojpdJ+9cZKwLfmqy7irD4N5qLteSilJlE0WLAtA=="],
 
     "@slack/logger/@types/node/undici-types": ["undici-types@7.21.0", "", {}, "sha512-w9IMgQrz4O0YN1LtB7K5P63vhlIOvC7opSmouCJ+ZywlPAlO9gIkJ+otk6LvGpAs2wg4econaCz3TvQ9xPoyuQ=="],
@@ -2295,9 +2320,21 @@
 
     "yargs/find-up/locate-path": ["locate-path@5.0.0", "", { "dependencies": { "p-locate": "^4.1.0" } }, "sha512-t7hw9pI+WvuwNJXwk5zVHpyhIqzg2qTlklJOf0mVxGSbe3Fp2VieZcduNYjaLDoy6p9uGpQEGWG87WpMKlNq8g=="],
 
+    "@johpaz/hive-agents-core/@slack/bolt/@slack/web-api/@types/node": ["@types/node@25.7.0", "", { "dependencies": { "undici-types": "~7.21.0" } }, "sha512-z+pdZyxE+RTQE9AcboAZCb4otwcrvgHD+GlBpPgn0emDVt0ohrTMhAwlr2Wd9nZ+nihhYFxO2pThz3C5qSu2Eg=="],
+
+    "@johpaz/hive-agents-core/@slack/bolt/@slack/web-api/eventemitter3": ["eventemitter3@5.0.4", "", {}, "sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw=="],
+
+    "@johpaz/hive-agents-core/@slack/bolt/@slack/web-api/p-queue": ["p-queue@6.6.2", "", { "dependencies": { "eventemitter3": "^4.0.4", "p-timeout": "^3.2.0" } }, "sha512-RwFpb72c/BhQLEXIZ5K2e+AhgNVmIejGlTgiB9MzZ0e93GRvqZ7uSi0dvRF7/XIXDeNkra2fNHBxTyPDGySpjQ=="],
+
     "@typescript-eslint/typescript-estree/minimatch/brace-expansion/balanced-match": ["balanced-match@4.0.4", "", {}, "sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA=="],
 
     "yargs/find-up/locate-path/p-locate": ["p-locate@4.1.0", "", { "dependencies": { "p-limit": "^2.2.0" } }, "sha512-R79ZZ/0wAxKGu3oYMlz8jy/kbhsNrS7SKZ7PxEHBgJ5+F2mtFW2fK2cOtBh1cHYkQsbzFV7I+EoRKe6Yt0oK7A=="],
+
+    "@johpaz/hive-agents-core/@slack/bolt/@slack/web-api/@types/node/undici-types": ["undici-types@7.21.0", "", {}, "sha512-w9IMgQrz4O0YN1LtB7K5P63vhlIOvC7opSmouCJ+ZywlPAlO9gIkJ+otk6LvGpAs2wg4econaCz3TvQ9xPoyuQ=="],
+
+    "@johpaz/hive-agents-core/@slack/bolt/@slack/web-api/p-queue/eventemitter3": ["eventemitter3@4.0.7", "", {}, "sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw=="],
+
+    "@johpaz/hive-agents-core/@slack/bolt/@slack/web-api/p-queue/p-timeout": ["p-timeout@3.2.0", "", { "dependencies": { "p-finally": "^1.0.0" } }, "sha512-rhIwUycgwwKcP9yTOOFK/AKsAopjjCakVqLHePO3CC6Mir1Z99xT+R63jZxAT5lFZLa2inS5h+ZS2GvR99/FBg=="],
 
     "yargs/find-up/locate-path/p-locate/p-limit": ["p-limit@2.3.0", "", { "dependencies": { "p-try": "^2.0.0" } }, "sha512-//88mFWSJx8lxCzwdAABTJL2MyWB12+eIY7MDL2SqLmAkeKU9qxRvWuSyTjm3FUmpBEMuFfckAIqEaVGUDxb6w=="],
   }

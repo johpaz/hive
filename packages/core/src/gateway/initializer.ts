@@ -71,6 +71,7 @@ export async function writePidFile(pidFile: string): Promise<void> {
 export async function loadAgentConfigFromDB(
   config: Config
 ): Promise<{ provider: string; model: string }> {
+  // Último recurso cuando la BD aún no tiene providers/modelos activos (setup inicial)
   const defaultProvider = "gemini";
   const defaultModel = "gemini-2.5-flash";
 
@@ -89,8 +90,14 @@ export async function loadAgentConfigFromDB(
     `).get(coordinatorAgentId || "", coordinatorAgentId || "") as
       { provider_id: string | null; model_id: string | null } | undefined;
 
-    let provider = agentConfig?.provider_id || defaultProvider;
-    let model = agentConfig?.model_id || defaultModel;
+    // Si el coordinator no tiene modelo, usar el default resuelto desde la BD
+    const { getDefaultLLM } = await import("../agent/llm-client");
+    const defaultLLM = (!agentConfig?.provider_id || !agentConfig?.model_id)
+      ? await getDefaultLLM()
+      : null;
+
+    let provider = agentConfig?.provider_id || defaultLLM?.provider || defaultProvider;
+    let model = agentConfig?.model_id || defaultLLM?.model || defaultModel;
 
     // Cargar API keys de los providers desde la DB
     const providers = db.query(`
@@ -231,18 +238,23 @@ export async function initializeGateway(
     // 3. Cargar configuración del agente desde DB
     const { provider, model } = await loadAgentConfigFromDB(config);
 
-    // 4. Sync FTS5 indexes (tools + skills + playbook + mcp_tools)
-    log.info("[initialize] Syncing FTS5 indexes (asynchronous & transactional)...")
+    // 4. Sync HiveDB capability index (tools + skills + playbook + mcp_tools)
+    log.info("[initialize] Syncing HiveDB capability index...")
     try {
+      const { getSearchDb } = await import("../storage/hivedb");
+      const searchDb = await getSearchDb();
       await Promise.all([
         syncToolsToFTS(),
         syncSkillsToFTS(),
         syncPlaybookToFTS(),
         syncMCPToolsToFTS()
       ]);
-      log.info("[initialize] ✅ FTS5 indexes synced (tools, skills, playbook, mcp_tools)")
+      // Warmup query: the first search pays reader initialization; do it here
+      // so selector latency stays under budget on the first real message.
+      await searchDb.queryHybrid({ text: "warmup", k: 1 });
+      log.info("[initialize] ✅ HiveDB capability index synced (tools, skills, playbook, mcp_tools)")
     } catch (err) {
-      log.error(`[initialize] FTS5 sync failed during startup: ${(err as Error).message}`);
+      log.error(`[initialize] HiveDB index sync failed during startup: ${(err as Error).message}`);
       // Consider if we should throw or continue. For now, continue but log error.
     }
 

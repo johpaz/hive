@@ -67,73 +67,73 @@ describe("Tool Selector Module", () => {
         // These tests verify that conversational messages return empty arrays
         // This logic does NOT require FTS5 database
 
-        test("hola → [] (greeting)", () => {
-            const result = selectTools("hola")
+        test("hola → [] (greeting)", async () => {
+            const result = await selectTools("hola")
             expect(result).toEqual([])
         })
 
-        test("hi → []", () => {
-            const result = selectTools("hi")
+        test("hi → []", async () => {
+            const result = await selectTools("hi")
             expect(result).toEqual([])
         })
 
-        test("hello → []", () => {
-            const result = selectTools("hello")
+        test("hello → []", async () => {
+            const result = await selectTools("hello")
             expect(result).toEqual([])
         })
 
-        test("buenos días → []", () => {
-            const result = selectTools("buenos días")
+        test("buenos días → []", async () => {
+            const result = await selectTools("buenos días")
             expect(result).toEqual([])
         })
 
-        test("gracias → []", () => {
-            const result = selectTools("gracias")
+        test("gracias → []", async () => {
+            const result = await selectTools("gracias")
             expect(result).toEqual([])
         })
 
-        test("thank you → []", () => {
-            const result = selectTools("thank you")
+        test("thank you → []", async () => {
+            const result = await selectTools("thank you")
             expect(result).toEqual([])
         })
 
-        test("cómo estás? → []", () => {
-            const result = selectTools("cómo estás?")
+        test("cómo estás? → []", async () => {
+            const result = await selectTools("cómo estás?")
             expect(result).toEqual([])
         })
 
-        test("ok → []", () => {
-            const result = selectTools("ok")
+        test("ok → []", async () => {
+            const result = await selectTools("ok")
             expect(result).toEqual([])
         })
 
-        test("sí → []", () => {
-            const result = selectTools("sí")
+        test("sí → []", async () => {
+            const result = await selectTools("sí")
             expect(result).toEqual([])
         })
 
-        test("adiós → []", () => {
-            const result = selectTools("adiós")
+        test("adiós → []", async () => {
+            const result = await selectTools("adiós")
             expect(result).toEqual([])
         })
 
-        test("empty string → []", () => {
-            const result = selectTools("")
+        test("empty string → []", async () => {
+            const result = await selectTools("")
             expect(result).toEqual([])
         })
 
-        test("single character → []", () => {
-            const result = selectTools("a")
+        test("single character → []", async () => {
+            const result = await selectTools("a")
             expect(result).toEqual([])
         })
 
-        test("bien → []", () => {
-            const result = selectTools("bien")
+        test("bien → []", async () => {
+            const result = await selectTools("bien")
             expect(result).toEqual([])
         })
 
-        test("entiendo → []", () => {
-            const result = selectTools("entiendo")
+        test("entiendo → []", async () => {
+            const result = await selectTools("entiendo")
             expect(result).toEqual([])
         })
     })
@@ -142,28 +142,28 @@ describe("Tool Selector Module", () => {
         // These tests verify behavior when FTS5 is available
         // Without FTS5, returns empty - this is expected behavior
 
-        test("action message returns array (may be empty if no FTS5)", () => {
-            const result = selectTools("crea una tarea cron")
+        test("action message returns array (may be empty if no FTS5)", async () => {
+            const result = await selectTools("crea una tarea cron")
             // Returns array (may be empty if FTS5 not available)
             expect(Array.isArray(result)).toBe(true)
             expect(result.length).toBeLessThanOrEqual(4)
         })
 
-        test("search message returns array", () => {
-            const result = selectTools("busca información en la web")
+        test("search message returns array", async () => {
+            const result = await selectTools("busca información en la web")
             expect(Array.isArray(result)).toBe(true)
         })
 
-        test("create agent message returns array", () => {
-            const result = selectTools("crea un agente nuevo")
+        test("create agent message returns array", async () => {
+            const result = await selectTools("crea un agente nuevo")
             expect(Array.isArray(result)).toBe(true)
         })
     })
 
     describe("selectTools - Limit Enforcement", () => {
-        test("should never return more than 4 tools", () => {
+        test("should never return more than 4 tools", async () => {
             // Any message should respect the limit
-            const result = selectTools("busca información sobre todo y haz muchas cosas")
+            const result = await selectTools("busca información sobre todo y haz muchas cosas")
             expect(result.length).toBeLessThanOrEqual(4)
         })
     })
@@ -311,34 +311,34 @@ describe("Tool Selector Module", () => {
 
     describe("Edge Cases", () => {
 
-        test("handles very long messages without crashing", () => {
+        test("handles very long messages without crashing", async () => {
             const longMessage = " ".repeat(1000) + "buscar" + " ".repeat(1000)
-            const result = selectTools(longMessage)
+            const result = await selectTools(longMessage)
             expect(Array.isArray(result)).toBe(true)
         })
 
-        test("handles special characters without crashing", () => {
+        test("handles special characters without crashing", async () => {
             const message = "buscar <script>alert('xss')</script> en la web"
-            const result = selectTools(message)
+            const result = await selectTools(message)
             expect(Array.isArray(result)).toBe(true)
         })
 
-        test("handles unicode characters without crashing", () => {
+        test("handles unicode characters without crashing", async () => {
             const message = "buscar 🎯 información sobre 🚀 proyectos"
-            const result = selectTools(message)
+            const result = await selectTools(message)
             expect(Array.isArray(result)).toBe(true)
         })
 
-        test("handles mixed case messages", () => {
-            const result1 = selectTools("BUSCAR EN LA WEB")
-            const result2 = selectTools("buscar en la web")
+        test("handles mixed case messages", async () => {
+            const result1 = await selectTools("BUSCAR EN LA WEB")
+            const result2 = await selectTools("buscar en la web")
             expect(Array.isArray(result1)).toBe(true)
             expect(Array.isArray(result2)).toBe(true)
         })
 
-        test("handles messages with only stopwords", () => {
+        test("handles messages with only stopwords", async () => {
             const message = "que con para por"
-            const result = selectTools(message)
+            const result = await selectTools(message)
             // Should return empty due to all stopwords
             expect(result).toEqual([])
         })
@@ -346,22 +346,22 @@ describe("Tool Selector Module", () => {
 
     describe("Performance", () => {
 
-        test("should complete quickly for typical messages", () => {
+        test("should complete quickly for typical messages", async () => {
             const message = "crea un proyecto nuevo para organizar mis tareas"
 
             const start = performance.now()
-            selectTools(message)
+            await selectTools(message)
             const duration = performance.now() - start
 
             // Should complete in under 50ms (requirement)
             expect(duration).toBeLessThan(50)
         })
 
-        test("should complete quickly for conversational messages", () => {
+        test("should complete quickly for conversational messages", async () => {
             const message = "hola cómo estás"
 
             const start = performance.now()
-            selectTools(message)
+            await selectTools(message)
             const duration = performance.now() - start
 
             expect(duration).toBeLessThan(10)
@@ -372,8 +372,8 @@ describe("Tool Selector Module", () => {
         // These tests verify the required tools exist in the catalog
         // Note: Full FTS selection tests require a running database (not available in CI)
 
-        test("1. hola → [] (conversational, no tools)", () => {
-            const result = selectTools("hola")
+        test("1. hola → [] (conversational, no tools)", async () => {
+            const result = await selectTools("hola")
             expect(result).toEqual([])
         })
 
@@ -429,7 +429,7 @@ describe("Tool Selector Module", () => {
     })
 
     describe("Logging Output", () => {
-        test("should log user message, FTS query, scores, and selected tools", () => {
+        test("should log user message, FTS query, scores, and selected tools", async () => {
             const capturedLogs: LogEntry[] = []
 
             // Listener to capture log entries
@@ -447,7 +447,7 @@ describe("Tool Selector Module", () => {
                 getLogger().setLevel("debug")
 
                 // Execute selectTools with a non-conversational message
-                const result = selectTools("crea una tarea cron para mañana")
+                const result = await selectTools("crea una tarea cron para mañana")
 
                 // Verify logs were captured
                 expect(capturedLogs.length).toBeGreaterThan(0)
@@ -488,7 +488,7 @@ describe("Tool Selector Module", () => {
             }
         })
 
-        test("should use info level for tool selection results", () => {
+        test("should use info level for tool selection results", async () => {
             const capturedLogs: LogEntry[] = []
 
             const listener = (entry: LogEntry) => {
@@ -501,7 +501,7 @@ describe("Tool Selector Module", () => {
 
             try {
                 // Use a message that should trigger tool selection
-                const result = selectTools("busca información en la web")
+                const result = await selectTools("busca información en la web")
 
                 // Check that we have info-level logs for selections (when tools are found)
                 // Note: This depends on FTS5 availability

@@ -2,23 +2,40 @@ import { getDb } from "../../storage/sqlite"
 import { voiceService } from "../../voice"
 import { storeProviderApiKey, loadProviderApiKey } from "../../storage/crypto"
 
+/** Providers de voz = providers con al menos un modelo STT/TTS en la BD. */
+function getVoiceProviderIds(): string[] {
+  const rows = getDb().query(`
+    SELECT DISTINCT p.id FROM providers p
+    JOIN models m ON m.provider_id = p.id
+    WHERE m.model_type IN ('stt', 'tts')
+  `).all() as Array<{ id: string }>
+  return rows.map(r => r.id)
+}
+
+/** Providers de voz locales (modelos con capability "local", ej. Piper) no requieren API key. */
+function isLocalVoiceProvider(providerId: string): boolean {
+  const row = getDb().query(`
+    SELECT COUNT(*) AS c FROM models
+    WHERE provider_id = ? AND model_type IN ('stt', 'tts') AND capabilities LIKE '%"local"%'
+  `).get(providerId) as { c: number } | undefined
+  return (row?.c ?? 0) > 0
+}
+
 export async function handleGetVoiceProviders(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   return addCorsHeaders(Response.json({
-    providers: ["elevenlabs", "openai", "gemini", "qwen", "groq", "piper", "local-llama"]
+    providers: getVoiceProviderIds()
   }), req)
 }
 
 export async function handleGetConfiguredVoiceProviders(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
-  const voiceProviderIds = ["groq", "elevenlabs", "openai", "gemini", "qwen"]
+  const voiceProviderIds = getVoiceProviderIds()
   const results = await Promise.all(voiceProviderIds.map(async id => ({
     id,
-    configured: !!(await loadProviderApiKey(id))
+    configured: isLocalVoiceProvider(id) || !!(await loadProviderApiKey(id))
   })))
 
   const providers: Record<string, boolean> = {}
   for (const r of results) providers[r.id] = r.configured
-  providers.piper = true
-  providers["local-llama"] = true
 
   return addCorsHeaders(Response.json(providers), req)
 }
@@ -45,22 +62,14 @@ export async function handleSaveVoiceProviderKey(
   try {
     const db = getDb()
 
-    // Get base URL for the provider
-    let baseUrl = ""
-    switch (providerId) {
-      case "groq":       baseUrl = "https://api.groq.com/openai/v1"; break
-      case "elevenlabs": baseUrl = "https://api.elevenlabs.io/v1"; break
-      case "openai":     baseUrl = "https://api.openai.com/v1"; break
-      case "gemini":     baseUrl = "https://generativelanguage.googleapis.com/v1beta"; break
-      case "qwen":       baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1"; break
-      default:
-        return addCorsHeaders(Response.json({ success: false, error: "Unknown provider" }, { status: 400 }), req)
+    // El provider debe existir en la BD (viene del seed o fue creado por el usuario)
+    const provider = db.query(`SELECT id FROM providers WHERE id = ?`).get(providerId) as { id: string } | undefined
+    if (!provider) {
+      return addCorsHeaders(Response.json({ success: false, error: "Unknown provider" }, { status: 400 }), req)
     }
 
-    db.query(`
-      INSERT OR REPLACE INTO providers (id, name, base_url, enabled, active)
-      VALUES (?, ?, ?, 1, 1)
-    `).run(providerId, providerId, baseUrl)
+    // Activar sin pisar name/category/base_url existentes
+    db.query(`UPDATE providers SET enabled = 1, active = 1 WHERE id = ?`).run(providerId)
 
     await storeProviderApiKey(providerId, apiKey)
 

@@ -40,7 +40,7 @@ export async function handleActivateSkill(req: Request, addCorsHeaders: (r: Resp
 
   getDb().query(`UPDATE skills SET active = ? WHERE id = ?`).run(active ? 1 : 0, skillId)
 
-  // Re-sync FTS5 index so semantic matching respects the new active state immediately
+  // Re-sync the HiveDB index so semantic matching respects the new active state immediately
   syncSkillsToFTS().catch(() => {})
 
   return addCorsHeaders(Response.json({ success: true, skillId, active }), req)

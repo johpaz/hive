@@ -552,8 +552,10 @@ search_knowledge({
 ```
 
 **Características:**
-- Usa **FTS5** para búsqueda full-text con ranking BM25
-- **Fallback automático** a LIKE si FTS5 falla
+- Usa **HiveDB** (`@johpaz/hive-db`, motor Rust embebido) para búsqueda full-text con ranking BM25
+- Análisis en español: normalización de acentos ("transacción" ≈ "transaccion") y stemming ("pagos" ≈ "pago")
+- Parsing tolerante: texto crudo del usuario (comillas, operadores, ¿?) nunca lanza error
+- Pesos por campo: nombre (4.0) > tags/categoría (3.0) > descripción (2.0)
 - Busca en nombre, descripción y categoría
 - Retorna herramientas activas e inactivas (para descubrimiento)
 

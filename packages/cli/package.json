@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-cli",
-  "version": "0.0.40",
+  "version": "0.0.41",
   "description": "Hive CLI — Command line interface for the Hive AI Gateway",
   "bin": {
     "hive": "./dist/hive.js"

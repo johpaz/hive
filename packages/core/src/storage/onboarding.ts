@@ -425,25 +425,16 @@ export async function saveVoiceConfig(data: {
     db.query(`UPDATE models SET active = 1, enabled = 1 WHERE id = ? `).run(data.sttProvider);
     db.query(`UPDATE models SET active = 1, enabled = 1 WHERE id = ? `).run(data.ttsProvider);
 
-    // Determine provider IDs based on model IDs
-    let sttProviderId = "";
-    let ttsProviderId = "";
+    // Resolve provider IDs from the DB: the value can be a model id or a provider id
+    const resolveVoiceProviderId = (id: string): string => {
+      const model = db.query(`SELECT provider_id FROM models WHERE id = ?`).get(id) as { provider_id: string } | undefined;
+      if (model?.provider_id) return model.provider_id;
+      const provider = db.query(`SELECT id FROM providers WHERE id = ?`).get(id) as { id: string } | undefined;
+      return provider?.id || "";
+    };
 
-    if (data.sttProvider.startsWith("whisper") || data.sttProvider === "distil-whisper-large-v3-en") {
-      sttProviderId = "groq";
-    } else if (data.sttProvider === "whisper-1") {
-      sttProviderId = "openai";
-    }
-
-    if (data.ttsProvider.startsWith("eleven")) {
-      ttsProviderId = "elevenlabs";
-    } else if (data.ttsProvider.startsWith("tts-") || data.ttsProvider.startsWith("gpt-")) {
-      ttsProviderId = "openai";
-    } else if (data.ttsProvider.startsWith("gemini")) {
-      ttsProviderId = "gemini";
-    } else if (data.ttsProvider.startsWith("qwen")) {
-      ttsProviderId = "qwen";
-    }
+    const sttProviderId = resolveVoiceProviderId(data.sttProvider);
+    const ttsProviderId = resolveVoiceProviderId(data.ttsProvider);
 
     // Save STT API key to provider if provided
     if (data.sttApiKey && sttProviderId) {
@@ -1285,7 +1276,6 @@ export function runStartupMigrations(): void {
         updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
       )`);
 
-      db.run(`CREATE VIRTUAL TABLE tools_fts USING fts5(tool_name, name, description, category)`);
 
       db.run(`CREATE TABLE skills (
         id               TEXT PRIMARY KEY,
@@ -1307,34 +1297,14 @@ export function runStartupMigrations(): void {
         updated_at       TEXT DEFAULT (datetime('now'))
       )`);
 
-      db.run(`CREATE VIRTUAL TABLE skills_fts USING fts5(id, name, description, category, tools, triggers, body)`);
-
       db.run("CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category)");
       db.run("CREATE INDEX IF NOT EXISTS idx_skills_active ON skills(active)");
 
-      db.run(`DROP TRIGGER IF EXISTS skills_ai`);
-      db.run(`DROP TRIGGER IF EXISTS skills_au`);
-      db.run(`DROP TRIGGER IF EXISTS skills_ad`);
-      db.run(`CREATE TRIGGER skills_ai AFTER INSERT ON skills BEGIN
-        INSERT INTO skills_fts(id, name, description, category, tools, triggers, body)
-        VALUES (new.id, new.name, new.description, new.category, new.tools, new.triggers, new.body);
-      END`);
-      db.run(`CREATE TRIGGER skills_au AFTER UPDATE ON skills BEGIN
-        DELETE FROM skills_fts WHERE id = old.id;
-        INSERT INTO skills_fts(id, name, description, category, tools, triggers, body)
-        VALUES (new.id, new.name, new.description, new.category, new.tools, new.triggers, new.body);
-      END`);
-      db.run(`CREATE TRIGGER skills_ad AFTER DELETE ON skills BEGIN
-        DELETE FROM skills_fts WHERE id = old.id;
-      END`);
-
-      // Reseed tools
-      const insertToolFts = db.prepare(`INSERT OR REPLACE INTO tools_fts(tool_name, name, description, category) VALUES (?, ?, ?, ?)`);
+      // Reseed tools (search indexing happens at startup via HiveDB sync)
       let toolCount = 0;
       for (const tool of SEED_DATA.tools) {
         db.query(`INSERT INTO tools (id, name, description, category, enabled, active, created_at, updated_at) VALUES (?, ?, ?, ?, 1, 1, (unixepoch()), (unixepoch()))`)
           .run(tool.id, tool.name, tool.description, tool.category);
-        insertToolFts.run(tool.name, tool.name, tool.description, tool.category);
         toolCount++;
       }
       log.info(`[migration v0.0.29] ✅ ${toolCount} tools re-seeded`);
@@ -1470,15 +1440,7 @@ export function runStartupMigrations(): void {
       }
       log.info(`[migration v0.0.31] ✅ ${skillsAdded} skills synced from bundle`);
 
-      // Sync skills_fts (FTS5 index)
-      log.info("[migration v0.0.31] Syncing skills_fts index...");
-      db.run("DELETE FROM skills_fts");
-      const ftsInsert = db.prepare("INSERT INTO skills_fts(id, name, description, category, tools, triggers, body) VALUES(?, ?, ?, ?, ?, ?, ?)");
-      const activeSkills = db.query("SELECT * FROM skills WHERE active = 1").all() as any[];
-      for (const s of activeSkills) {
-        ftsInsert.run(s.id, s.name, s.description || "", s.category || "", s.tools || "", s.triggers || "", s.body || "");
-      }
-      log.info(`[migration v0.0.31] ✅ ${activeSkills.length} skills indexed in FTS5`);
+      // (skills search indexing happens at startup via the HiveDB sync)
 
     markApplied("v0.0.31");
     log.info("✅ Migration v0.0.31: Reduced system_prompt + skills sync");
@@ -1527,6 +1489,127 @@ export function runStartupMigrations(): void {
 
     markApplied("v0.0.33");
     log.info("✅ Migration v0.0.33: HiveAgents LLM provider + 5 models added");
+  }
+
+  // v0.0.34 — unify HiveAgents provider to a single recommended model
+  if (!applied("v0.0.34")) {
+    const db = getDb();
+    log.info("[migration v0.0.34] Unifying HiveAgents provider to single model...");
+
+    const hiveagentsModelId = "Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf";
+    const hiveagentsModelName = "Qwen-AgentWorld 35B MoE (Recomendado)";
+
+    // Ensure provider exists
+    db.query(`
+      INSERT OR IGNORE INTO providers (id, name, base_url, category, enabled, active)
+      VALUES ('hiveagents', 'HiveAgents LLM (Cloudflare)', 'https://llm.hiveagents.io/v1', 'llm', 1, 0)
+    `).run();
+
+    // Insert the single recommended model
+    db.query(`
+      INSERT OR IGNORE INTO models (id, provider_id, name, model_type, context_window, capabilities, enabled, active)
+      VALUES (?, 'hiveagents', ?, 'llm', 200000, ?, 1, 0)
+    `).run(hiveagentsModelId, hiveagentsModelName, JSON.stringify(["chat", "streaming", "reasoning", "function_calling"]));
+
+    // Reassign existing agents using any old hiveagents model to the new unified model
+    const reassigned = db.query(`
+      UPDATE agents
+      SET model_id = ?
+      WHERE provider_id = 'hiveagents' AND model_id IS NOT NULL AND model_id != ?
+    `).run(hiveagentsModelId, hiveagentsModelId);
+    log.info(`[migration v0.0.34] ✅ Reassigned ${(reassigned as any).changes || 0} agent(s) to ${hiveagentsModelId}`);
+
+    // Deactivate legacy hiveagents models so they no longer appear in selectors
+    const deactivated = db.query(`
+      UPDATE models SET enabled = 0, active = 0
+      WHERE provider_id = 'hiveagents' AND id != ?
+    `).run(hiveagentsModelId);
+    log.info(`[migration v0.0.34] ✅ Deactivated ${(deactivated as any).changes || 0} legacy HiveAgents model(s)`);
+
+    // If the unified model belongs to an active provider, keep it enabled
+    const providerActive = db.query("SELECT active FROM providers WHERE id = 'hiveagents'").get() as { active: number } | undefined;
+    if (providerActive?.active) {
+      db.query("UPDATE models SET enabled = 1, active = 1 WHERE id = ?").run(hiveagentsModelId);
+      log.info("[migration v0.0.34] ✅ Unified model activated because hiveagents provider is active");
+    }
+
+    markApplied("v0.0.34");
+    log.info("✅ Migration v0.0.34: HiveAgents unified to Qwen-AgentWorld");
+  }
+
+  // v0.0.41 — remove local-llama (llama-server) provider + fix voice provider categories
+  if (!applied("v0.0.41")) {
+    const db = getDb();
+    log.info("[migration v0.0.41] Removing local-llama provider and fixing voice provider categories...");
+
+    const unlinked = db.query(`
+      UPDATE agents SET provider_id = NULL, model_id = NULL WHERE provider_id = 'local-llama'
+    `).run();
+    log.info(`[migration v0.0.41] ✅ Unlinked ${(unlinked as any).changes || 0} agent(s) from local-llama`);
+
+    db.query(`DELETE FROM models WHERE provider_id = 'local-llama'`).run();
+    db.query(`DELETE FROM providers WHERE id = 'local-llama'`).run();
+
+    db.query(`UPDATE providers SET category = 'tts' WHERE id IN ('elevenlabs', 'piper')`).run();
+
+    markApplied("v0.0.41");
+    log.info("✅ Migration v0.0.41: local-llama removed + voice provider categories fixed");
+  }
+
+  // v0.0.42 — capability search moved to HiveDB (@johpaz/hive-db):
+  // drop the FTS5 virtual tables and the skills triggers that fed them.
+  // The skills_ai/au/ad triggers MUST go first: with skills_fts gone they
+  // would break every write to the skills table.
+  if (!applied("v0.0.42")) {
+    const db = getDb();
+    log.info("[migration v0.0.42] Dropping FTS5 tables (search now lives in HiveDB)...");
+
+    db.run("DROP TRIGGER IF EXISTS skills_ai");
+    db.run("DROP TRIGGER IF EXISTS skills_au");
+    db.run("DROP TRIGGER IF EXISTS skills_ad");
+    db.run("DROP TABLE IF EXISTS tools_fts");
+    db.run("DROP TABLE IF EXISTS skills_fts");
+    db.run("DROP TABLE IF EXISTS playbook_fts");
+    db.run("DROP TABLE IF EXISTS mcp_tools_fts");
+
+    markApplied("v0.0.42");
+    log.info("✅ Migration v0.0.42: FTS5 tables dropped — capability search moved to HiveDB");
+  }
+
+  // v0.0.43 — mcpToolFullName now shortens the SERVER prefix (not the tool
+  // name) when over 64 chars. Recompute stored mcp_tools ids so they keep
+  // matching the executor names built at runtime with the same function.
+  if (!applied("v0.0.43")) {
+    const db = getDb();
+    const { mcpToolFullName } = require("../agent/tool-selector");
+    const rows = db.query("SELECT id, server_name, tool_name FROM mcp_tools").all() as Array<{
+      id: string; server_name: string; tool_name: string;
+    }>;
+    let renamed = 0;
+    for (const row of rows) {
+      const newId = mcpToolFullName(row.server_name, row.tool_name);
+      if (newId !== row.id) {
+        db.query("DELETE FROM mcp_tools WHERE id = ?").run(newId); // avoid PK collision
+        db.query("UPDATE mcp_tools SET id = ? WHERE id = ?").run(newId, row.id);
+        renamed++;
+      }
+    }
+    markApplied("v0.0.43");
+    log.info(`✅ Migration v0.0.43: ${renamed} MCP tool id(s) recomputed (server prefix shortened, tool name preserved)`);
+  }
+
+  // v0.0.44 — scratchpad moved from SQLite to a HiveDB document collection
+  // (see agent/conversation-store.ts). Existing notes are not carried over
+  // (dev-phase data loss accepted); the SQLite table is just dropped.
+  if (!applied("v0.0.44")) {
+    const db = getDb();
+    log.info("[migration v0.0.44] Dropping scratchpad table (notes now live in HiveDB)...");
+
+    db.run("DROP INDEX IF EXISTS idx_scratchpad_thread");
+    db.run("DROP TABLE IF EXISTS scratchpad");
+
+    markApplied("v0.0.44");
+    log.info("✅ Migration v0.0.44: scratchpad table dropped — notes moved to HiveDB collection");
   }
   } catch (e) {
     log.error("⚠️ runStartupMigrations failed:", { error: (e as Error).message });

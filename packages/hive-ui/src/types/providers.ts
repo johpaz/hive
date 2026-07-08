@@ -102,6 +102,8 @@ export interface Provider {
   id: string;
   type?: ProviderType;
   name: string;
+  /** Uso principal del provider según la BD: 'llm' (texto), 'stt' o 'tts' */
+  category?: string;
   status?: ProviderStatus;
   config?: ProviderConfig;
   models?: Model[];

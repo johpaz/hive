@@ -1,6 +1,7 @@
 import { getDb } from "../../storage/sqlite"
 import { emitCanvas } from "../../canvas/emitter"
 import { storeAgentHeaders, deleteAgentSecrets } from "../../storage/crypto"
+import { getDefaultLLM } from "../../agent/llm-client"
 
 export async function handleGetAgents(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const url = new URL(req.url)
@@ -68,6 +69,11 @@ export async function handleCreateAgent(req: Request, addCorsHeaders: (r: Respon
   const body = await req.json().catch(() => ({}))
   let agentId: string
 
+  // Default provider/model from the DB when the request doesn't specify one
+  const defaultLLM = (!body.providerId || !body.modelId) ? await getDefaultLLM() : null
+  const providerId = body.providerId || defaultLLM?.provider || null
+  const modelId = body.modelId || defaultLLM?.model || null
+
   if (body.id) {
     agentId = body.id
     getDb().query(`
@@ -77,8 +83,8 @@ export async function handleCreateAgent(req: Request, addCorsHeaders: (r: Respon
       agentId,
       body.name,
       body.description || "",
-      body.providerId || "openai",
-      body.modelId || "gpt-4o",
+      providerId,
+      modelId,
       body.tone || "friendly",
       body.workspace || null
     )
@@ -90,8 +96,8 @@ export async function handleCreateAgent(req: Request, addCorsHeaders: (r: Respon
     `).get(
       body.name,
       body.description || "",
-      body.providerId || "openai",
-      body.modelId || "gpt-4o",
+      providerId,
+      modelId,
       body.tone || "friendly",
       body.workspace || null
     ) as { id: string } | undefined

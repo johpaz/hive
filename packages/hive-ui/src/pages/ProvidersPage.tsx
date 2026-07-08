@@ -1,9 +1,8 @@
-import { Plus, MessageSquare, Eye, Mic, Server, type LucideProps } from "lucide-react";
+import { Plus, Eye, Mic, Server, type LucideProps } from "lucide-react";
 import { ProviderList } from "@/modules/providers";
 import { NewProviderForm } from "@/modules/providers/NewProviderForm";
 import { VisionModelsTab } from "@/modules/providers/tabs/VisionModelsTab";
 import { VoiceProvidersTab } from "@/modules/providers/tabs/VoiceProvidersTab";
-import { TextModelsTab } from "@/modules/providers/tabs/TextModelsTab";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription, DialogHeader } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useProviders } from "@/hooks/useProviders";
@@ -11,7 +10,6 @@ import { useState } from "react";
 import type React from "react";
 
 const PlusIcon = Plus as React.ComponentType<LucideProps>;
-const MessageSquareIcon = MessageSquare as React.ComponentType<LucideProps>;
 const EyeIcon = Eye as React.ComponentType<LucideProps>;
 const MicIcon = Mic as React.ComponentType<LucideProps>;
 const ServerIcon = Server as React.ComponentType<LucideProps>;
@@ -19,7 +17,7 @@ const ServerIcon = Server as React.ComponentType<LucideProps>;
 export function ProvidersPage() {
   const { providers, createProvider } = useProviders();
   const [open, setOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("text");
+  const [activeTab, setActiveTab] = useState("providers");
 
   const handleAdd = async (data: {
     id: string;
@@ -81,10 +79,10 @@ export function ProvidersPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="w-full grid grid-cols-4 h-10">
-          <TabsTrigger value="text" className="gap-1.5 text-xs">
-            <MessageSquareIcon className="h-3.5 w-3.5" />
-            Texto
+        <TabsList className="w-full grid grid-cols-3 h-10">
+          <TabsTrigger value="providers" className="gap-1.5 text-xs">
+            <ServerIcon className="h-3.5 w-3.5" />
+            Providers
           </TabsTrigger>
           <TabsTrigger value="vision" className="gap-1.5 text-xs">
             <EyeIcon className="h-3.5 w-3.5" />
@@ -94,23 +92,16 @@ export function ProvidersPage() {
             <MicIcon className="h-3.5 w-3.5" />
             Voz
           </TabsTrigger>
-          <TabsTrigger value="providers" className="gap-1.5 text-xs">
-            <ServerIcon className="h-3.5 w-3.5" />
-            Providers
-          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="text" className="mt-4">
-          <TextModelsTab />
+        <TabsContent value="providers" className="mt-4">
+          <ProviderList />
         </TabsContent>
         <TabsContent value="vision" className="mt-4">
           <VisionModelsTab />
         </TabsContent>
         <TabsContent value="voice" className="mt-4">
           <VoiceProvidersTab />
-        </TabsContent>
-        <TabsContent value="providers" className="mt-4">
-          <ProviderList />
         </TabsContent>
       </Tabs>
     </div>

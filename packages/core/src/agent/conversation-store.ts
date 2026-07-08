@@ -2,10 +2,12 @@
  * Conversation Store — persists message history in the `conversations` table.
  * Replaces the LangGraph BunSqliteSaver + lg_checkpoints approach.
  *
- * Also manages: summaries, scratchpad.
+ * Also manages: summaries (SQLite), scratchpad (HiveDB collection — first
+ * table migrated off SQLite onto @johpaz/hive-db's document collections).
  */
 
 import { getDb } from "../storage/sqlite"
+import { getSearchDb } from "../storage/hivedb"
 import { logger } from "../utils/logger"
 import type { LLMMessage, ContentPart } from "./llm-client"
 import { estimateTokens } from "../utils/toon"
@@ -211,33 +213,97 @@ export function saveSummary(
   `).run(threadId, summary, messagesCovered, lastMessageId)
 }
 
-// ─── Scratchpad ───────────────────────────────────────────────────────────────
+// ─── Scratchpad (HiveDB collection) ────────────────────────────────────────────
+//
+// Persistent key-value notes per conversation. Lives in a HiveDB document
+// collection instead of SQLite: id = "<threadId>:<key>", so a per-thread
+// listing is a prefix scan and no secondary index is needed.
 
-export function saveScratchpadNote(
+export interface ScratchpadDoc {
+  threadId: string
+  key: string
+  value: string
+  source: string | null
+  createdAt: number
+  updatedAt: number
+  /** Monotonic per-process counter — tiebreaker for notes saved within the same clock tick. */
+  seq: number
+}
+
+let scratchpadSeq = 0
+
+/** Wire shape for the admin notes panel — mirrors the old SQLite row (snake_case, epoch seconds). */
+export interface ScratchpadNoteRow {
+  id: string
+  thread_id: string
+  key: string
+  value: string
+  source: string | null
+  created_at: number
+  updated_at: number
+}
+
+function scratchpadNoteId(threadId: string, key: string): string {
+  return `${threadId}:${key}`
+}
+
+async function scratchpadCollection() {
+  const db = await getSearchDb()
+  return db.collection<ScratchpadDoc>("scratchpad")
+}
+
+export async function saveScratchpadNote(
   threadId: string,
   key: string,
   value: string,
   source?: string
-): void {
-  const db = getDb()
-  db.query(`
-    INSERT INTO scratchpad (thread_id, key, value, source)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(thread_id, key) DO UPDATE SET
-      value      = excluded.value,
-      source     = excluded.source,
-      updated_at = unixepoch()
-  `).run(threadId, key, value, source ?? null)
+): Promise<void> {
+  const col = await scratchpadCollection()
+  const id = scratchpadNoteId(threadId, key)
+  const existing = await col.get(id)
+  const now = Date.now()
+  await col.put(id, {
+    threadId,
+    key,
+    value,
+    source: source ?? null,
+    createdAt: existing?.doc.createdAt ?? now,
+    updatedAt: now,
+    seq: scratchpadSeq++,
+  })
 }
 
-export function getScratchpad(threadId: string): Array<{ key: string; value: string }> {
-  const db = getDb()
-  return db.query(
-    "SELECT key, value FROM scratchpad WHERE thread_id = ? ORDER BY updated_at DESC"
-  ).all(threadId) as Array<{ key: string; value: string }>
+function byMostRecent(a: { doc: ScratchpadDoc }, b: { doc: ScratchpadDoc }): number {
+  return b.doc.updatedAt - a.doc.updatedAt || b.doc.seq - a.doc.seq
 }
 
-export function deleteScratchpadNote(threadId: string, key: string): void {
-  const db = getDb()
-  db.query("DELETE FROM scratchpad WHERE thread_id = ? AND key = ?").run(threadId, key)
+export async function getScratchpad(threadId: string): Promise<Array<{ key: string; value: string }>> {
+  const col = await scratchpadCollection()
+  const entries = await col.scan({ prefix: `${threadId}:` })
+  return entries
+    .sort(byMostRecent)
+    .map((e) => ({ key: e.doc.key, value: e.doc.value }))
+}
+
+/** All notes across every thread, most recently updated first — used by the admin notes panel. */
+export async function listAllScratchpadNotes(limit: number): Promise<ScratchpadNoteRow[]> {
+  const col = await scratchpadCollection()
+  const entries = await col.scan({})
+  return entries
+    .sort(byMostRecent)
+    .slice(0, limit)
+    .map((e) => ({
+      id: e.id,
+      thread_id: e.doc.threadId,
+      key: e.doc.key,
+      value: e.doc.value,
+      source: e.doc.source,
+      created_at: Math.floor(e.doc.createdAt / 1000),
+      updated_at: Math.floor(e.doc.updatedAt / 1000),
+    }))
+}
+
+export async function deleteScratchpadNote(threadId: string, key: string): Promise<void> {
+  const col = await scratchpadCollection()
+  await col.delete(scratchpadNoteId(threadId, key))
 }
