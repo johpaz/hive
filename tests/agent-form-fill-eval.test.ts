@@ -21,10 +21,8 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
-import {
-  initializeDatabase,
-  getDbPathLazy,
-} from "../packages/core/src/storage/sqlite";
+import { ensureHiveDb } from "../packages/core/src/storage/bootstrap";
+import { getHiveDbPath } from "../packages/core/src/storage/hivedb";
 import {
   resolveAgentId,
   activateBrowserTools,
@@ -89,13 +87,13 @@ describe.skipIf(!RUN)("Agent form-fill eval — GoFest mock", () => {
   let baseUrl: string;
 
   beforeAll(async () => {
-    const dbPath = getDbPathLazy();
+    const dbPath = getHiveDbPath();
     if (!existsSync(dbPath)) {
       throw new Error(`Hive DB not found at ${dbPath}. Complete onboarding first.`);
     }
 
-    initializeDatabase();
-    activateBrowserTools();
+    await ensureHiveDb();
+    await activateBrowserTools();
 
     const config = loadConfig();
     initializeBrowserService(config);
@@ -108,7 +106,7 @@ describe.skipIf(!RUN)("Agent form-fill eval — GoFest mock", () => {
     const agentLoop = getAgentLoop();
     if (!agentLoop) throw new Error("AgentLoop could not be built");
 
-    const coordinatorId = resolveAgentId(null);
+    const coordinatorId = await resolveAgentId(null);
     if (!coordinatorId) throw new Error("No coordinator agent found in DB");
 
     // Sanity-check: browser tools must exist in the registry
@@ -152,7 +150,7 @@ describe.skipIf(!RUN)("Agent form-fill eval — GoFest mock", () => {
   });
 
   it("navega, llena campos del formulario y responde sin atascarse", async () => {
-    const coordinatorId = resolveAgentId(null)!;
+    const coordinatorId = (await resolveAgentId(null))!;
     const threadId = `agent-form-eval-${Date.now()}`;
     const userMessage =
       `Llena el formulario de registro para llevar a Hive Agents a GoFest 2026. ` +
@@ -308,7 +306,7 @@ describe.skipIf(!RUN)("Agent form-fill eval — GoFest mock", () => {
     const brokenUrl = `http://localhost:${(brokenServer as any).port}`;
 
     try {
-      const coordinatorId = resolveAgentId(null)!;
+      const coordinatorId = (await resolveAgentId(null))!;
       const threadId = `agent-form-eval-broken-${Date.now()}`;
       const userMessage = `Llena este formulario para GoFest 2026: ${brokenUrl}/`;
 

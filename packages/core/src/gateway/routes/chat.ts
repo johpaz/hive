@@ -9,13 +9,14 @@
  * }
  */
 
-import { getDb } from "../../storage/sqlite";
 import { resolveUserId, resolveAgentId } from "../../storage/onboarding";
 import { laneQueue } from "../lane-queue";
 import { AgentRunner } from "../../agent/providers";
 import { getDefaultLLM } from "../../agent/llm-client";
 import { logger } from "../../utils/logger";
 import { saveScratchpadNote, listAllScratchpadNotes } from "../../agent/conversation-store";
+import { col, fromIndexable } from "../../storage/hive";
+import type { UserDoc, AgentDoc, ConversationDoc } from "../../storage/collections";
 
 const log = logger.child("api:chat");
 export const DEFAULT_CHAT_HISTORY_LIMIT = 40;
@@ -58,13 +59,11 @@ export async function handleChat(
       );
     }
 
-    const db = getDb();
-
     // Resolve user ID
-    const finalUserId = userId || resolveUserId({ channel }) || "default";
-    
+    const finalUserId = userId || (await resolveUserId({ channel })) || "default";
+
     // Resolve agent ID (coordinator by default)
-    const finalAgentId = agentId || resolveAgentId(null) || "main";
+    const finalAgentId = agentId || (await resolveAgentId(null)) || "main";
 
     // conversations.thread_id is the context key; never generate a per-request thread.
     const threadId = resolveChatThreadId(finalUserId, thread_id);
@@ -72,10 +71,9 @@ export async function handleChat(
     log.info(`[chat] Processing message from user=${finalUserId} agent=${finalAgentId} thread=${threadId}`);
 
     // Get user timezone for timestamp
-    const userRow = db.query<any, [string]>(
-      "SELECT timezone FROM users WHERE id = ?"
-    ).get(finalUserId);
-    const userTimezone = userRow?.timezone || "UTC";
+    const usersCol = await col<UserDoc>("users");
+    const userRow = await usersCol.get(finalUserId);
+    const userTimezone = userRow?.doc.timezone || "UTC";
     const now = new Date();
     
     let exactTime: string;
@@ -98,11 +96,10 @@ export async function handleChat(
     const messages = [{ role: "user" as const, content: messageContent }];
 
     // Get provider config from DB
-    const agent = db.query<any, [string]>(
-      "SELECT provider_id, model_id FROM agents WHERE id = ?"
-    ).get(finalAgentId);
+    const agentsCol = await col<AgentDoc>("agents");
+    const agent = await agentsCol.get(finalAgentId);
 
-    const provider = agent?.provider_id || (await getDefaultLLM())?.provider;
+    const provider = fromIndexable(agent?.doc.provider_id ?? null) || (await getDefaultLLM())?.provider;
     if (!provider) {
       return addCorsHeaders(Response.json(
         { error: "No active LLM providers configured" },
@@ -210,14 +207,26 @@ export async function handleGetChatHistory(req: Request, addCorsHeaders: (r: Res
   const threadId = url.searchParams.get("sessionId") || url.searchParams.get("threadId") || "default"
   const limit = parseInt(url.searchParams.get("limit") || String(DEFAULT_CHAT_HISTORY_LIMIT))
 
-  const messages = getDb().query(`
-    SELECT id, thread_id, channel, role, content, tool_calls_json, tool_call_id, reasoning_content, token_count, created_at, updated_at FROM conversations
-    WHERE thread_id = ? AND role IN ('user', 'assistant')
-    ORDER BY id DESC
-    LIMIT ?
-  `).all(threadId, limit) as Record<string, unknown>[]
+  const conversationsCol = await col<ConversationDoc>("conversations")
+  const entries = (await conversationsCol.scan({ prefix: `${threadId}:`, reverse: true }))
+    .filter(e => e.doc.role === "user" || e.doc.role === "assistant")
+    .slice(0, limit)
 
-  return addCorsHeaders(Response.json({ messages: messages.reverse() }), req)
+  const messages = entries.map(e => ({
+    id: parseInt(e.id.slice(e.id.lastIndexOf(":") + 1), 10),
+    thread_id: e.doc.thread_id,
+    channel: e.doc.channel,
+    role: e.doc.role,
+    content: e.doc.content,
+    tool_calls_json: e.doc.tool_calls_json,
+    tool_call_id: e.doc.tool_call_id,
+    reasoning_content: e.doc.reasoning_content,
+    token_count: e.doc.token_count,
+    created_at: e.doc.created_at,
+    updated_at: e.doc.updated_at,
+  })).reverse()
+
+  return addCorsHeaders(Response.json({ messages }), req)
 }
 
 export async function handleGetCanvas(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {

@@ -21,7 +21,8 @@
  * TODOS los datos se formatean en TOON para ahorro de tokens.
  */
 
-import { getDb } from "../storage/sqlite"
+import { col, fromIndexable } from "../storage/hive"
+import type { AgentDoc, ModelDoc } from "../storage/collections"
 import { logger } from "../utils/logger"
 import type { LLMMessage, LLMToolDef, ContentPart } from "./llm-client"
 import type { MCPClientManager } from "@johpaz/hive-agents-mcp"
@@ -81,6 +82,24 @@ export interface CompiledContext {
   skills: SkillDescriptor[]  // Skills loaded (minimal + discovered)
 }
 
+/** Maps the stored AgentDoc (sentinel-encoded FKs) to the shape context-compiler works with. */
+function fromAgentDoc(doc: AgentDoc) {
+  return {
+    id: doc.id,
+    user_id: doc.user_id,
+    name: doc.name,
+    role: doc.role,
+    system_prompt: doc.system_prompt,
+    tone: doc.tone,
+    provider_id: fromIndexable(doc.provider_id),
+    model_id: fromIndexable(doc.model_id),
+    tools_json: doc.tools_json,
+    skills_json: doc.skills_json,
+    max_iterations: doc.max_iterations,
+    workspace: doc.workspace,
+  }
+}
+
 // ─── Main compiler ─────────────────────────────────────────────────────────
 
 /**
@@ -100,7 +119,6 @@ export async function compileContext(opts: {
   taskContext?: string | ContentPart[]
   mcpManager?: MCPClientManager | null
 }): Promise<CompiledContext> {
-  const db = getDb()
   const { agentId, threadId, mcpManager, userMessage, isolated, taskContext } = opts
 
   // Fallback: Get MCP Manager from singleton if not provided
@@ -114,19 +132,19 @@ export async function compileContext(opts: {
   })()
 
   // Resolve userId from database with priority: explicit param → channel identity → single user
-  const userId = opts.userId || resolveUserId({
+  const userId = opts.userId || (await resolveUserId({
     threadId,
     channel: opts.channel,
     channelUserId: threadId
-  }) || threadId || ""
+  })) || threadId || ""
 
   // [STEP-1] Load agent config
   log.info(`[context-compiler] [STEP-1] Loading agent config for id=${agentId}`)
-  let agent: any
+  let agent: ReturnType<typeof fromAgentDoc>
   try {
-    agent = db.query<any, [string]>(
-      "SELECT * FROM agents WHERE id = ?"
-    ).get(agentId)
+    const agentsCol = await col<AgentDoc>("agents")
+    const entry = await agentsCol.get(agentId)
+    agent = entry ? fromAgentDoc(entry.doc) : undefined
   } catch (err) {
     log.error(`[context-compiler] [STEP-1] ❌ FAILED loading agent: ${JSON.stringify(err)}`)
     throw err
@@ -143,8 +161,9 @@ export async function compileContext(opts: {
   let modelContextWindow = DEFAULT_CONTEXT_WINDOW
   if (agent.model_id) {
     try {
-      const mRow = db.query<any, [string]>("SELECT context_window FROM models WHERE id = ?").get(agent.model_id.replace(/^[^/]+\//, ''))
-      if (mRow?.context_window) modelContextWindow = mRow.context_window
+      const modelsCol = await col<ModelDoc>("models")
+      const modelEntry = await modelsCol.get(agent.model_id.replace(/^[^/]+\//, ''))
+      if (modelEntry?.doc.context_window) modelContextWindow = modelEntry.doc.context_window
     } catch { /* use default */ }
   }
 
@@ -165,9 +184,8 @@ export async function compileContext(opts: {
 
   if (effectiveMcpManager) {
     try {
-      const dbServers = db.query<any, []>(
-        "SELECT id, name, status FROM mcp_servers WHERE enabled = 1"
-      ).all()
+      const mcpServersCol = await col<import("../storage/collections").McpServerDoc>("mcpServers")
+      const dbServers = (await mcpServersCol.scan({})).map(e => e.doc).filter(s => s.enabled)
 
       for (const server of dbServers) {
         // Try ID first (normalized), then name
@@ -218,7 +236,7 @@ export async function compileContext(opts: {
               serverTools = effectiveMcpManager!.getServerTools(server.name)
             }
             if (serverTools && serverTools.length > 0) {
-              syncMCPToolsToDB(server.id || server.name, server.name, serverTools)
+              await syncMCPToolsToDB(server.id || server.name, server.name, serverTools)
             }
           }
           await syncMCPToolsToFTS();
@@ -275,7 +293,7 @@ export async function compileContext(opts: {
 
   try {
     // Load minimal skills (always available)
-    minimalSkills = getMinimalSkills()
+    minimalSkills = await getMinimalSkills()
     log.info(`[context-compiler] [STEP-8b] ✅ Loaded ${minimalSkills.length} minimal skills`)
 
     // Discover additional skills via HiveDB search (coordinator only)
@@ -307,9 +325,9 @@ export async function compileContext(opts: {
 
   // [STEP-9] STRATEGY 3: COMPRESS — Load history with compaction
   log.info(`[context-compiler] [STEP-9] Loading conversation history...`)
-  let recentMessages: ReturnType<typeof getRecentMessages> = []
+  let recentMessages: Awaited<ReturnType<typeof getRecentMessages>> = []
   try {
-    recentMessages = getRecentMessages(threadId, KEEP_LAST_N_MESSAGES)
+    recentMessages = await getRecentMessages(threadId, KEEP_LAST_N_MESSAGES)
     log.info(`[context-compiler] [STEP-9] ✅ Loaded ${recentMessages.length} recent messages`)
   } catch (err) {
     log.error(`[context-compiler] [STEP-9] ❌ FAILED loading history: ${JSON.stringify(err)}`)
@@ -317,9 +335,9 @@ export async function compileContext(opts: {
   }
 
   // Check if we need to use summary (conversation is long)
-  let summary: ReturnType<typeof getSummary> = null
+  let summary: Awaited<ReturnType<typeof getSummary>> = null
   try {
-    summary = getSummary(threadId)
+    summary = await getSummary(threadId)
   } catch (err) {
     log.error(`[context-compiler] [STEP-9b] ❌ FAILED loading summary: ${JSON.stringify(err)}`)
     throw err
@@ -354,10 +372,9 @@ export async function compileContext(opts: {
   }
 
   // [STEP-10b] Inject current date/time (ENTORNO ACTUAL)
-  const userRow = db.query<any, [string]>(
-    "SELECT timezone FROM users WHERE id = ?"
-  ).get(userId)
-  const userTimezone = userRow?.timezone || "UTC"
+  const usersCol = await col<import("../storage/collections").UserDoc>("users")
+  const userRow = await usersCol.get(userId)
+  const userTimezone = userRow?.doc.timezone || "UTC"
   const now = new Date()
   const fecha = getUserDate(userTimezone, now)
   const hora = getUserTime(userTimezone, now)

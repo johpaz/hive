@@ -1,4 +1,6 @@
-import { getDb } from "../../storage/sqlite.ts"
+import { col } from "../../storage/hive.ts"
+import { getUsageStats, hourBucket } from "../../storage/usage.ts"
+import type { ActivityRollupDoc } from "../../storage/collections.ts"
 import { loadConfig } from "../../config/loader.ts"
 import { cpus } from "node:os"
 import { readFile } from "node:fs/promises"
@@ -281,29 +283,22 @@ export function getSystemStats(startTime: number) {
 }
 
 export async function handleGetActivityStats(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
-  const db = getDb()
   const url = new URL(req.url)
   const hours = parseInt(url.searchParams.get("hours") || "12", 10)
 
-  // Get message counts per hour from conversations table
+  // Get message counts per hour from the activityRollups collection
   const now = Date.now()
-  const startTime = now - (hours * 60 * 60 * 1000)
+  const rollupsCol = await col<ActivityRollupDoc>("activityRollups")
 
-  const rows = db.query(`
-    SELECT
-      strftime('%Y-%m-%d %H:00', datetime(created_at, 'unixepoch')) as hour,
-      COUNT(*) as count
-    FROM conversations
-    WHERE created_at >= ?
-    GROUP BY hour
-    ORDER BY hour
-  `).all(startTime / 1000) as { hour: string; count: number }[]
+  const buckets: string[] = []
+  for (let t = now - hours * 3600_000; t <= now; t += 3600_000) {
+    buckets.push(hourBucket(t))
+  }
 
-  // Format as array expected by frontend
-  const activityData = rows.map(r => ({
-    time: r.hour,
-    count: r.count,
-  }))
+  const entries = await Promise.all(buckets.map((id) => rollupsCol.get(id)))
+  const activityData = entries
+    .map((e, i) => e ? { time: `${buckets[i].slice(0, 10)} ${buckets[i].slice(11, 13)}:00`, count: e.doc.messageCount } : null)
+    .filter((x): x is { time: string; count: number } => x !== null)
 
   return addCorsHeaders(Response.json(activityData), req)
 }
@@ -313,115 +308,26 @@ export async function handleGetSystemStats(req: Request, addCorsHeaders: (r: Res
 }
 
 export async function handleGetUsageStats(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
-  const db = getDb()
-
   // Get hours parameter from URL (default to 24 hours)
   const url = new URL(req.url)
   const hours = parseInt(url.searchParams.get("hours") || "24", 10)
-  const since = Math.floor(Date.now() / 1000) - (hours * 3600)
 
-  // Get totals from usage_records table (excluding TOON records)
-  const totals = db.query(`
-    SELECT
-      COALESCE(SUM(input_tokens), 0) as inputTokens,
-      COALESCE(SUM(output_tokens), 0) as outputTokens,
-      COALESCE(SUM(cost_usd), 0) as costUsd
-    FROM usage_records
-    WHERE created_at >= ? AND provider != 'toon'
-  `).get(since) as { inputTokens: number; outputTokens: number; costUsd: number }
-
-  // Get TOON savings separately
-  const toonTotals = db.query(`
-    SELECT
-      COALESCE(SUM(toon_saved_tokens), 0) as toonSavedTokens,
-      COALESCE(SUM(toon_saved_cost), 0) as toonSavedCost,
-      COALESCE(SUM(toon_saved_bytes), 0) as toonSavedBytes,
-      COALESCE(AVG(toon_saved_percent), 0) as toonSavedPercent,
-      COALESCE(SUM(toon_json_tokens), 0) as toonJsonTokens,
-      COALESCE(SUM(toon_toon_tokens), 0) as toonToonTokens,
-      COALESCE(SUM(toon_json_bytes), 0) as toonJsonBytes,
-      COALESCE(AVG(toon_saved_tokens_pct), 0) as toonSavedTokensPct
-    FROM usage_records
-    WHERE created_at >= ? AND provider = 'toon'
-  `).get(since) as {
-    toonSavedTokens: number;
-    toonSavedCost: number;
-    toonSavedBytes: number;
-    toonSavedPercent: number;
-    toonJsonTokens: number;
-    toonToonTokens: number;
-    toonJsonBytes: number;
-    toonSavedTokensPct: number;
-  }
-  const byProviderRows = db.query(`
-    SELECT
-      provider,
-      COALESCE(SUM(input_tokens), 0) as inputTokens,
-      COALESCE(SUM(output_tokens), 0) as outputTokens,
-      COALESCE(SUM(cost_usd), 0) as costUsd
-    FROM usage_records
-    WHERE created_at >= ? AND provider != 'toon'
-    GROUP BY provider
-  `).all(since) as { provider: string; inputTokens: number; outputTokens: number; costUsd: number }[]
-
-  // Get by model
-  const byModelRows = db.query(`
-    SELECT
-      model,
-      COALESCE(SUM(input_tokens), 0) as inputTokens,
-      COALESCE(SUM(output_tokens), 0) as outputTokens,
-      COALESCE(SUM(cost_usd), 0) as costUsd
-    FROM usage_records
-    WHERE created_at >= ? AND provider != 'toon'
-    GROUP BY model
-  `).all(since) as { model: string; inputTokens: number; outputTokens: number; costUsd: number }[]
-
-  const totalTokens = (totals.inputTokens || 0) + (totals.outputTokens || 0)
-  const totalCostUsd = totals.costUsd || 0
-
-  // Use TOON totals directly from DB - no calculations needed
-  const toonSavedTokens = toonTotals?.toonSavedTokens || 0
-  const toonSavedCost = toonTotals?.toonSavedCost || 0
-  const toonSavedBytes = toonTotals?.toonSavedBytes || 0
-  const toonJsonBytes = toonTotals?.toonJsonBytes || 0
-  const toonJsonTokens = toonTotals?.toonJsonTokens || 0
-  const toonToonTokens = toonTotals?.toonToonTokens || 0
-  
-  // Use saved_percent directly from DB (calculated at record time by toon-format-parser)
-  const toonSavedBytesPercent = toonTotals?.toonSavedPercent || 0
-  
-  // Use saved_tokens_pct directly from DB (calculated at record time by toon-format-parser)
-  const toonSavingsPercent = toonTotals?.toonSavedTokensPct || 0
+  const summary = await getUsageStats(hours)
 
   const stats: UsageStats = {
-    totalTokens,
-    totalInputTokens: totals.inputTokens || 0,
-    totalOutputTokens: totals.outputTokens || 0,
-    totalCostUsd,
-    toonSavedTokens,
-    toonSavedCost,
-    toonSavedBytes,
-    toonSavedBytesPercent,
-    toonJsonTokens,
-    toonToonTokens,
-    toonSavingsPercent,
-    byProvider: Object.fromEntries(
-      byProviderRows.map(r => [r.provider, {
-        tokens: (r.inputTokens || 0) + (r.outputTokens || 0),
-        costUsd: r.costUsd || 0,
-        inputTokens: r.inputTokens || 0,
-        outputTokens: r.outputTokens || 0,
-      }])
-    ),
-    byModel: Object.fromEntries(
-      byModelRows.map(r => [r.model, {
-        tokens: (r.inputTokens || 0) + (r.outputTokens || 0),
-        costUsd: r.costUsd || 0,
-        provider: "unknown",
-        inputTokens: r.inputTokens || 0,
-        outputTokens: r.outputTokens || 0,
-      }])
-    ),
+    totalTokens: summary.totalTokens,
+    totalInputTokens: summary.totalInputTokens,
+    totalOutputTokens: summary.totalOutputTokens,
+    totalCostUsd: summary.totalCostUsd,
+    toonSavedTokens: summary.toonSavedTokens,
+    toonSavedCost: summary.toonSavedCost,
+    toonSavedBytes: summary.toonSavedBytes,
+    toonSavedBytesPercent: summary.toonSavedBytesPercent,
+    toonJsonTokens: summary.toonJsonTokens,
+    toonToonTokens: summary.toonToonTokens,
+    toonSavingsPercent: summary.toonSavingsPercent,
+    byProvider: summary.byProvider,
+    byModel: summary.byModel,
   }
 
   return addCorsHeaders(Response.json(stats), req)

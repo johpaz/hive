@@ -11,7 +11,8 @@
 
 import { EventEmitter } from "events";
 import { logger } from "../utils/logger";
-import { getDb } from "../storage/sqlite";
+import { col, nextId, toIndexable, fromIndexable, BROADCAST } from "../storage/hive";
+import type { AgentBusMessageDoc, TaskDoc } from "../storage/collections";
 
 const log = logger.child("agent-bus");
 
@@ -122,8 +123,6 @@ export interface AgentBusMessage {
  * Guarda un mensaje en la base de datos para persistencia
  */
 function persistMessage(event: AgentBusEventKey, data: any, metadata?: Record<string, unknown>): void {
-  const db = getDb();
-  
   // Extraer IDs de worker según el tipo de evento
   let fromWorkerId: string | null = null;
   let toWorkerId: string | null = null;
@@ -167,45 +166,58 @@ function persistMessage(event: AgentBusEventKey, data: any, metadata?: Record<st
       content = JSON.stringify(data);
   }
 
-  try {
-    db.query(`
-      INSERT OR IGNORE INTO agent_bus_messages
-        (event_type, from_worker_id, to_worker_id, topic, content, metadata, created_at, read)
-      VALUES (?, ?, ?, ?, ?, ?, unixepoch(), 0)
-    `).run(
-      event,
-      fromWorkerId,
-      toWorkerId,
-      topic,
-      content,
-      metadata ? JSON.stringify(metadata) : null
-    );
-  } catch (err) {
-    log.warn(`Failed to persist message (non-critical): ${(err as Error).message}`);
-  }
+  Promise.resolve().then(async () => {
+    try {
+      const messagesCol = await col<AgentBusMessageDoc>("agentBusMessages");
+      const id = await nextId("agentBusMessages");
+      await messagesCol.put(id, {
+        id,
+        event_type: event,
+        from_worker_id: toIndexable(fromWorkerId),
+        to_worker_id: toWorkerId ? toWorkerId : BROADCAST,
+        topic,
+        content,
+        metadata: metadata ? JSON.stringify(metadata) : null,
+        created_at: Date.now(),
+        read: false,
+      }, { expectedVersion: 0 });
+    } catch (err) {
+      log.warn(`Failed to persist message (non-critical): ${(err as Error).message}`);
+    }
+  });
+}
+
+function docToMessage(doc: AgentBusMessageDoc): AgentBusMessage {
+  return {
+    id: parseInt(doc.id, 10),
+    event_type: doc.event_type,
+    from_worker_id: fromIndexable(doc.from_worker_id),
+    to_worker_id: doc.to_worker_id === BROADCAST ? null : doc.to_worker_id,
+    topic: doc.topic,
+    content: doc.content,
+    metadata: doc.metadata,
+    created_at: doc.created_at,
+    read: doc.read ? 1 : 0,
+  };
 }
 
 /**
  * Obtiene mensajes no leídos para un worker específico
  */
-export function getUnreadMessagesForWorker(workerId: string, limit: number = 50): AgentBusMessage[] {
-  const db = getDb();
-  
+export async function getUnreadMessagesForWorker(workerId: string, limit: number = 50): Promise<AgentBusMessage[]> {
   try {
-    const messages = db.query<any, [string, number]>(`
-      SELECT * FROM agent_bus_messages 
-      WHERE (to_worker_id = ? OR to_worker_id IS NULL) AND read = 0
-      ORDER BY created_at ASC
-      LIMIT ?
-    `).all(workerId, limit);
+    const messagesCol = await col<AgentBusMessageDoc>("agentBusMessages");
+    const entries = (await messagesCol.scan({}))
+      .filter(e => !e.doc.read && (e.doc.to_worker_id === workerId || e.doc.to_worker_id === BROADCAST))
+      .sort((a, b) => a.doc.created_at - b.doc.created_at)
+      .slice(0, limit);
 
     // Marcar como leídos
-    if (messages.length > 0) {
-      const ids = messages.map((m: AgentBusMessage) => m.id).join(",");
-      db.query(`UPDATE agent_bus_messages SET read = 1 WHERE id IN (${ids})`).run();
+    for (const entry of entries) {
+      await messagesCol.put(entry.id, { ...entry.doc, read: true }, { expectedVersion: entry.version });
     }
 
-    return messages;
+    return entries.map(e => docToMessage(e.doc));
   } catch (err) {
     log.error(`Failed to get unread messages: ${(err as Error).message}`);
     return [];
@@ -215,34 +227,29 @@ export function getUnreadMessagesForWorker(workerId: string, limit: number = 50)
 /**
  * Obtiene el historial de mensajes de un proyecto
  */
-export function getProjectMessageHistory(projectId: string, limit: number = 100): AgentBusMessage[] {
-  const db = getDb();
-  
+export async function getProjectMessageHistory(projectId: string, limit: number = 100): Promise<AgentBusMessage[]> {
   try {
     // Primero obtenemos los task_ids del proyecto
-    const tasks = db.query<any, [string]>(
-      "SELECT id FROM tasks WHERE project_id = ?"
-    ).all(projectId);
+    const tasksCol = await col<TaskDoc>("tasks");
+    const tasks = (await tasksCol.findBy("project_id", projectId)).map(e => e.doc);
 
     if (tasks.length === 0) return [];
 
     // Obtenemos los agent_ids de las tareas
-    const agentIds = tasks
-      .map((t: any) => t.agent_id)
-      .filter((id: string | null) => id !== null);
+    const agentIds = new Set(
+      tasks.map(t => fromIndexable(t.agent_id)).filter((id): id is string => id !== null)
+    );
 
-    if (agentIds.length === 0) return [];
+    if (agentIds.size === 0) return [];
 
     // Obtenemos mensajes relacionados a estos agents
-    const placeholders = agentIds.map(() => "?").join(",");
-    const messages = db.query<any, any[]>(`
-      SELECT * FROM agent_bus_messages 
-      WHERE from_worker_id IN (${placeholders})
-      ORDER BY created_at DESC
-      LIMIT ?
-    `).all([...agentIds, limit]);
+    const messagesCol = await col<AgentBusMessageDoc>("agentBusMessages");
+    const entries = (await messagesCol.scan({}))
+      .filter(e => agentIds.has(fromIndexable(e.doc.from_worker_id) ?? ""))
+      .sort((a, b) => b.doc.created_at - a.doc.created_at)
+      .slice(0, limit);
 
-    return messages;
+    return entries.map(e => docToMessage(e.doc));
   } catch (err) {
     log.error(`Failed to get project message history: ${(err as Error).message}`);
     return [];

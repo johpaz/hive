@@ -9,75 +9,84 @@
  *   - Archive unused workers
  *
  * Never rewrites the whole playbook — only incremental edits.
+ *
+ * "Last processed reflection" is tracked via a `cursors` collection doc
+ * (id="curator:lastReflection") instead of SQL's MAX(source_reflection_id).
+ * Stale-worker detection uses the denormalized `agents.lastTraceAt` field
+ * (set by tracer.ts) instead of a correlated MAX(t.created_at) subquery.
  */
 
 import { logger } from "../utils/logger"
+import { col, nextId, toIndexable, fromIndexable } from "../storage/hive"
+import type { ReflectionDoc, PlaybookDoc, AgentDoc, CursorDoc } from "../storage/collections"
 
 const log = logger.child("curator")
 
 const DAYS_BEFORE_ARCHIVE = 14   // archive workers not used in N days
 const MAX_HARMFUL_BEFORE_PRUNE = 3
+const CURSOR_ID = "curator:lastReflection"
 
 /** Entry point — called by reflector.ts after it inserts new reflections */
 export async function runCurator(): Promise<void> {
   try {
-    const { getDb } = await import("../storage/sqlite")
-    const db = getDb()
+    const cursorsCol = await col<CursorDoc>("cursors")
+    const playbookCol = await col<PlaybookDoc>("playbook")
+    const reflectionsCol = await col<ReflectionDoc>("reflections")
+    const agentsCol = await col<AgentDoc>("agents")
 
     // Process unprocessed reflections (those newer than last run)
-    const lastProcessed = (db.query<any, []>(
-      "SELECT COALESCE(MAX(source_reflection_id), 0) as mid FROM playbook"
-    ).get() as any)?.mid ?? 0
+    const cursorEntry = await cursorsCol.get(CURSOR_ID)
+    const lastProcessed = cursorEntry?.doc.value ?? null
 
-    const reflections = (db.query as any)(
-      "SELECT * FROM reflections WHERE id > ? ORDER BY id ASC"
-    ).all(lastProcessed)
+    let candidates = lastProcessed
+      ? await reflectionsCol.scan({ start: lastProcessed })
+      : await reflectionsCol.scan({})
+    if (lastProcessed && candidates[0]?.id === lastProcessed) candidates = candidates.slice(1)
 
-    if (reflections.length === 0) {
+    if (candidates.length === 0) {
       log.debug("[curator] No new reflections to process")
     } else {
-      log.info(`[curator] Processing ${reflections.length} new reflections`)
-      for (const reflection of reflections) {
-        processReflection(db, reflection)
+      log.info(`[curator] Processing ${candidates.length} new reflections`)
+      const allPlaybook = await playbookCol.scan({})
+      for (const entry of candidates) {
+        await processReflection(playbookCol, allPlaybook, entry.doc)
       }
+      const newCursor = candidates[candidates.length - 1].id
+      await cursorsCol.put(CURSOR_ID, { value: newCursor }, cursorEntry ? { expectedVersion: cursorEntry.version } : { expectedVersion: 0 })
     }
 
     // Prune rules where harmful > helpful (consistently bad rules)
-    db.query(`
-      UPDATE playbook
-      SET active = 0, updated_at = unixepoch()
-      WHERE active = 1
-        AND harmful_count > helpful_count
-        AND harmful_count >= ?
-    `).run(MAX_HARMFUL_BEFORE_PRUNE)
+    const allActive = (await playbookCol.scan({})).filter(e => e.doc.active)
+    for (const entry of allActive) {
+      if (entry.doc.harmful_count > entry.doc.helpful_count && entry.doc.harmful_count >= MAX_HARMFUL_BEFORE_PRUNE) {
+        await playbookCol.put(entry.id, { ...entry.doc, active: false, updated_at: Date.now() }, { expectedVersion: entry.version })
+      }
+    }
 
-    // Archive unused workers
-    const cutoff = Math.floor(Date.now() / 1000) - (DAYS_BEFORE_ARCHIVE * 86400)
-    const staleworkers = (db.query as any)(`
-      SELECT a.id, a.name
-      FROM agents a
-      WHERE a.role = 'worker'
-        AND a.status != 'archived'
-        AND a.enabled = 1
-        AND (
-          SELECT MAX(t.created_at) FROM traces t WHERE t.agent_id = a.id
-        ) < ?
-    `).all(cutoff)
+    // Archive unused workers — uses the denormalized lastTraceAt field
+    // (set by tracer.ts) instead of a correlated MAX(created_at) subquery.
+    const cutoff = Date.now() - (DAYS_BEFORE_ARCHIVE * 86400 * 1000)
+    const allAgents = await agentsCol.scan({})
+    const staleWorkers = allAgents.filter(e =>
+      e.doc.role === "worker" &&
+      e.doc.status !== "archived" &&
+      e.doc.enabled &&
+      (e.doc.lastTraceAt ?? 0) < cutoff
+    )
 
-    for (const worker of staleworkers) {
-      db.query(
-        "UPDATE agents SET status = 'archived', updated_at = unixepoch() WHERE id = ?"
-      ).run(worker.id)
+    for (const worker of staleWorkers) {
+      await agentsCol.put(worker.id, { ...worker.doc, status: "archived", updated_at: Date.now() }, { expectedVersion: worker.version })
 
       // Add playbook note about archival
-      addOrUpdateRule(db, {
-        rule: `Worker '${worker.name}' was archived due to inactivity (>${DAYS_BEFORE_ARCHIVE} days unused).`,
+      const currentPlaybook = await playbookCol.scan({})
+      await addOrUpdateRule(playbookCol, currentPlaybook, {
+        rule: `Worker '${worker.doc.name}' was archived due to inactivity (>${DAYS_BEFORE_ARCHIVE} days unused).`,
         category: "agent_creation",
         applicable_to: null,
         sourceReflectionId: null,
       })
 
-      log.info(`[curator] Archived inactive worker: ${worker.name} (${worker.id})`)
+      log.info(`[curator] Archived inactive worker: ${worker.doc.name} (${worker.id})`)
     }
 
     log.info("[curator] Playbook updated")
@@ -88,35 +97,39 @@ export async function runCurator(): Promise<void> {
 
 // ─── Process a single reflection ─────────────────────────────────────────────
 
-function processReflection(db: any, reflection: any): void {
+async function processReflection(
+  playbookCol: Awaited<ReturnType<typeof col<PlaybookDoc>>>,
+  allPlaybook: Array<{ id: string; version: number; doc: PlaybookDoc }>,
+  reflection: ReflectionDoc
+): Promise<void> {
   const category = mapInsightTypeToCategory(reflection.insight_type)
 
   // Check if a similar rule already exists (fuzzy check by first 60 chars)
   const prefix = reflection.description.substring(0, 60)
-  const existing = (db.query as any)(
-    "SELECT id, helpful_count FROM playbook WHERE rule LIKE ? AND active = 1 LIMIT 1"
-  ).get(`${prefix}%`)
+  const existing = allPlaybook.find(e => e.doc.active && e.doc.rule.startsWith(prefix))
 
   if (existing) {
     // Reinforce existing rule
-    db.query(
-      "UPDATE playbook SET helpful_count = helpful_count + 1, updated_at = unixepoch() WHERE id = ?"
-    ).run(existing.id)
+    await playbookCol.put(existing.id, { ...existing.doc, helpful_count: existing.doc.helpful_count + 1, updated_at: Date.now() }, { expectedVersion: existing.version })
     return
   }
 
   // Insert new rule
-  db.query(`
-    INSERT INTO playbook (rule, category, applicable_to, helpful_count, source_reflection_id)
-    VALUES (?, ?, ?, 1, ?)
-  `).run(
-    reflection.description,
+  const id = await nextId("playbook")
+  const now = Date.now()
+  await playbookCol.put(id, {
+    id,
+    rule: reflection.description,
     category,
-    reflection.affected_tools
-      ? JSON.stringify(JSON.parse(reflection.affected_tools))
-      : null,
-    reflection.id,
-  )
+    applicable_to: reflection.affected_tools ? JSON.stringify(JSON.parse(reflection.affected_tools)) : null,
+    helpful_count: 1,
+    harmful_count: 0,
+    active: true,
+    source_reflection_id: toIndexable(reflection.id),
+    created_at: now,
+    updated_at: now,
+  }, { expectedVersion: 0 })
+  allPlaybook.push({ id, version: 1, doc: { id, rule: reflection.description, category, applicable_to: null, helpful_count: 1, harmful_count: 0, active: true, source_reflection_id: toIndexable(reflection.id), created_at: now, updated_at: now } })
 }
 
 function mapInsightTypeToCategory(
@@ -131,28 +144,35 @@ function mapInsightTypeToCategory(
   return map[type] ?? "optimization"
 }
 
-function addOrUpdateRule(
-  db: any,
+async function addOrUpdateRule(
+  playbookCol: Awaited<ReturnType<typeof col<PlaybookDoc>>>,
+  allPlaybook: Array<{ id: string; version: number; doc: PlaybookDoc }>,
   opts: {
     rule: string
     category: string
     applicable_to: string | null
-    sourceReflectionId: number | null
+    sourceReflectionId: string | null
   }
-): void {
+): Promise<void> {
   const prefix = opts.rule.substring(0, 60)
-  const existing = (db.query as any)(
-    "SELECT id FROM playbook WHERE rule LIKE ? LIMIT 1"
-  ).get(`${prefix}%`)
+  const existing = allPlaybook.find(e => e.doc.rule.startsWith(prefix))
 
   if (existing) {
-    db.query(
-      "UPDATE playbook SET helpful_count = helpful_count + 1, updated_at = unixepoch() WHERE id = ?"
-    ).run(existing.id)
+    await playbookCol.put(existing.id, { ...existing.doc, helpful_count: existing.doc.helpful_count + 1, updated_at: Date.now() }, { expectedVersion: existing.version })
   } else {
-    db.query(`
-      INSERT INTO playbook (rule, category, applicable_to, helpful_count, source_reflection_id)
-      VALUES (?, ?, ?, 1, ?)
-    `).run(opts.rule, opts.category, opts.applicable_to, opts.sourceReflectionId)
+    const id = await nextId("playbook")
+    const now = Date.now()
+    await playbookCol.put(id, {
+      id,
+      rule: opts.rule,
+      category: opts.category as PlaybookDoc["category"],
+      applicable_to: opts.applicable_to,
+      helpful_count: 1,
+      harmful_count: 0,
+      active: true,
+      source_reflection_id: toIndexable(opts.sourceReflectionId),
+      created_at: now,
+      updated_at: now,
+    }, { expectedVersion: 0 })
   }
 }

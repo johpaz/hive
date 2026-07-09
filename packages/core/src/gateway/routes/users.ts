@@ -1,46 +1,55 @@
-import { getDb } from "../../storage/sqlite"
+import { col, updateDoc } from "../../storage/hive"
+import type { UserDoc, AgentDoc } from "../../storage/collections"
 
 export async function handleGetUsers(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
-  const users = getDb().query(`
-    SELECT u.*, COUNT(DISTINCT a.id) as agent_count
-    FROM users u
-    LEFT JOIN agents a ON u.id = a.user_id
-    GROUP BY u.id
-    ORDER BY u.created_at DESC
-  `).all() as Record<string, unknown>[]
-  
+  const usersCol = await col<UserDoc>("users")
+  const agentsCol = await col<AgentDoc>("agents")
+  const users = await usersCol.scan({})
+  const agents = await agentsCol.scan({})
+
+  const agentCountByUser = new Map<string, number>()
+  for (const a of agents) {
+    agentCountByUser.set(a.doc.user_id, (agentCountByUser.get(a.doc.user_id) || 0) + 1)
+  }
+
+  const sorted = [...users].sort((a, b) => b.doc.created_at - a.doc.created_at)
+
   return addCorsHeaders(Response.json({
-    users: users.map(u => ({
-      id: u.id,
-      name: u.name,
-      language: u.language,
-      timezone: u.timezone,
-      occupation: u.occupation,
-      notes: u.notes,
-      createdAt: new Date((u.created_at as number) * 1000).toISOString(),
-      agentCount: u.agent_count,
+    users: sorted.map(u => ({
+      id: u.doc.id,
+      name: u.doc.name,
+      language: u.doc.language,
+      timezone: u.doc.timezone,
+      occupation: u.doc.occupation,
+      notes: u.doc.notes,
+      createdAt: new Date(u.doc.created_at * 1000).toISOString(),
+      agentCount: agentCountByUser.get(u.doc.id) || 0,
     }))
   }), req)
 }
 
 export async function handleCreateUser(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const body = await req.json().catch(() => ({}))
-  
-  const result = getDb().query(`
-    INSERT INTO users(name, language, timezone, occupation, notes)
-    VALUES(?, ?, ?, ?, ?)
-    RETURNING id
-  `).get(
-    body.name || "User",
-    body.language || "es",
-    body.timezone || "UTC",
-    body.occupation || "",
-    body.notes || ""
-  ) as { id: string } | undefined
-  
+  const usersCol = await col<UserDoc>("users")
+
+  const id = crypto.randomUUID().replace(/-/g, "")
+  await usersCol.put(id, {
+    id,
+    name: body.name || "User",
+    language: body.language || "es",
+    timezone: body.timezone || "UTC",
+    occupation: body.occupation || "",
+    notes: body.notes || "",
+    master_key_hash: null,
+    email: null,
+    password_hash: null,
+    preferred_cron_channel: "auto",
+    created_at: Date.now(),
+  })
+
   return addCorsHeaders(Response.json({
     ok: true,
-    userId: result?.id
+    userId: id
   }), req)
 }
 
@@ -49,37 +58,16 @@ export async function handleUpdateUserSettings(req: Request, addCorsHeaders: (r:
   const userId = url.searchParams.get("userId") || "default"
   const body = await req.json().catch(() => ({}))
 
-  const updates: string[] = []
-  const params: unknown[] = []
+  const patch: Partial<UserDoc> = {}
+  if (body.name !== undefined) patch.name = body.name
+  if (body.language !== undefined) patch.language = body.language
+  if (body.timezone !== undefined) patch.timezone = body.timezone
+  if (body.occupation !== undefined) patch.occupation = body.occupation
+  if (body.notes !== undefined) patch.notes = body.notes
+  if (body.preferred_cron_channel !== undefined) patch.preferred_cron_channel = body.preferred_cron_channel
 
-  if (body.name !== undefined) {
-    updates.push("name = ?")
-    params.push(body.name)
-  }
-  if (body.language !== undefined) {
-    updates.push("language = ?")
-    params.push(body.language)
-  }
-  if (body.timezone !== undefined) {
-    updates.push("timezone = ?")
-    params.push(body.timezone)
-  }
-  if (body.occupation !== undefined) {
-    updates.push("occupation = ?")
-    params.push(body.occupation)
-  }
-  if (body.notes !== undefined) {
-    updates.push("notes = ?")
-    params.push(body.notes)
-  }
-  if (body.preferred_cron_channel !== undefined) {
-    updates.push("preferred_cron_channel = ?")
-    params.push(body.preferred_cron_channel)
-  }
-
-  if (updates.length > 0) {
-    params.push(userId)
-    getDb().query(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`).run(...params as any[])
+  if (Object.keys(patch).length > 0) {
+    await updateDoc<UserDoc>("users", userId, patch).catch(() => { /* user not found — no-op, matches prior UPDATE...WHERE semantics */ })
   }
 
   return addCorsHeaders(Response.json({ ok: true }), req)

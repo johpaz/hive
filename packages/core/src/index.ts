@@ -24,8 +24,6 @@ export * from "./channels/slack.ts";
 export * from "./channels/webchat.ts";
 
 // Storage
-export * from "./storage/sqlite.ts";
-export * from "./storage/schema.ts";
 export * from "./storage/seed.ts";
 export * from "./storage/crypto.ts";
 export * from "./storage/onboarding.ts";

@@ -141,24 +141,27 @@ export async function callLLM(options: LLMCallOptions): Promise<LLMResponse> {
  * Returns null when the DB has no usable LLM (e.g. fresh install before setup).
  */
 export async function getDefaultLLM(): Promise<{ provider: string; model: string } | null> {
-  const { getDb } = await import("../storage/sqlite")
-  const db = getDb()
+  const { col, fromIndexable } = await import("../storage/hive")
+  const agentsCol = await col<import("../storage/collections").AgentDoc>("agents")
+  const modelsCol = await col<import("../storage/collections").ModelDoc>("models")
+  const providersCol = await col<import("../storage/collections").ProviderDoc>("providers")
 
-  const coordinator = db.query<any, []>(
-    "SELECT provider_id, model_id FROM agents WHERE role = 'coordinator' LIMIT 1"
-  ).get()
-  if (coordinator?.provider_id && coordinator?.model_id) {
-    return { provider: coordinator.provider_id, model: coordinator.model_id }
+  const coordinators = await agentsCol.findBy("role", "coordinator")
+  const coordinator = coordinators[0]
+  const coordinatorProvider = fromIndexable(coordinator?.doc.provider_id ?? null)
+  const coordinatorModel = fromIndexable(coordinator?.doc.model_id ?? null)
+  if (coordinatorProvider && coordinatorModel) {
+    return { provider: coordinatorProvider, model: coordinatorModel }
   }
 
-  const row = db.query<any, []>(`
-    SELECT m.provider_id AS provider, m.id AS model
-    FROM models m
-    JOIN providers p ON p.id = m.provider_id
-    WHERE p.active = 1 AND m.active = 1 AND m.model_type = 'llm'
-    LIMIT 1
-  `).get()
-  return row ? { provider: row.provider, model: row.model } : null
+  const activeModels = (await modelsCol.findBy("model_type", "llm")).filter(m => m.doc.active)
+  for (const m of activeModels) {
+    const provider = await providersCol.get(m.doc.provider_id)
+    if (provider?.doc.active) {
+      return { provider: m.doc.provider_id, model: m.doc.id }
+    }
+  }
+  return null
 }
 
 /**
@@ -168,17 +171,16 @@ export async function resolveProviderConfig(
   providerId: string,
   modelId: string
 ): Promise<Pick<LLMCallOptions, "provider" | "model" | "apiKey" | "baseUrl" | "numCtx" | "numGpu" | "contextWindow">> {
-  const { getDb } = await import("../storage/sqlite")
+  const { col } = await import("../storage/hive")
   const { loadProviderApiKey } = await import("../storage/crypto")
-  const db = getDb()
-  const providerRow = db
-    .query<any, [string]>("SELECT * FROM providers WHERE id = ? AND enabled = 1")
-    .get(providerId)
+  const providersCol = await col<import("../storage/collections").ProviderDoc>("providers")
+  const modelsCol = await col<import("../storage/collections").ModelDoc>("models")
+
+  const providerEntry = await providersCol.get(providerId)
+  const providerRow = providerEntry?.doc.enabled ? providerEntry.doc : undefined
 
   // Load model's context window for token budget management
-  const modelRow = db
-    .query<any, [string]>("SELECT context_window FROM models WHERE id = ?")
-    .get(modelId)
+  const modelEntry = await modelsCol.get(modelId)
 
   let apiKey = await loadProviderApiKey(providerId)
   if (!apiKey) {
@@ -192,6 +194,6 @@ export async function resolveProviderConfig(
     baseUrl: providerRow?.base_url || undefined,
     numCtx: providerRow?.num_ctx ?? undefined,
     numGpu: providerRow?.num_gpu ?? undefined,
-    contextWindow: modelRow?.context_window ?? undefined,
+    contextWindow: modelEntry?.doc.context_window ?? undefined,
   }
 }

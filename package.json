@@ -31,8 +31,10 @@
     "./channels/whatsapp": "./packages/core/src/channels/whatsapp.ts",
     "./channels/slack": "./packages/core/src/channels/slack.ts",
     "./channels/webchat": "./packages/core/src/channels/webchat.ts",
-    "./storage/sqlite": "./packages/core/src/storage/sqlite.ts",
-    "./storage/schema": "./packages/core/src/storage/schema.ts",
+    "./storage/hive": "./packages/core/src/storage/hive.ts",
+    "./storage/hivedb": "./packages/core/src/storage/hivedb.ts",
+    "./storage/bootstrap": "./packages/core/src/storage/bootstrap.ts",
+    "./storage/collections": "./packages/core/src/storage/collections.ts",
     "./storage/seed": "./packages/core/src/storage/seed.ts",
     "./storage/crypto": "./packages/core/src/storage/crypto.ts",
     "./storage/onboarding": "./packages/core/src/storage/onboarding.ts",
@@ -91,7 +93,7 @@
     "discord",
     "whatsapp",
     "bun",
-    "sqlite",
+    "hivedb",
     "mcp",
     "open-source",
     "latam",
@@ -112,8 +114,7 @@
     "lint": "bunx tsc --noEmit",
     "build:binaries": "bun run scripts/build-binaries.ts",
     "bench": "bun run scripts/bench.ts",
-    "publish:sdk": "bun run scripts/publish-sdk.ts",
-    "reload-tools": "bun run scripts/reload-tools.ts"
+    "publish:sdk": "bun run scripts/publish-sdk.ts"
   },
   "dependencies": {
     "@ag-ui/core": "^0.0.46",

@@ -14,11 +14,13 @@
  * bun run tests/skill-selector-test.ts
  */
 
-import { getDb, initializeDatabase } from "../packages/core/src/storage/sqlite";
+import { ensureHiveDb } from "../packages/core/src/storage/bootstrap";
+import { col } from "../packages/core/src/storage/hive";
+import type { SkillDoc } from "../packages/core/src/storage/collections";
 import { seedAllData } from "../packages/core/src/storage/seed";
-import { 
-  selectSkills, 
-  getMinimalSkills, 
+import {
+  selectSkills,
+  getMinimalSkills,
   getAllSkillsFromDB,
   getSkillByName,
   getSkillsByCategory,
@@ -76,42 +78,21 @@ async function testInitializeDB(): Promise<TestResult> {
   printSubHeader("Test 1: Inicializar Base de Datos (BD Real)");
   
   try {
-    // Solo inicializar, las tablas ya deberían existir
-    initializeDatabase();
-    const db = getDb();
-    
+    // Solo inicializar, la colección ya debería existir
+    await ensureHiveDb();
+    const skillsCol = await col<SkillDoc>("skills");
+
     // Verificar que la BD está conectada y tiene datos
-    const skillCount = db.query("SELECT COUNT(*) as count FROM skills WHERE active = 1").get() as { count: number } | undefined;
-    
-    if (!skillCount) {
-      return {
-        success: false,
-        message: "No se pudo conectar a la BD",
-        error: "La consulta retornó undefined"
-      };
-    }
-    
+    const activeSkills = (await skillsCol.scan({})).filter(e => e.doc.active);
+
     printSuccess("BD conectada correctamente");
-    printInfo(`Skills en BD: ${skillCount.count}`);
-    
-    // Verificar tablas principales
-    const tables = db.query(`
-      SELECT name FROM sqlite_master 
-      WHERE type='table' AND name IN ('skills', 'skills_fts')
-    `).all() as { name: string }[];
-    
-    if (tables.length >= 2) {
-      printSuccess(`Tablas verificadas: ${tables.map(t => t.name).join(", ")}`);
-    } else {
-      printInfo(`Tablas encontradas: ${tables.map(t => t.name).join(", ")}`);
-    }
-    
+    printInfo(`Skills en BD: ${activeSkills.length}`);
+
     return {
       success: true,
       message: "BD conectada",
-      details: { 
-        skillCount: skillCount.count,
-        tables: tables.map(t => t.name)
+      details: {
+        skillCount: activeSkills.length,
       }
     };
   } catch (error) {
@@ -200,21 +181,20 @@ async function testVerifyFTS5(): Promise<TestResult> {
   printSubHeader("Test 4: Verificar índice HiveDB sincronizado");
 
   try {
-    const db = getDb();
-
-    const skillsCount = db.query("SELECT COUNT(*) as count FROM skills WHERE active = 1").get() as { count: number };
-    printSuccess(`Skills en DB: ${skillsCount.count}`);
+    const skillsCol = await col<SkillDoc>("skills");
+    const skillsCount = (await skillsCol.scan({})).filter(e => e.doc.active).length;
+    printSuccess(`Skills en DB: ${skillsCount}`);
 
     // Sincronizar y verificar que la búsqueda responde
     await syncSkillsToFTS();
     const { searchCapabilities } = await import("../packages/core/src/agent/capability-search");
-    const hits = await searchCapabilities("skill", { types: ["skill"], k: skillsCount.count || 1 });
+    const hits = await searchCapabilities("skill", { types: ["skill"], k: skillsCount || 1 });
     printSuccess(`Documentos consultables en HiveDB: ${hits.length}`);
 
     return {
       success: true,
       message: "Índice HiveDB verificado",
-      details: { skillsCount: skillsCount.count, indexedHits: hits.length }
+      details: { skillsCount, indexedHits: hits.length }
     };
   } catch (error) {
     return {
@@ -232,7 +212,7 @@ async function testGetAllSkillsFromDB(): Promise<TestResult> {
   printSubHeader("Test 5: Obtener Todas las Skills desde DB");
   
   try {
-    const skills = getAllSkillsFromDB();
+    const skills = await getAllSkillsFromDB();
     
     if (skills.length === 0) {
       return {
@@ -270,7 +250,7 @@ async function testGetSkillsByCategory(): Promise<TestResult> {
   printSubHeader("Test 6: Obtener Skills por Categoría (canvas)");
 
   try {
-    const skills = getSkillsByCategory("canvas");
+    const skills = await getSkillsByCategory("canvas");
 
     if (skills.length === 0) {
       return {
@@ -307,7 +287,7 @@ async function testGetSkillByName(): Promise<TestResult> {
   printSubHeader("Test 7: Obtener Skill por Nombre");
   
   try {
-    const skill = getSkillByName("code_generate");
+    const skill = await getSkillByName("code_generate");
     
     if (!skill) {
       return {
@@ -342,7 +322,7 @@ async function testGetMinimalSkills(): Promise<TestResult> {
   printSubHeader("Test 8: Obtener Minimal Skills");
   
   try {
-    const skills = getMinimalSkills();
+    const skills = await getMinimalSkills();
     
     printSuccess(`${skills.length} minimal skills encontradas`);
     printInfo(`Nombres esperados: ${Array.from(MINIMAL_SKILL_NAMES).join(", ")}`);

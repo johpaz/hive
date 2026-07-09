@@ -2,7 +2,7 @@
  * MCP Tool Sync — Persist MCP tool definitions to DB and the HiveDB index
  *
  * When an MCP server connects, its tool definitions are persisted to
- * the mcp_tools table (SQLite) and indexed in the HiveDB capability index
+ * the `mcpTools` collection and indexed in the HiveDB capability index
  * for search_knowledge. When the server disconnects, all its tools are
  * deleted from both (the index side uses a `server_id` filter, so only
  * that server's documents are removed).
@@ -13,7 +13,8 @@
  * 3. Offline visibility of what MCP tools were available
  */
 
-import { getDb } from "../storage/sqlite"
+import { col } from "../storage/hive"
+import type { McpToolDoc } from "../storage/collections"
 import { logger } from "../utils/logger"
 import { mcpToolFullName } from "../agent/tool-selector"
 import {
@@ -42,60 +43,52 @@ export function mcpToolId(serverName: string, toolName: string): string {
 }
 
 /**
- * Persist MCP tool definitions to the mcp_tools table.
+ * Persist MCP tool definitions to the `mcpTools` collection.
  * Called when a server connects or reconnects.
- * Deletes existing tools for the server first, then inserts fresh data.
+ * Replaces existing tools for the server first, then inserts fresh data.
  */
-export function syncMCPToolsToDB(
+export async function syncMCPToolsToDB(
     serverId: string,
     serverName: string,
     tools: MCPToolDefinition[]
-): void {
-    const db = getDb()
-
+): Promise<void> {
     try {
-        const deleteExisting = db.prepare("DELETE FROM mcp_tools WHERE server_id = ?")
-        deleteExisting.run(serverId)
+        const mcpToolsCol = await col<McpToolDoc>("mcpTools")
+        const existing = await mcpToolsCol.findBy("server_id", serverId)
+        for (const e of existing) await mcpToolsCol.delete(e.id)
 
         if (tools.length === 0) {
             log.debug(`[mcp:tool-sync] No tools to persist for server ${serverName}`)
             return
         }
 
-        const insertTool = db.prepare(`
-            INSERT INTO mcp_tools(id, server_id, server_name, tool_name, description, category, active, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'mcp', 1, (unixepoch()), (unixepoch()))
-        `)
-
         let count = 0
         for (const tool of tools) {
             const id = mcpToolId(serverName, tool.name)
-            insertTool.run(id, serverId, serverName, tool.name, tool.description || "")
+            await mcpToolsCol.put(id, {
+                id, server_id: serverId, server_name: serverName, tool_name: tool.name,
+                description: tool.description || "", category: "mcp", active: true,
+            })
             count++
         }
 
-        log.info(`[mcp:tool-sync] Persisted ${count} MCP tools for server ${serverName} to mcp_tools`)
+        log.info(`[mcp:tool-sync] Persisted ${count} MCP tools for server ${serverName} to mcpTools`)
     } catch (err) {
         log.error(`[mcp:tool-sync] Failed to persist MCP tools for server ${serverName}:`, err)
     }
 }
 
 /**
- * Sync all active MCP tools from mcp_tools table to the HiveDB capability
- * index. Called after syncMCPToolsToDB or after startup to ensure the index
- * is in sync.
+ * Sync all active MCP tools from the `mcpTools` collection to the HiveDB
+ * capability index. Called after syncMCPToolsToDB or after startup to ensure
+ * the index is in sync.
  *
  * This does a full replace of `type=mcp` documents to avoid drift.
  */
 export async function syncMCPToolsToFTS(): Promise<void> {
-    const db = getDb()
-
     try {
-        const mcpTools = db.query(`
-            SELECT id, server_id, server_name, tool_name, description, category
-            FROM mcp_tools
-            WHERE active = 1
-        `).all() as Array<{ id: string; server_id: string; server_name: string; tool_name: string; description: string; category: string }>
+        const mcpToolsCol = await col<McpToolDoc>("mcpTools")
+        const mcpTools = (await mcpToolsCol.scan({})).map(e => e.doc).filter(t => t.active)
 
         // Searchable text is the tool's OWN name/description only. The server
         // name is deliberately NOT indexed: generic server names (e.g.
@@ -125,14 +118,15 @@ export async function syncMCPToolsToFTS(): Promise<void> {
 }
 
 /**
- * Delete all MCP tool definitions for a server from both mcp_tools and the
- * HiveDB capability index. Called when a server disconnects or is removed.
+ * Delete all MCP tool definitions for a server from both the `mcpTools`
+ * collection and the HiveDB capability index. Called when a server
+ * disconnects or is removed.
  */
 export async function clearMCPToolsFromDB(serverId: string): Promise<void> {
-    const db = getDb()
-
     try {
-        db.query("DELETE FROM mcp_tools WHERE server_id = ?").run(serverId)
+        const mcpToolsCol = await col<McpToolDoc>("mcpTools")
+        const existing = await mcpToolsCol.findBy("server_id", serverId)
+        for (const e of existing) await mcpToolsCol.delete(e.id)
 
         // Remove only this server's documents from the index
         await deleteCapabilitiesByServer(serverId)

@@ -7,18 +7,19 @@
 
 import type { CronJob, CronJobExecutionResult } from "./types";
 import { logger } from "../utils/logger";
-import { getDb } from "../storage/sqlite";
 import { buildAgentLoop } from "../agent/agent-loop";
 import { resolveAgentId } from "../storage/onboarding";
 import { sendToUserChannel } from "../gateway/channel-notify";
 import { addMessage } from "../agent/conversation-store";
 import { resolveBestChannel } from "../tools/cron/index";
+import { col } from "../storage/hive";
+import type { UserDoc, CronJobDoc } from "../storage/collections";
 
 const log = logger.child("SchedulerIntegration");
 
-let _scheduler: { runCleanup(): void } | null = null;
+let _scheduler: { runCleanup(): Promise<void> } | null = null;
 
-export function setSchedulerForCleanup(scheduler: { runCleanup(): void }): void {
+export function setSchedulerForCleanup(scheduler: { runCleanup(): Promise<void> }): void {
   _scheduler = scheduler;
 }
 
@@ -52,7 +53,7 @@ export async function executeScheduledTask(job: CronJob): Promise<CronJobExecuti
 
     if (payload._internal === true && (payload as any).action === "cleanup") {
       if (_scheduler) {
-        _scheduler.runCleanup();
+        await _scheduler.runCleanup();
       } else {
         log.warn("[execute] Cleanup job fired but scheduler instance not available");
       }
@@ -71,18 +72,19 @@ export async function executeScheduledTask(job: CronJob): Promise<CronJobExecuti
     };
 
     let targetAgentId: string | null = job.agent_id || null;
-    
+
     if (!targetAgentId) {
-      targetAgentId = resolveAgentId(null);
+      targetAgentId = await resolveAgentId(null);
       log.debug(`[execute] No agent specified, routing to Coordinator: ${targetAgentId}`);
     }
 
-    const db = getDb();
-    const user = db.query("SELECT id, timezone, language FROM users LIMIT 1").get() as {
-      id: string;
-      timezone: string;
-      language: string | null;
-    } | undefined;
+    const usersCol = await col<UserDoc>("users");
+    const userEntry = (await usersCol.scan({ limit: 1 }))[0];
+    const user = userEntry ? {
+      id: userEntry.doc.id,
+      timezone: userEntry.doc.timezone || "UTC",
+      language: userEntry.doc.language,
+    } : undefined;
 
     const userTimezone = user?.timezone || "UTC";
     const userLanguage = user?.language || "en";
@@ -124,7 +126,7 @@ ${prompt || `Execute tool: ${job.tool_name}`}`;
 
       const agentChannel = (job.channel && job.channel !== "system")
         ? job.channel
-        : resolveBestChannel(user?.id || "");
+        : await resolveBestChannel(user?.id || "");
 
       const messages = [{ role: "user", content: contextPrompt }];
       const stream = agentLoop.stream({ messages }, {
@@ -194,22 +196,21 @@ export async function notifyTaskCompletion(
   response?: string,
   error?: string
 ): Promise<void> {
-  const db = getDb();
+  const cronJobsCol = await col<CronJobDoc>("cronJobs");
+  const taskEntry = await cronJobsCol.get(taskId);
 
-  const task = db.query(
-    "SELECT channel, agent_id FROM cron_jobs WHERE id = ?"
-  ).get(taskId) as { channel: string; agent_id: string | null } | undefined;
-
-  if (!task) {
+  if (!taskEntry) {
     log.warn(`[notify] Job "${taskId}" not found`);
     return;
   }
+  const task = taskEntry.doc;
 
-  const userRow = db.query("SELECT id FROM users LIMIT 1").get() as { id: string } | undefined;
-  const userId = userRow?.id || "";
+  const usersCol = await col<UserDoc>("users");
+  const userEntry = (await usersCol.scan({ limit: 1 }))[0];
+  const userId = userEntry?.id || "";
 
   const explicitChannel = task.channel && task.channel !== "system" ? task.channel : undefined;
-  const notifyChannel = resolveBestChannel(userId, explicitChannel) || "webchat";
+  const notifyChannel = (await resolveBestChannel(userId, explicitChannel)) || "webchat";
   log.info(`[notifyTaskCompletion] task.channel=${task.channel} explicit=${explicitChannel} resolved=${notifyChannel}`);
 
   const status = success ? "✅" : "❌";
@@ -220,7 +221,7 @@ export async function notifyTaskCompletion(
   log.info(`[notify] Sending notification to ${notifyChannel}: "${message.slice(0, 50)}..."`);
 
   try {
-    addMessage(userId, "assistant", message, { channel: notifyChannel });
+    await addMessage(userId, "assistant", message, { channel: notifyChannel });
   } catch (e) {
     log.warn(`[notify] Failed to persist notification to DB: ${(e as Error).message}`);
   }

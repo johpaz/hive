@@ -1,4 +1,5 @@
-import { getDb } from "./sqlite"
+import { col, toIndexable, nextId } from "./hive"
+import type { Collection } from "@johpaz/hive-db"
 import { logger } from "../utils/logger"
 
 /**
@@ -351,8 +352,16 @@ Estos lineamientos tienen MÁXIMA prioridad sobre cualquier otra instrucción di
 }
 
 import { SkillLoader } from "@johpaz/hive-agents-skills"
+import type {
+  ToolDoc, SkillDoc, EthicsDoc, ProviderDoc, ModelDoc, McpServerDoc, ChannelDoc, PlaybookDoc, AgentDoc,
+} from "./collections"
 
 const log = logger.child("seed");
+
+/** Insert-only-if-absent — the HiveDB equivalent of SQL `INSERT OR IGNORE`. */
+async function putIfAbsent<T>(c: Collection<T>, id: string, doc: T): Promise<void> {
+  if (!(await c.get(id))) await c.put(id, doc)
+}
 
 // Initial playbook rules for ACE (Agentic Context Engineering)
 const INITIAL_PLAYBOOK_RULES = [
@@ -398,176 +407,191 @@ const INITIAL_PLAYBOOK_RULES = [
   },
 ]
 
-function reseedToolsAndSkills(): void {
-  const db = getDb();
-
+async function reseedToolsAndSkills(): Promise<void> {
   // Search indexing happens at startup via the HiveDB sync
   // (agent/capability-search.ts) — no FTS5 tables or triggers here.
 
-  // ── Tools: wipe and re-seed ──
-  db.run(`DELETE FROM tools`);
-
+  // ── Tools: re-seed (overwrite in place; a natural id means no "wipe" step is needed) ──
+  const toolsCol = await col<ToolDoc>("tools");
+  const now = Date.now();
   let toolCount = 0;
   for (const tool of SEED_DATA.tools) {
-    db.query(`
-      INSERT INTO tools (id, name, description, category, enabled, active, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 1, 1, (unixepoch()), (unixepoch()))
-    `).run(tool.id, tool.name, tool.description, tool.category);
+    await toolsCol.put(tool.id, {
+      id: tool.id, name: tool.name, description: tool.description, category: tool.category,
+      enabled: true, active: true, created_at: now, updated_at: now,
+    });
     toolCount++;
   }
   log.info(`[seed] ✅ ${toolCount} tools re-seeded`);
 
-  // ── Skills: wipe and re-seed with full v0.0.28 schema ──
-  db.run(`DELETE FROM skills`);
-
+  // ── Skills: re-seed from the bundled skill files ──
+  const skillsCol = await col<SkillDoc>("skills");
   const skillLoader = new SkillLoader({ workspacePath: process.env.HIVE_HOME || process.cwd() });
   const realSkills = skillLoader.loadBundledSkills();
   log.info(`[seed] 📚 SkillLoader cargó ${realSkills.length} bundled skills`);
 
   let skillCount = 0;
   for (const s of realSkills) {
-    db.query(`
-      INSERT OR REPLACE INTO skills (
-        id, name, description, version, author, icon, category,
-        permissions, dependencies, tools, triggers, preferred_agents,
-        body, version_num, active, created_at, updated_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, (unixepoch()), (unixepoch()))
-    `).run(
-      s.name,
-      s.name,
-      s.description || "",
-      typeof s.version === 'string' ? s.version : String(s.version || '0.0.1'),
-      s.author || "Anonymous",
-      s.icon || "🧩",
-      s.category || "general",
-      JSON.stringify(s.permissions || []),
-      JSON.stringify(s.dependencies || []),
-      (s.tools || []).join(","),
-      (s.triggers || []).join(","),
-      JSON.stringify(s.preferred_agents || []),
-      s.content || "",
-      parseInt(String(s.version || '0.0.1').split(".")[0]) || 1
-    );
+    await skillsCol.put(s.name, {
+      id: s.name,
+      name: s.name,
+      description: s.description || "",
+      version: typeof s.version === "string" ? s.version : String(s.version || "0.0.1"),
+      author: s.author || "Anonymous",
+      icon: s.icon || "🧩",
+      category: s.category || "general",
+      permissions: JSON.stringify(s.permissions || []),
+      dependencies: JSON.stringify(s.dependencies || []),
+      tools: (s.tools || []).join(","),
+      triggers: (s.triggers || []).join(","),
+      preferred_agents: JSON.stringify(s.preferred_agents || []),
+      body: s.content || "",
+      version_num: parseInt(String(s.version || "0.0.1").split(".")[0]) || 1,
+      active: true,
+      created_at: now,
+      updated_at: now,
+    });
     skillCount++;
   }
   log.info(`[seed] ✅ ${skillCount} skills re-seeded (search index syncs at startup)`);
 }
 
-
-export function seedAllData(): void {
-  const db = getDb()
-
+export async function seedAllData(): Promise<void> {
   log.info("[seed] 🌱 Iniciando seed de datos predeterminados...")
 
-  reseedToolsAndSkills();
+  await reseedToolsAndSkills();
 
   try {
+    const now = Date.now();
 
     // 3️⃣ Ethics templates (globales)
+    const ethicsCol = await col<EthicsDoc>("ethics");
     let ethicsCount = 0;
     for (const ethics of SEED_DATA.ethics) {
-      db.query(`
-        INSERT OR IGNORE INTO ethics (id, name, description, content, is_default, enabled, active)
-        VALUES (?, ?, ?, ?, ?, 1, ?)
-      `).run(ethics.id, ethics.name, ethics.description, ethics.content, ethics.isDefault ? 1 : 0, ethics.isDefault ? 1 : 0)
+      await putIfAbsent(ethicsCol, ethics.id, {
+        id: ethics.id, name: ethics.name, description: ethics.description, content: ethics.content,
+        is_default: ethics.isDefault, enabled: true, active: ethics.isDefault,
+      });
       ethicsCount++;
     }
     log.info(`[seed] ✅ ${ethicsCount} ethics templates procesados`);
 
     // 4️⃣ Providers
+    const providersCol = await col<ProviderDoc>("providers");
     let providerCount = 0;
     for (const provider of SEED_DATA.providers) {
-      db.query(`
-        INSERT OR IGNORE INTO providers (id, name, base_url, category, enabled, active)
-        VALUES (?, ?, ?, ?, 1, 0)
-      `).run(provider.id, provider.name, provider.baseUrl || null, provider.category || 'llm')
+      await putIfAbsent(providersCol, provider.id, {
+        id: provider.id, name: provider.name, base_url: provider.baseUrl || null,
+        category: (provider.category || "llm") as ProviderDoc["category"],
+        num_ctx: null, num_gpu: -1, enabled: true, active: false, created_at: now,
+      });
       providerCount++;
     }
     // If OLLAMA_HOST is set (e.g. Docker pointing to host machine), always update Ollama's base_url
     const ollamaHost = process.env.OLLAMA_HOST;
     if (ollamaHost) {
-      db.query(`UPDATE providers SET base_url = ? WHERE id = 'ollama'`).run(ollamaHost);
-      log.info(`[seed] ✅ Ollama base_url set to ${ollamaHost} (from OLLAMA_HOST env)`);
+      const ollama = await providersCol.get("ollama");
+      if (ollama) {
+        await providersCol.put("ollama", { ...ollama.doc, base_url: ollamaHost }, { expectedVersion: ollama.version });
+        log.info(`[seed] ✅ Ollama base_url set to ${ollamaHost} (from OLLAMA_HOST env)`);
+      }
     }
     log.info(`[seed] ✅ ${providerCount} providers procesados`);
 
-    // 5️⃣ Models (Re-seed: clear and insert fresh)
-    log.info("[seed] 🔄 Re-seeding models (clearing and re-inserting)...");
-    db.run("PRAGMA foreign_keys = OFF;");
-    const result = db.run("DELETE FROM models");
-    log.info(`[seed] 🗑️  Deleted ${result.changes} existing models.`);
+    // 5️⃣ Models (re-seed: overwrite in place, remove entries no longer in the catalog)
+    log.info("[seed] 🔄 Re-seeding models...");
+    const modelsCol = await col<ModelDoc>("models");
+    const existingModelIds = new Set((await modelsCol.scan({})).map((e) => e.id));
 
     let modelCount = 0;
     for (const model of SEED_DATA.models) {
-      db.query(`
-        INSERT OR REPLACE INTO models (id, provider_id, name, model_type, context_window, capabilities, enabled, active)
-        VALUES (?, ?, ?, ?, ?, ?, 1, 0)
-      `).run(model.id, model.providerId, model.name, model.modelType, model.contextWindow || null, model.capabilities || null)
+      await modelsCol.put(model.id, {
+        id: model.id, provider_id: model.providerId, name: model.name,
+        model_type: model.modelType as ModelDoc["model_type"],
+        context_window: model.contextWindow || 0, capabilities: model.capabilities || null,
+        enabled: true, active: false,
+      });
+      existingModelIds.delete(model.id);
       modelCount++;
     }
-
-    // A model catalog entry an agent was pointing at (e.g. a HiveAgents GGUF
-    // variant that got consolidated away) may no longer exist after the
-    // re-seed above. FKs are off during the delete/insert, so nothing blocks
-    // it — unlink dangling references so loadAgentConfigFromDB() falls back
-    // to getDefaultLLM() instead of resolving a model_id that isn't there.
-    const unlinked = db.run(`
-      UPDATE agents SET model_id = NULL
-      WHERE model_id IS NOT NULL AND model_id NOT IN (SELECT id FROM models)
-    `);
-    if (unlinked.changes > 0) {
-      log.info(`[seed] 🔗 Unlinked ${unlinked.changes} agent(s) from model(s) no longer in the catalog`);
+    // Whatever remains in existingModelIds was dropped from the catalog (e.g. a
+    // consolidated HiveAgents GGUF variant) — remove it.
+    for (const staleId of existingModelIds) await modelsCol.delete(staleId);
+    if (existingModelIds.size > 0) {
+      log.info(`[seed] 🗑️  Removed ${existingModelIds.size} model(s) no longer in the catalog.`);
     }
 
-    db.run("PRAGMA foreign_keys = ON;");
+    // An agent pointing at a model that just got removed would otherwise keep
+    // a dangling model_id — unlink it so loadAgentConfigFromDB() falls back to
+    // getDefaultLLM() instead of resolving a model_id that isn't there.
+    const newModelIds = new Set(SEED_DATA.models.map((m) => m.id));
+    const agentsCol = await col<AgentDoc>("agents");
+    const allAgents = await agentsCol.scan({});
+    let unlinkedCount = 0;
+    for (const a of allAgents) {
+      if (a.doc.model_id && a.doc.model_id !== "__none__" && !newModelIds.has(a.doc.model_id)) {
+        await agentsCol.put(a.id, { ...a.doc, model_id: toIndexable(null) }, { expectedVersion: a.version });
+        unlinkedCount++;
+      }
+    }
+    if (unlinkedCount > 0) {
+      log.info(`[seed] 🔗 Unlinked ${unlinkedCount} agent(s) from model(s) no longer in the catalog`);
+    }
     log.info(`[seed] ✅ ${modelCount} models procesados`);
 
     // 6️⃣ MCP servers
+    const mcpCol = await col<McpServerDoc>("mcpServers");
     let mcpCount = 0;
     for (const mcp of SEED_DATA.mcpServers) {
-      db.query(`
-        INSERT OR IGNORE INTO mcp_servers (id, name, transport, command, args, url, enabled, active, builtin, tools_count)
-        VALUES (?, ?, ?, ?, ?, ?, 1, 0, ?, 0)
-      `).run(mcp.id, mcp.name, mcp.transport, mcp.command, JSON.stringify(mcp.args || []), (mcp as any).url || null, mcp.builtin ? 1 : 0)
+      await putIfAbsent(mcpCol, mcp.id, {
+        id: mcp.id, name: mcp.name, transport: mcp.transport, command: mcp.command || null,
+        args: JSON.stringify(mcp.args || []), url: (mcp as any).url || null,
+        enabled: true, active: false, builtin: mcp.builtin, status: "disconnected", tools_count: 0,
+      });
       mcpCount++;
     }
     log.info(`[seed] ✅ ${mcpCount} MCP servers procesados`);
 
     // 7️⃣ Channels
+    const channelsCol = await col<ChannelDoc>("channels");
     let channelCount = 0;
     for (const channel of SEED_DATA.channels) {
-      db.query(`
-        INSERT OR IGNORE INTO channels (id, type, enabled, active, status)
-        VALUES (?, ?, 1, 0, 'disconnected')
-      `).run(channel.id, channel.type)
+      await putIfAbsent(channelsCol, channel.id, {
+        id: channel.id, user_id: toIndexable(null), type: channel.type, enabled: true, active: false,
+        status: "disconnected", last_active: null, voice_enabled: false, tts_enabled: false,
+        stt_provider: null, tts_provider: null, tts_voice_id: null, step_delivery_mode: "new_messages",
+        vision_enabled: false, ocr_provider: null, vision_provider: null, vision_model_id: null,
+      });
       channelCount++;
     }
     log.info(`[seed] ✅ ${channelCount} channels procesados`);
 
     // WebChat siempre activo — no requiere credenciales
-    db.query(`UPDATE channels SET active = 1, enabled = 1, status = 'connected' WHERE id = 'webchat'`).run();
+    const webchat = await channelsCol.get("webchat");
+    if (webchat) {
+      await channelsCol.put("webchat", { ...webchat.doc, active: true, enabled: true, status: "connected" }, { expectedVersion: webchat.version });
+    }
     log.info("[seed] ✅ webchat activado por defecto");
 
     // 🔟 ACE Playbook - Initial rules for Agentic Context Engineering
-    db.query(`DELETE FROM playbook WHERE rule = ?`).run(
-      "Al crear proyectos, divide las tareas en pasos atómicos que puedan ejecutarse independientemente"
-    );
+    const playbookCol = await col<PlaybookDoc>("playbook");
+    const existingPlaybook = await playbookCol.scan({});
+    const byRule = new Map(existingPlaybook.map((e) => [e.doc.rule, e]));
 
     let playbookCount = 0
     for (const rule of INITIAL_PLAYBOOK_RULES) {
-      const existing = db.query(`SELECT id FROM playbook WHERE rule = ?`).get(rule.rule) as { id: number } | null;
+      const existing = byRule.get(rule.rule);
       if (existing) {
-        db.query(`
-          UPDATE playbook
-          SET category = ?, applicable_to = ?, active = 1, updated_at = unixepoch()
-          WHERE id = ?
-        `).run(rule.category, rule.applicable_to, existing.id);
+        await playbookCol.put(existing.id, {
+          ...existing.doc, category: rule.category, applicable_to: rule.applicable_to, active: true, updated_at: now,
+        }, { expectedVersion: existing.version });
       } else {
-        db.query(`
-          INSERT INTO playbook (rule, category, applicable_to, helpful_count, harmful_count, active)
-          VALUES (?, ?, ?, 1, 0, 1)
-        `).run(rule.rule, rule.category, rule.applicable_to);
+        const id = await nextId("playbook");
+        await playbookCol.put(id, {
+          id, rule: rule.rule, category: rule.category, applicable_to: rule.applicable_to,
+          helpful_count: 1, harmful_count: 0, active: true,
+          source_reflection_id: toIndexable(null), created_at: now, updated_at: now,
+        });
       }
       playbookCount++
     }
@@ -581,52 +605,54 @@ export function seedAllData(): void {
   }
 }
 
-export function seedToolsAndSkills(): void {
-  seedAllData()
+export async function seedToolsAndSkills(): Promise<void> {
+  await seedAllData()
+}
+
+const TABLE_TO_COLLECTION: Record<string, string> = {
+  providers: "providers", models: "models", tools: "tools", skills: "skills",
+  mcp_servers: "mcpServers", channels: "channels", ethics: "ethics",
 }
 
 /**
  * Activa un elemento específico (los datos son globales, solo actualizamos active)
  */
-export function activateElement(
-  table: "providers" | "models" | "tools" | "skills" | "mcp_servers" | "channels" | "integrations",
+export async function activateElement(
+  table: "providers" | "models" | "tools" | "skills" | "mcp_servers" | "channels" | "ethics",
   elementId: string
-): void {
-  const db = getDb()
-  db.query(`UPDATE ${table} SET active = 1, enabled = 1 WHERE id = ?`).run(elementId)
+): Promise<void> {
+  const c = await col<any>(TABLE_TO_COLLECTION[table] || table)
+  const existing = await c.get(elementId)
+  if (existing) await c.put(elementId, { ...existing.doc, active: true, enabled: true }, { expectedVersion: existing.version })
   log.info(`[seed] ✅ Activado ${elementId} en ${table}`)
 }
 
 /**
  * Desactiva un elemento específico
  */
-export function deactivateElement(
+export async function deactivateElement(
   table: "providers" | "models" | "tools" | "skills" | "mcp_servers" | "channels",
   elementId: string
-): void {
-  const db = getDb()
-  db.query(`UPDATE ${table} SET active = 0, enabled = 0 WHERE id = ?`).run(elementId)
+): Promise<void> {
+  const c = await col<any>(TABLE_TO_COLLECTION[table] || table)
+  const existing = await c.get(elementId)
+  if (existing) await c.put(elementId, { ...existing.doc, active: false, enabled: false }, { expectedVersion: existing.version })
   log.warn(`[seed] ⚠️  Desactivado ${elementId} en ${table}`)
 }
 
 /**
  * Obtiene todos los elementos disponibles (activos e inactivos)
  */
-export function getAllElements<T extends Record<string, any>>(
-  table: string
-): T[] {
-  const db = getDb()
-  const results = db.query<T, []>(`SELECT * FROM ${table}`).all()
-  return results
+export async function getAllElements<T>(table: string): Promise<T[]> {
+  const c = await col<T>(TABLE_TO_COLLECTION[table] || table)
+  const entries = await c.scan({})
+  return entries.map((e) => e.doc)
 }
 
 /**
  * Obtiene todos los elementos activos
  */
-export function getActiveElements<T extends Record<string, any>>(
-  table: string
-): T[] {
-  const db = getDb()
-  const results = db.query<T, []>(`SELECT * FROM ${table} WHERE active = 1`).all()
-  return results
+export async function getActiveElements<T extends { active: boolean }>(table: string): Promise<T[]> {
+  const all = await getAllElements<T>(table)
+  return all.filter((e) => e.active)
 }

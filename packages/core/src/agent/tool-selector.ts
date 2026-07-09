@@ -40,7 +40,8 @@
  *    - core (notify, report_progress, save_note)
  */
 
-import { getDb } from "../storage/sqlite"
+import { col } from "../storage/hive"
+import type { ToolDoc } from "../storage/collections"
 import { logger } from "../utils/logger"
 import {
     searchCapabilities,
@@ -376,8 +377,6 @@ export async function selectTools(
  * @param tools - Optional array of tools to sync. If not provided, fetches from DB.
  */
 export async function syncToolCatalogToFTS(tools?: ToolDescriptor[]): Promise<void> {
-    const db = getDb()
-
     try {
         // Step 1: Build full catalog = CORE_TOOL_CATALOG + any tools in DB not already covered
         // CORE_TOOL_CATALOG has bilingual keywords; DB tools may be dynamically registered
@@ -386,7 +385,8 @@ export async function syncToolCatalogToFTS(tools?: ToolDescriptor[]): Promise<vo
         )
 
         // Merge in any tools from the DB that are missing from the static catalog
-        const dbTools = db.query("SELECT name, description, category FROM tools").all() as Array<{ name: string; description: string | null; category: string | null }>
+        const toolsCol = await col<ToolDoc>("tools")
+        const dbTools = (await toolsCol.scan({})).map(e => e.doc)
         for (const row of dbTools) {
             if (catalogByName.has(row.name)) continue
 

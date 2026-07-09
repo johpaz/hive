@@ -6,7 +6,7 @@
  * by its specific adapter, providing clean separation of concerns.
  */
 
-import { loadConfig, startGateway, logger, getHiveDir, initializeDatabase } from "@johpaz/hive-agents-core";
+import { loadConfig, startGateway, logger, getHiveDir } from "@johpaz/hive-agents-core";
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, openSync } from "node:fs";
 import * as path from "node:path";
 import { spawn, ChildProcess } from "child_process";
@@ -212,7 +212,7 @@ function openBrowser(url: string): void {
  */
 async function isSetupMode(): Promise<boolean> {
   const hiveDir = getHiveDir();
-  const dbPath = path.join(hiveDir, "data", "hive.db");
+  const dbPath = path.join(hiveDir, "data", "hivedb");
   return !existsSync(dbPath);
 }
 
@@ -709,7 +709,7 @@ async function handleProductionMode(
       needsSetup = body.setupMode === true;
     } catch {
       const hiveDir = getHiveDir();
-      const dbPath = path.join(hiveDir, "data", "hive.db");
+      const dbPath = path.join(hiveDir, "data", "hivedb");
       needsSetup = !existsSync(dbPath);
     }
 

@@ -1,26 +1,31 @@
 import { multimodalService } from "../../multimodal/index"
-import { getDb } from "../../storage/sqlite"
+import { col, updateDoc } from "../../storage/hive"
+import type { ModelDoc, ProviderDoc, ChannelDoc } from "../../storage/collections"
+import { loadProviderApiKey } from "../../storage/crypto"
 
 export async function handleGetVisionProviders(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
-  const configured = multimodalService.getConfiguredVisionProviders()
-  const db = getDb()
-  const visionModels = db.query(`
-    SELECT m.id, m.name, m.provider_id, m.capabilities
-    FROM models m
-    JOIN providers p ON m.provider_id = p.id
-    WHERE m.enabled = 1 AND p.enabled = 1 AND p.api_key_encrypted IS NOT NULL AND p.api_key_encrypted != ''
-  `).all() as Array<{ id: string; name: string; provider_id: string; capabilities: string }>
+  const configured = await multimodalService.getConfiguredVisionProviders()
+  const modelsCol = await col<ModelDoc>("models")
+  const providersCol = await col<ProviderDoc>("providers")
 
-  const modelsWithVision = visionModels.filter(m => {
+  const enabledModels = (await modelsCol.scan({})).filter(e => e.doc.enabled)
+  const visionModels: Array<{ id: string; name: string; provider_id: string }> = []
+  for (const m of enabledModels) {
+    const provider = await providersCol.get(m.doc.provider_id)
+    if (!provider?.doc.enabled) continue
+    const apiKey = await loadProviderApiKey(m.doc.provider_id)
+    if (!apiKey) continue
     try {
-      const caps = JSON.parse(m.capabilities || "[]") as string[]
-      return caps.includes("vision")
-    } catch { return false }
-  })
+      const caps = JSON.parse(m.doc.capabilities || "[]") as string[]
+      if (caps.includes("vision")) {
+        visionModels.push({ id: m.doc.id, name: m.doc.name, provider_id: m.doc.provider_id })
+      }
+    } catch { /* skip malformed capabilities */ }
+  }
 
   return addCorsHeaders(Response.json({
     configuredProviders: configured,
-    visionModels: modelsWithVision.map(m => ({
+    visionModels: visionModels.map(m => ({
       id: m.id,
       name: m.name,
       providerId: m.provider_id,
@@ -29,7 +34,7 @@ export async function handleGetVisionProviders(req: Request, addCorsHeaders: (r:
 }
 
 export async function handleGetChannelVision(req: Request, addCorsHeaders: (r: Response, req: Request) => Response, channelId: string): Promise<Response> {
-  const config = multimodalService.getChannelVisionConfig(channelId)
+  const config = await multimodalService.getChannelVisionConfig(channelId)
   return addCorsHeaders(Response.json(config), req)
 }
 
@@ -41,35 +46,19 @@ export async function handleUpdateChannelVision(req: Request, addCorsHeaders: (r
     visionModelId?: string
   }
 
-  const db = getDb()
-  const updates: string[] = []
-  const values: any[] = []
+  const patch: Partial<ChannelDoc> = {}
+  if (body.visionEnabled !== undefined) patch.vision_enabled = !!body.visionEnabled
+  if (body.ocrProvider !== undefined) patch.ocr_provider = body.ocrProvider
+  if (body.visionProvider !== undefined) patch.vision_provider = body.visionProvider
+  if (body.visionModelId !== undefined) patch.vision_model_id = body.visionModelId
 
-  if (body.visionEnabled !== undefined) {
-    updates.push("vision_enabled = ?")
-    values.push(body.visionEnabled ? 1 : 0)
-  }
-  if (body.ocrProvider !== undefined) {
-    updates.push("ocr_provider = ?")
-    values.push(body.ocrProvider)
-  }
-  if (body.visionProvider !== undefined) {
-    updates.push("vision_provider = ?")
-    values.push(body.visionProvider)
-  }
-  if (body.visionModelId !== undefined) {
-    updates.push("vision_model_id = ?")
-    values.push(body.visionModelId)
-  }
-
-  if (updates.length === 0) {
+  if (Object.keys(patch).length === 0) {
     return addCorsHeaders(Response.json({ success: false, error: "No fields to update" }, { status: 400 }), req)
   }
 
-  values.push(channelId)
-  db.query(`UPDATE channels SET ${updates.join(", ")} WHERE id = ?`).run(...values)
+  await updateDoc<ChannelDoc>("channels", channelId, patch).catch(() => { /* not found */ })
 
-  const updated = multimodalService.getChannelVisionConfig(channelId)
+  const updated = await multimodalService.getChannelVisionConfig(channelId)
   return addCorsHeaders(Response.json({ success: true, config: updated }), req)
 }
 

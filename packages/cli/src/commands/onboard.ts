@@ -768,28 +768,39 @@ async function runUpdateWizard(existing: ExistingConfig): Promise<void> {
   }
 
   log.success("✅ Configuración actualizada en BD");
-  // Also update SQLite
+  // Also update HiveDB
   try {
-    const { initializeDatabase, getDb } = await import("../../../core/src/storage/sqlite");
-    initializeDatabase();
-    const sqliteDb = getDb();
+    const { col, toIndexable } = await import("../../../core/src/storage/hive");
+    const { storeProviderApiKey } = await import("../../../core/src/storage/crypto");
+    type ProviderDoc = { id: string; base_url: string | null; [k: string]: unknown };
+    type AgentDoc = { id: string; name: string; provider_id: string; model_id: string; [k: string]: unknown };
 
-    const apiKeyVal = (providersConfig[provider]?.apiKey as string) || null;
+    const apiKeyVal = providersConfig[provider]?.apiKey as string | undefined;
     const baseUrlVal = (providersConfig[provider]?.baseUrl as string) || null;
 
-    sqliteDb.query(`
-      UPDATE providers SET api_key = ?, base_url = ?
-      WHERE id = ?
-    `).run(apiKeyVal, baseUrlVal, provider);
+    const providersCol = await col<ProviderDoc>("providers");
+    const providerEntry = await providersCol.get(provider);
+    if (providerEntry) {
+      await providersCol.put(provider, { ...providerEntry.doc, base_url: baseUrlVal }, { expectedVersion: providerEntry.version });
+    }
+    if (apiKeyVal) {
+      await storeProviderApiKey(provider, apiKeyVal);
+    }
 
-    sqliteDb.query(`
-      UPDATE agents SET name = ?, provider_id = ?, model_id = ?
-      WHERE id = 'main'
-    `).run(agentName, provider, model);
+    const agentsCol = await col<AgentDoc>("agents");
+    const agentEntry = await agentsCol.get("main");
+    if (agentEntry) {
+      await agentsCol.put("main", {
+        ...agentEntry.doc,
+        name: agentName,
+        provider_id: toIndexable(provider),
+        model_id: toIndexable(model),
+      }, { expectedVersion: agentEntry.version });
+    }
 
-    console.log("✅ SQLite actualizado");
+    console.log("✅ HiveDB actualizado");
   } catch (error) {
-    console.log("⚠️ Error actualizando SQLite:", (error as Error).message);
+    console.log("⚠️ Error actualizando HiveDB:", (error as Error).message);
   }
 
   spinner.stop("Cambios guardados ✅");
@@ -824,7 +835,7 @@ async function runFullWizard(): Promise<void> {
   p.intro("🐝 Bienvenido a Hive — Personal AI Gateway");
 
   // Initialize DB at start
-  initOnboardingDb();
+  await initOnboardingDb();
 
   const TOTAL_STEPS = 7;
   let step = 1;
@@ -928,7 +939,7 @@ async function runFullWizard(): Promise<void> {
 
         // ✅ Save user to DB (agent will be saved in Step 2)
         // userId se genera automáticamente en la BD (randomblob)
-        state.userId = saveUserProfile({
+        state.userId = await saveUserProfile({
           userName: state.userName,
           userLanguage: state.userLanguage,
           userTimezone: state.userTimezone,
@@ -937,7 +948,7 @@ async function runFullWizard(): Promise<void> {
           channelUserId: state.sessionToken, // For webchat user_identity
         });
 
-        saveOnboardingProgress({
+        await saveOnboardingProgress({
           step: "user",
           userId: state.userId,
           data: { userName: state.userName, userLanguage: state.userLanguage, userTimezone: state.userTimezone, userOccupation: state.userOccupation, userNotes: state.userNotes },
@@ -988,7 +999,7 @@ async function runFullWizard(): Promise<void> {
         state.agentTone = agentTone as "formal" | "friendly" | "direct";
 
         // ✅ Save agent to DB (agentId se genera automáticamente)
-        state.agentId = saveAgentConfig({
+        state.agentId = await saveAgentConfig({
           userId: state.userId,
           agentName: state.agentName,
           description: state.agentDescription,
@@ -998,9 +1009,9 @@ async function runFullWizard(): Promise<void> {
         });
 
         // Activate default ethics
-        activateEthics(state.userId, "default");
+        await activateEthics(state.userId, "default");
 
-        saveOnboardingProgress({
+        await saveOnboardingProgress({
           step: "agent",
           userId: state.userId,
           data: { agentName: state.agentName, agentDescription: state.agentDescription, agentTone: state.agentTone, agentId: state.agentId },
@@ -1023,7 +1034,7 @@ async function runFullWizard(): Promise<void> {
 
         p.note("Los lineamientos éticos tienen MÁXIMA prioridad.", "Ética del agente");
 
-        const ethicsOptions = getAllEthics();
+        const ethicsOptions = await getAllEthics();
         console.log("📋 Ethics options:", ethicsOptions);
 
         if (ethicsOptions.length === 0) {
@@ -1044,9 +1055,9 @@ async function runFullWizard(): Promise<void> {
         }
 
         // ✅ Activate ethics in DB
-        activateEthics(state.userId, state.ethicsId);
+        await activateEthics(state.userId, state.ethicsId);
 
-        saveOnboardingProgress({
+        await saveOnboardingProgress({
           step: "ethics",
           userId: state.userId,
           data: { ethicsId: state.ethicsId },
@@ -1114,7 +1125,7 @@ async function runFullWizard(): Promise<void> {
           baseUrl: PROVIDER_BASE_URLS[state.provider],
         });
 
-        saveOnboardingProgress({
+        await saveOnboardingProgress({
           step: "provider",
           userId: state.userId,
           data: { provider: state.provider, model: state.model },
@@ -1436,7 +1447,7 @@ async function runFullWizard(): Promise<void> {
           log.success("✅ Telegram activado");
         }
 
-        saveOnboardingProgress({
+        await saveOnboardingProgress({
           step: "channel",
           userId: state.userId,
           data: { channel: "webchat", telegram: activateTelegram },
@@ -1487,7 +1498,7 @@ async function runFullWizard(): Promise<void> {
         }
 
         // ✅ Create agent in DB (FINAL STEP)
-        saveAgentConfig({
+        await saveAgentConfig({
           userId: state.userId,
           agentId: state.agentId,
           agentName: state.agentName,
@@ -1497,7 +1508,7 @@ async function runFullWizard(): Promise<void> {
           description: state.agentDescription,
         });
 
-        saveOnboardingProgress({
+        await saveOnboardingProgress({
           step: "agent",
           userId: state.userId,
           data: { agentId: state.agentId, agentName: state.agentName },
@@ -1585,13 +1596,19 @@ export async function onboard(): Promise<void> {
   }
 
   // Initialize DB first to check existing configuration
-  initOnboardingDb();
+  await initOnboardingDb();
 
   // Check if there's already an agent in the database
-  const { getDb } = await import("../../../core/src/storage/sqlite");
-  const db = getDb();
+  const { col, fromIndexable } = await import("../../../core/src/storage/hive");
+  const agentsCol = await col<import("../../../core/src/storage/collections").AgentDoc>("agents");
   // We look for the coordinator agent. In a personal gateway, there is usually only one.
-  const existingAgent = db.query("SELECT id, name, provider_id, model_id, status FROM agents WHERE role = 'coordinator' ORDER BY created_at DESC LIMIT 1").get() as any;
+  const coordinators = await agentsCol.findBy("role", "coordinator");
+  const existingAgentDoc = [...coordinators].sort((a, b) => b.doc.created_at - a.doc.created_at)[0]?.doc;
+  const existingAgent = existingAgentDoc ? {
+    id: existingAgentDoc.id, name: existingAgentDoc.name,
+    provider_id: fromIndexable(existingAgentDoc.provider_id), model_id: fromIndexable(existingAgentDoc.model_id),
+    status: existingAgentDoc.status,
+  } : undefined;
 
   // If agent exists and is completed (status = 'idle'), don't show onboarding menu
   if (existingAgent && existingAgent.status === 'idle') {
@@ -1648,19 +1665,21 @@ export async function onboard(): Promise<void> {
       }
 
       // Backup and delete database
-      const dbPath = path.join(hiveDir, "data", "hive.db");
+      const { getHiveDbPath, closeHiveDb } = await import("../../../core/src/storage/hivedb");
+      const dbPath = getHiveDbPath();
+      closeHiveDb();
       if (fs.existsSync(dbPath)) {
-        const backupPath = path.join(hiveDir, `hive.db.backup.${Date.now()}`);
-        fs.copyFileSync(dbPath, backupPath);
+        const backupPath = path.join(hiveDir, `hivedb.backup.${Date.now()}`);
+        fs.cpSync(dbPath, backupPath, { recursive: true });
         log.info(`Backup BD creado: ${backupPath}`);
 
-        // Delete the database file
-        fs.unlinkSync(dbPath);
+        // Delete the database directory
+        fs.rmSync(dbPath, { recursive: true, force: true });
         log.info("Base de datos eliminada");
       }
 
       // Reinitialize DB (creates fresh with seed)
-      initOnboardingDb();
+      await initOnboardingDb();
 
       log.success("BD reiniciada con datos del sistema");
     }

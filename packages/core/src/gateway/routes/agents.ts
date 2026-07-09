@@ -1,4 +1,5 @@
-import { getDb } from "../../storage/sqlite"
+import { col, updateDoc, toIndexable, fromIndexable } from "../../storage/hive"
+import type { AgentDoc, UserDoc } from "../../storage/collections"
 import { emitCanvas } from "../../canvas/emitter"
 import { storeAgentHeaders, deleteAgentSecrets } from "../../storage/crypto"
 import { getDefaultLLM } from "../../agent/llm-client"
@@ -6,60 +7,61 @@ import { getDefaultLLM } from "../../agent/llm-client"
 export async function handleGetAgents(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const url = new URL(req.url)
   const typeFilter = url.searchParams.get("type")
-  
-  let whereClause = ""
-  if (typeFilter) {
-    whereClause = "WHERE a.status = ?"
-  }
 
-  const rows = getDb().query(`
-    SELECT a.*, u.notes as user_preferences,
-    CASE WHEN a.headers_encrypted IS NOT NULL THEN 1 ELSE 0 END as has_headers
-    FROM agents a
-    LEFT JOIN users u ON a.user_id = u.id
-    ${whereClause}
-    ORDER BY a.created_at DESC
-  `).all(...(typeFilter ? [typeFilter] : [])) as Record<string, unknown>[]
+  const agentsCol = await col<AgentDoc>("agents")
+  const usersCol = await col<UserDoc>("users")
 
-  const agents = rows.map(row => ({
-    // Basic fields
-    id: row.id,
-    userId: row.user_id,
-    name: row.name,
-    description: row.description,
-    systemPrompt: row.system_prompt,
-    tone: row.tone,
+  const rows = typeFilter
+    ? await agentsCol.findBy("status", typeFilter)
+    : await agentsCol.scan({})
 
-    // Role & status
-    role: row.role as 'coordinator' | 'worker',
-    status: row.status,
-    enabled: Boolean(row.enabled),
+  const sorted = [...rows].sort((a, b) => b.doc.created_at - a.doc.created_at)
 
-    // Provider & model
-    providerId: row.provider_id,
-    modelId: row.model_id,
+  const agents = await Promise.all(sorted.map(async (row) => {
+    const user = await usersCol.get(row.doc.user_id)
+    return {
+      // Basic fields
+      id: row.doc.id,
+      userId: row.doc.user_id,
+      name: row.doc.name,
+      description: row.doc.description,
+      systemPrompt: row.doc.system_prompt,
+      tone: row.doc.tone,
 
-    // Tools & skills
-    toolsJson: row.tools_json,
-    skillsJson: row.skills_json,
+      // Role & status
+      role: row.doc.role,
+      status: row.doc.status,
+      enabled: row.doc.enabled,
 
-    // Hierarchy
-    parentId: row.parent_id,
-    maxIterations: row.max_iterations,
+      // Provider & model
+      providerId: fromIndexable(row.doc.provider_id),
+      modelId: fromIndexable(row.doc.model_id),
 
-    // Workspace
-    workspace: row.workspace,
+      // Tools & skills
+      toolsJson: row.doc.tools_json,
+      skillsJson: row.doc.skills_json,
 
-    // Headers (encrypted)
-    hasHeaders: row.has_headers === 1,
+      // Hierarchy
+      parentId: fromIndexable(row.doc.parent_id),
+      maxIterations: row.doc.max_iterations,
 
-    // Timestamps
-    createdAt: new Date((row.created_at as number) * 1000).toISOString(),
-    updatedAt: new Date((row.updated_at as number) * 1000).toISOString(),
+      // Workspace
+      workspace: row.doc.workspace,
 
-    // Virtual fields (not from DB)
-    taskCount: 0,
-    successRate: 100,
+      // User preferences (denormalized from users for the settings UI)
+      userPreferences: user?.doc.notes ?? null,
+
+      // Headers (encrypted) — presence check happens via the crypto layer now
+      hasHeaders: false,
+
+      // Timestamps
+      createdAt: new Date(row.doc.created_at * 1000).toISOString(),
+      updatedAt: new Date(row.doc.updated_at * 1000).toISOString(),
+
+      // Virtual fields (not from DB)
+      taskCount: 0,
+      successRate: 100,
+    }
   }))
 
   return addCorsHeaders(Response.json({ agents }), req)
@@ -67,42 +69,39 @@ export async function handleGetAgents(req: Request, addCorsHeaders: (r: Response
 
 export async function handleCreateAgent(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const body = await req.json().catch(() => ({}))
-  let agentId: string
+  const agentsCol = await col<AgentDoc>("agents")
 
   // Default provider/model from the DB when the request doesn't specify one
   const defaultLLM = (!body.providerId || !body.modelId) ? await getDefaultLLM() : null
   const providerId = body.providerId || defaultLLM?.provider || null
   const modelId = body.modelId || defaultLLM?.model || null
 
-  if (body.id) {
-    agentId = body.id
-    getDb().query(`
-      INSERT INTO agents(id, name, description, provider_id, model_id, tone, enabled, workspace)
-      VALUES(?, ?, ?, ?, ?, ?, 1, ?)
-    `).run(
-      agentId,
-      body.name,
-      body.description || "",
-      providerId,
-      modelId,
-      body.tone || "friendly",
-      body.workspace || null
-    )
-  } else {
-    const result = getDb().query(`
-      INSERT INTO agents(name, description, provider_id, model_id, tone, enabled, workspace)
-      VALUES(?, ?, ?, ?, ?, 1, ?)
-      RETURNING id
-    `).get(
-      body.name,
-      body.description || "",
-      providerId,
-      modelId,
-      body.tone || "friendly",
-      body.workspace || null
-    ) as { id: string } | undefined
-    agentId = result?.id || ""
+  const agentId: string = body.id || crypto.randomUUID().replace(/-/g, "")
+  const now = Date.now()
+  const existing = await agentsCol.get(agentId)
+
+  const agent: AgentDoc = {
+    id: agentId,
+    user_id: existing?.doc.user_id ?? "",
+    name: body.name,
+    description: body.description || "",
+    system_prompt: existing?.doc.system_prompt ?? null,
+    tone: body.tone || "friendly",
+    role: existing?.doc.role ?? "coordinator",
+    status: existing?.doc.status ?? "idle",
+    enabled: true,
+    provider_id: toIndexable(providerId),
+    model_id: toIndexable(modelId),
+    tools_json: existing?.doc.tools_json ?? null,
+    skills_json: existing?.doc.skills_json ?? null,
+    parent_id: existing?.doc.parent_id ?? toIndexable(null),
+    max_iterations: existing?.doc.max_iterations ?? 10,
+    workspace: body.workspace || null,
+    lastTraceAt: existing?.doc.lastTraceAt ?? null,
+    created_at: existing?.doc.created_at ?? now,
+    updated_at: now,
   }
+  await agentsCol.put(agentId, agent, existing ? { expectedVersion: existing.version } : undefined)
 
   if (body.headers && agentId) {
     await storeAgentHeaders(agentId, body.headers)
@@ -112,28 +111,19 @@ export async function handleCreateAgent(req: Request, addCorsHeaders: (r: Respon
     node: { id: agentId, name: body.name, status: "idle", type: "agent" }
   })
 
-  const agent = getDb().query(`
-    SELECT id, name, description, provider_id, model_id, tone, status, enabled, active, created_at, workspace
-    FROM agents WHERE id = ?
-  `).get(agentId) as Record<string, unknown> | undefined
-
-  if (!agent) {
-    return addCorsHeaders(Response.json({ ok: false, error: "Agent not found" }), req)
-  }
-
   return addCorsHeaders(Response.json({
     ok: true,
     agent: {
       id: agent.id,
       name: agent.name,
       description: agent.description,
-      providerId: agent.provider_id,
-      modelId: agent.model_id,
+      providerId: fromIndexable(agent.provider_id),
+      modelId: fromIndexable(agent.model_id),
       tone: agent.tone,
       status: agent.status,
-      enabled: agent.enabled === 1,
-      active: agent.active === 1,
-      createdAt: new Date((agent.created_at as number) * 1000).toISOString(),
+      enabled: agent.enabled,
+      active: true,
+      createdAt: new Date(agent.created_at * 1000).toISOString(),
       workspace: agent.workspace,
     }
   }), req)
@@ -148,30 +138,28 @@ export async function handleUpdateAgent(req: Request, addCorsHeaders: (r: Respon
   }
 
   const body = await req.json().catch(() => ({}))
-
-  const updates: string[] = []
-  const params: unknown[] = []
-
-  // Map: snake_case DB field → camelCase body key
-  const fieldMap: Record<string, string> = {
-    name:            "name",
-    description:     "description",
-    provider_id:     "providerId",
-    model_id:        "modelId",
-    system_prompt:   "systemPrompt",
-    status:          "status",
-    enabled:         "enabled",
-    tone:            "tone",
-    workspace:       "workspace",
-    role:            "role",
-    max_iterations:  "maxIterations",
+  const agentsCol = await col<AgentDoc>("agents")
+  const existing = await agentsCol.get(agentId)
+  if (!existing) {
+    return addCorsHeaders(new Response("Agent not found", { status: 404 }), req)
   }
 
-  for (const [dbField, camelKey] of Object.entries(fieldMap)) {
-    const val = body[dbField] !== undefined ? body[dbField] : body[camelKey]
-    if (val !== undefined) {
-      updates.push(`${dbField} = ?`)
-      params.push(typeof val === 'object' ? JSON.stringify(val) : val)
+  const patch: Partial<AgentDoc> = {}
+
+  // Map: doc field → camelCase body key
+  const fieldMap: Record<keyof AgentDoc, string> = {
+    name: "name", description: "description", provider_id: "providerId", model_id: "modelId",
+    system_prompt: "systemPrompt", status: "status", enabled: "enabled", tone: "tone",
+    workspace: "workspace", role: "role", max_iterations: "maxIterations",
+  } as any
+
+  for (const [docField, camelKey] of Object.entries(fieldMap) as Array<[keyof AgentDoc, string]>) {
+    const val = (body as any)[docField] !== undefined ? (body as any)[docField] : (body as any)[camelKey]
+    if (val === undefined) continue
+    if (docField === "provider_id" || docField === "model_id" || docField === "parent_id") {
+      (patch as any)[docField] = toIndexable(val)
+    } else {
+      (patch as any)[docField] = typeof val === "object" ? JSON.stringify(val) : val
     }
   }
 
@@ -181,18 +169,12 @@ export async function handleUpdateAgent(req: Request, addCorsHeaders: (r: Respon
   }
 
   const userPreferences = body.userPreferences !== undefined ? body.userPreferences : body.user_preferences
-  if (userPreferences !== undefined) {
-    const agentRow = getDb().query("SELECT user_id FROM agents WHERE id = ?").get(agentId) as { user_id: string } | undefined
-    if (agentRow?.user_id) {
-      getDb().query(`UPDATE users SET notes = ? WHERE id = ?`).run(userPreferences, agentRow.user_id)
-    }
+  if (userPreferences !== undefined && existing.doc.user_id) {
+    await updateDoc<UserDoc>("users", existing.doc.user_id, { notes: userPreferences }).catch(() => { /* user not found */ })
   }
 
-  if (updates.length > 0) {
-    updates.push("updated_at = unixepoch()")
-    params.push(agentId)
-    getDb().query(`UPDATE agents SET ${updates.join(", ")} WHERE id = ?`).run(...params as any[])
-
+  if (Object.keys(patch).length > 0) {
+    await agentsCol.put(agentId, { ...existing.doc, ...patch, updated_at: Date.now() }, { expectedVersion: existing.version })
     emitCanvas("canvas:node_update", { id: agentId, updates: body })
   }
 
@@ -207,7 +189,8 @@ export async function handleDeleteAgent(req: Request, addCorsHeaders: (r: Respon
     return addCorsHeaders(new Response("Missing ID", { status: 400 }), req)
   }
 
-  getDb().query(`DELETE FROM agents WHERE id = ?`).run(agentId)
+  const agentsCol = await col<AgentDoc>("agents")
+  await agentsCol.delete(agentId)
   await deleteAgentSecrets(agentId)
 
   emitCanvas("canvas:node_remove", { id: agentId })

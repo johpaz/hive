@@ -13,7 +13,8 @@
  * - Skills activos
  */
 
-import { getDb } from "../storage/sqlite"
+import { col } from "../storage/hive"
+import type { EthicsDoc, AgentDoc, UserDoc } from "../storage/collections"
 import { logger } from "../utils/logger"
 import { formatContext } from "../utils/toon"
 import { resolveUserId } from "../storage/onboarding"
@@ -35,18 +36,16 @@ export interface BuildSystemPromptOpts {
  * 4. Identidad del usuario (nombre, preferencias, contexto)
  */
 export async function buildSystemPrompt(opts: BuildSystemPromptOpts): Promise<string> {
-  const db = getDb()
   const { agentId, userId } = opts
 
   // ──────────────────────────────────────────────────────────────────────────
   // 1. ÉTICA — Capa constitucional (siempre completa)
   // ──────────────────────────────────────────────────────────────────────────
-  const ethicsRules = db.query<any, []>(`
-    SELECT name, content, description
-    FROM ethics
-    WHERE enabled = 1 AND active = 1
-    ORDER BY is_default DESC, id ASC
-  `).all()
+  const ethicsCol = await col<EthicsDoc>("ethics")
+  const ethicsRules = (await ethicsCol.scan({}))
+    .map(e => e.doc)
+    .filter(r => r.enabled && r.active)
+    .sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0) || a.id.localeCompare(b.id))
 
   let ethicsSection = ""
   if (ethicsRules.length > 0) {
@@ -68,11 +67,9 @@ export async function buildSystemPrompt(opts: BuildSystemPromptOpts): Promise<st
   // ──────────────────────────────────────────────────────────────────────────
   // 2. IDENTIDAD DEL AGENTE
   // ──────────────────────────────────────────────────────────────────────────
-  const agent = db.query<any, [string]>(`
-    SELECT id, name, role, description, system_prompt, tone, max_iterations, workspace
-    FROM agents
-    WHERE id = ?
-  `).get(agentId)
+  const agentsCol = await col<AgentDoc>("agents")
+  const agentEntry = await agentsCol.get(agentId)
+  const agent = agentEntry?.doc
 
   if (!agent) {
     throw new Error(`Agent not found: ${agentId}`)
@@ -119,11 +116,9 @@ export async function buildSystemPrompt(opts: BuildSystemPromptOpts): Promise<st
   // ──────────────────────────────────────────────────────────────────────────
   // 3. IDENTIDAD DEL USUARIO
   // ──────────────────────────────────────────────────────────────────────────
-  const user = db.query<any, [string]>(`
-    SELECT id, name, language,  timezone, occupation, notes
-    FROM users
-    WHERE id = ?
-  `).get(userId)
+  const usersCol = await col<UserDoc>("users")
+  const userEntry = await usersCol.get(userId)
+  const user = userEntry?.doc
 
   let userSection = `# IDENTIDAD DEL USUARIO\n\n`
 
@@ -164,6 +159,6 @@ export async function buildSystemPromptWithProjects(opts: {
   agentId: string
   userId?: string
 }): Promise<string> {
-  const userId = opts.userId || resolveUserId({}) || "default"
+  const userId = opts.userId || (await resolveUserId({})) || "default"
   return buildSystemPrompt({ agentId: opts.agentId, userId })
 }

@@ -44,7 +44,7 @@ export function getDefaultPaths(hiveDir?: string): InstallationPaths {
   
   return {
     hiveDir: dir,
-    dbPath: path.join(dataDir, "hive.db"),
+    dbPath: path.join(dataDir, "hivedb"),
     logPath: path.join(logsDir, "gateway.log"),
     pidPath: path.join(dir, "gateway.pid"),
     uiDir: null, // Will be set by adapter

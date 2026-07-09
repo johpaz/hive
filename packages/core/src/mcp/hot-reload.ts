@@ -2,13 +2,14 @@
  * MCP Hot Reload
  *
  * Watches for MCP server changes in DB and updates MCP Manager automatically
- * 
+ *
  * Architecture: Direct Connection
- * - MCP servers are tracked in DB (mcp_servers table)
+ * - MCP servers are tracked in the `mcpServers` HiveDB collection
  * - MCP tools are loaded at runtime from connected servers (not stored in DB)
  */
 
-import { getDb } from "../storage/sqlite";
+import { col, updateDoc } from "../storage/hive";
+import type { McpServerDoc } from "../storage/collections";
 import { logger } from "../utils/logger";
 import { loadMcpHeaders } from "../storage/crypto";
 import { syncMCPToolsToDB, syncMCPToolsToFTS, clearMCPToolsFromDB } from "./tool-sync";
@@ -61,8 +62,8 @@ export function stopMCPHotReload(): void {
  */
 async function syncMCPServers(mcpManager: MCPClientManager): Promise<void> {
   try {
-    const db = getDb();
-    const dbServers = db.query(`SELECT * FROM mcp_servers WHERE enabled = 1`).all() as Record<string, any>[];
+    const mcpServersCol = await col<McpServerDoc>("mcpServers");
+    const dbServers = (await mcpServersCol.scan({})).map(e => e.doc).filter(s => s.enabled);
 
     const currentServerNames = new Set(dbServers.map(s => s.id || s.name));
 
@@ -102,17 +103,17 @@ async function syncMCPServers(mcpManager: MCPClientManager): Promise<void> {
 
           // Get tools count and update status
           const tools = mcpManager.getServerTools(serverName) || [];
-          db.query(`UPDATE mcp_servers SET status = ?, tools_count = ? WHERE id = ?`).run("connected", tools.length, serverName);
+          await updateDoc<McpServerDoc>("mcpServers", server.id, { status: "connected", tools_count: tools.length }).catch(() => { /* not found */ });
 
           // Persist MCP tool definitions to DB and the HiveDB index
           // Use server.name (human-readable) for mcpToolId consistency with context-compiler
-          syncMCPToolsToDB(server.id || server.name, server.name || serverName, tools);
+          await syncMCPToolsToDB(server.id || server.name, server.name || serverName, tools);
           await syncMCPToolsToFTS();
 
           log.info(`MCP server ${serverName} connected: ${tools.length} tools available`);
         } catch (err) {
           log.error(`Failed to connect MCP server ${serverName}: ${(err as Error).message}`);
-          db.query(`UPDATE mcp_servers SET status = ? WHERE id = ?`).run("error", serverName);
+          await updateDoc<McpServerDoc>("mcpServers", server.id, { status: "error" }).catch(() => { /* not found */ });
         }
       }
     }
@@ -132,7 +133,7 @@ async function syncMCPServers(mcpManager: MCPClientManager): Promise<void> {
           await clearMCPToolsFromDB(oldServerName);
 
           // Update DB status
-          db.query(`UPDATE mcp_servers SET status = ?, tools_count = 0 WHERE id = ?`).run("disconnected", oldServerName);
+          await updateDoc<McpServerDoc>("mcpServers", oldServerName, { status: "disconnected", tools_count: 0 }).catch(() => { /* not found */ });
 
           log.info(`MCP server ${oldServerName} disconnected`);
         } catch (err) {

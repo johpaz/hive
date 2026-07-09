@@ -19,7 +19,7 @@
  */
 
 import type { IndexDoc } from "@johpaz/hive-db";
-import { getSearchDb } from "../storage/hivedb";
+import { getHiveDb } from "../storage/hivedb";
 import { logger } from "../utils/logger";
 
 const log = logger.child("capability-search");
@@ -83,7 +83,7 @@ export async function searchCapabilities(
   if (!trimmed) return [];
 
   const startTime = performance.now();
-  const db = await getSearchDb();
+  const db = await getHiveDb();
 
   // Filters are AND-ed by the engine, so multi-type search runs one query per
   // type; the single-type and all-types cases are one engine call.
@@ -153,7 +153,7 @@ export async function replaceCapabilityDocs(
   type: CapabilityType,
   docs: CapabilityDoc[]
 ): Promise<void> {
-  const db = await getSearchDb();
+  const db = await getHiveDb();
   await db.deleteByFilter({ field: "type", value: type });
   if (docs.length === 0) return;
   await db.upsertBatch(docs.map(toIndexDoc));
@@ -162,13 +162,13 @@ export async function replaceCapabilityDocs(
 /** Upsert documents without clearing the rest of their type. */
 export async function upsertCapabilityDocs(docs: CapabilityDoc[]): Promise<void> {
   if (docs.length === 0) return;
-  const db = await getSearchDb();
+  const db = await getHiveDb();
   await db.upsertBatch(docs.map(toIndexDoc));
 }
 
 /** Delete every MCP doc belonging to a server (hot-reload/disconnect). */
 export async function deleteCapabilitiesByServer(serverId: string): Promise<void> {
-  const db = await getSearchDb();
+  const db = await getHiveDb();
   await db.deleteByFilter({ field: "server_id", value: serverId });
 }
 

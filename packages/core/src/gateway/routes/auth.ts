@@ -1,4 +1,5 @@
-import { getDb } from "../../storage/sqlite";
+import { col } from "../../storage/hive";
+import type { UserDoc, RefreshTokenDoc } from "../../storage/collections";
 import { readFileSync } from "node:fs";
 import { getHiveDir } from "../../config/loader";
 import * as path from "node:path";
@@ -22,17 +23,23 @@ function hashToken(token: string): string {
   return Bun.hash(token + JWT_SECRET).toString(16);
 }
 
+/** The single user doc — Hive is a single-user app, so `UPDATE users SET ...` with no WHERE targets this row. */
+async function getSingleUser(): Promise<{ id: string; version: number; doc: UserDoc } | undefined> {
+  const usersCol = await col<UserDoc>("users");
+  return (await usersCol.scan({ limit: 1 }))[0];
+}
+
 export async function generateTokens(userId: string): Promise<AuthTokens> {
   const accessToken = jwt.sign({ userId, type: "access" }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
   const refreshToken = jwt.sign({ userId, type: "refresh", jti: crypto.randomUUID() }, JWT_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
-  
+
   const expiresAt = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60);
   const tokenHash = hashToken(refreshToken);
-  
-  getDb().query(
-    `INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)`
-  ).run(userId, tokenHash, expiresAt);
-  
+
+  const tokensCol = await col<RefreshTokenDoc>("refreshTokens");
+  const id = crypto.randomUUID().replace(/-/g, "");
+  await tokensCol.put(id, { id, user_id: userId, token_hash: tokenHash, expires_at: expiresAt, revoked: false }, { expectedVersion: 0 });
+
   return {
     accessToken,
     refreshToken,
@@ -45,17 +52,18 @@ export async function refreshAccessToken(refreshToken: string): Promise<AuthToke
   try {
     const decoded = jwt.verify(refreshToken, JWT_SECRET) as { userId: string; type: string; jti: string };
     if (decoded.type !== "refresh") return null;
-    
+
     const tokenHash = hashToken(refreshToken);
-    const stored = getDb().query(
-      `SELECT user_id FROM refresh_tokens WHERE token_hash = ? AND revoked = 0 AND expires_at > ?`
-    ).get(tokenHash, Math.floor(Date.now() / 1000)) as { user_id: string } | undefined;
-    
+    const tokensCol = await col<RefreshTokenDoc>("refreshTokens");
+    const matches = await tokensCol.findBy("token_hash", tokenHash);
+    const now = Math.floor(Date.now() / 1000);
+    const stored = matches.find(e => !e.doc.revoked && e.doc.expires_at > now);
+
     if (!stored) return null;
-    
-    getDb().query(`DELETE FROM refresh_tokens WHERE token_hash = ?`).run(tokenHash);
-    
-    return generateTokens(stored.user_id);
+
+    await tokensCol.delete(stored.id);
+
+    return generateTokens(stored.doc.user_id);
   } catch {
     return null;
   }
@@ -88,9 +96,7 @@ export async function handleAuthStatus(
   req: Request,
   cors: CorsHelper
 ): Promise<Response> {
-  const user = getDb().query(
-    `SELECT email, password_hash FROM users LIMIT 1`
-  ).get() as { email: string | null; password_hash: string | null } | null;
+  const user = (await getSingleUser())?.doc;
 
   const hasCredentials = !!(user?.email && user?.password_hash);
   return cors(Response.json({ hasCredentials, email: user?.email ?? null }), req);
@@ -121,9 +127,10 @@ export async function handleLogin(
     return cors(Response.json({ error: "Email y contraseña requeridos" }, { status: 400 }), req);
   }
 
-  const user = getDb().query(
-    `SELECT password_hash FROM users WHERE email = ? LIMIT 1`
-  ).get(body.email.toLowerCase().trim()) as { password_hash: string | null } | null;
+  const usersCol = await col<UserDoc>("users");
+  const targetEmail = body.email.toLowerCase().trim();
+  const matches = await usersCol.scan({});
+  const user = matches.find(e => e.doc.email === targetEmail)?.doc;
 
   if (!user?.password_hash) {
     return cors(Response.json({ error: "Credenciales inválidas" }, { status: 401 }), req);
@@ -159,9 +166,11 @@ export async function handleSetupCredentials(
   const passwordHash = await Bun.password.hash(body.password, { algorithm: "bcrypt", cost: 10 });
   const email = body.email.toLowerCase().trim();
 
-  getDb().query(
-    `UPDATE users SET email = ?, password_hash = ?`
-  ).run(email, passwordHash);
+  const usersCol = await col<UserDoc>("users");
+  const entry = await getSingleUser();
+  if (entry) {
+    await usersCol.put(entry.id, { ...entry.doc, email, password_hash: passwordHash }, { expectedVersion: entry.version });
+  }
 
   return cors(Response.json({ success: true }), req);
 }
@@ -183,21 +192,20 @@ export async function handleChangePassword(
     return cors(Response.json({ error: "La contraseña debe tener al menos 8 caracteres" }, { status: 400 }), req);
   }
 
-  const user = getDb().query(
-    `SELECT password_hash FROM users LIMIT 1`
-  ).get() as { password_hash: string | null } | null;
+  const entry = await getSingleUser();
 
-  if (!user?.password_hash) {
+  if (!entry?.doc.password_hash) {
     return cors(Response.json({ error: "No hay contraseña configurada" }, { status: 400 }), req);
   }
 
-  const valid = await Bun.password.verify(body.currentPassword, user.password_hash);
+  const valid = await Bun.password.verify(body.currentPassword, entry.doc.password_hash);
   if (!valid) {
     return cors(Response.json({ error: "Contraseña actual incorrecta" }, { status: 401 }), req);
   }
 
   const newHash = await Bun.password.hash(body.newPassword, { algorithm: "bcrypt", cost: 10 });
-  getDb().query(`UPDATE users SET password_hash = ?`).run(newHash);
+  const usersCol = await col<UserDoc>("users");
+  await usersCol.put(entry.id, { ...entry.doc, password_hash: newHash }, { expectedVersion: entry.version });
 
   return cors(Response.json({ success: true }), req);
 }
@@ -226,7 +234,11 @@ export async function handleRecover(
   }
 
   const newHash = await Bun.password.hash(body.newPassword, { algorithm: "bcrypt", cost: 10 });
-  getDb().query(`UPDATE users SET password_hash = ?`).run(newHash);
+  const usersCol = await col<UserDoc>("users");
+  const entry = await getSingleUser();
+  if (entry) {
+    await usersCol.put(entry.id, { ...entry.doc, password_hash: newHash }, { expectedVersion: entry.version });
+  }
 
   const authToken = process.env.HIVE_AUTH_TOKEN ?? storedToken;
   return cors(Response.json({ success: true, authToken }), req);
@@ -239,6 +251,10 @@ export async function handleDisableAuth(
   req: Request,
   cors: CorsHelper
 ): Promise<Response> {
-  getDb().query(`UPDATE users SET email = NULL, password_hash = NULL`).run();
+  const usersCol = await col<UserDoc>("users");
+  const entry = await getSingleUser();
+  if (entry) {
+    await usersCol.put(entry.id, { ...entry.doc, email: null, password_hash: null }, { expectedVersion: entry.version });
+  }
   return cors(Response.json({ success: true }), req);
 }

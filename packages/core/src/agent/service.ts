@@ -12,7 +12,6 @@
  * - Eventos (cron, etc.)
  */
 
-import { getDb } from "../storage/sqlite"
 import { logger } from "../utils/logger"
 import { buildSystemPromptWithProjects } from "./prompt-builder"
 import { getAgentLoop, rebuildAgentLoop } from "./agent-loop"
@@ -20,6 +19,8 @@ import type { MCPClientManager } from "@johpaz/hive-agents-mcp"
 import { resolveAgentId, resolveUserId } from "../storage/onboarding"
 import { getMCPManager as getSingletonMCPManager } from "../mcp/singleton"
 import type { ContentPart } from "./llm-client"
+import { col, fromIndexable } from "../storage/hive"
+import type { AgentDoc, EthicsDoc } from "../storage/collections"
 
 const log = logger.child("agent-service")
 
@@ -55,14 +56,16 @@ export interface AgentDBRecord {
 
 export class AgentService {
   private agentId: string
+  private explicitAgentId?: string
   private workspacePath: string
   private mcpManager: MCPClientManager | null = null
   private cronHandlers: CronHandler[] = []
   private initialized: boolean = false
 
   constructor(config?: AgentServiceConfig) {
-    // Resolve agentId from database if not provided
-    this.agentId = config?.agentId || resolveAgentId(null) || "main"
+    // Resolved against the database in initialize() if not provided explicitly.
+    this.explicitAgentId = config?.agentId
+    this.agentId = config?.agentId || "main"
     this.workspacePath = config?.workspacePath || ""
   }
 
@@ -78,6 +81,11 @@ export class AgentService {
     }
 
     try {
+      // Resolve agentId from database if not provided explicitly
+      if (!this.explicitAgentId) {
+        this.agentId = (await resolveAgentId(null)) || "main"
+      }
+
       // Obtener MCP Manager del agent loop
       const agentLoop = getAgentLoop()
       if (agentLoop) {
@@ -97,26 +105,29 @@ export class AgentService {
    * Obtiene el registro del agente desde la DB
    */
   async getAgent(agentId?: string): Promise<AgentDBRecord | null> {
-    const db = getDb()
     const id = agentId || this.agentId
-    
-    const agent = db.query<any, [string]>(
-      "SELECT * FROM agents WHERE id = ? LIMIT 1"
-    ).get(id) as AgentDBRecord | undefined
-
-    return agent || null
+    const agentsCol = await col<AgentDoc>("agents")
+    const entry = await agentsCol.get(id)
+    if (!entry) return null
+    return {
+      id: entry.doc.id, user_id: entry.doc.user_id, name: entry.doc.name,
+      description: entry.doc.description, system_prompt: entry.doc.system_prompt, tone: entry.doc.tone,
+      role: entry.doc.role, status: entry.doc.status, enabled: entry.doc.enabled ? 1 : 0,
+      provider_id: entry.doc.provider_id, model_id: entry.doc.model_id,
+      tools_json: entry.doc.tools_json, skills_json: entry.doc.skills_json,
+      parent_id: fromIndexable(entry.doc.parent_id), max_iterations: entry.doc.max_iterations,
+      headers_encrypted: null, headers_iv: null,
+      created_at: entry.doc.created_at, updated_at: entry.doc.updated_at,
+    }
   }
 
   /**
    * Obtiene la ética desde la DB
    */
   async getEthics(): Promise<string> {
-    const db = getDb()
-    const ethics = db.query<any, []>(
-      "SELECT content FROM ethics WHERE active = 1 LIMIT 1"
-    ).get() as { content: string } | undefined
-
-    return ethics?.content || ""
+    const ethicsCol = await col<EthicsDoc>("ethics")
+    const entries = await ethicsCol.scan({})
+    return entries.find((e) => e.doc.active)?.doc.content || ""
   }
 
   /**
@@ -233,7 +244,7 @@ export class AgentService {
    */
   async getSystemPrompt(agentId?: string, userId?: string): Promise<string> {
     const id = agentId || this.agentId
-    const uid = userId || resolveUserId({}) || "default"
+    const uid = userId || (await resolveUserId({})) || "default"
     return buildSystemPromptWithProjects({ agentId: id, userId: uid })
   }
 

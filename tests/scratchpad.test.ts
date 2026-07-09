@@ -5,11 +5,11 @@
  * collection: packages/core/src/agent/conversation-store.ts's scratchpad
  * functions on top of @johpaz/hive-db.
  *
- * Uses an in-memory index (HIVE_SEARCH_DB_PATH=":memory:") so no state
+ * Uses an in-memory index (HIVE_DB_PATH=":memory:") so no state
  * touches ~/.hive.
  */
 
-process.env.HIVE_SEARCH_DB_PATH = ":memory:";
+process.env.HIVE_DB_PATH = ":memory:";
 
 import { describe, test, expect, afterAll } from "bun:test";
 import {
@@ -18,10 +18,10 @@ import {
   deleteScratchpadNote,
   listAllScratchpadNotes,
 } from "../packages/core/src/agent/conversation-store";
-import { closeSearchDb } from "../packages/core/src/storage/hivedb";
+import { closeHiveDb } from "../packages/core/src/storage/hivedb";
 
 afterAll(() => {
-  closeSearchDb();
+  closeHiveDb();
 });
 
 describe("scratchpad (HiveDB collection)", () => {

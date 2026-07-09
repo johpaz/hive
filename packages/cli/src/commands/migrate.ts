@@ -1,10 +1,9 @@
 /**
- * Migrate Command — Fuerza la migración de schema y re-seed de datos
+ * Migrate Command — Fuerza el re-seed de datos predeterminados
  *
  * Útil cuando:
  * - Se actualizó el paquete pero el seed no se aplicó
  * - Se agregaron nuevas tools/models/providers al seed
- * - Se necesitan crear columnas nuevas en tablas existentes
  */
 
 import * as fs from "node:fs";
@@ -12,9 +11,9 @@ import * as path from "node:path";
 import { getHiveDir } from "@johpaz/hive-agents-core/config/loader";
 
 export async function migrate(): Promise<void> {
-  console.log("\n🔄 Migrando base de datos de Hive...\n");
+  console.log("\n🔄 Re-aplicando seed de datos de Hive...\n");
 
-  const dbPath = path.join(getHiveDir(), "data", "hive.db");
+  const dbPath = path.join(getHiveDir(), "data", "hivedb");
 
   if (!fs.existsSync(dbPath)) {
     console.log("⚠️  No se encontró base de datos existente.");
@@ -23,43 +22,31 @@ export async function migrate(): Promise<void> {
   }
 
   try {
-    const { initializeDatabase, getDb } = await import("@johpaz/hive-agents-core/storage/sqlite");
+    const { ensureHiveDb } = await import("@johpaz/hive-agents-core/storage/bootstrap");
+    const { col } = await import("@johpaz/hive-agents-core/storage/hive");
 
-    // 1. Inicializar BD y aplicar sync de schema
-    console.log("📐 Verificando schema...");
-    initializeDatabase();
-    console.log("   ✅ Schema sincronizado");
+    const countAll = async () => ({
+      tools: await (await col("tools")).count(),
+      models: await (await col("models")).count(),
+      providers: await (await col("providers")).count(),
+      skills: await (await col("skills")).count(),
+      playbook: await (await col("playbook")).count(),
+    });
 
-    const db = getDb();
+    const before = await countAll();
 
-    // 2. Contar datos actuales
-    const toolsBefore = (db.query("SELECT COUNT(*) as n FROM tools").get() as { n: number })?.n ?? 0;
-    const modelsBefore = (db.query("SELECT COUNT(*) as n FROM models").get() as { n: number })?.n ?? 0;
-    const providersBefore = (db.query("SELECT COUNT(*) as n FROM providers").get() as { n: number })?.n ?? 0;
-    const skillsBefore = (db.query("SELECT COUNT(*) as n FROM skills").get() as { n: number })?.n ?? 0;
-    const playbookBefore = (db.query("SELECT COUNT(*) as n FROM playbook").get() as { n: number })?.n ?? 0;
+    console.log("🌱 Aplicando seed de datos...");
+    await ensureHiveDb();
 
-    // 3. Ejecutar re-seed (idempotente)
-    console.log("\n🌱 Aplicando seed de datos...");
-    const { seedAllData } = await import("@johpaz/hive-agents-core/storage/seed");
-    seedAllData();
+    const after = await countAll();
 
-    // 4. Contar datos después
-    const toolsAfter = (db.query("SELECT COUNT(*) as n FROM tools").get() as { n: number })?.n ?? 0;
-    const modelsAfter = (db.query("SELECT COUNT(*) as n FROM models").get() as { n: number })?.n ?? 0;
-    const providersAfter = (db.query("SELECT COUNT(*) as n FROM providers").get() as { n: number })?.n ?? 0;
-    const skillsAfter = (db.query("SELECT COUNT(*) as n FROM skills").get() as { n: number })?.n ?? 0;
-    const playbookAfter = (db.query("SELECT COUNT(*) as n FROM playbook").get() as { n: number })?.n ?? 0;
-
-    // 5. Reportar cambios
     console.log("\n📊 Resumen de cambios:");
-
     const changes: Array<{ name: string; before: number; after: number }> = [
-      { name: "Tools", before: toolsBefore, after: toolsAfter },
-      { name: "Models", before: modelsBefore, after: modelsAfter },
-      { name: "Providers", before: providersBefore, after: providersAfter },
-      { name: "Skills", before: skillsBefore, after: skillsAfter },
-      { name: "Playbook Rules", before: playbookBefore, after: playbookAfter },
+      { name: "Tools", before: before.tools, after: after.tools },
+      { name: "Models", before: before.models, after: after.models },
+      { name: "Providers", before: before.providers, after: after.providers },
+      { name: "Skills", before: before.skills, after: after.skills },
+      { name: "Playbook Rules", before: before.playbook, after: after.playbook },
     ];
 
     let hadChanges = false;
@@ -75,7 +62,6 @@ export async function migrate(): Promise<void> {
       console.log("   ✅ Todo actualizado, sin cambios nuevos");
     }
 
-    // 6. Sugerir reload si gateway está corriendo
     const pidFile = path.join(getHiveDir(), "gateway.pid");
     if (fs.existsSync(pidFile)) {
       console.log("\n   💡 El gateway está corriendo. Ejecuta 'hive reload' para aplicar cambios.");

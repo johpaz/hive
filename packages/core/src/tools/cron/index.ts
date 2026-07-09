@@ -9,7 +9,8 @@
  */
 
 import type { Tool } from "../types";
-import { getDb } from "../../storage/sqlite";
+import { col, toIndexable } from "../../storage/hive";
+import type { UserDoc, UserIdentityDoc, ChannelDoc, CronJobDoc, TaskRunDoc } from "../../storage/collections";
 import { logger } from "../../utils/logger";
 import { Cron } from "croner";
 
@@ -25,30 +26,33 @@ export function getSchedulerInstance(): any {
   return _scheduler;
 }
 
-function getUserTimezone(): string {
-  const db = getDb();
-  const user = db.query("SELECT timezone FROM users LIMIT 1").get() as { timezone: string } | undefined;
-  return user?.timezone || "UTC";
+async function getUserTimezone(): Promise<string> {
+  const usersCol = await col<UserDoc>("users");
+  const userEntry = (await usersCol.scan({ limit: 1 }))[0];
+  return userEntry?.doc.timezone || "UTC";
 }
 
-export function resolveBestChannel(userId: string, explicitChannel?: string): string {
-  const db = getDb();
+export async function resolveBestChannel(userId: string, explicitChannel?: string): Promise<string> {
+  const usersCol = await col<UserDoc>("users");
+  const userEntry = await usersCol.get(userId);
+  const preferredCronChannel = userEntry?.doc.preferred_cron_channel;
 
-  const user = db.query("SELECT preferred_cron_channel FROM users WHERE id = ? LIMIT 1").get(userId) as {
-    preferred_cron_channel: string;
-  } | undefined;
+  const identitiesCol = await col<UserIdentityDoc>("userIdentities");
+  const identityEntries = await identitiesCol.scan({ prefix: `${userId}:` });
+  const allIdentityChannels = identityEntries.map(e => e.doc.channel);
 
-  const activeChannels = db.query(`
-    SELECT DISTINCT ui.channel FROM user_identities ui
-    JOIN channels c ON c.type = ui.channel
-    WHERE ui.user_id = ? AND c.active = 1 AND c.status = 'connected'
-  `).all(userId) as { channel: string }[];
+  const channelsCol = await col<ChannelDoc>("channels");
+  const activeChannels: string[] = [];
+  for (const channel of new Set(allIdentityChannels)) {
+    const channelEntry = await channelsCol.get(channel);
+    if (channelEntry?.doc.active && channelEntry.doc.status === "connected") {
+      activeChannels.push(channel);
+    }
+  }
 
-  log.debug(`[resolveBestChannel] userId=${userId}, explicit=${explicitChannel}, preferred=${user?.preferred_cron_channel}, activeChannels=[${activeChannels.map(c => c.channel).join(", ")}]`);
+  log.debug(`[resolveBestChannel] userId=${userId}, explicit=${explicitChannel}, preferred=${preferredCronChannel}, activeChannels=[${activeChannels.join(", ")}]`);
 
-  const identities = activeChannels.length > 0
-    ? activeChannels
-    : db.query("SELECT channel FROM user_identities WHERE user_id = ?").all(userId) as { channel: string }[];
+  const identities = activeChannels.length > 0 ? activeChannels : allIdentityChannels;
 
   if (identities.length === 0) {
     log.warn(`[resolveBestChannel] No identities found for user ${userId}, falling back to webchat`);
@@ -58,25 +62,25 @@ export function resolveBestChannel(userId: string, explicitChannel?: string): st
   let bestChannel = "";
 
   if (explicitChannel && explicitChannel !== "system") {
-    if (identities.some((i) => i.channel === explicitChannel)) {
+    if (identities.includes(explicitChannel)) {
       bestChannel = explicitChannel;
       log.info(`[resolveBestChannel] Using explicit channel: ${bestChannel}`);
     }
   }
 
-  if (!bestChannel && user?.preferred_cron_channel && user.preferred_cron_channel !== "auto") {
-    if (identities.some((i) => i.channel === user.preferred_cron_channel)) {
-      bestChannel = user.preferred_cron_channel;
+  if (!bestChannel && preferredCronChannel && preferredCronChannel !== "auto") {
+    if (identities.includes(preferredCronChannel)) {
+      bestChannel = preferredCronChannel;
       log.info(`[resolveBestChannel] Using preferred_cron_channel: ${bestChannel}`);
     } else {
-      log.warn(`[resolveBestChannel] preferred_cron_channel=${user.preferred_cron_channel} not in identities=[${identities.map(i => i.channel).join(", ")}]`);
+      log.warn(`[resolveBestChannel] preferred_cron_channel=${preferredCronChannel} not in identities=[${identities.join(", ")}]`);
     }
   }
 
   if (!bestChannel) {
     const preferred = ["telegram", "discord", "slack", "whatsapp", "webchat"];
     for (const p of preferred) {
-      if (identities.some((i) => i.channel === p)) {
+      if (identities.includes(p)) {
         bestChannel = p;
         log.info(`[resolveBestChannel] Using fallback priority: ${bestChannel}`);
         break;
@@ -85,7 +89,7 @@ export function resolveBestChannel(userId: string, explicitChannel?: string): st
   }
 
   if (!bestChannel) {
-    bestChannel = identities[0].channel;
+    bestChannel = identities[0];
     log.info(`[resolveBestChannel] Using first identity: ${bestChannel}`);
   }
 
@@ -117,7 +121,7 @@ export const cronCreateTool: Tool = {
     required: ["name", "task", "task_type"],
   },
   execute: async (params: Record<string, unknown>) => {
-    const timezone = getUserTimezone();
+    const timezone = await getUserTimezone();
 
     const name = params.name as string | undefined;
     const task = params.task as string | undefined;
@@ -174,7 +178,7 @@ export const cronCreateTool: Tool = {
 
     try {
       if (_scheduler) {
-        const result = _scheduler.create({
+        const result = await _scheduler.create({
           name,
           task,
           task_type,
@@ -200,24 +204,36 @@ export const cronCreateTool: Tool = {
           message: `Job "${name}" scheduled. Next run: ${result.nextRun ? new Date(result.nextRun).toLocaleString() : "unknown"}`,
         };
       } else {
-        const db = getDb();
+        const cronJobsCol = await col<CronJobDoc>("cronJobs");
         const id = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
         const now = new Date().toISOString();
         const payloadJson = JSON.stringify(payloadObj || { prompt: task });
 
-        db.query(`
-          INSERT INTO cron_jobs (
-            id, name, task, task_type, cron_expression, fire_at, timezone,
-            start_at, stop_at, dom_and_dow,
-            payload, agent_id, tool_name, max_runs, channel,
-            status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
-        `).run(
-          id, name, task, task_type, cron_expression || null, fire_at || null, timezone,
-          start_at || null, stop_at || null, dom_and_dow ? 1 : 0,
-          payloadJson, agent_id || null, tool_name || null, max_runs || null, channel,
-          now, now
-        );
+        await cronJobsCol.put(id, {
+          id, name, task, task_type,
+          cron_expression: cron_expression || null,
+          fire_at: fire_at || null,
+          timezone,
+          start_at: start_at || null,
+          stop_at: stop_at || null,
+          dom_and_dow: dom_and_dow ? 1 : 0,
+          max_runs: max_runs || null,
+          protect: 1,
+          interval_sec: null,
+          agent_id: toIndexable(agent_id || null),
+          channel,
+          payload: payloadJson,
+          tool_name: tool_name || null,
+          status: "active",
+          run_count: 0,
+          error_count: 0,
+          last_error: null,
+          created_at: now,
+          updated_at: now,
+          last_run_at: null,
+          next_run_at: null,
+          completed_at: null,
+        }, { expectedVersion: 0 });
 
         return {
           ok: true,
@@ -245,28 +261,17 @@ export const cronListTool: Tool = {
     },
   },
   execute: async (params: Record<string, unknown>) => {
-    const db = getDb();
-
     const status = params.status as string | undefined;
     const task_type = params.task_type as string | undefined;
 
     try {
-      let query = "SELECT * FROM cron_jobs WHERE 1=1";
-      const args: any[] = [];
+      const cronJobsCol = await col<CronJobDoc>("cronJobs");
+      let tasks = (await cronJobsCol.scan({})).map(e => e.doc);
 
-      if (status) {
-        query += " AND status = ?";
-        args.push(status);
-      }
+      if (status) tasks = tasks.filter(t => t.status === status);
+      if (task_type) tasks = tasks.filter(t => t.task_type === task_type);
 
-      if (task_type) {
-        query += " AND task_type = ?";
-        args.push(task_type);
-      }
-
-      query += " ORDER BY next_run_at ASC";
-
-      const tasks = db.query(query).all(...args) as any[];
+      tasks.sort((a, b) => (a.next_run_at ?? "").localeCompare(b.next_run_at ?? ""));
 
       return {
         ok: true,
@@ -345,42 +350,40 @@ export const cronUpdateTool: Tool = {
 
     try {
       if (_scheduler) {
-        const success = _scheduler.update(task_id, changes);
+        const success = await _scheduler.update(task_id, changes);
         if (success) {
           return { ok: true, message: `Job "${task_id}" updated` };
         } else {
           return { ok: false, error: `Job "${task_id}" not found` };
         }
       } else {
-        const db = getDb();
-        const fields: string[] = [];
-        const values: any[] = [];
+        const cronJobsCol = await col<CronJobDoc>("cronJobs");
+        const existing = await cronJobsCol.get(task_id);
+        if (!existing) {
+          return { ok: false, error: `Job "${task_id}" not found` };
+        }
 
-        if (changes.name !== undefined) { fields.push("name = ?"); values.push(changes.name); }
-        if (changes.task !== undefined) { fields.push("task = ?"); values.push(changes.task); }
-        if (changes.cron_expression !== undefined) { fields.push("cron_expression = ?"); values.push(changes.cron_expression); }
-        if (changes.fire_at !== undefined) { fields.push("fire_at = ?"); values.push(changes.fire_at); }
-        if (changes.payload !== undefined) { fields.push("payload = ?"); values.push(JSON.stringify(changes.payload)); }
-        if (changes.channel !== undefined) { fields.push("channel = ?"); values.push(changes.channel); }
-        if (changes.max_runs !== undefined) { fields.push("max_runs = ?"); values.push(changes.max_runs); }
-        if (changes.start_at !== undefined) { fields.push("start_at = ?"); values.push(changes.start_at); }
-        if (changes.stop_at !== undefined) { fields.push("stop_at = ?"); values.push(changes.stop_at); }
-        if (changes.dom_and_dow !== undefined) { fields.push("dom_and_dow = ?"); values.push(changes.dom_and_dow ? 1 : 0); }
-        if (changes.agent_id !== undefined) { fields.push("agent_id = ?"); values.push(changes.agent_id); }
-        if (changes.tool_name !== undefined) { fields.push("tool_name = ?"); values.push(changes.tool_name); }
+        const patch: Partial<CronJobDoc> = {};
+        if (changes.name !== undefined) patch.name = changes.name as string;
+        if (changes.task !== undefined) patch.task = changes.task as string;
+        if (changes.cron_expression !== undefined) patch.cron_expression = changes.cron_expression as string;
+        if (changes.fire_at !== undefined) patch.fire_at = changes.fire_at as string;
+        if (changes.payload !== undefined) patch.payload = JSON.stringify(changes.payload);
+        if (changes.channel !== undefined) patch.channel = changes.channel as string;
+        if (changes.max_runs !== undefined) patch.max_runs = changes.max_runs as number;
+        if (changes.start_at !== undefined) patch.start_at = changes.start_at as string;
+        if (changes.stop_at !== undefined) patch.stop_at = changes.stop_at as string;
+        if (changes.dom_and_dow !== undefined) patch.dom_and_dow = changes.dom_and_dow ? 1 : 0;
+        if (changes.agent_id !== undefined) patch.agent_id = toIndexable(changes.agent_id as string);
+        if (changes.tool_name !== undefined) patch.tool_name = changes.tool_name as string;
 
-        if (fields.length === 0) {
+        if (Object.keys(patch).length === 0) {
           return { ok: true, message: "No changes to apply" };
         }
 
-        values.push(task_id);
-        const result = db.query(`UPDATE cron_jobs SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+        await cronJobsCol.put(task_id, { ...existing.doc, ...patch }, { expectedVersion: existing.version });
 
-        if (result.changes > 0) {
-          return { ok: true, message: `Job "${task_id}" updated (scheduler not active)` };
-        } else {
-          return { ok: false, error: `Job "${task_id}" not found` };
-        }
+        return { ok: true, message: `Job "${task_id}" updated (scheduler not active)` };
       }
     } catch (err) {
       log.error(`[update] Failed: ${(err as Error).message}`);
@@ -410,23 +413,20 @@ export const cronPauseTool: Tool = {
 
     try {
       if (_scheduler) {
-        const success = _scheduler.pause(task_id);
+        const success = await _scheduler.pause(task_id);
         if (success) {
           return { ok: true, message: `Job "${task_id}" paused` };
         } else {
           return { ok: false, error: `Job "${task_id}" not found or already paused` };
         }
       } else {
-        const db = getDb();
-        const result = db.query(
-          "UPDATE cron_jobs SET status = 'paused' WHERE id = ?"
-        ).run(task_id);
-
-        if (result.changes > 0) {
-          return { ok: true, message: `Job "${task_id}" paused (scheduler not active)` };
-        } else {
+        const cronJobsCol = await col<CronJobDoc>("cronJobs");
+        const existing = await cronJobsCol.get(task_id);
+        if (!existing) {
           return { ok: false, error: `Job "${task_id}" not found` };
         }
+        await cronJobsCol.put(task_id, { ...existing.doc, status: "paused" }, { expectedVersion: existing.version });
+        return { ok: true, message: `Job "${task_id}" paused (scheduler not active)` };
       }
     } catch (err) {
       log.error(`[pause] Failed: ${(err as Error).message}`);
@@ -456,23 +456,20 @@ export const cronResumeTool: Tool = {
 
     try {
       if (_scheduler) {
-        const success = _scheduler.resume(task_id);
+        const success = await _scheduler.resume(task_id);
         if (success) {
           return { ok: true, message: `Job "${task_id}" resumed` };
         } else {
           return { ok: false, error: `Job "${task_id}" not found or already active` };
         }
       } else {
-        const db = getDb();
-        const result = db.query(
-          "UPDATE cron_jobs SET status = 'active' WHERE id = ?"
-        ).run(task_id);
-
-        if (result.changes > 0) {
-          return { ok: true, message: `Job "${task_id}" resumed (scheduler not active)` };
-        } else {
+        const cronJobsCol = await col<CronJobDoc>("cronJobs");
+        const existing = await cronJobsCol.get(task_id);
+        if (!existing) {
           return { ok: false, error: `Job "${task_id}" not found` };
         }
+        await cronJobsCol.put(task_id, { ...existing.doc, status: "active" }, { expectedVersion: existing.version });
+        return { ok: true, message: `Job "${task_id}" resumed (scheduler not active)` };
       }
     } catch (err) {
       log.error(`[resume] Failed: ${(err as Error).message}`);
@@ -502,23 +499,20 @@ export const cronDeleteTool: Tool = {
 
     try {
       if (_scheduler) {
-        const success = _scheduler.delete(task_id);
+        const success = await _scheduler.delete(task_id);
         if (success) {
           return { ok: true, message: `Job "${task_id}" deleted` };
         } else {
           return { ok: false, error: `Job "${task_id}" not found` };
         }
       } else {
-        const db = getDb();
-        const result = db.query(
-          "DELETE FROM cron_jobs WHERE id = ?"
-        ).run(task_id);
-
-        if (result.changes > 0) {
-          return { ok: true, message: `Job "${task_id}" deleted (scheduler not active)` };
-        } else {
+        const cronJobsCol = await col<CronJobDoc>("cronJobs");
+        const existing = await cronJobsCol.get(task_id);
+        if (!existing) {
           return { ok: false, error: `Job "${task_id}" not found` };
         }
+        await cronJobsCol.delete(task_id);
+        return { ok: true, message: `Job "${task_id}" deleted (scheduler not active)` };
       }
     } catch (err) {
       log.error(`[delete] Failed: ${(err as Error).message}`);
@@ -586,13 +580,12 @@ export const cronHistoryTool: Tool = {
     }
 
     try {
-      const db = getDb();
-      const runs = db.query(`
-        SELECT * FROM task_runs
-        WHERE task_id = ?
-        ORDER BY started_at DESC
-        LIMIT ?
-      `).all(task_id, limit) as any[];
+      const taskRunsCol = await col<TaskRunDoc>("taskRuns");
+      const runs = (await taskRunsCol.scan({}))
+        .map(e => e.doc)
+        .filter(r => r.task_id === task_id)
+        .sort((a, b) => b.started_at.localeCompare(a.started_at))
+        .slice(0, limit);
 
       return {
         ok: true,

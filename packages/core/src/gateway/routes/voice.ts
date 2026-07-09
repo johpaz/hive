@@ -1,37 +1,40 @@
-import { getDb } from "../../storage/sqlite"
+import { col, updateDoc } from "../../storage/hive"
+import type { ModelDoc, ProviderDoc, ChannelDoc } from "../../storage/collections"
 import { voiceService } from "../../voice"
 import { storeProviderApiKey, loadProviderApiKey } from "../../storage/crypto"
 
 /** Providers de voz = providers con al menos un modelo STT/TTS en la BD. */
-function getVoiceProviderIds(): string[] {
-  const rows = getDb().query(`
-    SELECT DISTINCT p.id FROM providers p
-    JOIN models m ON m.provider_id = p.id
-    WHERE m.model_type IN ('stt', 'tts')
-  `).all() as Array<{ id: string }>
-  return rows.map(r => r.id)
+async function getVoiceProviderIds(): Promise<string[]> {
+  const modelsCol = await col<ModelDoc>("models")
+  const [sttModels, ttsModels] = await Promise.all([
+    modelsCol.findBy("model_type", "stt"),
+    modelsCol.findBy("model_type", "tts"),
+  ])
+  const ids = new Set([...sttModels, ...ttsModels].map(e => e.doc.provider_id))
+  return [...ids]
 }
 
 /** Providers de voz locales (modelos con capability "local", ej. Piper) no requieren API key. */
-function isLocalVoiceProvider(providerId: string): boolean {
-  const row = getDb().query(`
-    SELECT COUNT(*) AS c FROM models
-    WHERE provider_id = ? AND model_type IN ('stt', 'tts') AND capabilities LIKE '%"local"%'
-  `).get(providerId) as { c: number } | undefined
-  return (row?.c ?? 0) > 0
+async function isLocalVoiceProvider(providerId: string): Promise<boolean> {
+  const modelsCol = await col<ModelDoc>("models")
+  const models = await modelsCol.findBy("provider_id", providerId)
+  return models.some(e =>
+    (e.doc.model_type === "stt" || e.doc.model_type === "tts") &&
+    !!e.doc.capabilities?.includes('"local"')
+  )
 }
 
 export async function handleGetVoiceProviders(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   return addCorsHeaders(Response.json({
-    providers: getVoiceProviderIds()
+    providers: await getVoiceProviderIds()
   }), req)
 }
 
 export async function handleGetConfiguredVoiceProviders(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
-  const voiceProviderIds = getVoiceProviderIds()
+  const voiceProviderIds = await getVoiceProviderIds()
   const results = await Promise.all(voiceProviderIds.map(async id => ({
     id,
-    configured: isLocalVoiceProvider(id) || !!(await loadProviderApiKey(id))
+    configured: (await isLocalVoiceProvider(id)) || !!(await loadProviderApiKey(id))
   })))
 
   const providers: Record<string, boolean> = {}
@@ -60,16 +63,15 @@ export async function handleSaveVoiceProviderKey(
   }
 
   try {
-    const db = getDb()
-
     // El provider debe existir en la BD (viene del seed o fue creado por el usuario)
-    const provider = db.query(`SELECT id FROM providers WHERE id = ?`).get(providerId) as { id: string } | undefined
+    const providersCol = await col<ProviderDoc>("providers")
+    const provider = await providersCol.get(providerId)
     if (!provider) {
       return addCorsHeaders(Response.json({ success: false, error: "Unknown provider" }, { status: 400 }), req)
     }
 
     // Activar sin pisar name/category/base_url existentes
-    db.query(`UPDATE providers SET enabled = 1, active = 1 WHERE id = ?`).run(providerId)
+    await providersCol.put(providerId, { ...provider.doc, enabled: true, active: true }, { expectedVersion: provider.version })
 
     await storeProviderApiKey(providerId, apiKey)
 
@@ -154,7 +156,7 @@ export async function handleGetChannelVoice(
   addCorsHeaders: (r: Response, req: Request) => Response,
   channelId: string
 ): Promise<Response> {
-  const voiceConfig = voiceService.getChannelVoiceConfig(channelId)
+  const voiceConfig = await voiceService.getChannelVoiceConfig(channelId)
   return addCorsHeaders(Response.json(voiceConfig), req)
 }
 
@@ -164,34 +166,16 @@ export async function handleUpdateChannelVoice(
   channelId: string
 ): Promise<Response> {
   const body = await req.json().catch(() => ({}))
-  const db = getDb()
-  const updates: string[] = []
-  const params: unknown[] = []
 
-  if (body.voiceEnabled !== undefined) { 
-    updates.push("voice_enabled = ?")
-    params.push(body.voiceEnabled ? 1 : 0) 
-  }
-  if (body.ttsEnabled !== undefined) { 
-    updates.push("tts_enabled = ?")
-    params.push(body.ttsEnabled ? 1 : 0) 
-  }
-  if (body.sttProvider !== undefined) { 
-    updates.push("stt_provider = ?")
-    params.push(body.sttProvider) 
-  }
-  if (body.ttsProvider !== undefined) { 
-    updates.push("tts_provider = ?")
-    params.push(body.ttsProvider) 
-  }
-  if (body.ttsVoiceId !== undefined) { 
-    updates.push("tts_voice_id = ?")
-    params.push(body.ttsVoiceId) 
-  }
+  const patch: Partial<ChannelDoc> = {}
+  if (body.voiceEnabled !== undefined) patch.voice_enabled = !!body.voiceEnabled
+  if (body.ttsEnabled !== undefined) patch.tts_enabled = !!body.ttsEnabled
+  if (body.sttProvider !== undefined) patch.stt_provider = body.sttProvider
+  if (body.ttsProvider !== undefined) patch.tts_provider = body.ttsProvider
+  if (body.ttsVoiceId !== undefined) patch.tts_voice_id = body.ttsVoiceId
 
-  if (updates.length > 0) {
-    params.push(channelId)
-    db.query(`UPDATE channels SET ${updates.join(", ")} WHERE id = ?`).run(...params as any[])
+  if (Object.keys(patch).length > 0) {
+    await updateDoc<ChannelDoc>("channels", channelId, patch).catch(() => { /* not found */ })
   }
 
   return addCorsHeaders(Response.json({ success: true }), req)

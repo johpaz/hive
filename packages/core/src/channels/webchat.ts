@@ -19,17 +19,22 @@ export class WebChatChannel extends BaseChannel {
   accountId: string;
   config: WebChatConfig;
 
+  private explicitAccountId?: string;
   private connections: Map<string, ServerWebSocket<WebSocketData>> = new Map();
   private log = logger.child("webchat");
 
   constructor(config: WebChatConfig) {
     super();
     this.config = config;
-    // Resolve accountId from database (single user) or use fallback
-    this.accountId = config.accountId || resolveUserId({}) || "webchat";
+    this.explicitAccountId = config.accountId;
+    this.accountId = config.accountId || "webchat";
   }
 
   async start(): Promise<void> {
+    // Resolve accountId from database (single user) if not provided explicitly
+    if (!this.explicitAccountId) {
+      this.accountId = (await resolveUserId({})) || "webchat";
+    }
     this.running = true;
     this.log.info("WebChat channel ready");
   }

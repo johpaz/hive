@@ -15,7 +15,7 @@ const getPidFile = () => {
   const config = loadConfig();
   return config.gateway?.pidFile ?? path.join(getHiveDirConst(), "gateway.pid");
 };
-const getDbFile = () => path.join(getHiveDirConst(), "data", "hive.db");
+const getDbFile = () => path.join(getHiveDirConst(), "data", "hivedb");
 
 function checkBun(): { ok: boolean; version: string } {
   try {
@@ -140,9 +140,9 @@ export async function doctor(): Promise<void> {
 
   // Base de Datos
   if (fs.existsSync(getDbFile())) {
-    checks.push({ category: "Sistema", name: "Base de Datos", status: "ok", message: "hive.db presente" });
+    checks.push({ category: "Sistema", name: "Base de Datos", status: "ok", message: "hivedb presente" });
   } else {
-    checks.push({ category: "Sistema", name: "Base de Datos", status: "warn", message: "hive.db no existe" });
+    checks.push({ category: "Sistema", name: "Base de Datos", status: "warn", message: "hivedb no existe" });
   }
 
   // Configuración (In-memory/Env)
@@ -169,9 +169,13 @@ export async function doctor(): Promise<void> {
   // Workspace — leer desde agents.workspace en la BD
   let workspacePath: string | null = null;
   try {
-    const { initializeDatabase, dbService } = await import("@johpaz/hive-agents-core/storage/sqlite");
-    initializeDatabase();
-    workspacePath = dbService.getActiveAgentWorkspace();
+    const { ensureHiveDb } = await import("@johpaz/hive-agents-core/storage/bootstrap");
+    const { col } = await import("@johpaz/hive-agents-core/storage/hive");
+    await ensureHiveDb();
+    const agentsCol = await col<{ role: string; workspace: string | null }>("agents");
+    const coordinator = (await agentsCol.findBy("role", "coordinator"))[0];
+    const ws = coordinator?.doc.workspace;
+    workspacePath = ws && ws !== "null" ? ws : null;
   } catch { /* BD no disponible aún */ }
 
   if (!workspacePath) {
@@ -184,13 +188,13 @@ export async function doctor(): Promise<void> {
 
   // Seed Data — verificar que los datos del seed estén actualizados
   try {
-    const { initializeDatabase, getDb } = await import("@johpaz/hive-agents-core/storage/sqlite");
-    initializeDatabase();
-    const db = getDb();
+    const { ensureHiveDb } = await import("@johpaz/hive-agents-core/storage/bootstrap");
+    const { col } = await import("@johpaz/hive-agents-core/storage/hive");
+    await ensureHiveDb();
     const { SEED_DATA } = await import("@johpaz/hive-agents-core/storage/seed");
 
     // Tools: comparar count en BD vs seed
-    const toolsInDb = (db.query("SELECT COUNT(*) as n FROM tools").get() as { n: number })?.n ?? 0;
+    const toolsInDb = await (await col("tools")).count();
     const toolsInSeed = SEED_DATA.tools.length;
     if (toolsInDb < toolsInSeed) {
       checks.push({
@@ -210,7 +214,7 @@ export async function doctor(): Promise<void> {
     }
 
     // Models: comparar count en BD vs seed
-    const modelsInDb = (db.query("SELECT COUNT(*) as n FROM models").get() as { n: number })?.n ?? 0;
+    const modelsInDb = await (await col("models")).count();
     const modelsInSeed = SEED_DATA.models.length;
     if (modelsInDb < modelsInSeed) {
       checks.push({
@@ -230,7 +234,7 @@ export async function doctor(): Promise<void> {
     }
 
     // Providers: comparar count en BD vs seed
-    const providersInDb = (db.query("SELECT COUNT(*) as n FROM providers").get() as { n: number })?.n ?? 0;
+    const providersInDb = await (await col("providers")).count();
     const providersInSeed = SEED_DATA.providers.length;
     if (providersInDb < providersInSeed) {
       checks.push({
@@ -250,7 +254,7 @@ export async function doctor(): Promise<void> {
     }
 
     // Skills: comparar count en BD
-    const skillsInDb = (db.query("SELECT COUNT(*) as n FROM skills").get() as { n: number })?.n ?? 0;
+    const skillsInDb = await (await col("skills")).count();
     if (skillsInDb === 0) {
       checks.push({
         category: "Seed Data",

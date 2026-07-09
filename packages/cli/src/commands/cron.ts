@@ -7,19 +7,19 @@
 
 import * as p from "@clack/prompts";
 import { getHiveDir } from "@johpaz/hive-agents-core/config/loader";
-import { getDb, initializeDatabase } from "@johpaz/hive-agents-core/storage/sqlite";
+import { col } from "@johpaz/hive-agents-core/storage/hive";
+import type { UserDoc } from "@johpaz/hive-agents-core/storage/collections";
 
 const API_BASE = "http://127.0.0.1:18790/api";
 
 /**
  * Get user's timezone from database
  */
-function getUserTimezone(): string {
+async function getUserTimezone(): Promise<string> {
   try {
-    initializeDatabase();
-    const db = getDb();
-    const user = db.query("SELECT timezone FROM users LIMIT 1").get() as { timezone: string } | undefined;
-    return user?.timezone || "UTC";
+    const usersCol = await col<UserDoc>("users");
+    const userEntry = (await usersCol.scan({ limit: 1 }))[0];
+    return userEntry?.doc.timezone || "UTC";
   } catch {
     return "UTC";
   }
@@ -293,7 +293,7 @@ async function addCron(args: string[]): Promise<void> {
   }
 
   try {
-    const timezone = tz || getUserTimezone();
+    const timezone = tz || (await getUserTimezone());
 
     const body: Record<string, unknown> = {
       name,

@@ -1,16 +1,18 @@
-import { getDb } from "../../storage/sqlite.ts"
+import { col, updateDoc } from "../../storage/hive.ts"
+import { getHiveDb } from "../../storage/hivedb.ts"
+import type { ModelDoc, AgentDoc } from "../../storage/collections.ts"
 import type { Config } from "../../config/loader.ts"
 
 export async function handleGetModels(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const url = new URL(req.url)
   const providerId = url.searchParams.get("provider_id")
 
-  let models
-  if (providerId) {
-    models = getDb().query("SELECT * FROM models WHERE provider_id = ? ORDER BY name").all(providerId)
-  } else {
-    models = getDb().query("SELECT * FROM models ORDER BY name").all()
-  }
+  const modelsCol = await col<ModelDoc>("models")
+  const entries = providerId
+    ? await modelsCol.findBy("provider_id", providerId)
+    : await modelsCol.scan({})
+
+  const models = entries.map(e => e.doc).sort((a, b) => a.name.localeCompare(b.name))
 
   return addCorsHeaders(Response.json({ models }), req)
 }
@@ -28,18 +30,18 @@ export async function handleCreateModel(req: Request, addCorsHeaders: (r: Respon
   }
 
   const id = body.id || name
-
-  const existing = getDb().query("SELECT * FROM models WHERE id = ?").get(id) as any
+  const modelsCol = await col<ModelDoc>("models")
+  const existing = await modelsCol.get(id)
   if (existing) {
-    return addCorsHeaders(Response.json({ ok: false, error: "Model already exists", id, model: existing }, { status: 409 }), req)
+    return addCorsHeaders(Response.json({ ok: false, error: "Model already exists", id, model: existing.doc }, { status: 409 }), req)
   }
 
-  getDb().query(`
-    INSERT INTO models(id, name, provider_id, model_type, context_window, enabled, active)
-    VALUES(?, ?, ?, ?, ?, 1, 1)
-  `).run(id, name, providerId, modelType, contextWindow)
+  const model: ModelDoc = {
+    id, name, provider_id: providerId, model_type: modelType,
+    context_window: contextWindow, capabilities: null, enabled: true, active: true,
+  }
+  await modelsCol.put(id, model, { expectedVersion: 0 })
 
-  const model = getDb().query("SELECT * FROM models WHERE id = ?").get(id)
   return addCorsHeaders(Response.json({ ok: true, id, model }, { status: 201 }), req)
 }
 
@@ -55,7 +57,7 @@ export async function handleToggleModel(req: Request, addCorsHeaders: (r: Respon
     return addCorsHeaders(Response.json({ success: false, error: "model id and active required" }), req)
   }
 
-  getDb().query(`UPDATE models SET active = ?, enabled = ? WHERE id = ?`).run(active ? 1 : 0, active ? 1 : 0, modelId)
+  await updateDoc<ModelDoc>("models", modelId, { active: !!active, enabled: !!active }).catch(() => { /* not found */ })
 
   return addCorsHeaders(Response.json({ success: true, active }), req)
 }
@@ -80,18 +82,20 @@ export async function handleDeleteModel(req: Request, addCorsHeaders: (r: Respon
     return addCorsHeaders(Response.json({ ok: false, error: "model id required" }, { status: 400 }), req)
   }
 
-  const existing = getDb().query("SELECT * FROM models WHERE id = ?").get(modelId) as any
+  const modelsCol = await col<ModelDoc>("models")
+  const existing = await modelsCol.get(modelId)
   if (!existing) {
     return addCorsHeaders(Response.json({ ok: false, error: "Model not found" }, { status: 404 }), req)
   }
 
-  const agents = getDb().query("SELECT id, name FROM agents WHERE model_id = ?").all(modelId) as any[]
+  const agentsCol = await col<AgentDoc>("agents")
+  const agents = await agentsCol.findBy("model_id", modelId)
   if (agents.length > 0) {
-    const names = agents.map(a => a.name).join(", ")
+    const names = agents.map(a => a.doc.name).join(", ")
     return addCorsHeaders(Response.json({ ok: false, error: `En uso por agentes: ${names}` }, { status: 409 }), req)
   }
 
-  getDb().query("DELETE FROM models WHERE id = ?").run(modelId)
+  await modelsCol.delete(modelId)
   return addCorsHeaders(Response.json({ ok: true }), req)
 }
 
@@ -104,7 +108,8 @@ export async function handleUpdateModel(req: Request, addCorsHeaders: (r: Respon
     return addCorsHeaders(Response.json({ ok: false, error: "model id required" }, { status: 400 }), req)
   }
 
-  const existing = getDb().query("SELECT * FROM models WHERE id = ?").get(oldId) as any
+  const modelsCol = await col<ModelDoc>("models")
+  const existing = await modelsCol.get(oldId)
   if (!existing) {
     return addCorsHeaders(Response.json({ ok: false, error: "Model not found" }, { status: 404 }), req)
   }
@@ -115,30 +120,36 @@ export async function handleUpdateModel(req: Request, addCorsHeaders: (r: Respon
 
   if (!newId || newId === oldId) {
     // Only name change
-    const name = newName || existing.name
-    getDb().query("UPDATE models SET name = ? WHERE id = ?").run(name, oldId)
-    const model = getDb().query("SELECT * FROM models WHERE id = ?").get(oldId)
+    const name = newName || existing.doc.name
+    await modelsCol.put(oldId, { ...existing.doc, name }, { expectedVersion: existing.version })
+    const model = (await modelsCol.get(oldId))?.doc
     return addCorsHeaders(Response.json({ ok: true, model }), req)
   }
 
-  // ID is changing — use a transaction to migrate agents references
-  const checkConflict = getDb().query("SELECT id FROM models WHERE id = ?").get(newId) as any
+  // ID is changing — atomically rename the model and re-point every agent
+  // that referenced the old id (this is the repo's one "transaction").
+  const checkConflict = await modelsCol.get(newId)
   if (checkConflict) {
     return addCorsHeaders(Response.json({ ok: false, error: "Ya existe un modelo con ese ID" }, { status: 409 }), req)
   }
 
-  const name = newName || existing.name
-  getDb().transaction(() => {
-    getDb().query(`
-      INSERT INTO models(id, name, provider_id, model_type, context_window, capabilities, enabled, active)
-      SELECT ?, ?, provider_id, model_type, context_window, capabilities, enabled, active FROM models WHERE id = ?
-    `).run(newId, name, oldId)
-    getDb().query("UPDATE agents SET model_id = ? WHERE model_id = ?").run(newId, oldId)
-    getDb().query("DELETE FROM models WHERE id = ?").run(oldId)
-  })()
+  const name = newName || existing.doc.name
+  const newModel: ModelDoc = { ...existing.doc, id: newId, name }
 
-  const model = getDb().query("SELECT * FROM models WHERE id = ?").get(newId)
-  return addCorsHeaders(Response.json({ ok: true, model }), req)
+  const agentsCol = await col<AgentDoc>("agents")
+  const affectedAgents = await agentsCol.findBy("model_id", oldId)
+
+  const db = await getHiveDb()
+  await db.batch([
+    { op: "put", collection: "models", id: newId, doc: newModel, expectedVersion: 0 },
+    { op: "delete", collection: "models", id: oldId },
+    ...affectedAgents.map(a => ({
+      op: "put" as const, collection: "agents", id: a.id,
+      doc: { ...a.doc, model_id: newId }, expectedVersion: a.version,
+    })),
+  ])
+
+  return addCorsHeaders(Response.json({ ok: true, model: newModel }), req)
 }
 
 export async function handleUpdateModelsConfig(

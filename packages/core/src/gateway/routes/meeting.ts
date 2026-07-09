@@ -1,6 +1,7 @@
-import { getDb } from "../../storage/sqlite";
 import { voiceService, type AudioInput } from "../../voice/index";
 import { logger } from "../../utils/logger";
+import { col, nextId, toIndexable } from "../../storage/hive";
+import type { MeetingSessionDoc, MeetingSegmentDoc, ModelDoc, ProviderDoc } from "../../storage/collections";
 
 const log = logger.child("meeting-routes");
 
@@ -15,35 +16,42 @@ export async function handleCreateMeeting(
     const body = await req.json().catch(() => ({})) as Record<string, unknown>;
     const title = (body.title as string) || "Reunión sin título";
 
-    const db = getDb();
-
     // Default STT model desde la BD (primer modelo stt activo) cuando el cliente no lo indica
     let sttModel = body.stt_model as string | undefined;
     if (!sttModel) {
-      const row = db.query(`
-        SELECT m.id FROM models m
-        JOIN providers p ON p.id = m.provider_id
-        WHERE m.model_type = 'stt' AND m.active = 1 AND p.active = 1
-        LIMIT 1
-      `).get() as { id: string } | undefined;
-      sttModel = row?.id || "whisper-large-v3-turbo";
+      const providersCol = await col<ProviderDoc>("providers");
+      const activeProviderIds = new Set(
+        (await providersCol.scan({})).map(e => e.doc).filter(p => p.active).map(p => p.id)
+      );
+      const modelsCol = await col<ModelDoc>("models");
+      const sttModelEntry = (await modelsCol.scan({}))
+        .map(e => e.doc)
+        .find(m => m.model_type === "stt" && m.active && activeProviderIds.has(m.provider_id));
+      sttModel = sttModelEntry?.id || "whisper-large-v3-turbo";
     }
-    const result = db
-      .query(
-        `INSERT INTO meeting_sessions (title, stt_model)
-         VALUES (?, ?)
-         RETURNING id, title, status, stt_model, started_at`
-      )
-      .get(title, sttModel) as {
-      id: string;
-      title: string;
-      status: string;
-      stt_model: string;
-      started_at: number;
+
+    const id = crypto.randomUUID().replace(/-/g, "");
+    const now = Date.now();
+    const doc: MeetingSessionDoc = {
+      id,
+      user_id: toIndexable(null),
+      title,
+      status: "active",
+      stt_model: sttModel,
+      started_at: now,
+      stopped_at: null,
+      report_path: null,
+      metadata: null,
     };
 
-    log.info(`Meeting session created: ${result.id}`);
-    return addCorsHeaders(Response.json({ ok: true, session: result }), req);
+    const sessionsCol = await col<MeetingSessionDoc>("meetingSessions");
+    await sessionsCol.put(id, doc, { expectedVersion: 0 });
+
+    log.info(`Meeting session created: ${id}`);
+    return addCorsHeaders(Response.json({
+      ok: true,
+      session: { id, title, status: doc.status, stt_model: doc.stt_model, started_at: doc.started_at },
+    }), req);
   } catch (error) {
     log.error(`handleCreateMeeting: ${(error as Error).message}`);
     return addCorsHeaders(
@@ -59,19 +67,19 @@ export async function handleListMeetings(
   addCorsHeaders: CorsHelper
 ): Promise<Response> {
   try {
-    const db = getDb();
-    const sessions = db
-      .query(
-        `SELECT ms.*, COUNT(seg.id) as segment_count
-         FROM meeting_sessions ms
-         LEFT JOIN meeting_segments seg ON seg.session_id = ms.id
-         GROUP BY ms.id
-         ORDER BY ms.started_at DESC
-         LIMIT 50`
-      )
-      .all() as Record<string, unknown>[];
+    const sessionsCol = await col<MeetingSessionDoc>("meetingSessions");
+    const sessions = (await sessionsCol.scan({}))
+      .map(e => e.doc)
+      .sort((a, b) => b.started_at - a.started_at)
+      .slice(0, 50);
 
-    return addCorsHeaders(Response.json({ ok: true, sessions }), req);
+    const segmentsCol = await col<MeetingSegmentDoc>("meetingSegments");
+    const withCounts = await Promise.all(sessions.map(async (s) => {
+      const segments = await segmentsCol.scan({ prefix: `${s.id}:` });
+      return { ...s, segment_count: segments.length };
+    }));
+
+    return addCorsHeaders(Response.json({ ok: true, sessions: withCounts }), req);
   } catch (error) {
     log.error(`handleListMeetings: ${(error as Error).message}`);
     return addCorsHeaders(
@@ -88,26 +96,23 @@ export async function handleGetMeeting(
   sessionId: string
 ): Promise<Response> {
   try {
-    const db = getDb();
-    const session = db
-      .query(`SELECT * FROM meeting_sessions WHERE id = ?`)
-      .get(sessionId) as Record<string, unknown> | undefined;
+    const sessionsCol = await col<MeetingSessionDoc>("meetingSessions");
+    const sessionEntry = await sessionsCol.get(sessionId);
 
-    if (!session) {
+    if (!sessionEntry) {
       return addCorsHeaders(
         Response.json({ ok: false, error: "Sesión no encontrada" }, { status: 404 }),
         req
       );
     }
 
-    const segments = db
-      .query(
-        `SELECT seq, speaker, text, created_at FROM meeting_segments
-         WHERE session_id = ? ORDER BY seq ASC`
-      )
-      .all(sessionId) as Record<string, unknown>[];
+    const segmentsCol = await col<MeetingSegmentDoc>("meetingSegments");
+    const segments = (await segmentsCol.scan({ prefix: `${sessionId}:` }))
+      .map(e => e.doc)
+      .sort((a, b) => a.seq - b.seq)
+      .map(s => ({ seq: s.seq, speaker: s.speaker, text: s.text, created_at: s.created_at }));
 
-    return addCorsHeaders(Response.json({ ok: true, session, segments }), req);
+    return addCorsHeaders(Response.json({ ok: true, session: sessionEntry.doc, segments }), req);
   } catch (error) {
     log.error(`handleGetMeeting: ${(error as Error).message}`);
     return addCorsHeaders(
@@ -136,17 +141,16 @@ export async function handleAddMeetingSegment(
       );
     }
 
-    const db = getDb();
-    const session = db
-      .query(`SELECT id, stt_model, status FROM meeting_sessions WHERE id = ?`)
-      .get(sessionId) as { id: string; stt_model: string; status: string } | undefined;
+    const sessionsCol = await col<MeetingSessionDoc>("meetingSessions");
+    const sessionEntry = await sessionsCol.get(sessionId);
 
-    if (!session) {
+    if (!sessionEntry) {
       return addCorsHeaders(
         Response.json({ ok: false, error: "Sesión no encontrada" }, { status: 404 }),
         req
       );
     }
+    const session = sessionEntry.doc;
     if (session.status !== "active") {
       return addCorsHeaders(
         Response.json(
@@ -160,16 +164,19 @@ export async function handleAddMeetingSegment(
     const audioInput: AudioInput = { type: "base64", data: audioBase64, mimeType };
     const transcription = await voiceService.transcribe(audioInput, session.stt_model);
 
-    const seqResult = db
-      .query(
-        `SELECT COALESCE(MAX(seq) + 1, 0) as next_seq FROM meeting_segments WHERE session_id = ?`
-      )
-      .get(sessionId) as { next_seq: number };
+    const paddedSeq = await nextId(`meetingSegments:${sessionId}`);
+    const seq = parseInt(paddedSeq, 10) - 1; // preserve the original 0-based sequence
 
-    const seq = seqResult.next_seq;
-    db.query(
-      `INSERT INTO meeting_segments (session_id, seq, speaker, text) VALUES (?, ?, ?, ?)`
-    ).run(sessionId, seq, speaker, transcription);
+    const segmentsCol = await col<MeetingSegmentDoc>("meetingSegments");
+    await segmentsCol.put(`${sessionId}:${paddedSeq}`, {
+      id: `${sessionId}:${paddedSeq}`,
+      session_id: sessionId,
+      seq,
+      speaker,
+      text: transcription,
+      duration_ms: null,
+      created_at: Date.now(),
+    }, { expectedVersion: 0 });
 
     return addCorsHeaders(
       Response.json({ ok: true, seq, speaker, text: transcription }),
@@ -191,45 +198,38 @@ export async function handleStopMeeting(
   sessionId: string
 ): Promise<Response> {
   try {
-    const db = getDb();
-    const session = db
-      .query(`SELECT id, title, status FROM meeting_sessions WHERE id = ?`)
-      .get(sessionId) as { id: string; title: string; status: string } | undefined;
+    const sessionsCol = await col<MeetingSessionDoc>("meetingSessions");
+    const sessionEntry = await sessionsCol.get(sessionId);
 
-    if (!session) {
+    if (!sessionEntry) {
       return addCorsHeaders(
         Response.json({ ok: false, error: "Sesión no encontrada" }, { status: 404 }),
         req
       );
     }
+    const session = sessionEntry.doc;
+
+    const segmentsCol = await col<MeetingSegmentDoc>("meetingSegments");
 
     if (session.status !== "active") {
-      const count = (
-        db
-          .query(`SELECT COUNT(*) as c FROM meeting_segments WHERE session_id = ?`)
-          .get(sessionId) as { c: number }
-      ).c;
+      const count = (await segmentsCol.scan({ prefix: `${sessionId}:` })).length;
       return addCorsHeaders(
         Response.json({ ok: true, session_id: sessionId, segment_count: count }),
         req
       );
     }
 
-    db.query(
-      `UPDATE meeting_sessions SET status = 'stopped', stopped_at = unixepoch() WHERE id = ?`
-    ).run(sessionId);
+    await sessionsCol.put(sessionId, { ...session, status: "stopped", stopped_at: Date.now() }, { expectedVersion: sessionEntry.version });
 
-    const countResult = db
-      .query(`SELECT COUNT(*) as count FROM meeting_segments WHERE session_id = ?`)
-      .get(sessionId) as { count: number };
+    const count = (await segmentsCol.scan({ prefix: `${sessionId}:` })).length;
 
-    log.info(`Meeting stopped: ${sessionId} — ${countResult.count} segments`);
+    log.info(`Meeting stopped: ${sessionId} — ${count} segments`);
     return addCorsHeaders(
       Response.json({
         ok: true,
         session_id: sessionId,
         title: session.title,
-        segment_count: countResult.count,
+        segment_count: count,
       }),
       req
     );

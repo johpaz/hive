@@ -4,11 +4,11 @@
  * Covers the layer that replaced the SQLite FTS5 virtual tables:
  * packages/core/src/agent/capability-search.ts on top of @johpaz/hive-db.
  *
- * Uses an in-memory index (HIVE_SEARCH_DB_PATH=":memory:") so no state
+ * Uses an in-memory index (HIVE_DB_PATH=":memory:") so no state
  * touches ~/.hive.
  */
 
-process.env.HIVE_SEARCH_DB_PATH = ":memory:";
+process.env.HIVE_DB_PATH = ":memory:";
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import {
@@ -18,7 +18,7 @@ import {
   upsertCapabilityDocs,
   deleteCapabilitiesByServer,
 } from "../packages/core/src/agent/capability-search";
-import { closeSearchDb } from "../packages/core/src/storage/hivedb";
+import { closeHiveDb } from "../packages/core/src/storage/hivedb";
 
 beforeAll(async () => {
   await replaceCapabilityDocs("tool", [
@@ -67,7 +67,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-  closeSearchDb();
+  closeHiveDb();
 });
 
 describe("HiveDB capability search", () => {

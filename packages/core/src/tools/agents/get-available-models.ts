@@ -8,7 +8,8 @@
  */
 
 import type { Tool } from "../types.ts";
-import { getDb } from "../../storage/sqlite.ts";
+import { col } from "../../storage/hive.ts";
+import type { ProviderDoc, ModelDoc } from "../../storage/collections.ts";
 
 export const getAvailableModelsTool: Tool = {
   name: "get_available_models",
@@ -31,7 +32,6 @@ export const getAvailableModelsTool: Tool = {
     },
   },
   execute: async (params: Record<string, unknown>) => {
-    const db = getDb();
     const { providerId, modelType, capabilities } = params as {
       providerId?: string;
       modelType?: string;
@@ -39,69 +39,39 @@ export const getAvailableModelsTool: Tool = {
     };
 
     try {
-      // Construir query con filtros opcionales
-      let query = `
-        SELECT 
-          p.id as provider_id,
-          p.name as provider_name,
-          p.category as provider_category,
-          m.id as model_id,
-          m.name as model_name,
-          m.model_type,
-          m.context_window,
-          m.capabilities
-        FROM models m
-        INNER JOIN providers p ON m.provider_id = p.id
-        WHERE m.enabled = 1 AND m.active = 1 AND p.enabled = 1 AND p.active = 1
-      `;
+      const providersCol = await col<ProviderDoc>("providers");
+      const providersById = new Map(
+        (await providersCol.scan({}))
+          .map(e => e.doc)
+          .filter(p => p.enabled && p.active)
+          .map(p => [p.id, p])
+      );
 
-      const whereClauses: string[] = [];
-      const queryParams: string[] = [];
+      const modelsCol = await col<ModelDoc>("models");
+      let models = (await modelsCol.scan({}))
+        .map(e => e.doc)
+        .filter(m => m.enabled && m.active && providersById.has(m.provider_id));
 
-      if (providerId) {
-        whereClauses.push("p.id = ?");
-        queryParams.push(providerId as string);
-      }
-
-      if (modelType) {
-        whereClauses.push("m.model_type = ?");
-        queryParams.push(modelType as string);
-      }
-
-      if (capabilities) {
-        whereClauses.push("m.capabilities LIKE ?");
-        queryParams.push(`%${capabilities as string}%`);
-      }
-
-      if (whereClauses.length > 0) {
-        query += " AND " + whereClauses.join(" AND ");
-      }
-
-      query += " ORDER BY p.name, m.name";
-
-      // Ejecutar query
-      const rows = db.query<any, string[]>(query).all(...queryParams) as Array<{
-        provider_id: string;
-        provider_name: string;
-        provider_category: string;
-        model_id: string;
-        model_name: string;
-        model_type: string;
-        context_window: number | null;
-        capabilities: string | null;
-      }>;
+      if (providerId) models = models.filter(m => m.provider_id === providerId);
+      if (modelType) models = models.filter(m => m.model_type === modelType);
+      if (capabilities) models = models.filter(m => (m.capabilities ?? "").includes(capabilities));
 
       // Transformar a formato amigable
-      const result = rows.map(row => ({
-        providerId: row.provider_id,
-        providerName: row.provider_name,
-        providerCategory: row.provider_category,
-        modelId: row.model_id,
-        modelName: row.model_name,
-        modelType: row.model_type,
-        contextWindow: row.context_window,
-        capabilities: row.capabilities ? JSON.parse(row.capabilities) : null,
-      }));
+      const result = models
+        .map(m => {
+          const provider = providersById.get(m.provider_id)!;
+          return {
+            providerId: provider.id,
+            providerName: provider.name,
+            providerCategory: provider.category,
+            modelId: m.id,
+            modelName: m.name,
+            modelType: m.model_type,
+            contextWindow: m.context_window,
+            capabilities: m.capabilities ? JSON.parse(m.capabilities) : null,
+          };
+        })
+        .sort((a, b) => a.providerName.localeCompare(b.providerName) || a.modelName.localeCompare(b.modelName));
 
       return {
         ok: true,

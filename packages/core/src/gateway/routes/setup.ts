@@ -1,6 +1,7 @@
 import { writeFileSync, mkdirSync } from "node:fs"
 import * as path from "node:path"
-import { getDb } from "../../storage/sqlite"
+import { col } from "../../storage/hive"
+import type { ProviderDoc, ModelDoc, EthicsDoc } from "../../storage/collections"
 import {
   initOnboardingDb,
   saveUserProfile,
@@ -13,32 +14,29 @@ import {
 import { getHiveDir } from "../../config/loader"
 import type { Config } from "../../config/loader"
 
-export function isSetupMode(): boolean {
+export async function isSetupMode(): Promise<boolean> {
   try {
-    const db = getDb()
-    const userCount = (db.query("SELECT COUNT(*) as count FROM users").get() as { count: number }).count
+    const usersCol = await col<import("../../storage/collections").UserDoc>("users")
+    const userCount = await usersCol.count()
     if (userCount === 0) return true
     // Also require a coordinator agent — setup may have failed mid-way after creating the user
-    const agentCount = (db.query("SELECT COUNT(*) as count FROM agents WHERE role = 'coordinator'").get() as { count: number }).count
-    return agentCount === 0
+    const agentsCol = await col<import("../../storage/collections").AgentDoc>("agents")
+    const coordinatorCount = (await agentsCol.findBy("role", "coordinator")).length
+    return coordinatorCount === 0
   } catch {
     return true
   }
 }
 
-export function handleSetupProviders(
+export async function handleSetupProviders(
   addCorsHeaders: (response: Response, request: Request) => Response,
   req: Request
-): Response {
+): Promise<Response> {
   // Provider + model list from the DB (seeded at startup). Only text (llm) providers.
-  const db = getDb()
-  const providers = db.query(`
-    SELECT id, name FROM providers WHERE category = 'llm'
-  `).all() as Array<{ id: string; name: string }>
-
-  const models = db.query(`
-    SELECT id, name, provider_id FROM models WHERE model_type = 'llm'
-  `).all() as Array<{ id: string; name: string; provider_id: string }>
+  const providersCol = await col<ProviderDoc>("providers")
+  const modelsCol = await col<ModelDoc>("models")
+  const providers = (await providersCol.scan({})).map(e => e.doc).filter(p => p.category === "llm")
+  const models = (await modelsCol.scan({})).map(e => e.doc).filter(m => m.model_type === "llm")
 
   const llmModelsByProvider = new Map<string, { id: string; name: string }[]>()
   for (const model of models) {
@@ -59,18 +57,13 @@ export function handleSetupProviders(
   return addCorsHeaders(Response.json(result), req)
 }
 
-export function handleSetupEthics(
+export async function handleSetupEthics(
   addCorsHeaders: (response: Response, request: Request) => Response,
   req: Request
-): Response {
+): Promise<Response> {
   try {
-    const db = getDb()
-    const ethics = db.query(`
-      SELECT id, name, description, content, is_default, active FROM ethics ORDER BY id
-    `).all() as Array<{
-      id: string; name: string; description: string | null;
-      content: string; is_default: number; active: number;
-    }>
+    const ethicsCol = await col<EthicsDoc>("ethics")
+    const ethics = (await ethicsCol.scan({})).map(e => e.doc).sort((a, b) => a.id.localeCompare(b.id))
 
     return addCorsHeaders(Response.json(
       ethics.map(e => ({
@@ -78,8 +71,8 @@ export function handleSetupEthics(
         name: e.name,
         description: e.description,
         content: e.content,
-        isDefault: e.is_default === 1,
-        active: e.active === 1,
+        isDefault: e.is_default,
+        active: e.active,
       }))
     ), req)
   } catch (error) {
@@ -109,12 +102,14 @@ export async function handleSetupOllamaModels(
 
     // Persist detected models into the DB so they can be FK-referenced by agents
     try {
-      const db = getDb()
+      const modelsCol = await col<ModelDoc>("models")
       for (const m of detected) {
-        db.query(`
-          INSERT OR IGNORE INTO models (id, name, provider_id, model_type, enabled, active)
-          VALUES (?, ?, 'ollama', 'llm', 1, 0)
-        `).run(m.name, m.name)
+        if (!(await modelsCol.get(m.name))) {
+          await modelsCol.put(m.name, {
+            id: m.name, name: m.name, provider_id: "ollama", model_type: "llm",
+            context_window: 0, capabilities: null, enabled: true, active: false,
+          }, { expectedVersion: 0 })
+        }
       }
     } catch { /* DB may not be initialized yet during early setup — ignore */ }
 
@@ -126,7 +121,7 @@ export async function handleSetupOllamaModels(
 }
 
 export async function handleSetupStatus(): Promise<Response> {
-  const setupMode = isSetupMode()
+  const setupMode = await isSetupMode()
   return Response.json({
     configured: !setupMode,
     setupMode,
@@ -155,10 +150,10 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
     let pingModel: string | undefined = model
     if (!pingModel) {
       try {
-        const row = getDb().query(`
-          SELECT id FROM models WHERE provider_id = ? AND model_type = 'llm' ORDER BY active DESC LIMIT 1
-        `).get(provider) as { id: string } | undefined
-        pingModel = row?.id
+        const modelsCol = await col<ModelDoc>("models")
+        const candidates = (await modelsCol.findBy("provider_id", provider)).filter(e => e.doc.model_type === "llm")
+        const best = [...candidates].sort((a, b) => Number(b.doc.active) - Number(a.doc.active))[0]
+        pingModel = best?.doc.id
       } catch { /* DB may not be initialized yet during early setup — ignore */ }
     }
 
@@ -322,7 +317,7 @@ export async function handleCompleteSetup(
   config: Config,
   addCorsHeaders: (response: Response, request: Request) => Response
 ): Promise<Response> {
-  if (!isSetupMode()) {
+  if (!(await isSetupMode())) {
     return addCorsHeaders(Response.json({
       success: false,
       error: "Setup already completed. Use config endpoints to modify settings.",
@@ -333,7 +328,7 @@ export async function handleCompleteSetup(
 
   // Re-check after the async boundary — a concurrent request may have
   // completed setup while we were awaiting the request body.
-  if (!isSetupMode()) {
+  if (!(await isSetupMode())) {
     return addCorsHeaders(Response.json({
       success: false,
       error: "Setup already completed. Use config endpoints to modify settings.",
@@ -341,31 +336,47 @@ export async function handleCompleteSetup(
   }
 
   try {
-    // Clean up any partial setup state (user created but setup didn't finish)
+    // Clean up any partial setup state (user created but setup didn't finish).
+    // This is the only reachable cascade-delete case in the app: an
+    // interrupted setup run, before any agent/channel/etc. exists yet, so a
+    // simple per-collection cleanup (not a generic cascade engine) is enough.
     try {
-      const db = getDb()
-      const userCount = (db.query("SELECT COUNT(*) as count FROM users").get() as { count: number }).count
-      const agentCount = (db.query("SELECT COUNT(*) as count FROM agents WHERE role = 'coordinator'").get() as { count: number }).count
-      if (userCount > 0 && agentCount === 0) {
-        db.exec("DELETE FROM users") // ON DELETE CASCADE cleans up agents, channels, etc.
+      const { col } = await import("../../storage/hive")
+      const usersCol = await col<import("../../storage/collections").UserDoc>("users")
+      const agentsCol = await col<import("../../storage/collections").AgentDoc>("agents")
+      const userCount = await usersCol.count()
+      const coordinatorCount = (await agentsCol.findBy("role", "coordinator")).length
+      if (userCount > 0 && coordinatorCount === 0) {
+        const identitiesCol = await col<import("../../storage/collections").UserIdentityDoc>("userIdentities")
+        const progressCol = await col<import("../../storage/collections").OnboardingProgressDoc>("onboardingProgress")
+        for (const u of await usersCol.scan({})) {
+          const identities = (await identitiesCol.scan({ prefix: `${u.id}:` }))
+          for (const i of identities) await identitiesCol.delete(i.id)
+          await progressCol.delete(u.id)
+          await usersCol.delete(u.id)
+        }
       }
     } catch { /* ignore cleanup errors */ }
 
-    initOnboardingDb()
+    await initOnboardingDb()
 
     // For Ollama: insert the selected model now that providers are seeded
     // (the earlier insert in handleSetupOllamaModels may have failed due to missing FK)
     if (body.provider === "ollama" && body.model) {
       try {
-        getDb().query(`
-          INSERT OR IGNORE INTO models (id, name, provider_id, model_type, enabled, active)
-          VALUES (?, ?, 'ollama', 'llm', 1, 1)
-        `).run(body.model, body.model)
+        const { col } = await import("../../storage/hive")
+        const modelsCol = await col<import("../../storage/collections").ModelDoc>("models")
+        if (!(await modelsCol.get(body.model))) {
+          await modelsCol.put(body.model, {
+            id: body.model, name: body.model, provider_id: "ollama", model_type: "llm",
+            context_window: 0, capabilities: null, enabled: true, active: true,
+          }, { expectedVersion: 0 })
+        }
       } catch { /* ignore */ }
     }
 
     // Let DB auto-generate userId via randomblob(16) — same as CLI onboarding
-    const userId = saveUserProfile({
+    const userId = await saveUserProfile({
       userName: body.userName || "User",
       userLanguage: body.userLanguage || "es",
       userTimezone: body.userTimezone || "UTC",
@@ -374,7 +385,7 @@ export async function handleCompleteSetup(
     })
 
     // Let DB auto-generate agentId — same as CLI onboarding
-    const agentId = saveAgentConfig({
+    const agentId = await saveAgentConfig({
       userId,
       agentName: body.agentName || "Bee",
       description: body.agentDescription || "",
@@ -421,10 +432,10 @@ export async function handleCompleteSetup(
     // Activar ethics — usar las seleccionadas por el usuario, o "default" si no viene nada
     if (body.ethicsRules && typeof body.ethicsRules === "object") {
       for (const [ethicsId, enabled] of Object.entries(body.ethicsRules as Record<string, boolean>)) {
-        if (enabled) activateEthics(userId, ethicsId)
+        if (enabled) await activateEthics(userId, ethicsId)
       }
     } else {
-      activateEthics(userId, "default")
+      await activateEthics(userId, "default")
     }
 
     // Use the userId as the auth token — stable, DB-generated, known only to the user.

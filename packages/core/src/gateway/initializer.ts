@@ -1,15 +1,17 @@
 import type { Config } from "../config/loader";
 import { logger } from "../utils/logger";
-import { getDb, initializeDatabase, getDbPathLazy } from "../storage/sqlite";
+import { ensureHiveDb } from "../storage/bootstrap";
+import { col, fromIndexable } from "../storage/hive";
+import type { AgentDoc, ProviderDoc, McpServerDoc } from "../storage/collections";
 import { buildAgentLoop } from "../agent/agent-loop";
 import { AgentRunner } from "../agent/providers/index";
 import { ChannelManager } from "../channels/manager";
 import { syncToolsToFTS, syncSkillsToFTS, syncPlaybookToFTS } from "../agent/context-compiler";
 import { syncMCPToolsToFTS } from "../mcp/tool-sync";
 import { AgentService, createAgentService } from "../agent/service";
-import { mkdirSync, existsSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import * as path from "node:path";
-import { resolveAgentId, runStartupMigrations } from "../storage/onboarding";
+import { resolveAgentId } from "../storage/onboarding";
 import { createMCPManager, type MCPClientManager } from "@johpaz/hive-agents-mcp";
 import { setMCPManager } from "../mcp/singleton";
 import { startMCPHotReload } from "../mcp/hot-reload";
@@ -23,26 +25,20 @@ const log = logger.child("gateway:init");
  * Verifica que exista al menos un usuario en la base de datos
  */
 export async function verifyDatabaseUsers(): Promise<void> {
-  // Setup mode: no DB yet — skip verification, gateway starts to serve the web setup
-  if (!existsSync(getDbPathLazy())) {
-    log.info("Setup mode: no database found — gateway will serve web setup at /setup");
-    return;
-  }
-
   try {
-    initializeDatabase();
+    await ensureHiveDb();
 
-    const db = getDb();
-    const userCount = db.query("SELECT COUNT(*) as count FROM users").get() as { count: number };
+    const usersCol = await col("users");
+    const userCount = await usersCol.count();
 
-    if (userCount.count === 0) {
+    if (userCount === 0) {
       const error = new Error("No users found in the database. A valid user is required to start the Hive Gateway.");
       log.error(error.message);
       log.error("Please run the onboarding process or manually insert a user.");
       throw error;
     }
 
-    log.info(`Database verified: ${userCount.count} user(s) found`);
+    log.info(`Database verified: ${userCount} user(s) found`);
   } catch (error) {
     log.error(`Database verification failed: ${(error as Error).message}`);
     throw error;
@@ -76,19 +72,28 @@ export async function loadAgentConfigFromDB(
   const defaultModel = "gemini-2.5-flash";
 
   try {
-    const db = getDb();
+    const agentsCol = await col<AgentDoc>("agents");
+    const providersCol = await col<ProviderDoc>("providers");
 
     // Get coordinator agent ID from database
-    const coordinatorAgentId = resolveAgentId(null);
+    const coordinatorAgentId = await resolveAgentId(null);
 
     // Obtener configuración del agente coordinador
-    const agentConfig = db.query(`
-      SELECT provider_id, model_id FROM agents
-      WHERE id = ? OR role = 'coordinator'
-      ORDER BY (CASE WHEN id = ? THEN 1 ELSE 0 END) DESC
-      LIMIT 1
-    `).get(coordinatorAgentId || "", coordinatorAgentId || "") as
-      { provider_id: string | null; model_id: string | null } | undefined;
+    let agentConfig: { provider_id: string | null; model_id: string | null } | undefined;
+    const coordinatorAgent = coordinatorAgentId ? await agentsCol.get(coordinatorAgentId) : undefined;
+    if (coordinatorAgent) {
+      agentConfig = {
+        provider_id: fromIndexable(coordinatorAgent.doc.provider_id),
+        model_id: fromIndexable(coordinatorAgent.doc.model_id),
+      };
+    } else {
+      const coordinators = await agentsCol.findBy("role", "coordinator", { limit: 1 });
+      const fallback = coordinators[0];
+      agentConfig = fallback ? {
+        provider_id: fromIndexable(fallback.doc.provider_id),
+        model_id: fromIndexable(fallback.doc.model_id),
+      } : undefined;
+    }
 
     // Si el coordinator no tiene modelo, usar el default resuelto desde la BD
     const { getDefaultLLM } = await import("../agent/llm-client");
@@ -100,9 +105,9 @@ export async function loadAgentConfigFromDB(
     let model = agentConfig?.model_id || defaultLLM?.model || defaultModel;
 
     // Cargar API keys de los providers desde la DB
-    const providers = db.query(`
-      SELECT id, name, base_url FROM providers WHERE active = 1
-    `).all() as Array<{ id: string; name: string; base_url: string | null }>;
+    const providers = (await providersCol.scan({}))
+      .filter(p => p.doc.active)
+      .map(p => ({ id: p.doc.id, name: p.doc.name, base_url: p.doc.base_url }));
 
     if (providers.length > 0) {
       config.models = config.models || {};
@@ -199,11 +204,11 @@ export async function initializeGateway(
   config: Config,
   pidFile: string
 ): Promise<GatewayInitializationResult> {
-  // Setup mode: 0 usuarios (initializeDatabase() ya fue llamado antes en server.ts)
+  // Setup mode: 0 usuarios (ensureHiveDb() ya fue llamado antes en server.ts)
   let setupMode = false;
   try {
-    const count = (getDb().query("SELECT COUNT(*) as count FROM users").get() as { count: number }).count;
-    setupMode = count === 0;
+    const usersCol = await col("users");
+    setupMode = (await usersCol.count()) === 0;
   } catch {
     setupMode = true;
   }
@@ -228,21 +233,14 @@ export async function initializeGateway(
     // 2. Escribir archivo PID (no crítico)
     await writePidFile(pidFile);
 
-    // 3a. Startup migrations (idempotent, version-keyed)
-    runStartupMigrations();
-
-    // 3b. Migrate AES-encrypted secrets → OS keychain (one-shot, idempotent)
-    const { migrateEncryptedSecretsToKeychain } = await import("../storage/migrate");
-    await migrateEncryptedSecretsToKeychain();
-
     // 3. Cargar configuración del agente desde DB
     const { provider, model } = await loadAgentConfigFromDB(config);
 
     // 4. Sync HiveDB capability index (tools + skills + playbook + mcp_tools)
     log.info("[initialize] Syncing HiveDB capability index...")
     try {
-      const { getSearchDb } = await import("../storage/hivedb");
-      const searchDb = await getSearchDb();
+      const { getHiveDb } = await import("../storage/hivedb");
+      const searchDb = await getHiveDb();
       await Promise.all([
         syncToolsToFTS(),
         syncSkillsToFTS(),
@@ -286,9 +284,9 @@ export async function initializeGateway(
     let mcpManager: MCPClientManager | null = null;
     
     // Load MCP servers from DB and merge with config
-    const db = getDb();
-    const dbServers = db.query(`SELECT * FROM mcp_servers WHERE enabled = 1`).all() as Record<string, any>[];
-    
+    const mcpServersCol = await col<McpServerDoc>("mcpServers");
+    const dbServers = (await mcpServersCol.scan({})).filter(s => s.doc.enabled).map(s => s.doc);
+
     const mcpServersFromDB: Record<string, any> = {};
     for (const server of dbServers) {
       try {
@@ -299,16 +297,12 @@ export async function initializeGateway(
           url: server.url,
           enabled: true,
         };
-        
-        // Load headers from keychain (modern), fall back to legacy AES
-        const keychainHeaders = await loadMcpHeaders(server.id || server.name);
-        if (Object.keys(keychainHeaders).length > 0) {
-          mcpServerConfig.headers = keychainHeaders;
-        } else if (server.headers_encrypted && server.headers_iv) {
-          const { legacyDecryptAES } = await import("../storage/crypto");
-          mcpServerConfig.headers = legacyDecryptAES(server.headers_encrypted, server.headers_iv);
+
+        const headers = await loadMcpHeaders(server.id || server.name);
+        if (Object.keys(headers).length > 0) {
+          mcpServerConfig.headers = headers;
         }
-        
+
         mcpServersFromDB[server.id || server.name] = mcpServerConfig;
       } catch (error) {
         log.warn(`Failed to load MCP server ${server.name} from DB: ${(error as Error).message}`);

@@ -2,7 +2,7 @@
  * Hive Scheduler Module
  * 
  * Croner-based scheduling system for Hive.
- * Supports recurring and one-shot cron jobs with SQLite persistence.
+ * Supports recurring and one-shot cron jobs with HiveDB persistence.
  */
 
 export { CronScheduler } from "./CronScheduler";

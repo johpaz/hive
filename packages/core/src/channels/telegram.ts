@@ -1,7 +1,8 @@
 import { Bot, GrammyError, InputFile, type Context } from "grammy";
 import { BaseChannel, type ChannelConfig, type IncomingMessage, type OutboundMessage } from "./base.ts";
 import { logger } from "../utils/logger.ts";
-import { getDb } from "../storage/sqlite.ts";
+import { updateDoc } from "../storage/hive.ts";
+import type { ChannelDoc } from "../storage/collections.ts";
 
 export interface TelegramConfig extends ChannelConfig {
   botToken: string;
@@ -55,18 +56,18 @@ export class TelegramChannel extends BaseChannel {
     });
 
     this.bot.start({
-      onStart: () => {
+      onStart: async () => {
         this.running = true;
         this.log.info(`Telegram bot started: @${this.bot?.botInfo?.username ?? "unknown"}`);
         try {
-          getDb().query(`UPDATE channels SET status = 'connected' WHERE id = ?`).run(this.accountId);
+          await updateDoc<ChannelDoc>("channels", this.accountId, { status: "connected" });
         } catch { /* ignore DB errors */ }
       },
-    }).catch((error: Error) => {
+    }).catch(async (error: Error) => {
       this.log.error(`Telegram bot error: ${error.message}`);
       this.running = false;
       try {
-        getDb().query(`UPDATE channels SET status = 'error' WHERE id = ?`).run(this.accountId);
+        await updateDoc<ChannelDoc>("channels", this.accountId, { status: "error" });
       } catch { /* ignore DB errors */ }
     });
   }
@@ -306,7 +307,7 @@ export class TelegramChannel extends BaseChannel {
       this.running = false;
       this.log.info("Telegram bot stopped");
       try {
-        getDb().query(`UPDATE channels SET status = 'disconnected' WHERE id = ?`).run(this.accountId);
+        await updateDoc<ChannelDoc>("channels", this.accountId, { status: "disconnected" });
       } catch { /* ignore DB errors */ }
     }
   }

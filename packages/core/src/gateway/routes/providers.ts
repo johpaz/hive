@@ -1,4 +1,5 @@
-import { getDb } from "../../storage/sqlite"
+import { col, updateDoc, updateManyByIndex } from "../../storage/hive"
+import type { ProviderDoc, ModelDoc, AgentDoc } from "../../storage/collections"
 import {
   maskApiKey,
   loadProviderApiKey, storeProviderApiKey,
@@ -10,36 +11,30 @@ import { logger } from "../../utils/logger"
 const log = logger.child("gateway")
 
 export async function handleGetProviders(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
-  const rawProviders = getDb().query(`
-    SELECT id, name, base_url, category, enabled, active, num_ctx FROM providers
-  `).all() as Record<string, unknown>[]
-
-  const modelsRows = getDb().query(`SELECT * FROM models`).all() as Record<string, unknown>[]
+  const providersCol = await col<ProviderDoc>("providers")
+  const modelsCol = await col<ModelDoc>("models")
+  const rawProviders = await providersCol.scan({})
+  const modelsRows = await modelsCol.scan({})
 
   const modelsByProvider: Record<string, Record<string, unknown>[]> = {}
   for (const m of modelsRows) {
-    const pid = (m.provider_id || m.providerId) as string
+    const pid = m.doc.provider_id
     if (!modelsByProvider[pid]) modelsByProvider[pid] = []
-    modelsByProvider[pid].push({
-      ...m,
-      enabled: !!m.enabled,
-      active: !!m.active,
-      provider_id: pid
-    })
+    modelsByProvider[pid].push({ ...m.doc, provider_id: pid })
   }
 
   const providers = await Promise.all(rawProviders.map(async (p) => {
-    const apiKey = await loadProviderApiKey(p.id as string)
-    const headers = await loadProviderHeaders(p.id as string)
-    const providerModels = modelsByProvider[p.id as string] || []
+    const apiKey = await loadProviderApiKey(p.doc.id)
+    const headers = await loadProviderHeaders(p.doc.id)
+    const providerModels = modelsByProvider[p.doc.id] || []
     return {
-      id: p.id,
-      name: p.name,
-      base_url: p.base_url,
-      category: p.category ?? "llm",
-      enabled: p.enabled,
-      active: p.active,
-      num_ctx: p.num_ctx ?? null,
+      id: p.doc.id,
+      name: p.doc.name,
+      base_url: p.doc.base_url,
+      category: p.doc.category ?? "llm",
+      enabled: p.doc.enabled,
+      active: p.doc.active,
+      num_ctx: p.doc.num_ctx ?? null,
       has_api_key: apiKey ? 1 : 0,
       has_headers: Object.keys(headers).length > 0 ? 1 : 0,
       masked_api_key: apiKey ? maskApiKey(apiKey) : null,
@@ -52,10 +47,18 @@ export async function handleGetProviders(req: Request, addCorsHeaders: (r: Respo
 
 export async function handleCreateProvider(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const body = await req.json().catch(() => ({}))
-  getDb().query(`
-    INSERT OR REPLACE INTO providers(id, name, base_url, enabled, active)
-    VALUES(?, ?, ?, ?, 1)
-  `).run(body.id, body.name, body.base_url || null, body.enabled !== undefined ? body.enabled : 1)
+  const providersCol = await col<ProviderDoc>("providers")
+  const existing = await providersCol.get(body.id)
+
+  await providersCol.put(body.id, {
+    id: body.id, name: body.name, base_url: body.base_url || null,
+    category: existing?.doc.category ?? "llm",
+    num_ctx: existing?.doc.num_ctx ?? null, num_gpu: existing?.doc.num_gpu ?? -1,
+    enabled: body.enabled !== undefined ? !!body.enabled : true,
+    active: true,
+    created_at: existing?.doc.created_at ?? Date.now(),
+  }, existing ? { expectedVersion: existing.version } : undefined)
+
   return addCorsHeaders(Response.json({ ok: true }), req)
 }
 
@@ -69,11 +72,10 @@ export async function handleToggleProvider(req: Request, addCorsHeaders: (r: Res
     return addCorsHeaders(new Response("Missing active field", { status: 400 }), req)
   }
 
-  const db = getDb()
-  db.query(`UPDATE providers SET active = ?, enabled = ? WHERE id = ?`).run(active ? 1 : 0, active ? 1 : 0, providerId)
+  await updateDoc<ProviderDoc>("providers", providerId, { active: !!active, enabled: !!active })
 
   // Cascade: activate/deactivate all models for this provider
-  db.query(`UPDATE models SET active = ?, enabled = ? WHERE provider_id = ?`).run(active ? 1 : 0, active ? 1 : 0, providerId)
+  await updateManyByIndex<ModelDoc>("models", "provider_id", providerId, { active: !!active, enabled: !!active })
 
   return addCorsHeaders(Response.json({ success: true, active }), req)
 }
@@ -81,33 +83,20 @@ export async function handleToggleProvider(req: Request, addCorsHeaders: (r: Res
 export async function handleUpdateProvider(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const url = new URL(req.url)
   const providerIdMatch = url.pathname.match(/^\/api\/providers\/([^/]+)$/)
-  
+
   if (!providerIdMatch) {
     return addCorsHeaders(new Response("Invalid path", { status: 400 }), req)
   }
-  
+
   const id = providerIdMatch[1]
   const body = await req.json().catch(() => ({}))
-  const updates: string[] = []
-  const params: any[] = []
+  const patch: Partial<ProviderDoc> = {}
 
-  if (body.name) {
-    updates.push("name = ?")
-    params.push(body.name)
-  }
+  if (body.name) patch.name = body.name
   const baseUrl = body.base_url !== undefined ? body.base_url : body.baseUrl
-  if (baseUrl !== undefined) {
-    updates.push("base_url = ?")
-    params.push(baseUrl || null)
-  }
-  if (body.enabled !== undefined) {
-    updates.push("enabled = ?")
-    params.push(body.enabled ? 1 : 0)
-  }
-  if (body.active !== undefined) {
-    updates.push("active = ?")
-    params.push(body.active ? 1 : 0)
-  }
+  if (baseUrl !== undefined) patch.base_url = baseUrl || null
+  if (body.enabled !== undefined) patch.enabled = !!body.enabled
+  if (body.active !== undefined) patch.active = !!body.active
   if (body.config?.apiKey || body.apiKey) {
     await storeProviderApiKey(id, body.config?.apiKey || body.apiKey)
   }
@@ -115,25 +104,16 @@ export async function handleUpdateProvider(req: Request, addCorsHeaders: (r: Res
     await storeProviderHeaders(id, body.headers)
   }
   const numCtx = body.num_ctx !== undefined ? body.num_ctx : body.numCtx
-  if (numCtx !== undefined) {
-    updates.push("num_ctx = ?")
-    params.push(numCtx ? Number(numCtx) : null)
-  }
+  if (numCtx !== undefined) patch.num_ctx = numCtx ? Number(numCtx) : null
 
-  if (updates.length > 0) {
-    params.push(id)
-    getDb().query(`UPDATE providers SET ${updates.join(", ")} WHERE id = ?`).run(...params)
+  if (Object.keys(patch).length > 0) {
+    await updateDoc<ProviderDoc>("providers", id, patch).catch(() => { /* provider not found */ })
 
     // Cascade active/enabled changes to models
-    const activeIdx = updates.findIndex(u => u.startsWith("active"))
-    const enabledIdx = updates.findIndex(u => u.startsWith("enabled"))
-
-    if (activeIdx !== -1) {
-      const activeVal = params[activeIdx]
-      getDb().query(`UPDATE models SET active = ?, enabled = ? WHERE provider_id = ?`).run(activeVal as any, activeVal as any, id)
-    } else if (enabledIdx !== -1) {
-      const enabledVal = params[enabledIdx]
-      getDb().query(`UPDATE models SET enabled = ?, active = ? WHERE provider_id = ?`).run(enabledVal as any, enabledVal as any, id)
+    if (patch.active !== undefined) {
+      await updateManyByIndex<ModelDoc>("models", "provider_id", id, { active: patch.active, enabled: patch.active })
+    } else if (patch.enabled !== undefined) {
+      await updateManyByIndex<ModelDoc>("models", "provider_id", id, { enabled: patch.enabled, active: patch.enabled })
     }
   }
 
@@ -145,16 +125,15 @@ export async function handleSyncProviderModels(
   addCorsHeaders: (r: Response, req: Request) => Response,
   providerId: string
 ): Promise<Response> {
-  const db = getDb()
-  const providerRow = db.query<Record<string, unknown>, [string]>(
-    "SELECT * FROM providers WHERE id = ?"
-  ).get(providerId)
+  const providersCol = await col<ProviderDoc>("providers")
+  const modelsCol = await col<ModelDoc>("models")
+  const providerEntry = await providersCol.get(providerId)
 
-  if (!providerRow) {
+  if (!providerEntry) {
     return addCorsHeaders(new Response("Provider not found", { status: 404 }), req)
   }
 
-  const baseUrl = ((providerRow.base_url as string) || "http://localhost:11434").replace(/\/(v1|api)\/?$/, "")
+  const baseUrl = (providerEntry.doc.base_url || "http://localhost:11434").replace(/\/(v1|api)\/?$/, "")
 
   try {
     let modelNames: string[] = []
@@ -181,31 +160,28 @@ export async function handleSyncProviderModels(
       return addCorsHeaders(Response.json({ error: "No models found from provider" }, { status: 400 }), req)
     }
 
-    const upsert = db.query(
-      `INSERT INTO models (id, provider_id, name, model_type, context_window, enabled, active)
-       VALUES (?, ?, ?, 'llm', 32768, 1, 1)
-       ON CONFLICT(id) DO UPDATE SET name = excluded.name, enabled = 1, active = 1`
-    )
-
     for (const name of modelNames) {
-      upsert.run(name, providerId, name)
+      const existing = await modelsCol.get(name)
+      await modelsCol.put(name, {
+        id: name, provider_id: providerId, name,
+        model_type: existing?.doc.model_type ?? "llm",
+        context_window: existing?.doc.context_window ?? 32768,
+        capabilities: existing?.doc.capabilities ?? null,
+        enabled: true, active: true,
+      }, existing ? { expectedVersion: existing.version } : undefined)
     }
 
     // Disable models that are no longer present
-    const existingModels = db.query<Record<string, unknown>, [string]>(
-      "SELECT id FROM models WHERE provider_id = ?"
-    ).all(providerId) as Record<string, unknown>[]
-
-    const disable = db.query("UPDATE models SET active = 0, enabled = 0 WHERE id = ?")
+    const existingModels = await modelsCol.findBy("provider_id", providerId)
     for (const row of existingModels) {
-      if (!modelNames.includes(row.id as string)) {
-        disable.run(row.id as string)
+      if (!modelNames.includes(row.id)) {
+        await modelsCol.put(row.id, { ...row.doc, active: false, enabled: false }, { expectedVersion: row.version })
       }
     }
 
-    const models = db.query<Record<string, unknown>, [string]>(
-      "SELECT id, name, provider_id, enabled, active FROM models WHERE provider_id = ?"
-    ).all(providerId)
+    const models = (await modelsCol.findBy("provider_id", providerId)).map(m => ({
+      id: m.doc.id, name: m.doc.name, provider_id: m.doc.provider_id, enabled: m.doc.enabled, active: m.doc.active,
+    }))
 
     return addCorsHeaders(Response.json({
       success: true,
@@ -234,8 +210,9 @@ export async function handleLoadHiveAgentsModel(
     return addCorsHeaders(Response.json({ error: "model_id is required" }, { status: 400 }), req)
   }
 
-  const providerRow = getDb().query("SELECT * FROM providers WHERE id = ?").get("hiveagents") as Record<string, unknown> | undefined
-  if (!providerRow) {
+  const providersCol = await col<ProviderDoc>("providers")
+  const providerEntry = await providersCol.get("hiveagents")
+  if (!providerEntry) {
     return addCorsHeaders(Response.json({ error: "Provider not found" }, { status: 404 }), req)
   }
 
@@ -244,7 +221,7 @@ export async function handleLoadHiveAgentsModel(
     return addCorsHeaders(Response.json({ error: "API key not configured for hiveagents" }, { status: 400 }), req)
   }
 
-  const baseUrl = providerRow.base_url as string | undefined
+  const baseUrl = providerEntry.doc.base_url ?? undefined
   log.info(`[gateway] Loading hiveagents model ${modelId} with ctx=${ctx} via ${baseUrl || "https://llm.hiveagents.io"}`)
 
   const result = await loadHiveAgentsModel(modelId as string, apiKey, baseUrl, ctx)
@@ -261,8 +238,9 @@ export async function handleGetHiveAgentsModelStatus(
   req: Request,
   addCorsHeaders: (r: Response, req: Request) => Response
 ): Promise<Response> {
-  const providerRow = getDb().query("SELECT * FROM providers WHERE id = ?").get("hiveagents") as Record<string, unknown> | undefined
-  if (!providerRow) {
+  const providersCol = await col<ProviderDoc>("providers")
+  const providerEntry = await providersCol.get("hiveagents")
+  if (!providerEntry) {
     return addCorsHeaders(Response.json({ error: "Provider not found" }, { status: 404 }), req)
   }
 
@@ -271,6 +249,6 @@ export async function handleGetHiveAgentsModelStatus(
     return addCorsHeaders(Response.json({ error: "API key not configured for hiveagents" }, { status: 400 }), req)
   }
 
-  const status = await getHiveAgentsModelStatus(apiKey, providerRow.base_url as string | undefined)
+  const status = await getHiveAgentsModelStatus(apiKey, providerEntry.doc.base_url ?? undefined)
   return addCorsHeaders(Response.json({ success: true, ...status }), req)
 }

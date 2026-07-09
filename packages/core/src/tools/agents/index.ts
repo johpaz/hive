@@ -5,7 +5,8 @@
  */
 
 import type { Tool } from "../types.ts";
-import { getDb } from "../../storage/sqlite.ts";
+import { col, toIndexable, fromIndexable, BROADCAST } from "../../storage/hive.ts";
+import type { MemoryDoc, AgentDoc, ProviderDoc, ModelDoc, TaskDoc, AgentBusMessageDoc } from "../../storage/collections.ts";
 import { logger } from "../../utils/logger.ts";
 import { agentBus } from "../../events/agent-bus.ts";
 
@@ -25,15 +26,20 @@ export const memoryWriteTool: Tool = {
     required: ["title", "content"],
   },
   execute: async (params: Record<string, unknown>) => {
-    const db = getDb();
     const title = params.title as string;
     const content = params.content as string;
 
     try {
-      db.query(`
-        INSERT OR REPLACE INTO notes (id, title, content, createdAt, updatedAt)
-        VALUES (lower(hex(randomblob(16))), ?, ?, unixepoch(), unixepoch())
-      `).run(title, content);
+      const memoryCol = await col<MemoryDoc>("memory");
+      const existing = await memoryCol.get(title);
+      const now = Date.now();
+      await memoryCol.put(title, {
+        id: title,
+        title,
+        content,
+        created_at: existing?.doc.created_at ?? now,
+        updated_at: now,
+      }, existing ? { expectedVersion: existing.version } : { expectedVersion: 0 });
 
       return { ok: true, title, message: "Memory saved." };
     } catch (error) {
@@ -55,22 +61,22 @@ export const memoryReadTool: Tool = {
     required: ["title"],
   },
   execute: async (params: Record<string, unknown>) => {
-    const db = getDb();
     const title = params.title as string;
 
     try {
-      const note = db.query<any, [string]>("SELECT * FROM notes WHERE title = ?").get(title);
+      const memoryCol = await col<MemoryDoc>("memory");
+      const entry = await memoryCol.get(title);
 
-      if (!note) {
+      if (!entry) {
         return { ok: false, error: `Memory not found: ${title}` };
       }
 
       return {
         ok: true,
-        title: note.title,
-        content: note.content,
-        createdAt: new Date(note.createdAt * 1000).toISOString(),
-        updatedAt: new Date(note.updatedAt * 1000).toISOString(),
+        title: entry.doc.title,
+        content: entry.doc.content,
+        createdAt: new Date(entry.doc.created_at).toISOString(),
+        updatedAt: new Date(entry.doc.updated_at).toISOString(),
       };
     } catch (error) {
       return { ok: false, error: `Failed to read memory: ${(error as Error).message}` };
@@ -88,15 +94,16 @@ export const memoryListTool: Tool = {
     properties: {},
   },
   execute: async () => {
-    const db = getDb();
-
     try {
-      const notes = db.query("SELECT id, title, createdAt FROM notes ORDER BY updatedAt DESC").all() as any[];
+      const memoryCol = await col<MemoryDoc>("memory");
+      const notes = (await memoryCol.scan({}))
+        .map(e => e.doc)
+        .sort((a, b) => b.updated_at - a.updated_at);
 
       return {
         ok: true,
         count: notes.length,
-        entries: notes.map((n) => ({ title: n.title, createdAt: new Date(n.createdAt * 1000).toISOString() })),
+        entries: notes.map((n) => ({ title: n.title, createdAt: new Date(n.created_at).toISOString() })),
       };
     } catch (error) {
       return { ok: false, error: `Failed to list memories: ${(error as Error).message}` };
@@ -117,14 +124,14 @@ export const memorySearchTool: Tool = {
     required: ["query"],
   },
   execute: async (params: Record<string, unknown>) => {
-    const db = getDb();
     const query = params.query as string;
+    const needle = query.toLowerCase();
 
     try {
-      const stmt = db.query<any, [string, string]>(
-        "SELECT id, title, content FROM notes WHERE content LIKE ? OR title LIKE ?"
-      );
-      const notes = stmt.all(`%${query}%`, `%${query}%`) as any[];
+      const memoryCol = await col<MemoryDoc>("memory");
+      const notes = (await memoryCol.scan({}))
+        .map(e => e.doc)
+        .filter(n => n.content.toLowerCase().includes(needle) || n.title.toLowerCase().includes(needle));
 
       return {
         ok: true,
@@ -154,15 +161,17 @@ export const memoryDeleteTool: Tool = {
     required: ["title"],
   },
   execute: async (params: Record<string, unknown>) => {
-    const db = getDb();
     const title = params.title as string;
 
     try {
-      const result = db.query("DELETE FROM notes WHERE title = ?").run(title);
+      const memoryCol = await col<MemoryDoc>("memory");
+      const existing = await memoryCol.get(title);
 
-      if (result.changes === 0) {
+      if (!existing) {
         return { ok: false, error: `Memory not found: ${title}` };
       }
+
+      await memoryCol.delete(title);
 
       return { ok: true, title, message: "Memory deleted." };
     } catch (error) {
@@ -191,7 +200,6 @@ export const agentCreateTool: Tool = {
     required: ["name", "providerId", "modelId"],
   },
   execute: async (params: Record<string, unknown>, config?: any) => {
-    const db = getDb();
     const userId = config?.configurable?.user_id;
     const parentId = config?.configurable?.agent_id ?? null;
     const name = params.name as string;
@@ -206,79 +214,83 @@ export const agentCreateTool: Tool = {
 
     // Validar que providerId y modelId sean obligatorios
     if (!providerId || !modelId) {
-      return { 
-        ok: false, 
-        error: "providerId y modelId son obligatorios. Usá get_available_models para consultar los modelos disponibles antes de crear el agente." 
+      return {
+        ok: false,
+        error: "providerId y modelId son obligatorios. Usá get_available_models para consultar los modelos disponibles antes de crear el agente."
       };
     }
 
     // Validar que el provider existe y está activo
-    const provider = db.query<any, [string]>(
-      "SELECT id, name, enabled, active FROM providers WHERE id = ?"
-    ).get(providerId);
+    const providersCol = await col<ProviderDoc>("providers");
+    const providerEntry = await providersCol.get(providerId);
 
-    if (!provider) {
-      return { 
-        ok: false, 
-        error: `Provider '${providerId}' no existe. Usá get_available_models para ver providers disponibles.` 
+    if (!providerEntry) {
+      return {
+        ok: false,
+        error: `Provider '${providerId}' no existe. Usá get_available_models para ver providers disponibles.`
       };
     }
 
-    if (!provider.enabled || !provider.active) {
-      return { 
-        ok: false, 
-        error: `Provider '${providerId}' no está activo. Usá get_available_models para ver providers activos.` 
+    if (!providerEntry.doc.enabled || !providerEntry.doc.active) {
+      return {
+        ok: false,
+        error: `Provider '${providerId}' no está activo. Usá get_available_models para ver providers activos.`
       };
     }
 
     // Validar que el modelo existe y está activo
-    const model = db.query<any, [string]>(
-      "SELECT id, name, enabled, active FROM models WHERE id = ?"
-    ).get(modelId);
+    const modelsCol = await col<ModelDoc>("models");
+    const modelEntry = await modelsCol.get(modelId);
 
-    if (!model) {
-      return { 
-        ok: false, 
-        error: `Modelo '${modelId}' no existe. Usá get_available_models para ver modelos disponibles.` 
+    if (!modelEntry) {
+      return {
+        ok: false,
+        error: `Modelo '${modelId}' no existe. Usá get_available_models para ver modelos disponibles.`
       };
     }
 
-    if (!model.enabled || !model.active) {
-      return { 
-        ok: false, 
-        error: `Modelo '${modelId}' no está activo. Usá get_available_models para ver modelos activos.` 
+    if (!modelEntry.doc.enabled || !modelEntry.doc.active) {
+      return {
+        ok: false,
+        error: `Modelo '${modelId}' no está activo. Usá get_available_models para ver modelos activos.`
       };
     }
 
     try {
       const agentId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+      const now = Date.now();
 
-db.query(`
-        INSERT INTO agents (id, user_id, name, description, system_prompt, tools_json, role, status, parent_id, provider_id, model_id, tone, max_iterations, workspace)
-        VALUES (?, ?, ?, ?, ?, ?, 'worker', 'idle', ?, ?, ?, ?, ?, ?)
-      `).run(
-        agentId,
-        userId,
+      const agentsCol = await col<AgentDoc>("agents");
+      await agentsCol.put(agentId, {
+        id: agentId,
+        user_id: userId,
         name,
         description,
-        systemPrompt,
-        toolsJson,
-        parentId,
+        system_prompt: systemPrompt,
+        tone,
+        role: "worker",
+        status: "idle",
+        enabled: true,
+        provider_id: toIndexable(providerId),
+        model_id: toIndexable(modelId),
+        tools_json: toolsJson,
+        skills_json: null,
+        parent_id: toIndexable(parentId),
+        max_iterations: maxIterations,
+        workspace: parentWorkspace,
+        lastTraceAt: null,
+        created_at: now,
+        updated_at: now,
+      }, { expectedVersion: 0 });
+
+      return {
+        ok: true,
+        agentId,
+        name,
         providerId,
         modelId,
-        tone,
-        maxIterations,
-        parentWorkspace
-      );
-
-      return { 
-        ok: true, 
-        agentId, 
-        name, 
-        providerId, 
-        modelId,
         workspace: parentWorkspace,
-        message: "Agente creado exitosamente." 
+        message: "Agente creado exitosamente."
       };
     } catch (error) {
       return { ok: false, error: `Failed to create agent: ${(error as Error).message}` };
@@ -299,26 +311,26 @@ export const agentFindTool: Tool = {
     },
   },
   execute: async (params: Record<string, unknown>, config?: any) => {
-    const db = getDb();
     const userId = config?.configurable?.user_id;
     const search = params.search as string | undefined;
     const status = params.status as string | undefined;
 
     try {
-      let query = "SELECT id, name, description, role, status FROM agents WHERE user_id = ? AND role = 'worker'";
-      const args: any[] = [userId];
+      const agentsCol = await col<AgentDoc>("agents");
+      let agents = (await agentsCol.scan({}))
+        .map(e => e.doc)
+        .filter(a => a.user_id === userId && a.role === "worker");
 
       if (search) {
-        query += " AND (name LIKE ? OR description LIKE ?)";
-        args.push(`%${search}%`, `%${search}%`);
+        const needle = search.toLowerCase();
+        agents = agents.filter(a =>
+          a.name.toLowerCase().includes(needle) || (a.description ?? "").toLowerCase().includes(needle)
+        );
       }
 
       if (status && status !== "any") {
-        query += " AND status = ?";
-        args.push(status);
+        agents = agents.filter(a => a.status === status);
       }
-
-      const agents = db.query(query).all(...args) as any[];
 
       return {
         ok: true,
@@ -350,15 +362,17 @@ export const agentArchiveTool: Tool = {
     required: ["agentId"],
   },
   execute: async (params: Record<string, unknown>) => {
-    const db = getDb();
     const agentId = params.agentId as string;
 
     try {
-      const result = db.query(`UPDATE agents SET enabled = 0, updated_at = unixepoch() WHERE id = ?`).run(agentId);
+      const agentsCol = await col<AgentDoc>("agents");
+      const existing = await agentsCol.get(agentId);
 
-      if (result.changes === 0) {
+      if (!existing) {
         return { ok: false, error: `Agent not found: ${agentId}` };
       }
+
+      await agentsCol.put(agentId, { ...existing.doc, enabled: false, updated_at: Date.now() }, { expectedVersion: existing.version });
 
       return { ok: true, agentId, message: "Agent archived." };
     } catch (error) {
@@ -381,17 +395,16 @@ export const taskDelegateTool: Tool = {
     required: ["worker_id", "task_description"],
   },
   execute: async (params: Record<string, unknown>, config?: any) => {
-    const db = getDb();
     const workerId = params.worker_id as string;
     const taskDescription = params.task_description as string;
 
-    const worker = db.query<any, [string]>(
-      "SELECT id, name, enabled FROM agents WHERE id = ?"
-    ).get(workerId);
+    const agentsCol = await col<AgentDoc>("agents");
+    const workerEntry = await agentsCol.get(workerId);
 
-    if (!worker) {
+    if (!workerEntry) {
       return { ok: false, error: `Worker not found: ${workerId}` };
     }
+    const worker = workerEntry.doc;
     if (!worker.enabled) {
       return { ok: false, error: `Worker is disabled: ${worker.name}` };
     }
@@ -469,20 +482,19 @@ export const taskStatusTool: Tool = {
     required: ["task_ids"],
   },
   execute: async (params: Record<string, unknown>) => {
-    const db = getDb();
     const taskIds = params.task_ids as number[];
 
     try {
-      const placeholders = taskIds.map(() => "?").join(",");
-      const tasks = db.query<any, any[]>(
-        `SELECT id, name, status, progress, result FROM tasks WHERE id IN (${placeholders})`
-      ).all(...taskIds) as any[];
+      const tasksCol = await col<TaskDoc>("tasks");
+      const ids = taskIds.map((id) => String(id).padStart(15, "0"));
+      const entries = await Promise.all(ids.map((id) => tasksCol.get(id)));
+      const tasks = entries.filter((e): e is NonNullable<typeof e> => !!e).map(e => e.doc);
 
       return {
         ok: true,
         task_count: tasks.length,
         tasks: tasks.map((t) => ({
-          id: t.id,
+          id: parseInt(t.id, 10),
           name: t.name,
           status: t.status,
           progress: t.progress,
@@ -545,39 +557,34 @@ export const busReadTool: Tool = {
     },
   },
   execute: async (params: Record<string, unknown>) => {
-    const db = getDb();
     const workerId = params.worker_id as string | undefined;
     const limit = (params.limit as number) ?? 10;
 
     try {
-      let query = "SELECT * FROM agent_bus_messages WHERE read = 0";
-      const args: any[] = [];
+      const messagesCol = await col<AgentBusMessageDoc>("agentBusMessages");
+      let entries = (await messagesCol.scan({})).filter(e => !e.doc.read);
 
       if (workerId) {
-        query += " AND (to_worker_id = ? OR to_worker_id IS NULL)";
-        args.push(workerId);
+        entries = entries.filter(e => e.doc.to_worker_id === workerId || e.doc.to_worker_id === BROADCAST);
       }
 
-      query += " ORDER BY created_at ASC LIMIT ?";
-      args.push(limit);
-
-      const messages = db.query(query).all(...args) as any[];
+      entries.sort((a, b) => a.doc.created_at - b.doc.created_at);
+      entries = entries.slice(0, limit);
 
       // Mark as read
-      if (messages.length > 0) {
-        const ids = messages.map((m) => m.id).join(",");
-        db.query(`UPDATE agent_bus_messages SET read = 1 WHERE id IN (${ids})`).run();
+      for (const entry of entries) {
+        await messagesCol.put(entry.id, { ...entry.doc, read: true }, { expectedVersion: entry.version });
       }
 
       return {
         ok: true,
-        count: messages.length,
-        messages: messages.map((m) => ({
+        count: entries.length,
+        messages: entries.map(({ doc: m }) => ({
           id: m.id,
           event_type: m.event_type,
           content: m.content,
-          from_worker_id: m.from_worker_id,
-          created_at: new Date(m.created_at * 1000).toISOString(),
+          from_worker_id: fromIndexable(m.from_worker_id),
+          created_at: new Date(m.created_at).toISOString(),
         })),
       };
     } catch (error) {

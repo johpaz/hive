@@ -16,7 +16,7 @@ function showDevBanner(): void {
 
 export async function dev(): Promise<void> {
   const hiveDir = getHiveDir();
-  const dbPath = path.join(hiveDir, "data", "hive.db");
+  const dbPath = path.join(hiveDir, "data", "hivedb");
 
   // Create hiveDir if it doesn't exist
   if (!fs.existsSync(hiveDir)) {

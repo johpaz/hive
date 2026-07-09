@@ -10,7 +10,8 @@
  */
 
 import type { Tool } from "../types.ts";
-import { getDb } from "../../storage/sqlite.ts";
+import { col, nextId, toIndexable } from "../../storage/hive.ts";
+import type { MeetingSessionDoc, MeetingSegmentDoc } from "../../storage/collections.ts";
 import { voiceService, type AudioInput } from "../../voice/index.ts";
 import { logger } from "../../utils/logger.ts";
 
@@ -43,30 +44,32 @@ export const meetingStartTool: Tool = {
       (params.stt_model as string) || "whisper-large-v3-turbo";
 
     try {
-      const db = getDb();
-      const result = db
-        .query(
-          `INSERT INTO meeting_sessions (title, stt_model)
-           VALUES (?, ?)
-           RETURNING id, title, status, stt_model, started_at`
-        )
-        .get(title, sttModel) as {
-        id: string;
-        title: string;
-        status: string;
-        stt_model: string;
-        started_at: number;
+      const id = crypto.randomUUID().replace(/-/g, "");
+      const now = Date.now();
+      const doc: MeetingSessionDoc = {
+        id,
+        user_id: toIndexable(null),
+        title,
+        status: "active",
+        stt_model: sttModel,
+        started_at: now,
+        stopped_at: null,
+        report_path: null,
+        metadata: null,
       };
 
-      log.info(`Meeting session started: ${result.id} — "${title}"`);
+      const sessionsCol = await col<MeetingSessionDoc>("meetingSessions");
+      await sessionsCol.put(id, doc, { expectedVersion: 0 });
+
+      log.info(`Meeting session started: ${id} — "${title}"`);
 
       return {
         ok: true,
-        session_id: result.id,
-        title: result.title,
-        status: result.status,
-        stt_model: result.stt_model,
-        message: `✅ Sesión de reunión iniciada. ID: ${result.id}\nTítulo: "${title}"\nModelo STT: ${sttModel}`,
+        session_id: id,
+        title: doc.title,
+        status: doc.status,
+        stt_model: doc.stt_model,
+        message: `✅ Sesión de reunión iniciada. ID: ${id}\nTítulo: "${title}"\nModelo STT: ${sttModel}`,
       };
     } catch (error) {
       log.error(`meeting_start error: ${(error as Error).message}`);
@@ -110,17 +113,13 @@ export const meetingAddSegmentTool: Tool = {
     const mimeType = (params.mime_type as string) || "audio/webm";
 
     try {
-      const db = getDb();
+      const sessionsCol = await col<MeetingSessionDoc>("meetingSessions");
+      const sessionEntry = await sessionsCol.get(sessionId);
 
-      const session = db
-        .query(
-          `SELECT id, stt_model, status FROM meeting_sessions WHERE id = ?`
-        )
-        .get(sessionId) as { id: string; stt_model: string; status: string } | undefined;
-
-      if (!session) {
+      if (!sessionEntry) {
         return { ok: false, error: `Sesión ${sessionId} no encontrada.` };
       }
+      const session = sessionEntry.doc;
       if (session.status !== "active") {
         return {
           ok: false,
@@ -144,18 +143,19 @@ export const meetingAddSegmentTool: Tool = {
         };
       }
 
-      const seqResult = db
-        .query(
-          `SELECT COALESCE(MAX(seq) + 1, 0) as next_seq FROM meeting_segments WHERE session_id = ?`
-        )
-        .get(sessionId) as { next_seq: number };
+      const paddedSeq = await nextId(`meetingSegments:${sessionId}`);
+      const seq = parseInt(paddedSeq, 10) - 1; // preserve the original 0-based sequence
 
-      const seq = seqResult.next_seq;
-
-      db.query(
-        `INSERT INTO meeting_segments (session_id, seq, speaker, text, duration_ms)
-         VALUES (?, ?, ?, ?, NULL)`
-      ).run(sessionId, seq, speaker, transcription);
+      const segmentsCol = await col<MeetingSegmentDoc>("meetingSegments");
+      await segmentsCol.put(`${sessionId}:${paddedSeq}`, {
+        id: `${sessionId}:${paddedSeq}`,
+        session_id: sessionId,
+        seq,
+        speaker,
+        text: transcription,
+        duration_ms: null,
+        created_at: Date.now(),
+      }, { expectedVersion: 0 });
 
       log.info(`Segment ${seq} added to session ${sessionId}: "${transcription.substring(0, 60)}..."`);
 
@@ -196,15 +196,13 @@ export const meetingStopTool: Tool = {
     const sessionId = params.session_id as string;
 
     try {
-      const db = getDb();
+      const sessionsCol = await col<MeetingSessionDoc>("meetingSessions");
+      const sessionEntry = await sessionsCol.get(sessionId);
 
-      const session = db
-        .query(`SELECT id, title, status FROM meeting_sessions WHERE id = ?`)
-        .get(sessionId) as { id: string; title: string; status: string } | undefined;
-
-      if (!session) {
+      if (!sessionEntry) {
         return { ok: false, error: `Sesión ${sessionId} no encontrada.` };
       }
+      const session = sessionEntry.doc;
       if (session.status === "stopped" || session.status === "report_ready") {
         return {
           ok: true,
@@ -213,22 +211,19 @@ export const meetingStopTool: Tool = {
         };
       }
 
-      db.query(
-        `UPDATE meeting_sessions SET status = 'stopped', stopped_at = unixepoch() WHERE id = ?`
-      ).run(sessionId);
+      await sessionsCol.put(sessionId, { ...session, status: "stopped", stopped_at: Date.now() }, { expectedVersion: sessionEntry.version });
 
-      const countResult = db
-        .query(`SELECT COUNT(*) as count FROM meeting_segments WHERE session_id = ?`)
-        .get(sessionId) as { count: number };
+      const segmentsCol = await col<MeetingSegmentDoc>("meetingSegments");
+      const count = (await segmentsCol.scan({ prefix: `${sessionId}:` })).length;
 
-      log.info(`Meeting session stopped: ${sessionId} — ${countResult.count} segments`);
+      log.info(`Meeting session stopped: ${sessionId} — ${count} segments`);
 
       return {
         ok: true,
         session_id: sessionId,
         title: session.title,
-        segment_count: countResult.count,
-        message: `⏹️ Sesión "${session.title}" detenida.\n${countResult.count} segmentos transcritos.\n\nPuedes pedir el reporte con: "Genera el reporte de la reunión ${sessionId}"`,
+        segment_count: count,
+        message: `⏹️ Sesión "${session.title}" detenida.\n${count} segmentos transcritos.\n\nPuedes pedir el reporte con: "Genera el reporte de la reunión ${sessionId}"`,
       };
     } catch (error) {
       log.error(`meeting_stop error: ${(error as Error).message}`);
@@ -257,38 +252,18 @@ export const meetingReportTool: Tool = {
     const sessionId = params.session_id as string;
 
     try {
-      const db = getDb();
+      const sessionsCol = await col<MeetingSessionDoc>("meetingSessions");
+      const sessionEntry = await sessionsCol.get(sessionId);
 
-      const session = db
-        .query(
-          `SELECT id, title, status, stt_model, started_at, stopped_at
-           FROM meeting_sessions WHERE id = ?`
-        )
-        .get(sessionId) as {
-        id: string;
-        title: string;
-        status: string;
-        stt_model: string;
-        started_at: number;
-        stopped_at: number | null;
-      } | undefined;
-
-      if (!session) {
+      if (!sessionEntry) {
         return { ok: false, error: `Sesión ${sessionId} no encontrada.` };
       }
+      const session = sessionEntry.doc;
 
-      const segments = db
-        .query(
-          `SELECT seq, speaker, text, created_at
-           FROM meeting_segments WHERE session_id = ?
-           ORDER BY seq ASC`
-        )
-        .all(sessionId) as {
-        seq: number;
-        speaker: string | null;
-        text: string;
-        created_at: number;
-      }[];
+      const segmentsCol = await col<MeetingSegmentDoc>("meetingSegments");
+      const segments = (await segmentsCol.scan({ prefix: `${sessionId}:` }))
+        .map(e => e.doc)
+        .sort((a, b) => a.seq - b.seq);
 
       if (segments.length === 0) {
         return {
@@ -301,9 +276,7 @@ export const meetingReportTool: Tool = {
         .map((s) => (s.speaker ? `[${s.speaker}]: ${s.text}` : s.text))
         .join("\n");
 
-      const durationSec = session.stopped_at
-        ? session.stopped_at - session.started_at
-        : Math.floor(Date.now() / 1000) - session.started_at;
+      const durationSec = Math.floor(((session.stopped_at ?? Date.now()) - session.started_at) / 1000);
       const durationMin = Math.floor(durationSec / 60);
       const durationSecRem = durationSec % 60;
 

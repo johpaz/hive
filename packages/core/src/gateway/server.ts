@@ -26,13 +26,14 @@ const _pkgVersion = (() => {
   }
 })();
 import { cpus as osCpus } from "node:os";
-import { getDb, getDbPathLazy, initializeDatabase } from "../storage/sqlite";
-import { seedAllData } from "../storage/seed";
+import { ensureHiveDb } from "../storage/bootstrap";
+import { col, fromIndexable, nextId } from "../storage/hive";
+import type { UserDoc, AgentDoc } from "../storage/collections";
 import { canvasManager } from "../canvas/canvas-manager.ts";
 import { subscribeCanvas, unsubscribeCanvas, emitCanvas, getCanvasSnapshot, removeCanvasComponent } from "../canvas/emitter";
 import { resolveCanvasInteraction } from "../tools/canvas/index";
 import { randomUUID } from "crypto";
-import { legacyDecryptAES, loadMcpHeaders } from "../storage/crypto.ts";
+import { loadMcpHeaders } from "../storage/crypto.ts";
 import { resolveContext } from "./resolver";
 import { voiceService } from "../voice/index";
 import { multimodalService } from "../multimodal/index";
@@ -169,16 +170,15 @@ export async function startGateway(config: Config): Promise<void> {
 
   // Inicializar DB siempre (en setup mode crea la DB vacía, los endpoints retornan [] en vez de 500)
   try {
-    const db = initializeDatabase();
-    // Seed providers/models/hive_capabilities so setup wizard has data before onboarding completes
-    seedAllData();
+    // Seed providers/models/etc so setup wizard has data before onboarding completes
+    await ensureHiveDb();
   } catch { /* si falla, los endpoints manejarán el error */ }
 
-  // Setup mode: no DB file OR DB existe pero tiene 0 usuarios (primera ejecución interrumpida)
+  // Setup mode: DB existe pero tiene 0 usuarios (primera ejecución interrumpida)
   let gatewaySetupMode = false;
   try {
-    const count = (getDb().query("SELECT COUNT(*) as count FROM users").get() as { count: number }).count;
-    gatewaySetupMode = count === 0;
+    const usersCol = await col("users");
+    gatewaySetupMode = (await usersCol.count()) === 0;
   } catch {
     gatewaySetupMode = true;
   }
@@ -208,26 +208,28 @@ export async function startGateway(config: Config): Promise<void> {
 
       // ── Initialize New Cron Scheduler (Croner-based) ───────────────────────
       try {
-        const db = getDb();
-
         // Repair orphaned task_runs (status='running' from previous crash)
-        db.query(`
-          UPDATE task_runs 
-          SET status = 'timeout', finished_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-          WHERE status = 'running'
-        `).run();
+        const taskRunsCol = await col<import("../storage/collections").TaskRunDoc>("taskRuns")
+        const orphaned = (await taskRunsCol.scan({})).filter(e => e.doc.status === "running")
+        for (const run of orphaned) {
+          await taskRunsCol.put(run.id, {
+            ...run.doc,
+            status: "timeout",
+            finished_at: new Date().toISOString(),
+          }, { expectedVersion: run.version })
+        }
 
         // Create and boot scheduler
         const handler = createTaskHandler();
-        const scheduler = new CronScheduler(db, handler);
-        scheduler.boot();
+        const scheduler = new CronScheduler(handler);
+        await scheduler.boot();
 
         // Register scheduler globally for tools, routes, and internal cleanup
         setScheduleToolsInstance(scheduler);
         setCronApiInstance(scheduler);
         setSchedulerForCleanup(scheduler);
 
-        log.info(`📅 CronScheduler initialized with ${scheduler.getStatus().length} task(s)`);
+        log.info(`📅 CronScheduler initialized with ${(await scheduler.getStatus()).length} task(s)`);
 
         // Register DAGScheduler as a global service (opt-in by swarms)
         const dagScheduler = new DAGScheduler({ strategy: new ParallelStrategy(), maxConcurrentWorkers: 2 });
@@ -342,8 +344,8 @@ export async function startGateway(config: Config): Promise<void> {
     log.info(`📥 Message from ${message.channel}:${message.accountId}`);
     log.info(`   Session: ${message.sessionId}`);
 
-    const voiceConfig = voiceService.getChannelVoiceConfig(message.channel);
-    const visionConfig = multimodalService.getChannelVisionConfig(message.channel);
+    const voiceConfig = await voiceService.getChannelVoiceConfig(message.channel);
+    const visionConfig = await multimodalService.getChannelVisionConfig(message.channel);
     let messageContent = message.content;
 
     let preferAudioResponse = false;
@@ -395,7 +397,7 @@ export async function startGateway(config: Config): Promise<void> {
           const activeModelId = dbModel;
           const activeProviderId = dbProvider;
           const modelHasVision = activeModelId && activeProviderId
-            ? multimodalService.modelSupportsVision(activeProviderId, activeModelId)
+            ? await multimodalService.modelSupportsVision(activeProviderId, activeModelId)
             : false;
 
           if (visionConfig.visionEnabled && modelHasVision) {
@@ -448,7 +450,7 @@ export async function startGateway(config: Config): Promise<void> {
 
     log.info(` Content: ${messageContent.substring(0, 150)}${messageContent.length > 150 ? "..." : ""}`);
 
-    const { userId, threadId: conversationThreadId } = resolveContext({
+    const { userId, threadId: conversationThreadId } = await resolveContext({
       channel: message.channel,
       channelUserId: message.sessionId,
     });
@@ -472,10 +474,9 @@ export async function startGateway(config: Config): Promise<void> {
         : { input_type: "text", channel: message.channel };
 
     // Obtener la zona horaria del usuario para el timestamp exacto
-    const userRow = getDb()
-      .query<any, [string]>("SELECT * FROM users WHERE id = ?")
-      .get(userId);
-    const userTimezone = userRow?.timezone || "UTC";
+    const usersColForTz = await col<UserDoc>("users");
+    const userRow = await usersColForTz.get(userId);
+    const userTimezone = userRow?.doc.timezone || "UTC";
     const now = new Date();
     let exactTime = "";
     try {
@@ -637,7 +638,7 @@ export async function startGateway(config: Config): Promise<void> {
   // Set HIVE_DEV=true in your development environment.
   const isDev = process.env.HIVE_DEV === "true" || process.env.HIVE_DEV === "1";
 
-  function checkAuth(req: Request, url: URL): boolean {
+  async function checkAuth(req: Request, url: URL): Promise<boolean> {
     // En modo desarrollo, permitir todo
     if (isDev) return true;
 
@@ -656,9 +657,8 @@ export async function startGateway(config: Config): Promise<void> {
     // This allows the UI to load user data when login is not configured yet
     if (url.pathname === "/api/users" && req.method === "GET") {
       try {
-        const user = getDb().query(
-          `SELECT email, password_hash FROM users LIMIT 1`
-        ).get() as { email: string | null; password_hash: string | null } | null;
+        const usersCol = await col<UserDoc>("users");
+        const user = (await usersCol.scan({ limit: 1 }))[0]?.doc;
         const hasCredentials = !!(user?.email && user?.password_hash);
         // Allow access if no credentials configured
         if (!hasCredentials) return true;
@@ -671,9 +671,8 @@ export async function startGateway(config: Config): Promise<void> {
     // no tiene token en localStorage porque nunca pasó por login.
     // Coincide con el comportamiento de AuthGuard: status.hasCredentials === false → open.
     try {
-      const user = getDb().query(
-        `SELECT email, password_hash FROM users LIMIT 1`
-      ).get() as { email: string | null; password_hash: string | null } | null;
+      const usersCol = await col<UserDoc>("users");
+      const user = (await usersCol.scan({ limit: 1 }))[0]?.doc;
       const hasCredentials = !!(user?.email && user?.password_hash);
       if (!hasCredentials) return true;
     } catch {
@@ -725,18 +724,19 @@ export async function startGateway(config: Config): Promise<void> {
 
         // ── WebSocket upgrade ────────────────────────────────────────────────
         if (url.pathname === "/ws" || url.pathname === "/ws/") {
-          let sessionId = url.searchParams.get("session") || resolveUserId({}) || "default";
+          let sessionId = url.searchParams.get("session") || (await resolveUserId({})) || "default";
           // Auth: accept ?token=<authToken> (same as REST Bearer) as alternative to ?session=<userId>
           if (!isDev && !gatewaySetupMode) {
             const tokenParam = url.searchParams.get("token");
             const activeToken = process.env.HIVE_AUTH_TOKEN;
+            const usersColForWs = await col<UserDoc>("users");
             if (tokenParam && activeToken && tokenParam === activeToken) {
               // Token auth — resolve the real userId from DB
-              const user = getDb().query("SELECT id FROM users LIMIT 1").get() as { id: string } | undefined;
+              const user = (await usersColForWs.scan({ limit: 1 }))[0];
               if (user) sessionId = user.id;
             }
             try {
-              const userExists = getDb().query("SELECT 1 FROM users WHERE id = ? LIMIT 1").get(sessionId);
+              const userExists = await usersColForWs.get(sessionId);
               if (!userExists) {
                 return new Response("Unauthorized", { status: 401 });
               }
@@ -911,7 +911,7 @@ export async function startGateway(config: Config): Promise<void> {
         }
 
         // ── Rutas que requieren autenticación ────────────────────────────────
-        if (!checkAuth(req, url)) {
+        if (!(await checkAuth(req, url))) {
           log.warn(`[AUTH] Unauthorized request to ${url.pathname} from ${req.headers.get("origin")} `);
           return addCorsHeaders(new Response("Unauthorized", { status: 401 }), req);
         }
@@ -1167,11 +1167,10 @@ export async function startGateway(config: Config): Promise<void> {
         // Get/Update workspace files (soul, user, ethics)
         for (const wsType of ["soul", "user", "ethics"] as const) {
           if (url.pathname === `/api/workspace/${wsType}`) {
-            const coordinatorRow = getDb().query<{ workspace: string | null }, []>(
-              "SELECT workspace FROM agents WHERE role = 'coordinator' LIMIT 1"
-            ).get();
-            const liveWorkspacePath = coordinatorRow?.workspace
-              ? expandPath(coordinatorRow.workspace)
+            const agentsColForWorkspace = await col<AgentDoc>("agents")
+            const coordinatorRow = (await agentsColForWorkspace.findBy("role", "coordinator", { limit: 1 }))[0];
+            const liveWorkspacePath = coordinatorRow?.doc.workspace
+              ? expandPath(coordinatorRow.doc.workspace)
               : expandPath("~/.hive/workspace");
             if (req.method === "GET") {
               return await handleGetWorkspace(req, addCorsHeaders, liveWorkspacePath, wsType);
@@ -1286,7 +1285,15 @@ export async function startGateway(config: Config): Promise<void> {
           const { name, description, category, tools, triggers, preferred_agents, body: bodyContent } = body
           if (!name) return addCorsHeaders(new Response("Missing name", { status: 400 }), req)
           const id = randomUUID()
-          getDb().query(`INSERT INTO skills(id, name, description, category, tools, triggers, preferred_agents, body, version, version_num, active) VALUES(?, ?, ?, ?, ?, ?, ?, ?, '0.0.1', 1, 1)`).run(id, name, description || "", category || "", tools || "", triggers || "", typeof preferred_agents === 'object' ? JSON.stringify(preferred_agents || []) : (preferred_agents || "[]"), bodyContent || "")
+          const skillsColForCreate = await col<import("../storage/collections").SkillDoc>("skills")
+          const nowForSkill = Date.now()
+          await skillsColForCreate.put(id, {
+            id, name, description: description || "", version: "0.0.1", author: "Anonymous", icon: "🧩",
+            category: category || "", permissions: "[]", dependencies: "[]",
+            tools: tools || "", triggers: triggers || "",
+            preferred_agents: typeof preferred_agents === 'object' ? JSON.stringify(preferred_agents || []) : (preferred_agents || "[]"),
+            body: bodyContent || "", version_num: 1, active: true, created_at: nowForSkill, updated_at: nowForSkill,
+          }, { expectedVersion: 0 })
           return addCorsHeaders(Response.json({ success: true, id }), req)
         }
 
@@ -1325,7 +1332,10 @@ export async function startGateway(config: Config): Promise<void> {
           const { name, description, content, is_default } = body
           if (!name || !content) return addCorsHeaders(Response.json({ success: false, error: "Missing name or content" }, { status: 400 }), req)
           const id = randomUUID()
-          getDb().query(`INSERT INTO ethics(id, name, description, content, is_default, enabled, active) VALUES(?, ?, ?, ?, ?, 1, 1)`).run(id, name, description || "", content, is_default ? 1 : 0)
+          const ethicsColForCreate = await col<import("../storage/collections").EthicsDoc>("ethics")
+          await ethicsColForCreate.put(id, {
+            id, name, description: description || "", content, is_default: !!is_default, enabled: true, active: true,
+          }, { expectedVersion: 0 })
           return addCorsHeaders(Response.json({ success: true, id }), req)
         }
 
@@ -1388,7 +1398,16 @@ export async function startGateway(config: Config): Promise<void> {
             log.info(`[MCP] Toggle connection for ${mcpName}, active=${active}`)
 
             // Update DB
-            getDb().query(`UPDATE mcp_servers SET active = ?, enabled = ? WHERE id = ? OR name = ?`).run(active ? 1 : 0, active ? 1 : 0, mcpName, mcpName)
+            const mcpServersColT = await col<import("../storage/collections").McpServerDoc>("mcpServers")
+            const findMcpEntry = async (idOrName: string) => {
+              const byId = await mcpServersColT.get(idOrName)
+              if (byId) return byId
+              return (await mcpServersColT.scan({})).find(e => e.doc.name === idOrName)
+            }
+            const toggleEntry = await findMcpEntry(mcpName)
+            if (toggleEntry) {
+              await mcpServersColT.put(toggleEntry.id, { ...toggleEntry.doc, active: !!active, enabled: !!active }, { expectedVersion: toggleEntry.version })
+            }
 
             // Connect/Disconnect MCP server in real-time (no restart needed)
             try {
@@ -1396,29 +1415,23 @@ export async function startGateway(config: Config): Promise<void> {
               if (mcp) {
                 log.info(`[MCP] Manager found, connecting ${mcpName}...`)
                 if (active) {
-                  const server = getDb().query(`SELECT * FROM mcp_servers WHERE id = ? OR name = ?`).get(mcpName, mcpName) as Record<string, any> | undefined;
+                  const server = (await findMcpEntry(mcpName))?.doc;
                   if (server) {
                     log.info(`[MCP] Server config: transport=${server.transport}, url=${server.url}`)
 
                     // Build MCP server config
                     const mcpServerConfig: any = {
-                      transport: server.transport as string,
-                      command: server.command as string | null,
-                      args: server.args ? JSON.parse(server.args as string) : [],
-                      url: server.url as string | null,
+                      transport: server.transport,
+                      command: server.command,
+                      args: server.args ? JSON.parse(server.args) : [],
+                      url: server.url,
                       enabled: true,
                     }
 
-                    // Load headers from keychain (modern approach), fall back to legacy AES
-                    const keychainHeaders = await loadMcpHeaders(server.id as string);
+                    // Load headers from keychain (modern approach)
+                    const keychainHeaders = await loadMcpHeaders(server.id);
                     if (Object.keys(keychainHeaders).length > 0) {
                       mcpServerConfig.headers = keychainHeaders;
-                    } else if (server.headers_encrypted && server.headers_iv) {
-                      try {
-                        mcpServerConfig.headers = legacyDecryptAES(server.headers_encrypted, server.headers_iv);
-                      } catch (e) {
-                        log.warn(`Failed to decrypt legacy headers for ${mcpName}`);
-                      }
                     }
 
                     // Get current MCP config and add/update this server
@@ -1442,13 +1455,19 @@ export async function startGateway(config: Config): Promise<void> {
                       log.error(`[MCP] Connection error for ${mcpName}: ${serverDetails.error}`);
                     }
                     log.info(`[MCP] Connected! Tools: ${tools.length}, status: ${serverStatus}`);
-                    getDb().query(`UPDATE mcp_servers SET status = ?, tools_count = ? WHERE id = ? OR name = ?`).run(serverStatus === "connected" ? "connected" : "error", tools.length, mcpName, mcpName);
+                    const entryAfterConnect = await findMcpEntry(mcpName)
+                    if (entryAfterConnect) {
+                      await mcpServersColT.put(entryAfterConnect.id, { ...entryAfterConnect.doc, status: serverStatus === "connected" ? "connected" : "error", tools_count: tools.length }, { expectedVersion: entryAfterConnect.version })
+                    }
                   } else {
                     log.error(`[MCP] Server not found in DB: ${mcpName}`)
                   }
                 } else {
                   await mcp.disconnectServer(mcpName);
-                  getDb().query(`UPDATE mcp_servers SET status = ? WHERE id = ? OR name = ?`).run("disconnected", mcpName, mcpName);
+                  const entryAfterDisconnect = await findMcpEntry(mcpName)
+                  if (entryAfterDisconnect) {
+                    await mcpServersColT.put(entryAfterDisconnect.id, { ...entryAfterDisconnect.doc, status: "disconnected" }, { expectedVersion: entryAfterDisconnect.version })
+                  }
                 }
               } else {
                 log.error(`[MCP] No MCP Manager found`)
@@ -1482,36 +1501,39 @@ export async function startGateway(config: Config): Promise<void> {
             }
 
             // Update DB
-            getDb().query(`UPDATE mcp_servers SET active = ?, enabled = ? WHERE id = ? OR name = ?`).run(active ? 1 : 0, active ? 1 : 0, mcpName, mcpName)
+            const mcpServersColT2 = await col<import("../storage/collections").McpServerDoc>("mcpServers")
+            const findMcpEntry2 = async (idOrName: string) => {
+              const byId = await mcpServersColT2.get(idOrName)
+              if (byId) return byId
+              return (await mcpServersColT2.scan({})).find(e => e.doc.name === idOrName)
+            }
+            const toggleEntry2 = await findMcpEntry2(mcpName)
+            if (toggleEntry2) {
+              await mcpServersColT2.put(toggleEntry2.id, { ...toggleEntry2.doc, active: !!active, enabled: !!active }, { expectedVersion: toggleEntry2.version })
+            }
 
             // Connect/Disconnect MCP server in real-time (no restart needed)
             try {
               const mcp = agent?.getMCPManager() ?? null;
               if (mcp) {
                 if (active) {
-                  const server = getDb().query(`SELECT * FROM mcp_servers WHERE id = ? OR name = ?`).get(mcpName, mcpName) as Record<string, any> | undefined;
+                  const server = (await findMcpEntry2(mcpName))?.doc;
                   if (server) {
                     log.info(`[MCP] Server config: transport=${server.transport}, url=${server.url}`)
 
                     // Build MCP server config
                     const mcpServerConfig: any = {
-                      transport: server.transport as string,
-                      command: server.command as string | null,
-                      args: server.args ? JSON.parse(server.args as string) : [],
-                      url: server.url as string | null,
+                      transport: server.transport,
+                      command: server.command,
+                      args: server.args ? JSON.parse(server.args) : [],
+                      url: server.url,
                       enabled: true,
                     }
 
-                    // Load headers from keychain (modern approach), fall back to legacy AES
-                    const keychainHeaders2 = await loadMcpHeaders(server.id as string);
+                    // Load headers from keychain (modern approach)
+                    const keychainHeaders2 = await loadMcpHeaders(server.id);
                     if (Object.keys(keychainHeaders2).length > 0) {
                       mcpServerConfig.headers = keychainHeaders2;
-                    } else if (server.headers_encrypted && server.headers_iv) {
-                      try {
-                        mcpServerConfig.headers = legacyDecryptAES(server.headers_encrypted, server.headers_iv);
-                      } catch (e) {
-                        log.warn(`Failed to decrypt legacy headers for ${mcpName}`);
-                      }
                     }
 
                     // Get current MCP config and add/update this server
@@ -1537,13 +1559,19 @@ export async function startGateway(config: Config): Promise<void> {
                     log.info(`[MCP] Connected! Tools: ${tools.length}, status: ${serverStatus2}`);
 
                     // Update DB with status and tools
-                    getDb().query(`UPDATE mcp_servers SET status = ?, tools_count = ? WHERE id = ? OR name = ?`).run(serverStatus2 === "connected" ? "connected" : "error", tools.length, mcpName, mcpName);
+                    const entryAfterConnect2 = await findMcpEntry2(mcpName)
+                    if (entryAfterConnect2) {
+                      await mcpServersColT2.put(entryAfterConnect2.id, { ...entryAfterConnect2.doc, status: serverStatus2 === "connected" ? "connected" : "error", tools_count: tools.length }, { expectedVersion: entryAfterConnect2.version })
+                    }
                   } else {
                     log.error(`[MCP] Server not found in DB: ${mcpName}`)
                   }
                 } else {
                   await mcp.disconnectServer(mcpName);
-                  getDb().query(`UPDATE mcp_servers SET status = ? WHERE id = ? OR name = ?`).run("disconnected", mcpName, mcpName);
+                  const entryAfterDisconnect2 = await findMcpEntry2(mcpName)
+                  if (entryAfterDisconnect2) {
+                    await mcpServersColT2.put(entryAfterDisconnect2.id, { ...entryAfterDisconnect2.doc, status: "disconnected" }, { expectedVersion: entryAfterDisconnect2.version })
+                  }
                 }
               }
             } catch (error) {
@@ -1807,7 +1835,7 @@ export async function startGateway(config: Config): Promise<void> {
     },
 
     websocket: {
-      open(ws) {
+      async open(ws) {
         const data = ws.data;
         // ── Meeting Stream ─────────────────────────────────────────────────────
         if (data.sessionId.startsWith("meeting:")) {
@@ -1832,26 +1860,25 @@ export async function startGateway(config: Config): Promise<void> {
 
         // Send welcome message with real user data
         try {
-          const db = getDb();
-          const user = db.query("SELECT id, name, language FROM users LIMIT 1").get() as { id: string; name: string; language: string } | undefined;
-          const agent = db.query("SELECT id, name, provider_id, model_id FROM agents WHERE role = 'coordinator' LIMIT 1").get() as { id: string; name: string; provider_id: string; model_id: string } | undefined;
+          const usersColForWelcome = await col<UserDoc>("users");
+          const agentsColForWelcome = await col<AgentDoc>("agents");
+          const channelsColForWelcome = await col<import("../storage/collections").ChannelDoc>("channels");
 
-          // Get channels
-          const channels = db.query("SELECT id FROM channels WHERE active = 1").all() as Array<{ id: string }>;
-
-          // Get voice config from webchat channel
-          const voiceConfig = db.query("SELECT voice_enabled, stt_provider, tts_provider FROM channels WHERE id = 'webchat'").get() as { voice_enabled: number; stt_provider: string; tts_provider: string } | undefined;
+          const user = (await usersColForWelcome.scan({ limit: 1 }))[0]?.doc;
+          const agent = (await agentsColForWelcome.findBy("role", "coordinator", { limit: 1 }))[0]?.doc;
+          const channels = (await channelsColForWelcome.scan({})).filter(c => c.doc.active);
+          const webchat = await channelsColForWelcome.get("webchat");
 
           ws.send(JSON.stringify({
             type: "welcome",
             sessionId: data.sessionId,
             user: user ? { id: user.id, name: user.name, language: user.language } : null,
-            agent: agent ? { id: agent.id, name: agent.name, provider: agent.provider_id, model: agent.model_id } : null,
-            channels: channels.map(c => c.id),
-            voice: voiceConfig ? {
-              enabled: voiceConfig.voice_enabled === 1,
-              sttProvider: voiceConfig.stt_provider,
-              ttsProvider: voiceConfig.tts_provider
+            agent: agent ? { id: agent.id, name: agent.name, provider: fromIndexable(agent.provider_id), model: fromIndexable(agent.model_id) } : null,
+            channels: channels.map(c => c.doc.id),
+            voice: webchat ? {
+              enabled: webchat.doc.voice_enabled,
+              sttProvider: webchat.doc.stt_provider,
+              ttsProvider: webchat.doc.tts_provider
             } : { enabled: false, sttProvider: null, ttsProvider: null },
           } as OutboundMessage));
         } catch (err) {
@@ -1886,25 +1913,28 @@ export async function startGateway(config: Config): Promise<void> {
               const mimeType = (m.mime_type as string) || "audio/webm";
               (async () => {
                 try {
-                  const db = getDb();
-                  const session = db.query(
-                    `SELECT id, stt_model, status FROM meeting_sessions WHERE id = ?`
-                  ).get(meetingSessionId) as { id: string; stt_model: string; status: string } | undefined;
-                  if (!session || session.status !== "active") {
+                  const sessionsCol = await col<import("../storage/collections").MeetingSessionDoc>("meetingSessions");
+                  const sessionEntry = await sessionsCol.get(meetingSessionId);
+                  if (!sessionEntry || sessionEntry.doc.status !== "active") {
                     ws.send(JSON.stringify({ type: "error", error: "Sesión no activa o no encontrada" }));
                     return;
                   }
                   const transcription = await voiceService.transcribe(
                     { type: "base64", data: audioBase64, mimeType },
-                    session.stt_model
+                    sessionEntry.doc.stt_model
                   );
-                  const seqResult = db.query(
-                    `SELECT COALESCE(MAX(seq) + 1, 0) as next_seq FROM meeting_segments WHERE session_id = ?`
-                  ).get(meetingSessionId) as { next_seq: number };
-                  const seq = seqResult.next_seq;
-                  db.query(
-                    `INSERT INTO meeting_segments (session_id, seq, speaker, text) VALUES (?, ?, ?, ?)`
-                  ).run(meetingSessionId, seq, speaker, transcription);
+                  const paddedSeq = await nextId(`meetingSegments:${meetingSessionId}`);
+                  const seq = parseInt(paddedSeq, 10) - 1;
+                  const segmentsCol = await col<import("../storage/collections").MeetingSegmentDoc>("meetingSegments");
+                  await segmentsCol.put(`${meetingSessionId}:${paddedSeq}`, {
+                    id: `${meetingSessionId}:${paddedSeq}`,
+                    session_id: meetingSessionId,
+                    seq,
+                    speaker,
+                    text: transcription,
+                    duration_ms: null,
+                    created_at: Date.now(),
+                  }, { expectedVersion: 0 });
                   ws.send(JSON.stringify({ type: "transcript_segment", seq, speaker, text: transcription }));
                 } catch (err) {
                   ws.send(JSON.stringify({ type: "error", error: (err as Error).message }));
@@ -1914,18 +1944,20 @@ export async function startGateway(config: Config): Promise<void> {
             }
             if (m?.type === "meeting_stop") {
               const meetingSessionId = (data as any).meetingSessionId as string;
-              try {
-                const db = getDb();
-                db.query(
-                  `UPDATE meeting_sessions SET status = 'stopped', stopped_at = unixepoch() WHERE id = ? AND status = 'active'`
-                ).run(meetingSessionId);
-                const countResult = db.query(
-                  `SELECT COUNT(*) as count FROM meeting_segments WHERE session_id = ?`
-                ).get(meetingSessionId) as { count: number };
-                ws.send(JSON.stringify({ type: "meeting_stopped", session_id: meetingSessionId, segment_count: countResult.count }));
-              } catch (err) {
-                ws.send(JSON.stringify({ type: "error", error: (err as Error).message }));
-              }
+              (async () => {
+                try {
+                  const sessionsCol = await col<import("../storage/collections").MeetingSessionDoc>("meetingSessions");
+                  const sessionEntry = await sessionsCol.get(meetingSessionId);
+                  if (sessionEntry && sessionEntry.doc.status === "active") {
+                    await sessionsCol.put(meetingSessionId, { ...sessionEntry.doc, status: "stopped", stopped_at: Date.now() }, { expectedVersion: sessionEntry.version });
+                  }
+                  const segmentsCol = await col<import("../storage/collections").MeetingSegmentDoc>("meetingSegments");
+                  const count = (await segmentsCol.scan({ prefix: `${meetingSessionId}:` })).length;
+                  ws.send(JSON.stringify({ type: "meeting_stopped", session_id: meetingSessionId, segment_count: count }));
+                } catch (err) {
+                  ws.send(JSON.stringify({ type: "error", error: (err as Error).message }));
+                }
+              })();
               return;
             }
           } catch { /* ignore malformed messages */ }
@@ -1962,7 +1994,7 @@ export async function startGateway(config: Config): Promise<void> {
           canvasManager.registerSession(`canvas:${data.sessionId}`, ws);
           ws.send(JSON.stringify({
             type: "canvas:snapshot",
-            data: getCanvasSnapshot(),
+            data: await getCanvasSnapshot(),
           }));
           return;
         }
@@ -1994,7 +2026,7 @@ export async function startGateway(config: Config): Promise<void> {
               return;
             }
             try {
-              const { userId, threadId: conversationThreadId } = resolveContext({ channel: "webchat", channelUserId: sessionId });
+              const { userId, threadId: conversationThreadId } = await resolveContext({ channel: "webchat", channelUserId: sessionId });
               const messages = [{ role: "user" as const, content: interactionMsg }];
               let streamedContent = "";
               const messageId = crypto.randomUUID();
@@ -2069,7 +2101,7 @@ export async function startGateway(config: Config): Promise<void> {
                 return;
               }
               try {
-                const { userId, threadId: conversationThreadId } = resolveContext({ channel: "webchat", channelUserId: sessionId });
+                const { userId, threadId: conversationThreadId } = await resolveContext({ channel: "webchat", channelUserId: sessionId });
                 const messages = [{ role: "user" as const, content: interactionMsg }];
                 let streamedContent = "";
                 const messageId = crypto.randomUUID();
@@ -2156,7 +2188,7 @@ export async function startGateway(config: Config): Promise<void> {
         if (msg.type === "audio" && msg.audio) {
           log.info(`WebChat audio from session ${msg.sessionId}`);
 
-          const voiceConfig = voiceService.getChannelVoiceConfig("webchat");
+          const voiceConfig = await voiceService.getChannelVoiceConfig("webchat");
 
           if (!voiceConfig.voiceEnabled) {
             ws.send(JSON.stringify({
@@ -2212,7 +2244,7 @@ export async function startGateway(config: Config): Promise<void> {
               }
 
               try {
-                const { userId, threadId: conversationThreadId } = resolveContext({
+                const { userId, threadId: conversationThreadId } = await resolveContext({
                   channel: "webchat",
                   channelUserId: msg.sessionId,
                 });
@@ -2281,7 +2313,7 @@ export async function startGateway(config: Config): Promise<void> {
                 const content = streamedContent || response.content?.trim() || "";
                 log.info(`Response sent to session ${unifiedSessionId} (${content.length} chars)`);
 
-                const voiceCfg = voiceService.getChannelVoiceConfig("webchat");
+                const voiceCfg = await voiceService.getChannelVoiceConfig("webchat");
                 const shouldSpeak = webchatPreferAudio;
                 let responseType: "text" | "audio" = "text";
                 let ttsProviderUsed: string | null = null;
@@ -2394,7 +2426,7 @@ export async function startGateway(config: Config): Promise<void> {
             }
 
             try {
-              const { userId, threadId: conversationThreadId } = resolveContext({
+              const { userId, threadId: conversationThreadId } = await resolveContext({
                 channel: "webchat",
                 channelUserId: msg.sessionId,
               });
@@ -2407,7 +2439,7 @@ export async function startGateway(config: Config): Promise<void> {
               // Multimodal: process image/document if present
               let finalMessageContent = msg.content;
               let contentParts: any[] | undefined = undefined;
-              const visionConfig = multimodalService.getChannelVisionConfig("webchat");
+              const visionConfig = await multimodalService.getChannelVisionConfig("webchat");
 
               if (msg.image || msg.document) {
                 log.info(`🖼️ Multimodal content detected from WebChat session ${unifiedSessionId}`);
@@ -2425,7 +2457,7 @@ export async function startGateway(config: Config): Promise<void> {
                     const activeModelId = dbModel;
                     const activeProviderId = dbProvider;
                     const modelHasVision = activeModelId && activeProviderId
-                      ? multimodalService.modelSupportsVision(activeProviderId, activeModelId)
+                      ? await multimodalService.modelSupportsVision(activeProviderId, activeModelId)
                       : false;
 
                     if (visionConfig.visionEnabled && modelHasVision) {
@@ -2530,7 +2562,7 @@ export async function startGateway(config: Config): Promise<void> {
               const content = streamedContent || response.content?.trim() || "";
               log.info(`Response sent to session ${unifiedSessionId} (${content.length} chars)`);
 
-              const voiceConfig = voiceService.getChannelVoiceConfig("webchat");
+              const voiceConfig = await voiceService.getChannelVoiceConfig("webchat");
               const shouldSpeak = webchatPreferAudio;
               let responseType: "text" | "audio" = "text";
               let ttsProviderUsed: string | null = null;

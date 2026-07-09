@@ -14,7 +14,8 @@
  */
 
 import { logger } from "../utils/logger"
-import { getDb } from "../storage/sqlite"
+import { col, fromIndexable } from "../storage/hive"
+import type { AgentDoc } from "../storage/collections"
 import { callLLM, resolveProviderConfig, getDefaultLLM, type LLMMessage } from "./llm-client"
 import { addMessage } from "./conversation-store"
 import { saveTrace, recordLLMUsage } from "./tracer"
@@ -82,15 +83,17 @@ export async function* runAgent(
   opts: AgentLoopOptions
 ): AsyncGenerator<StreamChunk> {
   const t0 = performance.now()
-  const db = getDb()
 
   // Load agent config from DB
-  const agent = db.query<any, [string]>("SELECT * FROM agents WHERE id = ?").get(opts.agentId)
-  if (!agent) throw new Error(`Agent not found: ${opts.agentId}`)
+  const agentsCol = await col<AgentDoc>("agents")
+  const agentEntry = await agentsCol.get(opts.agentId)
+  if (!agentEntry) throw new Error(`Agent not found: ${opts.agentId}`)
+  const agent = agentEntry.doc
 
   const agentName = agent.name || opts.agentId
   const maxIterations = agent.max_iterations || 10
-  const maxWallClockMs = agent.max_wall_clock_ms || DEFAULT_MAX_WALL_CLOCK_MS
+  // max_wall_clock_ms has no column in the schema — always falls back to the default.
+  const maxWallClockMs = DEFAULT_MAX_WALL_CLOCK_MS
   const wallClockDeadline = Date.now() + maxWallClockMs
 
   // Stuck-loop protection
@@ -98,8 +101,8 @@ export async function* runAgent(
   let stuckState: StuckLoopState | undefined
 
   // Resolve LLM provider config (default from DB when the agent has none configured)
-  let agentProvider = agent.provider_id
-  let agentModel = agent.model_id
+  let agentProvider = fromIndexable(agent.provider_id)
+  let agentModel = fromIndexable(agent.model_id)
   if (!agentProvider || !agentModel) {
     const defaultLLM = await getDefaultLLM()
     if (!defaultLLM) throw new Error("No active LLM providers/models configured in the database")
@@ -119,7 +122,7 @@ export async function* runAgent(
   // Store the user message in conversation history
   if (!opts.isolated) {
     // If userMessage is multimodal, addMessage extracts text for history storage
-    addMessage(opts.threadId, "user", opts.userMessage, { channel: opts.channel })
+    await addMessage(opts.threadId, "user", opts.userMessage, { channel: opts.channel })
     // Run compaction if conversation history is getting large
     await maybeCompact(
       opts.threadId,
@@ -233,7 +236,7 @@ export async function* runAgent(
       finalEmitted = true // already yielded above as the agent chunk
       // Only save to history if we have real content; empty → synthesis block will handle it
       if (finalContent && !opts.isolated) {
-        addMessage(opts.threadId, "assistant", finalContent)
+        await addMessage(opts.threadId, "assistant", finalContent)
       }
       break
     }
@@ -416,17 +419,12 @@ export async function* runAgent(
           // Inject skills associated with the injected tools
           if (injectedTools.length > 0) {
             try {
-              const db = getDb()
+              const skillsCol = await col<import("../storage/collections").SkillDoc>("skills")
               // Find skills that use any of the injected tools
-              const placeholders = injectedTools.map(() => "?").join(",")
-              const skillsWithTools = db.query(`
-                SELECT DISTINCT s.name, s.body, s.tools
-                FROM skills s
-                WHERE s.active = 1
-                AND (
-                  ${injectedTools.map(() => `s.tools LIKE ?`).join(" OR ")}
-                )
-              `).all(...injectedTools.map(t => `%${t}%`)) as Array<{ name: string; body: string; tools: string }>
+              const activeSkills = (await skillsCol.scan({})).filter(e => e.doc.active)
+              const skillsWithTools = activeSkills
+                .filter(e => injectedTools.some(t => e.doc.tools?.includes(t)))
+                .map(e => ({ name: e.doc.name, body: e.doc.body, tools: e.doc.tools }))
 
               // Filter to only skills that actually contain the tools (not partial matches)
               const matchingSkills = skillsWithTools.filter(s => {
@@ -597,14 +595,14 @@ export async function* runAgent(
       }
       finalContent = synthesis.content?.trim() || "He completado las tareas solicitadas."
       if (!opts.isolated) {
-        addMessage(opts.threadId, "assistant", finalContent)
+        await addMessage(opts.threadId, "assistant", finalContent)
       }
       yield { agent: { messages: [{ content: finalContent }] } }
     } catch (err) {
       log.warn(`[agent-loop] Synthesis call failed: ${(err as Error).message}`)
       finalContent = "He completado las tareas solicitadas."
       if (!opts.isolated) {
-        addMessage(opts.threadId, "assistant", finalContent)
+        await addMessage(opts.threadId, "assistant", finalContent)
       }
       yield { agent: { messages: [{ content: finalContent }] } }
     }
@@ -612,7 +610,7 @@ export async function* runAgent(
     // Internal break (stall, loop detected, stuck, timeout, abort) set finalContent
     // without yielding it — emit and persist it so the user gets a non-empty response
     if (!opts.isolated) {
-      addMessage(opts.threadId, "assistant", finalContent)
+      await addMessage(opts.threadId, "assistant", finalContent)
     }
     yield { agent: { messages: [{ content: finalContent }] } }
   }
@@ -705,7 +703,7 @@ export class AgentLoop {
    * Returns an async iterable that emits chunks compatible with
    * the existing providers/index.ts stream consumer.
    */
-  stream(
+  async *stream(
     input: { messages: Array<{ role: string; content: string | ContentPart[] }> },
     config: {
       configurable?: {
@@ -724,14 +722,14 @@ export class AgentLoop {
     }
   ): AsyncIterable<StreamChunk> {
     // Resolve from database with priority: explicit param → DB lookup → single user/agent
-    const threadId = config.configurable?.thread_id || resolveUserId({}) || "default"
-    const agentId = config.configurable?.agent_id || resolveAgentId(config.configurable?.agent_id) || this._resolveCoordinatorId() || "main"
+    const threadId = config.configurable?.thread_id || (await resolveUserId({})) || "default"
+    const agentId = config.configurable?.agent_id || (await resolveAgentId(config.configurable?.agent_id)) || (await this._resolveCoordinatorId()) || "main"
     const systemPromptOverride = config.configurable?.system_prompt
     const channel = config.configurable?.channel
-    const userId = config.configurable?.user_id || resolveUserId({
+    const userId = config.configurable?.user_id || (await resolveUserId({
       channel: config.configurable?.channel ? (config.configurable?.channel as string).split(':')[0] : null,
       channelUserId: config.configurable?.thread_id
-    })
+    }))
 
     // Log MCP Manager status
     log.info(`[AgentLoop.stream] MCP Manager available: ${this.mcpManager !== null}`)
@@ -755,7 +753,7 @@ export class AgentLoop {
     const rawUserMessage = config.configurable?.raw_user_message || 
       (typeof userMessage === "string" ? userMessage : userMessage.filter(p => p.type === "text").map(p => (p as any).text).join("\n"))
 
-    return runAgent({
+    yield* runAgent({
       agentId,
       userMessage, // FULL MULTIMODAL MESSAGE
       rawUserMessage, // CLEAN TEXT for search selectors
@@ -771,9 +769,9 @@ export class AgentLoop {
     })
   }
 
-  private _resolveCoordinatorId(): string {
+  private async _resolveCoordinatorId(): Promise<string> {
     // Use the storage helper to get coordinator agent ID from database
-    const coordinatorId = resolveAgentId(null);
+    const coordinatorId = await resolveAgentId(null);
     return coordinatorId || "main";
   }
 }

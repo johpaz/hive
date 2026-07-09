@@ -1,12 +1,14 @@
 /**
  * Tracer — ACE Generator output.
  *
- * Records every agent execution to the `traces` table.
- * Fire-and-forget (non-blocking). Also updates playbook helpful/harmful counts
- * based on execution outcome.
+ * Records every agent execution to the `traces` collection.
+ * Fire-and-forget (non-blocking). Also updates the denormalized
+ * `agents.lastTraceAt` field used by the Curator's stale-worker detection.
  */
 
 import { logger } from "../utils/logger"
+import { col, nextId, updateDoc } from "../storage/hive"
+import type { TraceDoc, AgentDoc } from "../storage/collections"
 
 const log = logger.child("tracer")
 
@@ -31,26 +33,27 @@ export function saveTrace(trace: TraceInput): void {
   // Run asynchronously so it never blocks the caller
   Promise.resolve().then(async () => {
     try {
-      const { getDb } = await import("../storage/sqlite")
-      const db = getDb()
+      const tracesCol = await col<TraceDoc>("traces")
+      const id = await nextId("traces")
+      const now = Date.now()
+      await tracesCol.put(id, {
+        id,
+        thread_id: trace.threadId,
+        agent_id: trace.agentId,
+        agent_name: trace.agentName,
+        tool_used: trace.toolUsed ?? null,
+        input_summary: trace.inputSummary.substring(0, 500),
+        output_summary: trace.outputSummary.substring(0, 500),
+        success: trace.success,
+        error_message: trace.errorMessage ?? null,
+        duration_ms: trace.durationMs ?? null,
+        tokens_used: trace.tokensUsed ?? null,
+        created_at: now,
+      })
 
-      db.query(`
-        INSERT INTO traces
-          (thread_id, agent_id, agent_name, tool_used, input_summary,
-           output_summary, success, error_message, duration_ms, tokens_used)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        trace.threadId,
-        trace.agentId,
-        trace.agentName,
-        trace.toolUsed ?? null,
-        trace.inputSummary.substring(0, 500),
-        trace.outputSummary.substring(0, 500),
-        trace.success ? 1 : 0,
-        trace.errorMessage ?? null,
-        trace.durationMs ?? null,
-        trace.tokensUsed ?? null,
-      )
+      // Denormalized field the Curator scans for stale-worker detection,
+      // avoiding a correlated MAX(created_at) query HiveDB has no primitive for.
+      await updateDoc<AgentDoc>("agents", trace.agentId, { lastTraceAt: now }).catch(() => { /* agent may not exist */ })
 
       // Trigger reflector check in background
       checkReflectorTrigger().catch(() => { /* ignore */ })

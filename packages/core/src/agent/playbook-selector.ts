@@ -7,7 +7,8 @@
  * folding, lenient parsing — raw user text never throws).
  */
 
-import { getDb } from "../storage/sqlite"
+import { col } from "../storage/hive"
+import type { PlaybookDoc } from "../storage/collections"
 import { logger } from "../utils/logger"
 import {
     searchCapabilities,
@@ -21,7 +22,7 @@ const log = logger.child("playbook-selector")
 // ─── Types ───────────────────────────────────────────────────────────────────────
 
 export interface PlaybookRule {
-    id: number
+    id: string
     rule: string
     category: string
     applicable_to?: string
@@ -44,7 +45,6 @@ const RELEVANCE_RATIO = 0.3
  * Select relevant rules from the Playbook based on semantic matching
  */
 export async function selectPlaybookRules(message: string): Promise<PlaybookRule[]> {
-    const db = getDb()
     const startTime = performance.now()
 
     if (!message.trim()) return []
@@ -55,19 +55,21 @@ export async function selectPlaybookRules(message: string): Promise<PlaybookRule
             k: MAX_RULES_PER_TURN,
         })
 
-        const relevantIds = applyRelativeCutoff(hits, RELEVANCE_RATIO)
-            .map(h => Number.parseInt(h.rawId, 10))
-            .filter(id => Number.isFinite(id))
+        const relevantIds = applyRelativeCutoff(hits, RELEVANCE_RATIO).map(h => h.rawId)
 
         if (relevantIds.length === 0) return []
 
         // Fetch full rules
-        const rules = db.query(`
-            SELECT id, rule, category, applicable_to
-            FROM playbook
-            WHERE id IN (${relevantIds.map(() => '?').join(',')})
-            AND active = 1
-        `).all(...relevantIds) as PlaybookRule[]
+        const playbookCol = await col<PlaybookDoc>("playbook")
+        const entries = await Promise.all(relevantIds.map(id => playbookCol.get(id)))
+        const rules: PlaybookRule[] = entries
+            .filter((e): e is NonNullable<typeof e> => !!e && e.doc.active)
+            .map(e => ({
+                id: e.id,
+                rule: e.doc.rule,
+                category: e.doc.category,
+                applicable_to: e.doc.applicable_to ?? undefined,
+            }))
 
         const timing = performance.now() - startTime
         log.info(`[playbook-selector] Selected ${rules.length} rules in ${timing.toFixed(2)}ms`)
@@ -89,20 +91,10 @@ export async function selectPlaybookRules(message: string): Promise<PlaybookRule
  * Replaces all `type=playbook` documents atomically.
  */
 export async function syncPlaybookToFTS(): Promise<void> {
-    const db = getDb()
-
     try {
         // Step 1: Get active rules
-        const rules = db.query(`
-            SELECT id, rule, category, applicable_to
-            FROM playbook
-            WHERE active = 1
-        `).all() as Array<{
-            id: number
-            rule: string
-            category: string
-            applicable_to: string
-        }>
+        const playbookCol = await col<PlaybookDoc>("playbook")
+        const rules = (await playbookCol.scan({})).map(e => e.doc).filter(r => r.active)
 
         if (rules.length === 0) {
             log.debug(`[playbook-selector] No rules in playbook to sync`)
@@ -111,7 +103,7 @@ export async function syncPlaybookToFTS(): Promise<void> {
         // Step 2: Replace all playbook documents in the capability index
         const docs: CapabilityDoc[] = rules.map(item => ({
             type: "playbook" as const,
-            rawId: String(item.id),
+            rawId: item.id,
             body: item.rule,
             tags: [item.category, item.applicable_to].filter(Boolean).join(" "),
         }))

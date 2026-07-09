@@ -2,7 +2,8 @@ import { App, ExpressReceiver, type SlashCommand } from "@slack/bolt";
 import type { ChannelConfig, IncomingMessage, OutboundMessage } from "./base.ts";
 import { BaseChannel } from "./base.ts";
 import { logger } from "../utils/logger.ts";
-import { getDb } from "../storage/sqlite.ts";
+import { updateDoc } from "../storage/hive.ts";
+import type { ChannelDoc } from "../storage/collections.ts";
 
 export interface SlackConfig extends ChannelConfig {
   accountId?: string;
@@ -95,7 +96,7 @@ export class SlackChannel extends BaseChannel {
       this.connectionState.status = "connected";
       this.log.info(`Slack channel started on port ${port}`);
       try {
-        getDb().query(`UPDATE channels SET status = 'connected' WHERE id = ?`).run(this.accountId);
+        await updateDoc<ChannelDoc>("channels", this.accountId, { status: "connected" });
       } catch { /* ignore DB errors */ }
 
     } catch (error) {
@@ -103,7 +104,7 @@ export class SlackChannel extends BaseChannel {
       this.connectionState.error = (error as Error).message;
       this.log.error(`Slack connection error: ${(error as Error).message}`);
       try {
-        getDb().query(`UPDATE channels SET status = 'error' WHERE id = ?`).run(this.accountId);
+        await updateDoc<ChannelDoc>("channels", this.accountId, { status: "error" });
       } catch { /* ignore DB errors */ }
       throw error;
     }
@@ -124,7 +125,7 @@ export class SlackChannel extends BaseChannel {
     this.connectionState.status = "disconnected";
     this.log.info("Slack channel stopped");
     try {
-      getDb().query(`UPDATE channels SET status = 'disconnected' WHERE id = ?`).run(this.accountId);
+      await updateDoc<ChannelDoc>("channels", this.accountId, { status: "disconnected" });
     } catch { /* ignore DB errors */ }
   }
 

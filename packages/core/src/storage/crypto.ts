@@ -1,8 +1,13 @@
 import { logger } from "../utils/logger"
-import { getDb } from "./sqlite"
+import { col } from "./hive"
 
 const log = logger.child("crypto")
 const SERVICE = "hive"
+
+interface SecretDoc {
+  ciphertext: string
+  iv: string
+}
 
 // ─── Keychain with in-memory fallback ────────────────────────────────────────
 // On Linux headless (no GNOME Keyring / libsecret) Bun.secrets throws.
@@ -14,22 +19,22 @@ let _keychainOk: boolean | null = null // null = untested
 
 async function _get(name: string): Promise<string | null> {
   if (_keychainOk === false) {
-    return _mem.get(name) ?? _readDbSecret(name)
+    return _mem.get(name) ?? (await _readCollectionSecret(name))
   }
   try {
     const val = await (Bun as any).secrets.get({ service: SERVICE, name })
     _keychainOk = true
-    return val ?? _mem.get(name) ?? _readDbSecret(name)
+    return val ?? _mem.get(name) ?? (await _readCollectionSecret(name))
   } catch {
     _keychainOk = false
-    return _mem.get(name) ?? _readDbSecret(name)
+    return _mem.get(name) ?? (await _readCollectionSecret(name))
   }
 }
 
 async function _set(name: string, value: string): Promise<boolean> {
   if (_keychainOk === false) {
     _mem.set(name, value)
-    return persistSecretToDb(name, value)
+    return persistSecretToCollection(name, value)
   }
   try {
     await (Bun as any).secrets.set({ service: SERVICE, name, value })
@@ -38,39 +43,22 @@ async function _set(name: string, value: string): Promise<boolean> {
   } catch {
     _keychainOk = false
     _mem.set(name, value)
-    return persistSecretToDb(name, value)
+    return persistSecretToCollection(name, value)
   }
 }
 
 /**
- * Read a secret from its DB ciphertext column as a last-resort fallback
- * when the keychain and in-memory map are both empty. Used to survive
- * container restarts when the OS keychain is unavailable (Docker, headless).
+ * Read a secret from the `secrets` HiveDB collection as a last-resort
+ * fallback when the keychain and in-memory map are both empty. Used to
+ * survive process restarts when the OS keychain is unavailable (Docker,
+ * headless).
  */
-function _readDbSecret(name: string): string | null {
-  const parts = name.split(":")
-  if (parts.length !== 3) return null
-  const [kind, id, field] = parts
-
-  let table: string
-  let column: string
-  switch (`${kind}:${field}`) {
-    case "provider:api_key": table = "providers"; column = "api_key"; break
-    case "provider:headers":  table = "providers"; column = "headers"; break
-    case "channel:config":    table = "channels";  column = "config"; break
-    case "mcp:headers":       table = "mcp_servers"; column = "headers"; break
-    case "mcp:env":           table = "mcp_servers"; column = "env"; break
-    case "agent:headers":     table = "agents"; column = "headers"; break
-    default: return null
-  }
-
+async function _readCollectionSecret(name: string): Promise<string | null> {
   try {
-    const db = getDb()
-    const row = db.query(
-      `SELECT ${column}_encrypted AS enc, ${column}_iv AS iv FROM ${table} WHERE id = ?`
-    ).get(id) as { enc: string | null; iv: string | null } | undefined
-    if (!row?.enc || !row?.iv) return null
-    const plain = legacyDecryptAES(row.enc, row.iv)
+    const secrets = await col<SecretDoc>("secrets")
+    const entry = await secrets.get(name)
+    if (!entry) return null
+    const plain = decryptSecret(entry.doc.ciphertext, entry.doc.iv)
     if (plain) {
       // Cache in memory for subsequent lookups in this process
       _mem.set(name, plain)
@@ -87,6 +75,12 @@ async function _del(name: string): Promise<void> {
     await (Bun as any).secrets.delete({ service: SERVICE, name })
   } catch {
     // ignore — might not exist or keychain unavailable
+  }
+  try {
+    const secrets = await col<SecretDoc>("secrets")
+    await secrets.delete(name)
+  } catch {
+    // ignore — might not exist
   }
 }
 
@@ -108,9 +102,9 @@ export async function deleteSecret(name: string): Promise<void> {
 
 /**
  * Returns true if the secret was persisted to a durable store (OS keychain
- * or DB-backed fallback). Returns false if it ended up in the per-process
- * in-memory map only — useful so callers can avoid destructive actions
- * (like nulling the DB ciphertext) that would lose data on restart.
+ * or the `secrets` collection fallback). Returns false if it ended up in the
+ * per-process in-memory map only — useful so callers can avoid destructive
+ * actions that would lose data on restart.
  */
 export async function storeProviderApiKey(id: string, apiKey: string): Promise<boolean> {
   return await _set(`provider:${id}:api_key`, apiKey)
@@ -212,27 +206,12 @@ export function verifyPassword(password: string, hash: string): boolean {
   return hasher.digest("hex") === hash
 }
 
-// ─── Legacy AES-256-GCM decryption ──────────────────────────────────────────
-// Used only by the one-shot migration in storage/migrate.ts.
-// Safe to remove after all installs have run the migration once.
+// ─── AES-256-GCM for the collection-backed secret fallback ──────────────────
 
-export function legacyDecryptAES(encrypted: string, iv: string): string {
+export function decryptSecret(encrypted: string, iv: string): string {
   const nodeCrypto = require("node:crypto")
-  const nodeFs = require("node:fs")
-  const nodePath = require("node:path")
-  const nodeOs = require("node:os")
-
-  let key: Buffer
-  const masterKey = process.env.HIVE_MASTER_KEY
-  if (masterKey) {
-    key = Buffer.from(masterKey.slice(0, 32).padEnd(32, "0"), "utf8")
-  } else {
-    const hiveDir = process.env.HIVE_HOME || nodePath.join(nodeOs.homedir(), ".hive")
-    const keyPath = nodePath.join(hiveDir, ".master.key")
-    if (!nodeFs.existsSync(keyPath)) return ""
-    key = Buffer.from(nodeFs.readFileSync(keyPath, "utf8").trim(), "hex")
-  }
-
+  const key = getMasterKey()
+  if (!key) return ""
   try {
     const ivBuf = Buffer.from(iv, "hex")
     const [encData, authTag] = encrypted.split(":")
@@ -265,11 +244,11 @@ function getMasterKey(): Buffer | null {
 }
 
 /**
- * Encrypt a plaintext string using the same AES-256-GCM scheme as the legacy
- * store. Format: `<encDataHex>:<authTagHex>`. Used as a DB-backed fallback
+ * Encrypt a plaintext string with AES-256-GCM. Format:
+ * `<encDataHex>:<authTagHex>`. Used as the `secrets` collection fallback
  * when the OS keychain is unavailable (headless Linux, Docker, etc.).
  */
-export function legacyEncryptAES(plain: string, ivHex: string): string {
+export function encryptSecret(plain: string, ivHex: string): string {
   const nodeCrypto = require("node:crypto")
   const key = getMasterKey()
   if (!key) return ""
@@ -285,45 +264,29 @@ export function legacyEncryptAES(plain: string, ivHex: string): string {
 }
 
 /**
- * DB-backed persistence fallback for secrets. Maps the canonical secret
- * name (e.g. `provider:openai:api_key`) to the matching ciphertext column
- * and updates the row in-place. Returns true if the row was written.
+ * Persist a secret to the `secrets` collection as a last-resort fallback
+ * (keyed directly by the canonical secret name, e.g.
+ * `provider:openai:api_key`). Returns true if the document was written.
  */
-function persistSecretToDb(name: string, value: string): boolean {
+async function persistSecretToCollection(name: string, value: string): Promise<boolean> {
   const nodeCrypto = require("node:crypto")
-  const parts = name.split(":")
-  if (parts.length !== 3) return false
-  const [kind, id, field] = parts
-
-  let table: string
-  let column: string
-  switch (`${kind}:${field}`) {
-    case "provider:api_key": table = "providers"; column = "api_key"; break
-    case "provider:headers":  table = "providers"; column = "headers"; break
-    case "channel:config":    table = "channels";  column = "config"; break
-    case "mcp:headers":       table = "mcp_servers"; column = "headers"; break
-    case "mcp:env":           table = "mcp_servers"; column = "env"; break
-    case "agent:headers":     table = "agents"; column = "headers"; break
-    default: return false
-  }
 
   const key = getMasterKey()
   if (!key) {
-    log.warn(`[secrets] No master key in ${process.env.HIVE_HOME || "~/.hive"}/.master.key — cannot persist ${name} to DB fallback`)
+    log.warn(`[secrets] No master key in ${process.env.HIVE_HOME || "~/.hive"}/.master.key — cannot persist ${name} to collection fallback`)
     return false
   }
 
   const iv = nodeCrypto.randomBytes(12).toString("hex")
-  const enc = legacyEncryptAES(value, iv)
-  if (!enc) return false
+  const ciphertext = encryptSecret(value, iv)
+  if (!ciphertext) return false
 
   try {
-    const db = getDb()
-    db.query(`UPDATE ${table} SET ${column}_encrypted = ?, ${column}_iv = ? WHERE id = ?`)
-      .run(enc, iv, id)
+    const secrets = await col<SecretDoc>("secrets")
+    await secrets.put(name, { ciphertext, iv })
     return true
   } catch (err) {
-    log.warn(`[secrets] DB fallback failed for ${name}: ${(err as Error).message}`)
+    log.warn(`[secrets] Collection fallback failed for ${name}: ${(err as Error).message}`)
     return false
   }
 }

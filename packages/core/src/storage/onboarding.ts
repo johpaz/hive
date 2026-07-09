@@ -1,5 +1,6 @@
 import { logger } from "../utils/logger.ts";
-import { getDb, initializeDatabase } from "./sqlite";
+import { ensureHiveDb } from "./bootstrap";
+import { col, toIndexable, fromIndexable } from "./hive";
 import {
   storeProviderApiKey,
   storeChannelConfig,
@@ -9,6 +10,10 @@ import {
 } from "./crypto";
 import { seedAllData, SEED_DATA } from "./seed";
 import { SkillLoader } from "@johpaz/hive-agents-skills";
+import type {
+  UserDoc, ProviderDoc, ModelDoc, AgentDoc, ChannelDoc, McpServerDoc,
+  UserIdentityDoc, OnboardingProgressDoc, EthicsDoc, SkillDoc, ToolDoc,
+} from "./collections";
 
 export interface OnboardingSection {
   step: "user" | "skills" | "ethics" | "tools" | "provider" | "model" | "channel" | "mcp" | "agent" | "complete";
@@ -18,7 +23,6 @@ export interface OnboardingSection {
 }
 
 const log = logger.child("onboarding");
-// 9️⃣ Hive System Prompt 
 
 const HIVE_SYSTEM_PROMPT = `
 # HIVE — Agente Coordinador
@@ -69,28 +73,33 @@ La búsqueda es bilingüe: buscá en español y si hay pocos resultados se re-in
 webchat (siempre activo) · telegram · discord · slack · whatsapp
 Canal preferido para cron: telegram > discord > webchat
 `
-export function initOnboardingDb(): void {
+
+/** Generates a 32-char lowercase hex id, matching the old `lower(hex(randomblob(16)))` scheme. */
+function genId(): string {
+  return crypto.randomUUID().replace(/-/g, "");
+}
+
+export async function initOnboardingDb(): Promise<void> {
   try {
-    initializeDatabase();
+    await ensureHiveDb();
 
-    // Verificar si la DB ya tiene datos antes de hacer seed
-    const db = getDb();
-    const userCount = db.query("SELECT COUNT(*) as count FROM users").get() as { count: number };
+    const usersCol = await col<UserDoc>("users");
+    const userCount = await usersCol.count();
 
-    if (userCount.count > 0) {
-      log.info("✅ DB ya inicializada con " + userCount.count + " usuario(s). Saltando seed.");
+    if (userCount > 0) {
+      log.info("✅ DB ya inicializada con " + userCount + " usuario(s). Saltando seed.");
       return;
     }
 
     log.info("🌱 Ejecutando seed de datos...");
-    seedAllData();
+    await seedAllData();
     log.info("✅ Seed completado correctamente.");
   } catch (e) {
     log.error("⚠️ Fallo al inicializar/poblar la DB:", { error: (e as Error).message });
   }
 }
 
-export function saveUserProfile(data: {
+export async function saveUserProfile(data: {
   userId?: string;
   userName?: string;
   userLanguage?: string;
@@ -102,77 +111,79 @@ export function saveUserProfile(data: {
   agentDescription?: string;
   agentTone?: string;
   channelUserId?: string;
-}): string {
+}): Promise<string> {
   try {
-    const db = getDb();
+    const usersCol = await col<UserDoc>("users");
     let finalUserId = data.userId;
 
     if (!finalUserId) {
-      // 1️⃣ Dejar que SQLite genere el ID automáticamente con randomblob(16)
-      const result = db.query(`
-        INSERT INTO users(name, language, timezone, occupation, notes)
-VALUES(?, ?, ?, ?, ?) RETURNING id
-  `).get(
-        data.userName || null,
-        data.userLanguage || null,
-        data.userTimezone || null,
-        data.userOccupation || null,
-        data.userNotes || null
-      ) as { id: string };
-      finalUserId = result.id;
+      finalUserId = genId();
+      await usersCol.put(finalUserId, {
+        id: finalUserId,
+        name: data.userName || null,
+        language: data.userLanguage || null,
+        timezone: data.userTimezone || null,
+        occupation: data.userOccupation || null,
+        notes: data.userNotes || null,
+        master_key_hash: null,
+        email: null,
+        password_hash: null,
+        preferred_cron_channel: "auto",
+        created_at: Date.now(),
+      });
       log.info("✅ User created with auto-generated ID", { userId: finalUserId });
     } else {
-      // 1️⃣ Upsert con ID explícito (flujo web o actualización)
-      db.query(`
-        INSERT INTO users(id, name, language, timezone, occupation, notes)
-VALUES(?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-name = COALESCE(excluded.name, name),
-  language = COALESCE(excluded.language, language),
-  timezone = COALESCE(excluded.timezone, timezone),
-  occupation = COALESCE(excluded.occupation, occupation),
-  notes = COALESCE(excluded.notes, notes)
-    `).run(
-        finalUserId,
-        data.userName || null,
-        data.userLanguage || null,
-        data.userTimezone || null,
-        data.userOccupation || null,
-        data.userNotes || null
-      );
+      const existing = await usersCol.get(finalUserId);
+      await usersCol.put(finalUserId, {
+        id: finalUserId,
+        name: data.userName ?? existing?.doc.name ?? null,
+        language: data.userLanguage ?? existing?.doc.language ?? null,
+        timezone: data.userTimezone ?? existing?.doc.timezone ?? null,
+        occupation: data.userOccupation ?? existing?.doc.occupation ?? null,
+        notes: data.userNotes ?? existing?.doc.notes ?? null,
+        master_key_hash: existing?.doc.master_key_hash ?? null,
+        email: existing?.doc.email ?? null,
+        password_hash: existing?.doc.password_hash ?? null,
+        preferred_cron_channel: existing?.doc.preferred_cron_channel ?? "auto",
+        created_at: existing?.doc.created_at ?? Date.now(),
+      }, existing ? { expectedVersion: existing.version } : undefined);
     }
 
     // 2️⃣ Crear identidad base para webchat (sesión única)
     if (data.channelUserId) {
-      db.query(`
-        INSERT OR REPLACE INTO user_identities(user_id, channel, channel_user_id)
-VALUES(?, 'webchat', ?)
-  `).run(finalUserId, data.channelUserId);
+      const identitiesCol = await col<UserIdentityDoc>("userIdentities");
+      await identitiesCol.put(`${finalUserId}:webchat`, {
+        user_id: finalUserId, channel: "webchat", channel_user_id: data.channelUserId, linked_at: Date.now(),
+      });
       log.info("✅ User identity created for webchat", { userId: finalUserId });
     }
 
     // 3️⃣ Crear o actualizar agente
     if (data.agentId && data.agentName) {
-
-      db.query(`
-        INSERT INTO agents
-  (id, user_id, name, description, tone, system_prompt, status, role)
-VALUES(?, ?, ?, ?, ?, ?, 'idle', 'coordinator')
-        ON CONFLICT(id) DO UPDATE SET
-user_id = COALESCE(excluded.user_id, user_id),
-  name = COALESCE(excluded.name, name),
-  description = COALESCE(excluded.description, description),
-  tone = COALESCE(excluded.tone, tone),
-  system_prompt = excluded.system_prompt,
-  role = 'coordinator'
-    `).run(
-        data.agentId,
-        finalUserId,
-        data.agentName,
-        data.agentDescription || null,
-        data.agentTone || null,
-        HIVE_SYSTEM_PROMPT,
-      );
+      const agentsCol = await col<AgentDoc>("agents");
+      const existingAgent = await agentsCol.get(data.agentId);
+      const now = Date.now();
+      await agentsCol.put(data.agentId, {
+        id: data.agentId,
+        user_id: finalUserId,
+        name: data.agentName,
+        description: data.agentDescription ?? existingAgent?.doc.description ?? null,
+        system_prompt: HIVE_SYSTEM_PROMPT,
+        tone: data.agentTone ?? existingAgent?.doc.tone ?? null,
+        role: "coordinator",
+        status: existingAgent?.doc.status ?? "idle",
+        enabled: existingAgent?.doc.enabled ?? true,
+        provider_id: existingAgent?.doc.provider_id ?? toIndexable(null),
+        model_id: existingAgent?.doc.model_id ?? toIndexable(null),
+        tools_json: existingAgent?.doc.tools_json ?? null,
+        skills_json: existingAgent?.doc.skills_json ?? null,
+        parent_id: existingAgent?.doc.parent_id ?? toIndexable(null),
+        max_iterations: existingAgent?.doc.max_iterations ?? 10,
+        workspace: existingAgent?.doc.workspace ?? null,
+        lastTraceAt: existingAgent?.doc.lastTraceAt ?? null,
+        created_at: existingAgent?.doc.created_at ?? now,
+        updated_at: now,
+      }, existingAgent ? { expectedVersion: existingAgent.version } : undefined);
     }
 
     return finalUserId;
@@ -182,12 +193,12 @@ user_id = COALESCE(excluded.user_id, user_id),
   }
 }
 
-export function activateSkills(userId: string, skillIds: string[]): void {
+export async function activateSkills(userId: string, skillIds: string[]): Promise<void> {
   try {
-    const db = getDb();
-    // Activar skills seleccionadas
+    const skillsCol = await col<SkillDoc>("skills");
     for (const skillId of skillIds) {
-      db.query(`UPDATE skills SET active = 1 WHERE id = ? `).run(skillId);
+      const existing = await skillsCol.get(skillId);
+      if (existing) await skillsCol.put(skillId, { ...existing.doc, active: true }, { expectedVersion: existing.version });
     }
     log.info("✅ Skills activadas:", { skillIds: skillIds.join(", ") });
   } catch (e) {
@@ -195,25 +206,28 @@ export function activateSkills(userId: string, skillIds: string[]): void {
   }
 }
 
-export function activateEthics(userId: string, ethicsId: string): void {
+export async function activateEthics(userId: string, ethicsId: string): Promise<void> {
   try {
-    const db = getDb();
-    // Activar el ethics seleccionado
-    db.query(`UPDATE ethics SET active = 1 WHERE id = ? `).run(ethicsId);
-    // Desactivar los demás
-    db.query(`UPDATE ethics SET active = 0 WHERE id != ? `).run(ethicsId);
+    const ethicsCol = await col<EthicsDoc>("ethics");
+    const all = await ethicsCol.scan({});
+    for (const e of all) {
+      const shouldBeActive = e.id === ethicsId;
+      if (e.doc.active !== shouldBeActive) {
+        await ethicsCol.put(e.id, { ...e.doc, active: shouldBeActive }, { expectedVersion: e.version });
+      }
+    }
     log.info("✅ Ethics activado:", { ethicsId });
   } catch (e) {
     log.error("⚠️ Error activating ethics:", { error: (e as Error).message });
   }
 }
 
-export function activateTools(userId: string, toolIds: string[]): void {
+export async function activateTools(userId: string, toolIds: string[]): Promise<void> {
   try {
-    const db = getDb();
-    // Activar tools seleccionadas
+    const toolsCol = await col<ToolDoc>("tools");
     for (const toolId of toolIds) {
-      db.query(`UPDATE tools SET active = 1, enabled = 1 WHERE id = ? `).run(toolId);
+      const existing = await toolsCol.get(toolId);
+      if (existing) await toolsCol.put(toolId, { ...existing.doc, active: true, enabled: true }, { expectedVersion: existing.version });
     }
     log.info("✅ Tools activadas:", { toolIds: toolIds.join(", ") });
   } catch (e) {
@@ -225,9 +239,9 @@ export function activateTools(userId: string, toolIds: string[]): void {
  * Activate all browser tools when Chromium is available
  * Called from gateway initializer when browser service connects successfully
  */
-export function activateBrowserTools(): void {
+export async function activateBrowserTools(): Promise<void> {
   try {
-    const db = getDb();
+    const toolsCol = await col<ToolDoc>("tools");
     const browserToolIds = [
       "browser_navigate",
       "browser_screenshot",
@@ -239,7 +253,8 @@ export function activateBrowserTools(): void {
     ];
 
     for (const toolId of browserToolIds) {
-      db.query(`UPDATE tools SET active = 1, enabled = 1 WHERE id = ? `).run(toolId);
+      const existing = await toolsCol.get(toolId);
+      if (existing) await toolsCol.put(toolId, { ...existing.doc, active: true, enabled: true }, { expectedVersion: existing.version });
     }
     log.info("✅ Browser tools activated (Chromium available)");
   } catch (e) {
@@ -255,15 +270,19 @@ export async function saveProviderConfig(data: {
   baseUrl?: string;
 }): Promise<void> {
   try {
-    const db = getDb();
+    const providersCol = await col<ProviderDoc>("providers");
+    const modelsCol = await col<ModelDoc>("models");
 
     // 1️⃣ Primero: Actualizar provider global con API key del usuario
-    db.query(`
-      UPDATE providers SET base_url = ?, enabled = 1, active = 1 WHERE id = ?
-    `).run(data.baseUrl || null, data.provider);
+    const existingProvider = await providersCol.get(data.provider);
+    if (existingProvider) {
+      await providersCol.put(data.provider, {
+        ...existingProvider.doc, base_url: data.baseUrl || null, enabled: true, active: true,
+      }, { expectedVersion: existingProvider.version });
+    }
 
     if (data.apiKey) {
-      await storeProviderApiKey(data.provider as string, data.apiKey as string);
+      await storeProviderApiKey(data.provider, data.apiKey);
     }
 
     log.info("✅ Provider actualizado:", { provider: data.provider });
@@ -271,16 +290,19 @@ export async function saveProviderConfig(data: {
     // 2️⃣ Segundo: Activar el modelo seleccionado
     // For Ollama, models are inserted dynamically (not seeded), ensure row exists first
     if (data.provider === "ollama" && data.model) {
-      db.query(`
-        INSERT OR IGNORE INTO models(id, name, provider_id, model_type, enabled, active)
-VALUES(?, ?, 'ollama', 'llm', 1, 1)
-  `).run(data.model, data.model);
+      const existingModel = await modelsCol.get(data.model);
+      if (!existingModel) {
+        await modelsCol.put(data.model, {
+          id: data.model, provider_id: "ollama", name: data.model, model_type: "llm",
+          context_window: 0, capabilities: null, enabled: true, active: true,
+        });
+      }
     }
 
-    db.query(`
-      UPDATE models SET enabled = 1, active = 1
-      WHERE id = ?
-  `).run(data.model);
+    const modelToActivate = await modelsCol.get(data.model);
+    if (modelToActivate) {
+      await modelsCol.put(data.model, { ...modelToActivate.doc, enabled: true, active: true }, { expectedVersion: modelToActivate.version });
+    }
 
     log.info("✅ Model activado:", { model: data.model });
   } catch (e) {
@@ -289,12 +311,12 @@ VALUES(?, ?, 'ollama', 'llm', 1, 1)
   }
 }
 
-export function activateMcpServers(userId: string, mcpIds: string[]): void {
+export async function activateMcpServers(userId: string, mcpIds: string[]): Promise<void> {
   try {
-    const db = getDb();
-    // Activar MCP servers seleccionados
+    const mcpCol = await col<McpServerDoc>("mcpServers");
     for (const mcpId of mcpIds) {
-      db.query(`UPDATE mcp_servers SET active = 1, enabled = 1 WHERE id = ? `).run(mcpId);
+      const existing = await mcpCol.get(mcpId);
+      if (existing) await mcpCol.put(mcpId, { ...existing.doc, active: true, enabled: true }, { expectedVersion: existing.version });
     }
     log.info("✅ MCP servers activados:", { mcpIds: mcpIds.join(", ") });
   } catch (e) {
@@ -302,8 +324,7 @@ export function activateMcpServers(userId: string, mcpIds: string[]): void {
   }
 }
 
-
-export function saveAgentConfig(data: {
+export async function saveAgentConfig(data: {
   userId: string;
   agentId?: string;
   agentName: string;
@@ -311,63 +332,57 @@ export function saveAgentConfig(data: {
   modelId: string;
   tone: string;
   description?: string;
-}): string {
+}): Promise<string> {
   try {
-    const db = getDb();
-    let finalAgentId = data.agentId;
+    const providersCol = await col<ProviderDoc>("providers");
+    const modelsCol = await col<ModelDoc>("models");
+    const agentsCol = await col<AgentDoc>("agents");
 
     // Validate FK references — use null if the referenced row doesn't exist
     // (e.g. custom Ollama model IDs are not in the seed models table)
     const rawProviderId = data.providerId || null;
     const rawModelId = data.modelId || null;
-    const safeProviderId = rawProviderId && db.query("SELECT id FROM providers WHERE id = ?").get(rawProviderId) ? rawProviderId : null;
-    const safeModelId = rawModelId && db.query("SELECT id FROM models WHERE id = ?").get(rawModelId) ? rawModelId : null;
+    const safeProviderId = rawProviderId && (await providersCol.get(rawProviderId)) ? rawProviderId : null;
+    const safeModelId = rawModelId && (await modelsCol.get(rawModelId)) ? rawModelId : null;
 
-    // Si no se pasa agentId, dejar que SQLite lo genere automáticamente
+    let finalAgentId = data.agentId;
+    const now = Date.now();
+
     if (!finalAgentId) {
-      const result = db.query(`
-        INSERT INTO agents
-  (user_id, name, description, tone, system_prompt, provider_id, model_id, status, role, enabled)
-VALUES(?, ?, ?, ?, ?, ?, ?, 'idle', 'coordinator', 1)
-        RETURNING id
-  `).get(
-        data.userId,
-        data.agentName,
-        data.description || null,
-        data.tone,
-        HIVE_SYSTEM_PROMPT,
-        safeProviderId,
-        safeModelId
-      ) as { id: string };
-      finalAgentId = result.id;
+      finalAgentId = genId();
+      await agentsCol.put(finalAgentId, {
+        id: finalAgentId, user_id: data.userId, name: data.agentName,
+        description: data.description || null, system_prompt: HIVE_SYSTEM_PROMPT,
+        tone: data.tone, role: "coordinator", status: "idle", enabled: true,
+        provider_id: toIndexable(safeProviderId), model_id: toIndexable(safeModelId),
+        tools_json: null, skills_json: null, parent_id: toIndexable(null),
+        max_iterations: 10, workspace: null, lastTraceAt: null,
+        created_at: now, updated_at: now,
+      });
       log.info("✅ Agent created with auto-generated ID", { agentId: finalAgentId });
     } else {
-      // INSERT or UPDATE agent (crea nuevo o actualiza existente)
-      db.query(`
-        INSERT INTO agents
-  (id, user_id, name, description, tone, system_prompt, provider_id, model_id, status, role, enabled)
-VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'idle', 'coordinator', 1)
-        ON CONFLICT(id) DO UPDATE SET
-user_id = COALESCE(excluded.user_id, user_id),
-  name = COALESCE(excluded.name, name),
-  description = COALESCE(excluded.description, description),
-  tone = COALESCE(excluded.tone, tone),
-  system_prompt = excluded.system_prompt,
-  provider_id = COALESCE(excluded.provider_id, provider_id),
-  model_id = COALESCE(excluded.model_id, model_id),
-  status = 'idle',
-  enabled = 1,
-  role = 'coordinator'
-    `).run(
-        data.agentId,
-        data.userId,
-        data.agentName,
-        data.description || null,
-        data.tone,
-        HIVE_SYSTEM_PROMPT,
-        safeProviderId,
-        safeModelId
-      );
+      const existing = await agentsCol.get(finalAgentId);
+      await agentsCol.put(finalAgentId, {
+        id: finalAgentId,
+        user_id: data.userId ?? existing?.doc.user_id,
+        name: data.agentName ?? existing?.doc.name,
+        description: data.description ?? existing?.doc.description ?? null,
+        system_prompt: HIVE_SYSTEM_PROMPT,
+        tone: data.tone ?? existing?.doc.tone,
+        role: "coordinator",
+        status: "idle",
+        enabled: true,
+        provider_id: toIndexable(safeProviderId) !== "__none__" ? toIndexable(safeProviderId) : (existing?.doc.provider_id ?? toIndexable(null)),
+        model_id: toIndexable(safeModelId) !== "__none__" ? toIndexable(safeModelId) : (existing?.doc.model_id ?? toIndexable(null)),
+        tools_json: existing?.doc.tools_json ?? null,
+        skills_json: existing?.doc.skills_json ?? null,
+        parent_id: existing?.doc.parent_id ?? toIndexable(null),
+        max_iterations: existing?.doc.max_iterations ?? 10,
+        workspace: existing?.doc.workspace ?? null,
+        lastTraceAt: existing?.doc.lastTraceAt ?? null,
+        created_at: existing?.doc.created_at ?? now,
+        updated_at: now,
+      }, existing ? { expectedVersion: existing.version } : undefined);
     }
 
     return finalAgentId;
@@ -383,11 +398,13 @@ export async function activateChannel(userId: string, data: {
   config?: Record<string, unknown>;
 }): Promise<void> {
   try {
-    const db = getDb();
-
-    db.query(`
-      UPDATE channels SET user_id = ?, active = 1, enabled = 1, status = 'connected' WHERE id = ?
-    `).run(userId, data.channelId);
+    const channelsCol = await col<ChannelDoc>("channels");
+    const existing = await channelsCol.get(data.channelId);
+    if (existing) {
+      await channelsCol.put(data.channelId, {
+        ...existing.doc, user_id: userId, active: true, enabled: true, status: "connected",
+      }, { expectedVersion: existing.version });
+    }
 
     if (data.config && Object.keys(data.config).length > 0) {
       await storeChannelConfig(data.channelId, data.config);
@@ -396,10 +413,10 @@ export async function activateChannel(userId: string, data: {
     // Create user_identity for the channel if channelUserId provided
     if (data.channelUserId) {
       const channelType = data.channelId; // webchat, telegram, discord, etc.
-      db.query(`
-        INSERT OR REPLACE INTO user_identities(user_id, channel, channel_user_id)
-VALUES(?, ?, ?)
-      `).run(userId, channelType, data.channelUserId);
+      const identitiesCol = await col<UserIdentityDoc>("userIdentities");
+      await identitiesCol.put(`${userId}:${channelType}`, {
+        user_id: userId, channel: channelType, channel_user_id: data.channelUserId, linked_at: Date.now(),
+      });
       log.info("✅ User identity created", { userId, channel: channelType });
     }
 
@@ -419,43 +436,51 @@ export async function saveVoiceConfig(data: {
   ttsApiKey?: string;
 }): Promise<void> {
   try {
-    const db = getDb();
+    const modelsCol = await col<ModelDoc>("models");
+    const providersCol = await col<ProviderDoc>("providers");
+    const channelsCol = await col<ChannelDoc>("channels");
 
     // Activate STT and TTS models
-    db.query(`UPDATE models SET active = 1, enabled = 1 WHERE id = ? `).run(data.sttProvider);
-    db.query(`UPDATE models SET active = 1, enabled = 1 WHERE id = ? `).run(data.ttsProvider);
+    for (const modelId of [data.sttProvider, data.ttsProvider]) {
+      const existing = await modelsCol.get(modelId);
+      if (existing) await modelsCol.put(modelId, { ...existing.doc, active: true, enabled: true }, { expectedVersion: existing.version });
+    }
 
     // Resolve provider IDs from the DB: the value can be a model id or a provider id
-    const resolveVoiceProviderId = (id: string): string => {
-      const model = db.query(`SELECT provider_id FROM models WHERE id = ?`).get(id) as { provider_id: string } | undefined;
-      if (model?.provider_id) return model.provider_id;
-      const provider = db.query(`SELECT id FROM providers WHERE id = ?`).get(id) as { id: string } | undefined;
-      return provider?.id || "";
+    const resolveVoiceProviderId = async (id: string): Promise<string> => {
+      const model = await modelsCol.get(id);
+      if (model?.doc.provider_id) return model.doc.provider_id;
+      const provider = await providersCol.get(id);
+      return provider?.doc.id || "";
     };
 
-    const sttProviderId = resolveVoiceProviderId(data.sttProvider);
-    const ttsProviderId = resolveVoiceProviderId(data.ttsProvider);
+    const sttProviderId = await resolveVoiceProviderId(data.sttProvider);
+    const ttsProviderId = await resolveVoiceProviderId(data.ttsProvider);
 
     // Save STT API key to provider if provided
     if (data.sttApiKey && sttProviderId) {
-      db.query(`UPDATE providers SET enabled = 1, active = 1 WHERE id = ?`).run(sttProviderId);
+      const existing = await providersCol.get(sttProviderId);
+      if (existing) await providersCol.put(sttProviderId, { ...existing.doc, enabled: true, active: true }, { expectedVersion: existing.version });
       await storeProviderApiKey(sttProviderId, data.sttApiKey);
       log.info("✅ STT API key guardada en keychain", { provider: sttProviderId });
     }
 
     // Save TTS API key to provider if provided
     if (data.ttsApiKey && ttsProviderId) {
-      db.query(`UPDATE providers SET enabled = 1, active = 1 WHERE id = ?`).run(ttsProviderId);
+      const existing = await providersCol.get(ttsProviderId);
+      if (existing) await providersCol.put(ttsProviderId, { ...existing.doc, enabled: true, active: true }, { expectedVersion: existing.version });
       await storeProviderApiKey(ttsProviderId, data.ttsApiKey);
       log.info("✅ TTS API key guardada en keychain", { provider: ttsProviderId });
     }
 
     // Update channel with voice config
-    db.query(`
-      UPDATE channels 
-      SET user_id = ?, voice_enabled = ?, stt_provider = ?, tts_provider = ?
-  WHERE id = ?
-    `).run(data.userId, data.voiceEnabled ? 1 : 0, data.sttProvider, data.ttsProvider, data.channelId);
+    const existingChannel = await channelsCol.get(data.channelId);
+    if (existingChannel) {
+      await channelsCol.put(data.channelId, {
+        ...existingChannel.doc, user_id: data.userId, voice_enabled: data.voiceEnabled,
+        stt_provider: data.sttProvider, tts_provider: data.ttsProvider,
+      }, { expectedVersion: existingChannel.version });
+    }
 
     log.info("✅ Voice config saved:", {
       channelId: data.channelId,
@@ -481,24 +506,15 @@ export async function saveMcpServer(data: {
   enabled?: boolean;
 }): Promise<void> {
   try {
-    const db = getDb();
+    const mcpId = `${data.userId}:${data.name}`;
+    const mcpCol = await col<McpServerDoc>("mcpServers");
 
-    const mcpId = `${data.userId}:${data.name} `;
-
-    db.query(`
-      INSERT OR REPLACE INTO mcp_servers
-        (id, user_id, name, transport, command, args, url, enabled, builtin)
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?, 0)
-    `).run(
-      mcpId,
-      data.userId,
-      data.name,
-      data.transport,
-      data.command || null,
-      JSON.stringify(data.args || []),
-      data.url || null,
-      data.enabled ? 1 : 0
-    );
+    await mcpCol.put(mcpId, {
+      id: mcpId, user_id: data.userId, name: data.name, transport: data.transport,
+      command: data.command || null, args: JSON.stringify(data.args || []),
+      url: data.url || null, enabled: !!data.enabled, active: !!data.enabled,
+      builtin: false, status: "disconnected", tools_count: 0,
+    });
 
     if (data.env && Object.keys(data.env).length > 0) {
       await storeMcpEnv(mcpId, data.env);
@@ -510,143 +526,101 @@ export async function saveMcpServer(data: {
   }
 }
 
-export function saveToolSelection(userId: string, tools: string[]): void {
+export async function saveToolSelection(userId: string, tools: string[]): Promise<void> {
   try {
-    const db = getDb();
-
+    const toolsCol = await col<ToolDoc>("tools");
     for (const tool of tools) {
-      // Activar la herramienta (ya existe del seed)
-      db.query(`
-        UPDATE tools SET active = 1, enabled = 1
-        WHERE id = ?
-  `).run(tool);
+      const existing = await toolsCol.get(tool);
+      if (existing) await toolsCol.put(tool, { ...existing.doc, active: true, enabled: true }, { expectedVersion: existing.version });
     }
-
     log.info("✅ Tools activadas:", { tools: tools.join(", ") });
   } catch (e) {
     log.error("⚠️ Error saving tools:", { error: (e as Error).message });
   }
 }
 
-export function activateProvider(providerId: string): void {
+async function setActiveEnabled(collection: string, id: string, value: boolean): Promise<void> {
+  const c = await col<{ active: boolean; enabled: boolean }>(collection);
+  const existing = await c.get(id);
+  if (existing) await c.put(id, { ...existing.doc, active: value, enabled: value }, { expectedVersion: existing.version });
+}
+
+export async function activateProvider(providerId: string): Promise<void> {
   try {
-    const db = getDb();
-    db.query(`
-      UPDATE providers SET active = 1, enabled = 1
-      WHERE id = ?
-  `).run(providerId);
+    await setActiveEnabled("providers", providerId, true);
     log.info("✅ Provider activado:", { providerId });
   } catch (e) {
     log.error("⚠️ Error activating provider:", { error: (e as Error).message });
   }
 }
 
-export function activateModel(modelId: string): void {
+export async function activateModel(modelId: string): Promise<void> {
   try {
-    const db = getDb();
-    db.query(`
-      UPDATE models SET active = 1, enabled = 1
-      WHERE id = ?
-  `).run(modelId);
+    await setActiveEnabled("models", modelId, true);
     log.info("✅ Model activado:", { modelId });
   } catch (e) {
     log.error("⚠️ Error activating model:", { error: (e as Error).message });
   }
 }
 
-
-
-export function activateMcpServer(mcpName: string): void {
+export async function activateMcpServer(mcpName: string): Promise<void> {
   try {
-    const db = getDb();
-    db.query(`
-      UPDATE mcp_servers SET active = 1, enabled = 1
-      WHERE id = ?
-  `).run(mcpName);
+    await setActiveEnabled("mcpServers", mcpName, true);
     log.info("✅ MCP server activado:", { mcpName });
   } catch (e) {
     log.error("⚠️ Error activating MCP server:", { error: (e as Error).message });
   }
 }
 
-export function deactivateProvider(providerId: string): void {
+export async function deactivateProvider(providerId: string): Promise<void> {
   try {
-    const db = getDb();
-    db.query(`
-      UPDATE providers SET active = 0, enabled = 0
-      WHERE id = ?
-  `).run(providerId);
+    await setActiveEnabled("providers", providerId, false);
     log.warn("⚠️ Provider desactivado:", { providerId });
   } catch (e) {
     log.error("⚠️ Error deactivating provider:", { error: (e as Error).message });
   }
 }
 
-export function deactivateModel(modelId: string): void {
+export async function deactivateModel(modelId: string): Promise<void> {
   try {
-    const db = getDb();
-    db.query(`
-      UPDATE models SET active = 0, enabled = 0
-      WHERE id = ?
-  `).run(modelId);
+    await setActiveEnabled("models", modelId, false);
     log.warn("⚠️ Model desactivado:", { modelId });
   } catch (e) {
     log.error("⚠️ Error deactivating model:", { error: (e as Error).message });
   }
 }
 
-export function deactivateChannel(channelType: string): void {
+export async function deactivateChannel(channelType: string): Promise<void> {
   try {
-    const db = getDb();
-    db.query(`
-      UPDATE channels SET active = 0, enabled = 0
-      WHERE id = ?
-  `).run(channelType);
+    await setActiveEnabled("channels", channelType, false);
     log.warn("⚠️ Channel desactivado:", { channelType });
   } catch (e) {
     log.error("⚠️ Error deactivating channel:", { error: (e as Error).message });
   }
 }
 
-export function deactivateMcpServer(mcpName: string): void {
+export async function deactivateMcpServer(mcpName: string): Promise<void> {
   try {
-    const db = getDb();
-    db.query(`
-      UPDATE mcp_servers SET active = 0, enabled = 0
-      WHERE id = ?
-  `).run(mcpName);
+    await setActiveEnabled("mcpServers", mcpName, false);
     log.warn("⚠️ MCP server desactivado:", { mcpName });
   } catch (e) {
     log.error("⚠️ Error deactivating MCP server:", { error: (e as Error).message });
   }
 }
 
-export function getAllProviders(): Array<{
+export async function getAllProviders(): Promise<Array<{
   id: string;
   name: string;
   baseUrl: string | null;
   enabled: boolean;
   active: boolean;
-}> {
+}>> {
   try {
-    const db = getDb();
-    const results = db.query(`
-      SELECT id, name, base_url, enabled, active
-      FROM providers
-  `).all() as Array<{
-      id: string;
-      name: string;
-      base_url: string | null;
-      enabled: number;
-      active: number;
-    }>;
-
-    return results.map(r => ({
-      id: r.id,
-      name: r.name,
-      baseUrl: r.base_url,
-      enabled: r.enabled === 1,
-      active: r.active === 1,
+    const providersCol = await col<ProviderDoc>("providers");
+    const entries = await providersCol.scan({});
+    return entries.map((e) => ({
+      id: e.doc.id, name: e.doc.name, baseUrl: e.doc.base_url,
+      enabled: e.doc.enabled, active: e.doc.active,
     }));
   } catch (e) {
     log.warn("[onboarding] ⚠️ Error getting providers:", (e as Error).message);
@@ -654,7 +628,7 @@ export function getAllProviders(): Array<{
   }
 }
 
-export function getAllModels(): Array<{
+export async function getAllModels(): Promise<Array<{
   id: string;
   name: string;
   providerId: string;
@@ -662,30 +636,14 @@ export function getAllModels(): Array<{
   capabilities: string | null;
   enabled: boolean;
   active: boolean;
-}> {
+}>> {
   try {
-    const db = getDb();
-    const results = db.query(`
-      SELECT id, name, provider_id, context_window, capabilities, enabled, active
-      FROM models
-  `).all() as Array<{
-      id: string;
-      name: string;
-      provider_id: string;
-      context_window: number | null;
-      capabilities: string | null;
-      enabled: number;
-      active: number;
-    }>;
-
-    return results.map(r => ({
-      id: r.id,
-      name: r.name,
-      providerId: r.provider_id,
-      contextWindow: r.context_window,
-      capabilities: r.capabilities,
-      enabled: r.enabled === 1,
-      active: r.active === 1,
+    const modelsCol = await col<ModelDoc>("models");
+    const entries = await modelsCol.scan({});
+    return entries.map((e) => ({
+      id: e.doc.id, name: e.doc.name, providerId: e.doc.provider_id,
+      contextWindow: e.doc.context_window, capabilities: e.doc.capabilities,
+      enabled: e.doc.enabled, active: e.doc.active,
     }));
   } catch (e) {
     log.error("⚠️ Error getting models:", { error: (e as Error).message });
@@ -693,35 +651,20 @@ export function getAllModels(): Array<{
   }
 }
 
-export function getAllEthics(): Array<{
+export async function getAllEthics(): Promise<Array<{
   id: string;
   name: string;
   description: string | null;
   content: string;
   isDefault: boolean;
   active: boolean;
-}> {
+}>> {
   try {
-    const db = getDb();
-    const results = db.query(`
-      SELECT id, name, description, content, is_default, active
-      FROM ethics
-  `).all() as Array<{
-      id: string;
-      name: string;
-      description: string | null;
-      content: string;
-      is_default: number;
-      active: number;
-    }>;
-
-    return results.map(r => ({
-      id: r.id,
-      name: r.name,
-      description: r.description,
-      content: r.content,
-      isDefault: r.is_default === 1,
-      active: r.active === 1,
+    const ethicsCol = await col<EthicsDoc>("ethics");
+    const entries = await ethicsCol.scan({});
+    return entries.map((e) => ({
+      id: e.doc.id, name: e.doc.name, description: e.doc.description, content: e.doc.content,
+      isDefault: e.doc.is_default, active: e.doc.active,
     }));
   } catch (e) {
     log.error("⚠️ Error getting ethics:", { error: (e as Error).message });
@@ -729,37 +672,19 @@ export function getAllEthics(): Array<{
   }
 }
 
-export function getAllSkills(): Array<{
+export async function getAllSkills(): Promise<Array<{
   id: string;
   name: string;
   description: string | null;
-  source: string;
-  isGlobal: boolean;
   enabled: boolean;
   active: boolean;
-}> {
+}>> {
   try {
-    const db = getDb();
-    const results = db.query(`
-      SELECT id, name, api_key_encrypted, api_key_iv, base_url, enabled
-      FROM providers
-  `).all() as Array<{
-      id: string;
-      name: string;
-      description: string | null;
-      source: string;
-      enabled: number;
-      active: number;
-    }>;
-
-    return results.map(r => ({
-      id: r.id,
-      name: r.name,
-      description: r.description,
-      source: r.source,
-      isGlobal: false,
-      enabled: r.enabled === 1,
-      active: r.active === 1,
+    const skillsCol = await col<SkillDoc>("skills");
+    const entries = await skillsCol.scan({});
+    return entries.map((e) => ({
+      id: e.doc.id, name: e.doc.name, description: e.doc.description,
+      enabled: true, active: e.doc.active,
     }));
   } catch (e) {
     log.error("⚠️ Error getting skills:", { error: (e as Error).message });
@@ -767,35 +692,20 @@ export function getAllSkills(): Array<{
   }
 }
 
-export function getAllDbTools(): Array<{
+export async function getAllDbTools(): Promise<Array<{
   id: string;
   name: string;
   description: string | null;
   category: string | null;
   enabled: boolean;
   active: boolean;
-}> {
+}>> {
   try {
-    const db = getDb();
-    const results = db.query(`
-      SELECT id, name, description, category, enabled, active
-      FROM tools
-  `).all() as Array<{
-      id: string;
-      name: string;
-      description: string | null;
-      category: string | null;
-      enabled: number;
-      active: number;
-    }>;
-
-    return results.map(r => ({
-      id: r.id,
-      name: r.name,
-      description: r.description,
-      category: r.category,
-      enabled: r.enabled === 1,
-      active: r.active === 1,
+    const toolsCol = await col<ToolDoc>("tools");
+    const entries = await toolsCol.scan({});
+    return entries.map((e) => ({
+      id: e.doc.id, name: e.doc.name, description: e.doc.description, category: e.doc.category,
+      enabled: e.doc.enabled, active: e.doc.active,
     }));
   } catch (e) {
     log.error("⚠️ Error getting tools:", { error: (e as Error).message });
@@ -803,7 +713,7 @@ export function getAllDbTools(): Array<{
   }
 }
 
-export function getAllMcpServers(): Array<{
+export async function getAllMcpServers(): Promise<Array<{
   id: string;
   name: string;
   transport: string;
@@ -813,34 +723,14 @@ export function getAllMcpServers(): Array<{
   builtin: boolean;
   enabled: boolean;
   active: boolean;
-}> {
+}>> {
   try {
-    const db = getDb();
-    const results = db.query(`
-      SELECT id, name, transport, command, args, url, builtin, enabled, active
-      FROM mcp_servers
-  `).all() as Array<{
-      id: string;
-      name: string;
-      transport: string;
-      command: string | null;
-      args: string | null;
-      url: string | null;
-      builtin: number;
-      enabled: number;
-      active: number;
-    }>;
-
-    return results.map(r => ({
-      id: r.id,
-      name: r.name,
-      transport: r.transport,
-      command: r.command,
-      args: r.args,
-      url: r.url,
-      builtin: r.builtin === 1,
-      enabled: r.enabled === 1,
-      active: r.active === 1,
+    const mcpCol = await col<McpServerDoc>("mcpServers");
+    const entries = await mcpCol.scan({});
+    return entries.map((e) => ({
+      id: e.doc.id, name: e.doc.name, transport: e.doc.transport, command: e.doc.command,
+      args: e.doc.args, url: e.doc.url, builtin: e.doc.builtin,
+      enabled: e.doc.enabled, active: e.doc.active,
     }));
   } catch (e) {
     log.error("⚠️ Error getting MCP servers:", { error: (e as Error).message });
@@ -848,35 +738,20 @@ export function getAllMcpServers(): Array<{
   }
 }
 
-export function getAllChannels(): Array<{
+export async function getAllChannels(): Promise<Array<{
   id: string;
   type: string;
   accountId: string;
   status: string;
   enabled: boolean;
   active: boolean;
-}> {
+}>> {
   try {
-    const db = getDb();
-    const results = db.query(`
-      SELECT id, type, id as account_id, status, enabled, active
-      FROM channels
-  `).all() as Array<{
-      id: string;
-      type: string;
-      account_id: string;
-      status: string;
-      enabled: number;
-      active: number;
-    }>;
-
-    return results.map(r => ({
-      id: r.id,
-      type: r.type,
-      accountId: r.id,
-      status: r.status,
-      enabled: r.enabled === 1,
-      active: r.active === 1,
+    const channelsCol = await col<ChannelDoc>("channels");
+    const entries = await channelsCol.scan({});
+    return entries.map((e) => ({
+      id: e.doc.id, type: e.doc.type, accountId: e.doc.id,
+      status: e.doc.status, enabled: e.doc.enabled, active: e.doc.active,
     }));
   } catch (e) {
     log.warn("[onboarding] ⚠️ Error getting channels:", (e as Error).message);
@@ -884,29 +759,17 @@ export function getAllChannels(): Array<{
   }
 }
 
-export function getActiveTools(): Array<{
+export async function getActiveTools(): Promise<Array<{
   id: string;
   name: string;
   description: string | null;
   category: string | null;
-}> {
+}>> {
   try {
-    const db = getDb();
-    const results = db.query(`
-      SELECT id, name, description, category
-      FROM tools WHERE active = 1
-  `).all() as Array<{
-      id: string;
-      name: string;
-      description: string | null;
-      category: string | null;
-    }>;
-
-    return results.map(r => ({
-      id: r.id,
-      name: r.name,
-      description: r.description,
-      category: r.category,
+    const toolsCol = await col<ToolDoc>("tools");
+    const entries = await toolsCol.scan({});
+    return entries.filter((e) => e.doc.active).map((e) => ({
+      id: e.doc.id, name: e.doc.name, description: e.doc.description, category: e.doc.category,
     }));
   } catch (e) {
     log.error("⚠️ Error getting active tools:", { error: (e as Error).message });
@@ -914,18 +777,15 @@ export function getActiveTools(): Array<{
   }
 }
 
-export function getOnboardingProgress(userId: string): OnboardingSection | null {
+export async function getOnboardingProgress(userId: string): Promise<OnboardingSection | null> {
   try {
-    const db = getDb();
-    const result = db.query<{ step: string; data: string }, [string]>(
-      "SELECT step, data FROM onboarding_progress WHERE user_id = ? LIMIT 1"
-    ).get(userId);
-
-    if (result) {
+    const progressCol = await col<OnboardingProgressDoc>("onboardingProgress");
+    const entry = await progressCol.get(userId);
+    if (entry) {
       return {
-        step: result.step as OnboardingSection["step"],
+        step: entry.doc.step as OnboardingSection["step"],
         userId,
-        data: JSON.parse(result.data),
+        data: JSON.parse(entry.doc.data),
         completedAt: Date.now(),
       };
     }
@@ -935,13 +795,12 @@ export function getOnboardingProgress(userId: string): OnboardingSection | null 
   }
 }
 
-export function saveOnboardingProgress(section: OnboardingSection): void {
+export async function saveOnboardingProgress(section: OnboardingSection): Promise<void> {
   try {
-    const db = getDb();
-    db.query(`
-      INSERT OR REPLACE INTO onboarding_progress(id, user_id, step, data)
-VALUES(?, ?, ?, ?)
-  `).run(section.userId, section.userId, section.step, JSON.stringify(section.data));
+    const progressCol = await col<OnboardingProgressDoc>("onboardingProgress");
+    await progressCol.put(section.userId, {
+      user_id: section.userId, step: section.step, data: JSON.stringify(section.data),
+    });
   } catch (e) {
     log.error("⚠️ Error saving progress:", { error: (e as Error).message });
   }
@@ -955,25 +814,14 @@ export async function getUserProviders(userId: string): Promise<Array<{
   enabled: boolean;
 }>> {
   try {
-    const db = getDb();
-    const results = db.query(`
-      SELECT id, name, api_key_encrypted, api_key_iv, base_url, enabled
-      FROM providers
-  `).all() as Array<{
-      id: string;
-      name: string;
-      api_key_encrypted: string | null;
-      api_key_iv: string | null;
-      base_url: string | null;
-      enabled: number;
-    }>;
-
-    return Promise.all(results.map(async r => ({
-      id: r.name,
-      name: r.name,
-      apiKey: await loadProviderApiKey(r.name) || null,
-      baseUrl: r.base_url,
-      enabled: r.enabled === 1,
+    const providersCol = await col<ProviderDoc>("providers");
+    const entries = await providersCol.scan({});
+    return Promise.all(entries.map(async (e) => ({
+      id: e.doc.name,
+      name: e.doc.name,
+      apiKey: (await loadProviderApiKey(e.doc.name)) || null,
+      baseUrl: e.doc.base_url,
+      enabled: e.doc.enabled,
     })));
   } catch (e) {
     log.warn("[onboarding] ⚠️ Error getting providers:", (e as Error).message);
@@ -989,22 +837,14 @@ export async function getUserChannels(userId: string): Promise<Array<{
   enabled: boolean;
 }>> {
   try {
-    const db = getDb();
-    const results = db.query<{
-      id: string;
-      type: string;
-      account_id: string;
-      enabled: number;
-    }, [string]>(`
-      SELECT id, type, id as account_id, enabled FROM channels WHERE user_id = ?
-    `).all(userId);
-
-    return Promise.all(results.map(async r => ({
-      id: r.type,
-      type: r.type,
-      accountId: r.id,
-      config: await loadChannelConfig(r.id),
-      enabled: r.enabled === 1,
+    const channelsCol = await col<ChannelDoc>("channels");
+    const entries = await channelsCol.findBy("user_id", userId);
+    return Promise.all(entries.map(async (e) => ({
+      id: e.doc.type,
+      type: e.doc.type,
+      accountId: e.doc.id,
+      config: await loadChannelConfig(e.doc.id),
+      enabled: e.doc.enabled,
     })));
   } catch (e) {
     log.warn("[onboarding] ⚠️ Error getting channels:", (e as Error).message);
@@ -1012,32 +852,20 @@ export async function getUserChannels(userId: string): Promise<Array<{
   }
 }
 
-export function getUserAgents(userId: string): Array<{
+export async function getUserAgents(userId: string): Promise<Array<{
   id: string;
   name: string;
   providerId: string | null;
   modelId: string | null;
   tone: string;
-}> {
+}>> {
   try {
-    const db = getDb();
-    const results = db.query<{
-      id: string;
-      name: string;
-      provider_id: string | null;
-      model_id: string | null;
-      tone: string;
-    }, [string]>(`
-      SELECT id, name, provider_id, model_id, tone
-      FROM agents WHERE user_id = ?
-  `).all(userId);
-
-    return results.map(r => ({
-      id: r.id,
-      name: r.name,
-      providerId: r.provider_id,
-      modelId: r.model_id,
-      tone: r.tone || "friendly",
+    const agentsCol = await col<AgentDoc>("agents");
+    const entries = await agentsCol.findBy("user_id", userId);
+    return entries.map((e) => ({
+      id: e.doc.id, name: e.doc.name,
+      providerId: fromIndexable(e.doc.provider_id), modelId: fromIndexable(e.doc.model_id),
+      tone: e.doc.tone || "friendly",
     }));
   } catch (e) {
     log.error("⚠️ Error getting agents:", { error: (e as Error).message });
@@ -1053,11 +881,11 @@ export function getUserAgents(userId: string): Array<{
  * Hive is designed around a single-user model, so this returns the first user found.
  * @returns The user ID or null if no users exist
  */
-export function getSingleUserId(): string | null {
+export async function getSingleUserId(): Promise<string | null> {
   try {
-    const db = getDb();
-    const result = db.query("SELECT id FROM users LIMIT 1").get() as { id: string } | undefined;
-    return result?.id || null;
+    const usersCol = await col<UserDoc>("users");
+    const entries = await usersCol.scan({ limit: 1 });
+    return entries[0]?.id || null;
   } catch (e) {
     log.warn("[getSingleUserId] ⚠️ Error getting user ID:", (e as Error).message);
     return null;
@@ -1069,11 +897,11 @@ export function getSingleUserId(): string | null {
  * The coordinator is the agent with role = 'coordinator'.
  * @returns The coordinator agent ID or null if not found
  */
-export function getCoordinatorAgentId(): string | null {
+export async function getCoordinatorAgentId(): Promise<string | null> {
   try {
-    const db = getDb();
-    const result = db.query("SELECT id FROM agents WHERE role = 'coordinator' LIMIT 1").get() as { id: string } | undefined;
-    return result?.id || null;
+    const agentsCol = await col<AgentDoc>("agents");
+    const entries = await agentsCol.findBy("role", "coordinator", { limit: 1 });
+    return entries[0]?.id || null;
   } catch (e) {
     log.warn("[getCoordinatorAgentId] ⚠️ Error getting coordinator agent ID:", (e as Error).message);
     return null;
@@ -1086,13 +914,12 @@ export function getCoordinatorAgentId(): string | null {
  * @param channelUserId The channel-specific user ID (e.g., Telegram chat_id)
  * @returns The Hive user ID or null if not found
  */
-export function getUserIdFromChannelIdentity(channel: string, channelUserId: string): string | null {
+export async function getUserIdFromChannelIdentity(channel: string, channelUserId: string): Promise<string | null> {
   try {
-    const db = getDb();
-    const result = db.query(
-      "SELECT user_id FROM user_identities WHERE channel = ? AND channel_user_id = ? LIMIT 1"
-    ).get(channel, channelUserId) as { user_id: string } | undefined;
-    return result?.user_id || null;
+    const identitiesCol = await col<UserIdentityDoc>("userIdentities");
+    const all = await identitiesCol.scan({});
+    const match = all.find((e) => e.doc.channel === channel && e.doc.channel_user_id === channelUserId);
+    return match?.doc.user_id || null;
   } catch (e) {
     log.warn("[getUserIdFromChannelIdentity] ⚠️ Error getting user ID from channel identity:", (e as Error).message);
     return null;
@@ -1102,18 +929,18 @@ export function getUserIdFromChannelIdentity(channel: string, channelUserId: str
 /**
  * Resolve the user ID from various sources with priority:
  * 1. Explicit userId parameter
-  * 2. Channel identity lookup (if channel and channelUserId provided)
-  * 3. Single user from database
-  * 4. Null (no user found)
-  */
-export function resolveUserId(
+ * 2. Channel identity lookup (if channel and channelUserId provided)
+ * 3. Single user from database
+ * 4. Null (no user found)
+ */
+export async function resolveUserId(
   opts: {
     userId?: string | null;
     threadId?: string | null;
     channel?: string | null;
     channelUserId?: string | null;
   }
-): string | null {
+): Promise<string | null> {
   // Priority 1: Explicit userId
   if (opts.userId) {
     return opts.userId;
@@ -1121,14 +948,14 @@ export function resolveUserId(
 
   // Priority 2: Channel identity lookup
   if (opts.channel && opts.channelUserId) {
-    const userId = getUserIdFromChannelIdentity(opts.channel, opts.channelUserId);
+    const userId = await getUserIdFromChannelIdentity(opts.channel, opts.channelUserId);
     if (userId) {
       return userId;
     }
   }
 
   // Priority 3: Single user from database
-  const singleUserId = getSingleUserId();
+  const singleUserId = await getSingleUserId();
   if (singleUserId) {
     return singleUserId;
   }
@@ -1143,25 +970,19 @@ export function resolveUserId(
  * 2. First enabled agent
  * 3. Null (no agent found)
  */
-export function getDefaultAgentId(): string | null {
+export async function getDefaultAgentId(): Promise<string | null> {
   try {
-    const db = getDb();
+    const agentsCol = await col<AgentDoc>("agents");
 
     // Try coordinator first
-    const coordinator = db.query(
-      "SELECT id FROM agents WHERE role = 'coordinator' AND enabled = 1 LIMIT 1"
-    ).get() as { id: string } | undefined;
-
-    if (coordinator?.id) {
-      return coordinator.id;
-    }
+    const coordinators = await agentsCol.findBy("role", "coordinator");
+    const enabledCoordinator = coordinators.find((e) => e.doc.enabled);
+    if (enabledCoordinator) return enabledCoordinator.id;
 
     // Fallback to first enabled agent
-    const firstAgent = db.query(
-      "SELECT id FROM agents WHERE enabled = 1 LIMIT 1"
-    ).get() as { id: string } | undefined;
-
-    return firstAgent?.id || null;
+    const all = await agentsCol.scan({});
+    const firstEnabled = all.find((e) => e.doc.enabled);
+    return firstEnabled?.id || null;
   } catch (e) {
     log.warn("[getDefaultAgentId] ⚠️ Error getting default agent ID:", (e as Error).message);
     return null;
@@ -1175,7 +996,7 @@ export function getDefaultAgentId(): string | null {
  * 3. First enabled agent from database
  * 4. Null (no agent found)
  */
-export function resolveAgentId(agentId?: string | null): string | null {
+export async function resolveAgentId(agentId?: string | null): Promise<string | null> {
   // Priority 1: Explicit agentId
   if (agentId) {
     return agentId;
@@ -1188,11 +1009,11 @@ export function resolveAgentId(agentId?: string | null): string | null {
 /**
  * Get user preferences (notes) for a given user ID
  */
-export function getUserPreferences(userId: string): string | null {
+export async function getUserPreferences(userId: string): Promise<string | null> {
   try {
-    const db = getDb();
-    const result = db.query("SELECT notes FROM users WHERE id = ?").get(userId) as { notes: string | null } | undefined;
-    return result?.notes || null;
+    const usersCol = await col<UserDoc>("users");
+    const entry = await usersCol.get(userId);
+    return entry?.doc.notes || null;
   } catch (e) {
     log.warn("[getUserPreferences] ⚠️ Error getting user preferences:", (e as Error).message);
     return null;
@@ -1202,7 +1023,7 @@ export function getUserPreferences(userId: string): string | null {
 /**
  * Get agent configuration by ID
  */
-export function getAgentConfig(agentId: string): {
+export async function getAgentConfig(agentId: string): Promise<{
   id: string;
   user_id: string;
   name: string;
@@ -1214,404 +1035,20 @@ export function getAgentConfig(agentId: string): {
   tools_json: string | null;
   skills_json: string | null;
   max_iterations: number;
-} | null {
+} | null> {
   try {
-    const db = getDb();
-    const result = db.query(`
-      SELECT id, user_id, name, description, system_prompt, tone,
-  provider_id, model_id, tools_json, skills_json, max_iterations
-      FROM agents WHERE id = ?
-  `).get(agentId) as {
-      id: string;
-      user_id: string;
-      name: string;
-      description: string | null;
-      system_prompt: string | null;
-      tone: string | null;
-      provider_id: string | null;
-      model_id: string | null;
-      tools_json: string | null;
-      skills_json: string | null;
-      max_iterations: number;
-    } | undefined;
-
-    return result || null;
+    const agentsCol = await col<AgentDoc>("agents");
+    const entry = await agentsCol.get(agentId);
+    if (!entry) return null;
+    return {
+      id: entry.doc.id, user_id: entry.doc.user_id, name: entry.doc.name,
+      description: entry.doc.description, system_prompt: entry.doc.system_prompt, tone: entry.doc.tone,
+      provider_id: fromIndexable(entry.doc.provider_id), model_id: fromIndexable(entry.doc.model_id),
+      tools_json: entry.doc.tools_json, skills_json: entry.doc.skills_json,
+      max_iterations: entry.doc.max_iterations,
+    };
   } catch (e) {
     log.warn("[getAgentConfig] ⚠️ Error getting agent config:", (e as Error).message);
     return null;
-  }
-}
-
-/**
- * Idempotent startup migrations. Runs on every gateway start.
- * Each migration is guarded by the schema_migrations table — once applied, it never re-runs.
- */
-export function runStartupMigrations(): void {
-  try {
-    const db = getDb();
-
-    const applied = (v: string) =>
-      !!db.query("SELECT 1 FROM schema_migrations WHERE version = ?").get(v);
-    const markApplied = (v: string) =>
-      db.query("INSERT OR IGNORE INTO schema_migrations(version) VALUES(?)").run(v);
-
-    // v0.0.29 — consolidate tools + skills: drop and recreate tables with current schema, reseed
-    if (!applied("v0.0.29")) {
-      const db = getDb();
-      log.info("[migration v0.0.29] Dropping and recreating tools + skills tables...");
-
-      db.run("DROP TABLE IF EXISTS skills_fts");
-      db.run("DROP TABLE IF EXISTS skills");
-      db.run("DROP TABLE IF EXISTS tools_fts");
-      db.run("DROP TABLE IF EXISTS tools");
-
-      db.run(`CREATE TABLE tools (
-        id          TEXT PRIMARY KEY,
-        name        TEXT NOT NULL UNIQUE,
-        description TEXT,
-        category    TEXT,
-        enabled     INTEGER NOT NULL DEFAULT 1,
-        active      INTEGER NOT NULL DEFAULT 1,
-        created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
-        updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
-      )`);
-
-
-      db.run(`CREATE TABLE skills (
-        id               TEXT PRIMARY KEY,
-        name             TEXT NOT NULL,
-        description      TEXT,
-        version          TEXT DEFAULT '0.0.1',
-        author           TEXT DEFAULT 'Anonymous',
-        icon             TEXT DEFAULT '🧩',
-        category         TEXT NOT NULL,
-        permissions      TEXT,
-        dependencies     TEXT,
-        tools            TEXT NOT NULL,
-        triggers         TEXT NOT NULL,
-        preferred_agents TEXT,
-        body             TEXT NOT NULL,
-        version_num      INTEGER DEFAULT 1,
-        active           INTEGER DEFAULT 1,
-        created_at       TEXT DEFAULT (datetime('now')),
-        updated_at       TEXT DEFAULT (datetime('now'))
-      )`);
-
-      db.run("CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category)");
-      db.run("CREATE INDEX IF NOT EXISTS idx_skills_active ON skills(active)");
-
-      // Reseed tools (search indexing happens at startup via HiveDB sync)
-      let toolCount = 0;
-      for (const tool of SEED_DATA.tools) {
-        db.query(`INSERT INTO tools (id, name, description, category, enabled, active, created_at, updated_at) VALUES (?, ?, ?, ?, 1, 1, (unixepoch()), (unixepoch()))`)
-          .run(tool.id, tool.name, tool.description, tool.category);
-        toolCount++;
-      }
-      log.info(`[migration v0.0.29] ✅ ${toolCount} tools re-seeded`);
-
-      // Reseed skills from SkillLoader
-      const skillLoader = new SkillLoader({ workspacePath: process.env.HIVE_HOME || process.cwd() });
-      const bundledSkills = skillLoader.loadBundledSkills();
-      log.info(`[migration v0.0.29] 📚 SkillLoader loaded ${bundledSkills.length} bundled skills`);
-      let skillCount = 0;
-      for (const s of bundledSkills) {
-        db.query(`
-          INSERT OR REPLACE INTO skills (
-            id, name, description, version, author, icon, category,
-            permissions, dependencies, tools, triggers, preferred_agents,
-            body, version_num, active, created_at, updated_at
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, (unixepoch()), (unixepoch()))
-        `).run(
-          s.name, s.name, s.description || "",
-          typeof s.version === "string" ? s.version : String(s.version || "0.0.1"),
-          s.author || "Anonymous",
-          s.icon || "🧩",
-          s.category || "general",
-          JSON.stringify(s.permissions || []),
-          JSON.stringify(s.dependencies || []),
-          (s.tools || []).join(","),
-          (s.triggers || []).join(","),
-          JSON.stringify(s.preferred_agents || []),
-          s.content || "",
-          parseInt(String(s.version || "0.0.1").split(".")[0]) || 1
-        );
-        skillCount++;
-      }
-      log.info(`[migration v0.0.29] ✅ ${skillCount} skills re-seeded (FTS5 auto-synced via triggers)`);
-
-      markApplied("v0.0.29");
-      log.info("✅ Migration v0.0.29: tools + skills consolidated, dropped and recreated");
-    }
-
-    // v0.0.30 — add NVIDIA NIM provider + 12 free models (without dropping existing data)
-    if (!applied("v0.0.30")) {
-      const db = getDb();
-      log.info("[migration v0.0.30] Ensuring providers table exists...");
-      db.run(`CREATE TABLE IF NOT EXISTS providers (
-        id              TEXT PRIMARY KEY,
-        name            TEXT NOT NULL UNIQUE,
-        api_key_encrypted TEXT,
-        api_key_iv      TEXT,
-        headers_encrypted TEXT,
-        headers_iv      TEXT,
-        base_url        TEXT,
-        category        TEXT NOT NULL DEFAULT 'llm',
-        num_ctx         INTEGER,
-        num_gpu         INTEGER DEFAULT -1,
-        enabled         INTEGER NOT NULL DEFAULT 1,
-        active          INTEGER NOT NULL DEFAULT 0,
-        created_at      INTEGER NOT NULL DEFAULT (unixepoch())
-      )`);
-      log.info("[migration v0.0.30] Ensuring models table exists...");
-      db.run(`CREATE TABLE IF NOT EXISTS models (
-        id              TEXT PRIMARY KEY,
-        provider_id     TEXT REFERENCES providers(id) ON DELETE CASCADE,
-        name            TEXT NOT NULL,
-        model_type      TEXT NOT NULL DEFAULT 'llm',
-        context_window  INTEGER NOT NULL DEFAULT 20000,
-        capabilities    TEXT,
-        enabled         INTEGER NOT NULL DEFAULT 1,
-        active          INTEGER NOT NULL DEFAULT 0
-      )`);
-      db.run("CREATE INDEX IF NOT EXISTS idx_models_provider ON models(provider_id)");
-      db.run("CREATE INDEX IF NOT EXISTS idx_models_type ON models(model_type)");
-      log.info("[migration v0.0.30] Adding new providers and models...");
-      for (const provider of SEED_DATA.providers) {
-        db.query(`
-          INSERT OR IGNORE INTO providers (id, name, base_url, category, enabled, active)
-          VALUES (?, ?, ?, ?, 1, 0)
-        `).run(provider.id, provider.name, provider.baseUrl || null, provider.category || 'llm');
-      }
-      const ollamaHost = process.env.OLLAMA_HOST;
-      if (ollamaHost) {
-        db.query(`UPDATE providers SET base_url = ? WHERE id = 'ollama'`).run(ollamaHost);
-        log.info(`[migration v0.0.30] ✅ Ollama base_url set to ${ollamaHost} (from OLLAMA_HOST env)`);
-      }
-      let modelCount = 0;
-      for (const model of SEED_DATA.models) {
-        db.query(`
-          INSERT OR IGNORE INTO models (id, provider_id, name, model_type, context_window, capabilities, enabled, active)
-          VALUES (?, ?, ?, ?, ?, ?, 1, 0)
-        `).run(model.id, model.providerId, model.name, model.modelType, model.contextWindow || null, model.capabilities || null);
-        modelCount++;
-      }
-      log.info(`[migration v0.0.30] ✅ Added ${SEED_DATA.providers.length} providers and ${modelCount} models`);
-      markApplied("v0.0.30");
-      log.info("✅ Migration v0.0.30: NVIDIA NIM provider + 12 free models added");
-    }
-
-    // v0.0.31 — Update coordinator system_prompt to reduced version + sync bundled skills
-    if (!applied("v0.0.31")) {
-      const db = getDb();
-      log.info("[migration v0.0.31] Updating coordinator system_prompt...");
-
-      // Update coordinator system_prompt with new concise version
-      db.run(`UPDATE agents SET system_prompt = ? WHERE role = 'coordinator'`, [HIVE_SYSTEM_PROMPT]);
-      const updated = db.query("SELECT name FROM agents WHERE role = 'coordinator' AND system_prompt = ?").get(HIVE_SYSTEM_PROMPT);
-      if (updated) {
-        log.info("[migration v0.0.31] ✅ Coordinator system_prompt updated");
-      } else {
-        log.warn("[migration v0.0.31] ⚠️ Coordinator update may have failed - checking length...");
-      }
-
-      // Add/update skills from bundled data (busqueda_fts5, canvas_report, memory_manager minimal set)
-      log.info("[migration v0.0.31] Verifying minimal skills exist...");
-      const skillLoader = new SkillLoader({ workspacePath: process.env.HIVE_HOME || process.cwd() });
-      const bundledSkills = skillLoader.loadBundledSkills();
-
-      let skillsAdded = 0;
-      for (const s of bundledSkills) {
-        db.query(`
-          INSERT OR IGNORE INTO skills (
-            id, name, description, version, author, icon, category,
-            permissions, dependencies, tools, triggers, preferred_agents,
-            body, version_num, active, created_at, updated_at
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, (unixepoch()), (unixepoch()))
-        `).run(
-          s.name, s.name, s.description || "", String(s.version || "1.0.0"),
-          s.author || "Hive", s.icon || "🧩", s.category || "general",
-          JSON.stringify(s.permissions || []), JSON.stringify(s.dependencies || []),
-          (s.tools || []).join(","), (s.triggers || []).join(","), "[]",
-          s.content || "", 100
-        );
-        skillsAdded++;
-      }
-      log.info(`[migration v0.0.31] ✅ ${skillsAdded} skills synced from bundle`);
-
-      // (skills search indexing happens at startup via the HiveDB sync)
-
-    markApplied("v0.0.31");
-    log.info("✅ Migration v0.0.31: Reduced system_prompt + skills sync");
-  }
-
-  // v0.0.32 — add vision/multimodal columns to channels table
-  if (!applied("v0.0.32")) {
-    const db = getDb();
-    log.info("[migration v0.0.32] Adding vision columns to channels table...");
-
-    const addCol = (col: string, def: string) => {
-      try { db.run(`ALTER TABLE channels ADD COLUMN ${col} ${def}`); } catch { /* already exists */ }
-    };
-    addCol("vision_enabled", "INTEGER NOT NULL DEFAULT 0");
-    addCol("ocr_provider", "TEXT");
-    addCol("vision_provider", "TEXT");
-    addCol("vision_model_id", "TEXT");
-
-    markApplied("v0.0.32");
-    log.info("✅ Migration v0.0.32: vision columns added to channels");
-  }
-
-  // v0.0.33 — add HiveAgents LLM provider + 5 local GGUF models
-  if (!applied("v0.0.33")) {
-    const db = getDb();
-    log.info("[migration v0.0.33] Adding HiveAgents LLM provider and models...");
-
-    db.query(`
-      INSERT OR IGNORE INTO providers (id, name, base_url, category, enabled, active)
-      VALUES ('hiveagents', 'HiveAgents LLM (Cloudflare)', 'https://llm.hiveagents.io/v1', 'llm', 1, 1)
-    `).run();
-
-    const hiveModels = [
-      { id: "Qwen3.6-35B-A3B-UD-Q6_K.gguf",       name: "Qwen3.6 35B MoE (Recomendado)", ctx: 8192, caps: '["chat","streaming","reasoning"]' },
-      { id: "gemma-4-26B-A4B-it-UD-Q6_K_XL.gguf", name: "Gemma 4 26B MoE",               ctx: 8192, caps: '["chat","streaming"]' },
-      { id: "gemma-4-12b-it-UD-Q4_K_XL.gguf",     name: "Gemma 4 12B Dense",             ctx: 8192, caps: '["chat","streaming"]' },
-      { id: "Qwen3.6-27B-UD-Q6_K_XL.gguf",         name: "Qwen3.6 27B + MTP",             ctx: 8192, caps: '["chat","streaming","reasoning"]' },
-      { id: "gemma-4-31B-it-UD-Q6_K_XL.gguf",     name: "Gemma 4 31B Dense",             ctx: 8192, caps: '["chat","streaming"]' },
-    ];
-    for (const m of hiveModels) {
-      db.query(`
-        INSERT OR IGNORE INTO models (id, provider_id, name, model_type, context_window, capabilities, enabled, active)
-        VALUES (?, 'hiveagents', ?, 'llm', ?, ?, 1, 1)
-      `).run(m.id, m.name, m.ctx, m.caps);
-    }
-
-    markApplied("v0.0.33");
-    log.info("✅ Migration v0.0.33: HiveAgents LLM provider + 5 models added");
-  }
-
-  // v0.0.34 — unify HiveAgents provider to a single recommended model
-  if (!applied("v0.0.34")) {
-    const db = getDb();
-    log.info("[migration v0.0.34] Unifying HiveAgents provider to single model...");
-
-    const hiveagentsModelId = "Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf";
-    const hiveagentsModelName = "Qwen-AgentWorld 35B MoE (Recomendado)";
-
-    // Ensure provider exists
-    db.query(`
-      INSERT OR IGNORE INTO providers (id, name, base_url, category, enabled, active)
-      VALUES ('hiveagents', 'HiveAgents LLM (Cloudflare)', 'https://llm.hiveagents.io/v1', 'llm', 1, 0)
-    `).run();
-
-    // Insert the single recommended model
-    db.query(`
-      INSERT OR IGNORE INTO models (id, provider_id, name, model_type, context_window, capabilities, enabled, active)
-      VALUES (?, 'hiveagents', ?, 'llm', 200000, ?, 1, 0)
-    `).run(hiveagentsModelId, hiveagentsModelName, JSON.stringify(["chat", "streaming", "reasoning", "function_calling"]));
-
-    // Reassign existing agents using any old hiveagents model to the new unified model
-    const reassigned = db.query(`
-      UPDATE agents
-      SET model_id = ?
-      WHERE provider_id = 'hiveagents' AND model_id IS NOT NULL AND model_id != ?
-    `).run(hiveagentsModelId, hiveagentsModelId);
-    log.info(`[migration v0.0.34] ✅ Reassigned ${(reassigned as any).changes || 0} agent(s) to ${hiveagentsModelId}`);
-
-    // Deactivate legacy hiveagents models so they no longer appear in selectors
-    const deactivated = db.query(`
-      UPDATE models SET enabled = 0, active = 0
-      WHERE provider_id = 'hiveagents' AND id != ?
-    `).run(hiveagentsModelId);
-    log.info(`[migration v0.0.34] ✅ Deactivated ${(deactivated as any).changes || 0} legacy HiveAgents model(s)`);
-
-    // If the unified model belongs to an active provider, keep it enabled
-    const providerActive = db.query("SELECT active FROM providers WHERE id = 'hiveagents'").get() as { active: number } | undefined;
-    if (providerActive?.active) {
-      db.query("UPDATE models SET enabled = 1, active = 1 WHERE id = ?").run(hiveagentsModelId);
-      log.info("[migration v0.0.34] ✅ Unified model activated because hiveagents provider is active");
-    }
-
-    markApplied("v0.0.34");
-    log.info("✅ Migration v0.0.34: HiveAgents unified to Qwen-AgentWorld");
-  }
-
-  // v0.0.41 — remove local-llama (llama-server) provider + fix voice provider categories
-  if (!applied("v0.0.41")) {
-    const db = getDb();
-    log.info("[migration v0.0.41] Removing local-llama provider and fixing voice provider categories...");
-
-    const unlinked = db.query(`
-      UPDATE agents SET provider_id = NULL, model_id = NULL WHERE provider_id = 'local-llama'
-    `).run();
-    log.info(`[migration v0.0.41] ✅ Unlinked ${(unlinked as any).changes || 0} agent(s) from local-llama`);
-
-    db.query(`DELETE FROM models WHERE provider_id = 'local-llama'`).run();
-    db.query(`DELETE FROM providers WHERE id = 'local-llama'`).run();
-
-    db.query(`UPDATE providers SET category = 'tts' WHERE id IN ('elevenlabs', 'piper')`).run();
-
-    markApplied("v0.0.41");
-    log.info("✅ Migration v0.0.41: local-llama removed + voice provider categories fixed");
-  }
-
-  // v0.0.42 — capability search moved to HiveDB (@johpaz/hive-db):
-  // drop the FTS5 virtual tables and the skills triggers that fed them.
-  // The skills_ai/au/ad triggers MUST go first: with skills_fts gone they
-  // would break every write to the skills table.
-  if (!applied("v0.0.42")) {
-    const db = getDb();
-    log.info("[migration v0.0.42] Dropping FTS5 tables (search now lives in HiveDB)...");
-
-    db.run("DROP TRIGGER IF EXISTS skills_ai");
-    db.run("DROP TRIGGER IF EXISTS skills_au");
-    db.run("DROP TRIGGER IF EXISTS skills_ad");
-    db.run("DROP TABLE IF EXISTS tools_fts");
-    db.run("DROP TABLE IF EXISTS skills_fts");
-    db.run("DROP TABLE IF EXISTS playbook_fts");
-    db.run("DROP TABLE IF EXISTS mcp_tools_fts");
-
-    markApplied("v0.0.42");
-    log.info("✅ Migration v0.0.42: FTS5 tables dropped — capability search moved to HiveDB");
-  }
-
-  // v0.0.43 — mcpToolFullName now shortens the SERVER prefix (not the tool
-  // name) when over 64 chars. Recompute stored mcp_tools ids so they keep
-  // matching the executor names built at runtime with the same function.
-  if (!applied("v0.0.43")) {
-    const db = getDb();
-    const { mcpToolFullName } = require("../agent/tool-selector");
-    const rows = db.query("SELECT id, server_name, tool_name FROM mcp_tools").all() as Array<{
-      id: string; server_name: string; tool_name: string;
-    }>;
-    let renamed = 0;
-    for (const row of rows) {
-      const newId = mcpToolFullName(row.server_name, row.tool_name);
-      if (newId !== row.id) {
-        db.query("DELETE FROM mcp_tools WHERE id = ?").run(newId); // avoid PK collision
-        db.query("UPDATE mcp_tools SET id = ? WHERE id = ?").run(newId, row.id);
-        renamed++;
-      }
-    }
-    markApplied("v0.0.43");
-    log.info(`✅ Migration v0.0.43: ${renamed} MCP tool id(s) recomputed (server prefix shortened, tool name preserved)`);
-  }
-
-  // v0.0.44 — scratchpad moved from SQLite to a HiveDB document collection
-  // (see agent/conversation-store.ts). Existing notes are not carried over
-  // (dev-phase data loss accepted); the SQLite table is just dropped.
-  if (!applied("v0.0.44")) {
-    const db = getDb();
-    log.info("[migration v0.0.44] Dropping scratchpad table (notes now live in HiveDB)...");
-
-    db.run("DROP INDEX IF EXISTS idx_scratchpad_thread");
-    db.run("DROP TABLE IF EXISTS scratchpad");
-
-    markApplied("v0.0.44");
-    log.info("✅ Migration v0.0.44: scratchpad table dropped — notes moved to HiveDB collection");
-  }
-  } catch (e) {
-    log.error("⚠️ runStartupMigrations failed:", { error: (e as Error).message });
   }
 }

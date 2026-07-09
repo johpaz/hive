@@ -1,12 +1,13 @@
 /**
  * REST API Endpoints for Cron Jobs
- * 
+ *
  * Endpoints for the dashboard to manage cron jobs.
  * These endpoints delegate to the CronScheduler instance.
  */
 
 import type { CronScheduler } from "../../scheduler/CronScheduler";
-import { getDb } from "../../storage/sqlite";
+import { col, toIndexable } from "../../storage/hive";
+import type { CronJobDoc, TaskRunDoc, UserDoc, UserIdentityDoc, ChannelDoc } from "../../storage/collections";
 
 // Global scheduler instance (set during gateway initialization)
 let _scheduler: CronScheduler | null = null;
@@ -32,22 +33,14 @@ export async function handleGetCronJobs(
 
   try {
     if (_scheduler) {
-      const tasks = _scheduler.listTasks(status);
+      const tasks = await _scheduler.listTasks(status);
       return addCorsHeaders(Response.json({ tasks, count: tasks.length }), req);
     } else {
-      // Fallback: direct DB query
-      const db = getDb();
-      let query = "SELECT * FROM cron_jobs WHERE 1=1";
-      const args: any[] = [];
-
-      if (status) {
-        query += " AND status = ?";
-        args.push(status);
-      }
-
-      query += " ORDER BY next_run_at ASC";
-
-      const tasks = db.query(query).all(...args);
+      // Fallback: direct collection scan
+      const cronJobsCol = await col<CronJobDoc>("cronJobs");
+      let tasks = (await cronJobsCol.scan({})).map(e => e.doc);
+      if (status) tasks = tasks.filter(t => t.status === status);
+      tasks.sort((a, b) => (a.next_run_at ?? "").localeCompare(b.next_run_at ?? ""));
       return addCorsHeaders(Response.json({ tasks, count: tasks.length }), req);
     }
   } catch (err) {
@@ -69,7 +62,7 @@ export async function handleGetCronJob(
 ): Promise<Response> {
   try {
     if (_scheduler) {
-      const task = _scheduler.getTask(taskId);
+      const task = await _scheduler.getTask(taskId);
       if (task) {
         return addCorsHeaders(Response.json({ task }), req);
       } else {
@@ -79,11 +72,11 @@ export async function handleGetCronJob(
         );
       }
     } else {
-      // Fallback: direct DB query
-      const db = getDb();
-      const task = db.query("SELECT * FROM cron_jobs WHERE id = ?").get(taskId);
-      if (task) {
-        return addCorsHeaders(Response.json({ task }), req);
+      // Fallback: direct collection lookup
+      const cronJobsCol = await col<CronJobDoc>("cronJobs");
+      const entry = await cronJobsCol.get(taskId);
+      if (entry) {
+        return addCorsHeaders(Response.json({ task: entry.doc }), req);
       } else {
         return addCorsHeaders(
           Response.json({ error: "Task not found" }, { status: 404 }),
@@ -136,12 +129,12 @@ export async function handleCreateCronJob(
     }
 
     // Get user timezone
-    const db = getDb();
-    const user = db.query("SELECT timezone FROM users LIMIT 1").get() as { timezone: string } | undefined;
-    const timezone = user?.timezone || "UTC";
+    const usersCol = await col<UserDoc>("users");
+    const userEntry = (await usersCol.scan({ limit: 1 }))[0];
+    const timezone = userEntry?.doc.timezone || "UTC";
 
     if (_scheduler) {
-      const result = _scheduler.create({
+      const result = await _scheduler.create({
         name,
         task,
         task_type,
@@ -170,20 +163,32 @@ export async function handleCreateCronJob(
       const id = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
       const now = new Date().toISOString();
 
-      db.query(`
-        INSERT INTO cron_jobs (
-          id, name, task, task_type, cron_expression, fire_at, timezone,
-          start_at, stop_at, dom_and_dow,
-          payload, agent_id, tool_name, max_runs, channel, protect, interval_sec,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        id, name, task, task_type, cron_expression || null, fire_at || null, timezone,
-        start_at || null, stop_at || null, dom_and_dow ? 1 : 0,
-        JSON.stringify(payload || {}), agent_id || null, tool_name || null,
-        max_runs || null, channel || "system", protect !== false ? 1 : 0,
-        interval_sec || null, now, now
-      );
+      const cronJobsCol = await col<CronJobDoc>("cronJobs");
+      await cronJobsCol.put(id, {
+        id, name, task, task_type,
+        cron_expression: cron_expression || null,
+        fire_at: fire_at || null,
+        timezone,
+        start_at: start_at || null,
+        stop_at: stop_at || null,
+        dom_and_dow: dom_and_dow ? 1 : 0,
+        payload: JSON.stringify(payload || {}),
+        agent_id: toIndexable(agent_id || null),
+        tool_name: tool_name || null,
+        max_runs: max_runs || null,
+        channel: channel || "system",
+        protect: protect !== false ? 1 : 0,
+        interval_sec: interval_sec || null,
+        status: "active",
+        run_count: 0,
+        error_count: 0,
+        last_error: null,
+        created_at: now,
+        updated_at: now,
+        last_run_at: null,
+        next_run_at: null,
+        completed_at: null,
+      }, { expectedVersion: 0 });
 
       return addCorsHeaders(Response.json({
         ok: true,
@@ -211,7 +216,7 @@ export async function handleUpdateCronJob(
     const body = await req.json().catch(() => ({}));
 
     if (_scheduler) {
-      const success = _scheduler.update(taskId, body);
+      const success = await _scheduler.update(taskId, body);
       if (success) {
         return addCorsHeaders(Response.json({ ok: true }), req);
       } else {
@@ -222,66 +227,34 @@ export async function handleUpdateCronJob(
       }
     } else {
       // Fallback: direct update
-      const db = getDb();
-      const fields: string[] = [];
-      const values: any[] = [];
-
-      if (body.name !== undefined) {
-        fields.push("name = ?");
-        values.push(body.name);
-      }
-      if (body.task !== undefined) {
-        fields.push("task = ?");
-        values.push(body.task);
-      }
-      if (body.cron_expression !== undefined) {
-        fields.push("cron_expression = ?");
-        values.push(body.cron_expression);
-      }
-      if (body.fire_at !== undefined) {
-        fields.push("fire_at = ?");
-        values.push(body.fire_at);
-      }
-      if (body.start_at !== undefined) {
-        fields.push("start_at = ?");
-        values.push(body.start_at);
-      }
-      if (body.stop_at !== undefined) {
-        fields.push("stop_at = ?");
-        values.push(body.stop_at);
-      }
-      if (body.dom_and_dow !== undefined) {
-        fields.push("dom_and_dow = ?");
-        values.push(body.dom_and_dow ? 1 : 0);
-      }
-      if (body.payload !== undefined) {
-        fields.push("payload = ?");
-        values.push(JSON.stringify(body.payload));
-      }
-      if (body.status !== undefined) {
-        fields.push("status = ?");
-        values.push(body.status);
-      }
-      if (body.max_runs !== undefined) {
-        fields.push("max_runs = ?");
-        values.push(body.max_runs);
-      }
-
-      if (fields.length === 0) {
-        return addCorsHeaders(Response.json({ ok: true }), req);
-      }
-
-      values.push(taskId);
-      const result = db.query(`UPDATE cron_jobs SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-
-      if (result.changes > 0) {
-        return addCorsHeaders(Response.json({ ok: true }), req);
-      } else {
+      const cronJobsCol = await col<CronJobDoc>("cronJobs");
+      const existing = await cronJobsCol.get(taskId);
+      if (!existing) {
         return addCorsHeaders(
           Response.json({ error: "Task not found" }, { status: 404 }),
           req
         );
       }
+
+      const patch: Partial<CronJobDoc> = {};
+      if (body.name !== undefined) patch.name = body.name;
+      if (body.task !== undefined) patch.task = body.task;
+      if (body.cron_expression !== undefined) patch.cron_expression = body.cron_expression;
+      if (body.fire_at !== undefined) patch.fire_at = body.fire_at;
+      if (body.start_at !== undefined) patch.start_at = body.start_at;
+      if (body.stop_at !== undefined) patch.stop_at = body.stop_at;
+      if (body.dom_and_dow !== undefined) patch.dom_and_dow = body.dom_and_dow ? 1 : 0;
+      if (body.payload !== undefined) patch.payload = JSON.stringify(body.payload);
+      if (body.status !== undefined) patch.status = body.status;
+      if (body.max_runs !== undefined) patch.max_runs = body.max_runs;
+
+      if (Object.keys(patch).length === 0) {
+        return addCorsHeaders(Response.json({ ok: true }), req);
+      }
+
+      await cronJobsCol.put(taskId, { ...existing.doc, ...patch }, { expectedVersion: existing.version });
+
+      return addCorsHeaders(Response.json({ ok: true }), req);
     }
   } catch (err) {
     return addCorsHeaders(
@@ -302,7 +275,7 @@ export async function handleDeleteCronJob(
 ): Promise<Response> {
   try {
     if (_scheduler) {
-      const success = _scheduler.delete(taskId);
+      const success = await _scheduler.delete(taskId);
       if (success) {
         return addCorsHeaders(Response.json({ ok: true }), req);
       } else {
@@ -313,17 +286,16 @@ export async function handleDeleteCronJob(
       }
     } else {
       // Fallback: direct delete
-      const db = getDb();
-      const result = db.query("DELETE FROM cron_jobs WHERE id = ?").run(taskId);
-
-      if (result.changes > 0) {
-        return addCorsHeaders(Response.json({ ok: true }), req);
-      } else {
+      const cronJobsCol = await col<CronJobDoc>("cronJobs");
+      const existing = await cronJobsCol.get(taskId);
+      if (!existing) {
         return addCorsHeaders(
           Response.json({ error: "Task not found" }, { status: 404 }),
           req
         );
       }
+      await cronJobsCol.delete(taskId);
+      return addCorsHeaders(Response.json({ ok: true }), req);
     }
   } catch (err) {
     return addCorsHeaders(
@@ -344,7 +316,7 @@ export async function handlePauseCronJob(
 ): Promise<Response> {
   try {
     if (_scheduler) {
-      const success = _scheduler.pause(taskId);
+      const success = await _scheduler.pause(taskId);
       if (success) {
         return addCorsHeaders(Response.json({ ok: true, message: `Task "${taskId}" paused` }), req);
       } else {
@@ -355,17 +327,16 @@ export async function handlePauseCronJob(
       }
     } else {
       // Fallback: direct update
-      const db = getDb();
-      const result = db.query("UPDATE cron_jobs SET status = 'paused' WHERE id = ?").run(taskId);
-
-      if (result.changes > 0) {
-        return addCorsHeaders(Response.json({ ok: true }), req);
-      } else {
+      const cronJobsCol = await col<CronJobDoc>("cronJobs");
+      const existing = await cronJobsCol.get(taskId);
+      if (!existing) {
         return addCorsHeaders(
           Response.json({ error: "Task not found" }, { status: 404 }),
           req
         );
       }
+      await cronJobsCol.put(taskId, { ...existing.doc, status: "paused" }, { expectedVersion: existing.version });
+      return addCorsHeaders(Response.json({ ok: true }), req);
     }
   } catch (err) {
     return addCorsHeaders(
@@ -386,7 +357,7 @@ export async function handleResumeCronJob(
 ): Promise<Response> {
   try {
     if (_scheduler) {
-      const success = _scheduler.resume(taskId);
+      const success = await _scheduler.resume(taskId);
       if (success) {
         return addCorsHeaders(Response.json({ ok: true, message: `Task "${taskId}" resumed` }), req);
       } else {
@@ -397,17 +368,16 @@ export async function handleResumeCronJob(
       }
     } else {
       // Fallback: direct update
-      const db = getDb();
-      const result = db.query("UPDATE cron_jobs SET status = 'active' WHERE id = ?").run(taskId);
-
-      if (result.changes > 0) {
-        return addCorsHeaders(Response.json({ ok: true }), req);
-      } else {
+      const cronJobsCol = await col<CronJobDoc>("cronJobs");
+      const existing = await cronJobsCol.get(taskId);
+      if (!existing) {
         return addCorsHeaders(
           Response.json({ error: "Task not found" }, { status: 404 }),
           req
         );
       }
+      await cronJobsCol.put(taskId, { ...existing.doc, status: "active" }, { expectedVersion: existing.version });
+      return addCorsHeaders(Response.json({ ok: true }), req);
     }
   } catch (err) {
     return addCorsHeaders(
@@ -464,13 +434,12 @@ export async function handleGetCronJobHistory(
     const url = new URL(req.url);
     const limit = parseInt(url.searchParams.get("limit") || "10", 10);
 
-    const db = getDb();
-    const runs = db.query(`
-      SELECT * FROM task_runs 
-      WHERE task_id = ? 
-      ORDER BY started_at DESC 
-      LIMIT ?
-    `).all(taskId, limit);
+    const taskRunsCol = await col<TaskRunDoc>("taskRuns");
+    const runs = (await taskRunsCol.scan({}))
+      .map(e => e.doc)
+      .filter(r => r.task_id === taskId)
+      .sort((a, b) => b.started_at.localeCompare(a.started_at))
+      .slice(0, limit);
 
     return addCorsHeaders(Response.json({ history: runs, count: runs.length }), req);
   } catch (err) {
@@ -491,7 +460,7 @@ export async function handleGetCronStatus(
 ): Promise<Response> {
   try {
     if (_scheduler) {
-      const status = _scheduler.getStatus();
+      const status = await _scheduler.getStatus();
       return addCorsHeaders(Response.json({ status }), req);
     } else {
       return addCorsHeaders(Response.json({ status: [], message: "Scheduler not active" }), req);
@@ -513,22 +482,28 @@ export async function handleGetCronChannels(
   addCorsHeaders: (r: Response, req: Request) => Response
 ): Promise<Response> {
   try {
-    const db = getDb();
-    const user = db.query("SELECT id FROM users LIMIT 1").get() as { id: string } | undefined;
-    const userId = user?.id || "";
+    const usersCol = await col<UserDoc>("users");
+    const userEntry = (await usersCol.scan({ limit: 1 }))[0];
+    const userId = userEntry?.id || "";
 
-    const channels = db.query(`
-      SELECT DISTINCT c.id, c.type, c.active, c.status
-      FROM channels c
-      INNER JOIN user_identities ui ON ui.channel = c.type
-      WHERE ui.user_id = ? AND c.active = 1
-    `).all(userId) as Array<{ id: string; type: string; active: number; status: string }>;
+    const identitiesCol = await col<UserIdentityDoc>("userIdentities");
+    const identityEntries = await identitiesCol.scan({ prefix: `${userId}:` });
+    const identityChannels = [...new Set(identityEntries.map(e => e.doc.channel))];
+
+    const channelsCol = await col<ChannelDoc>("channels");
+    const channels: Array<{ id: string; type: string; active: boolean; status: string }> = [];
+    for (const type of identityChannels) {
+      const entry = await channelsCol.get(type);
+      if (entry?.doc.active) {
+        channels.push({ id: entry.id, type: entry.doc.type, active: entry.doc.active, status: entry.doc.status });
+      }
+    }
 
     const recommended = ["telegram", "discord", "slack", "whatsapp", "webchat"];
     const formatted = channels.map(ch => ({
       id: ch.id,
       type: ch.type || ch.id,
-      active: ch.active === 1,
+      active: ch.active,
       recommended: recommended.includes(ch.type || ch.id),
     }));
 

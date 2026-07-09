@@ -1,4 +1,5 @@
-import { getDb } from "../storage/sqlite"
+import { col, fromIndexable } from "../storage/hive"
+import type { AgentDoc, McpServerDoc, ProjectDoc, TaskDoc } from "../storage/collections"
 
 export interface CanvasEvent {
   type: CanvasEventType
@@ -66,13 +67,11 @@ export function removeCanvasComponent(id: string) {
   canvasComponents.delete(id);
 }
 
-export function getCanvasSnapshot() {
-  const db = getDb()
-
-  const agentNodes = db
-    .query<any, []>("SELECT id, name, description, role, status FROM agents")
-    .all()
-    .map((a: any) => {
+export async function getCanvasSnapshot() {
+  const agentsCol = await col<AgentDoc>("agents")
+  const agentNodes = (await agentsCol.scan({}))
+    .map(e => e.doc)
+    .map((a) => {
       const live = agentLiveState.get(a.id)
       return {
         id: a.id,
@@ -84,10 +83,11 @@ export function getCanvasSnapshot() {
       }
     })
 
-  const mcpNodes = db
-    .query<any, []>("SELECT id, name, status FROM mcp_servers WHERE enabled = 1")
-    .all()
-    .map((m: any) => ({
+  const mcpServersCol = await col<McpServerDoc>("mcpServers")
+  const mcpNodes = (await mcpServersCol.scan({}))
+    .map(e => e.doc)
+    .filter(m => m.enabled)
+    .map((m) => ({
       id: `mcp:${m.id}`,
       name: m.name,
       status: m.status,
@@ -95,32 +95,31 @@ export function getCanvasSnapshot() {
     }))
 
   // Proyectos activos
-  const projectNodes = db
-    .query<any, []>("SELECT id, name, type, status, progress, agent_id FROM projects WHERE status IN ('active','pending','paused')")
-    .all()
-    .map((p: any) => ({
-      id: `project_${p.id}`,
-      name: p.name,
-      status: p.status,
-      type: "project",
-      data: { progress: p.progress, projectType: p.type, agentId: p.agent_id },
-    }))
+  const activeStatuses = new Set(["active", "pending", "paused"])
+  const projectsCol = await col<ProjectDoc>("projects")
+  const activeProjects = (await projectsCol.scan({}))
+    .map(e => e.doc)
+    .filter(p => activeStatuses.has(p.status))
+  const projectNodes = activeProjects.map((p) => ({
+    id: `project_${p.id}`,
+    name: p.name,
+    status: p.status,
+    type: "project",
+    data: { progress: p.progress, projectType: p.type, agentId: fromIndexable(p.agent_id) },
+  }))
 
   // Tareas de proyectos activos
-  const taskNodes = db
-    .query<any, []>(`
-      SELECT t.id, t.name, t.status, t.progress, t.agent_id, t.project_id
-      FROM tasks t
-      INNER JOIN projects p ON t.project_id = p.id
-      WHERE p.status IN ('active','pending','paused')
-    `)
-    .all()
-    .map((t: any) => ({
+  const activeProjectIds = new Set(activeProjects.map(p => p.id))
+  const tasksCol = await col<TaskDoc>("tasks")
+  const taskNodes = (await tasksCol.scan({}))
+    .map(e => e.doc)
+    .filter(t => activeProjectIds.has(t.project_id))
+    .map((t) => ({
       id: `task_${t.id}`,
       name: t.name,
       status: t.status,
       type: "task",
-      data: { progress: t.progress, agentId: t.agent_id, projectId: t.project_id },
+      data: { progress: t.progress, agentId: fromIndexable(t.agent_id), projectId: t.project_id },
     }))
 
   // Edges: proyecto → tarea

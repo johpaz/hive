@@ -15,15 +15,15 @@ import {
     CORE_TOOL_CATALOG,
     initializeToolSelector,
 } from "../packages/core/src/agent/tool-selector"
-import { initializeDatabase } from "../packages/core/src/storage/sqlite"
+import { ensureHiveDb } from "../packages/core/src/storage/bootstrap"
 import { onLogEntry, removeLogListener, type LogEntry } from "../packages/core/src/utils/logger"
 
 // Initialize database and sync FTS before tests
-beforeAll(() => {
+beforeAll(async () => {
     // Set HIVE_DEV mode to use local .hive-dev directory for tests
     process.env.HIVE_DEV = "1"
     try {
-        initializeDatabase()
+        await ensureHiveDb()
         initializeToolSelector()
     } catch (e) {
         // Database might already be initialized

@@ -178,19 +178,20 @@ async function updateSkills(): Promise<void> {
 
   try {
     // 1. Contar skills actuales en BD
-    const { initializeDatabase, getDb } = await import("@johpaz/hive-agents-core/storage/sqlite");
-    initializeDatabase();
-    const db = getDb();
+    const { ensureHiveDb } = await import("@johpaz/hive-agents-core/storage/bootstrap");
+    const { col } = await import("@johpaz/hive-agents-core/storage/hive");
+    await ensureHiveDb();
+    const skillsCol = await col("skills");
 
-    const beforeCount = (db.query("SELECT COUNT(*) as n FROM skills").get() as { n: number })?.n ?? 0;
+    const beforeCount = await skillsCol.count();
     console.log(`   Skills actuales en BD: ${beforeCount}`);
 
     // 2. Recargar skills desde SkillLoader y re-semear
     const { seedAllData } = await import("@johpaz/hive-agents-core/storage/seed");
-    seedAllData();
+    await seedAllData();
 
     // 3. Contar skills después del re-seed
-    const afterCount = (db.query("SELECT COUNT(*) as n FROM skills").get() as { n: number })?.n ?? 0;
+    const afterCount = await skillsCol.count();
     const newSkills = afterCount - beforeCount;
 
     if (newSkills > 0) {

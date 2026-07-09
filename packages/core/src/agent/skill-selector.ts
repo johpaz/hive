@@ -16,7 +16,8 @@
  * 5. Returns skill content for injection into system prompt
  */
 
-import { getDb } from "../storage/sqlite"
+import { col } from "../storage/hive"
+import type { SkillDoc } from "../storage/collections"
 import { logger } from "../utils/logger"
 import {
     searchCapabilities,
@@ -55,7 +56,15 @@ export interface SkillDescriptor {
     body: string
     version: string
     version_num: number
-    active: number
+    active: boolean
+}
+
+function toSkillDescriptor(doc: SkillDoc): SkillDescriptor {
+    return {
+        id: doc.id, name: doc.name, description: doc.description ?? "", category: doc.category,
+        tools: doc.tools, triggers: doc.triggers, preferred_agents: doc.preferred_agents,
+        body: doc.body, version: doc.version, version_num: doc.version_num, active: doc.active,
+    }
 }
 
 export interface SelectedSkill {
@@ -191,12 +200,8 @@ export async function selectSkills(userMessage: string): Promise<SkillDescriptor
     }
 
     // Step 2: Check explicit triggers first (high priority)
-    const db = getDb()
-    const allSkills = db.query(`
-        SELECT id, name, description, category, tools, triggers, preferred_agents, body, version, version_num, active
-        FROM skills
-        WHERE active = 1
-    `).all() as SkillDescriptor[]
+    const skillsCol = await col<SkillDoc>("skills")
+    const allSkills = (await skillsCol.scan({})).filter(e => e.doc.active).map(e => toSkillDescriptor(e.doc))
 
     // Check trigger match - if found, return immediately with high confidence
     for (const skill of allSkills) {
@@ -262,17 +267,12 @@ export async function selectSkills(userMessage: string): Promise<SkillDescriptor
  *
  * @returns Array of minimal skills (memory_manager, canvas_report, task_orchestrator)
  */
-export function getMinimalSkills(): SkillDescriptor[] {
-    const db = getDb()
-
+export async function getMinimalSkills(): Promise<SkillDescriptor[]> {
     try {
-        const placeholders = Array.from(MINIMAL_SKILL_NAMES).map(() => "?").join(",")
-        const skills = db.query(`
-            SELECT id, name, description, category, tools, triggers, preferred_agents, body, version, version_num, active
-            FROM skills
-            WHERE name IN (${placeholders})
-            AND active = 1
-        `).all(...MINIMAL_SKILL_NAMES) as SkillDescriptor[]
+        const skillsCol = await col<SkillDoc>("skills")
+        const skills = (await skillsCol.scan({}))
+            .filter(e => MINIMAL_SKILL_NAMES.has(e.doc.name) && e.doc.active)
+            .map(e => toSkillDescriptor(e.doc))
 
         log.info(`[skill-selector] Loaded ${skills.length} minimal skills: ${skills.map(s => s.name).join(", ")}`)
         return skills
@@ -291,23 +291,10 @@ export function getMinimalSkills(): SkillDescriptor[] {
  * batch commit).
  */
 export async function syncSkillsToFTS(): Promise<void> {
-    const db = getDb()
-
     try {
         // Step 1: Get all enabled skills from database
-        const dbSkills = db.query(`
-            SELECT id, name, description, category, tools, triggers, body
-            FROM skills
-            WHERE active = 1
-        `).all() as Array<{
-            id: string
-            name: string
-            description: string
-            category: string
-            tools: string
-            triggers: string
-            body: string
-        }>
+        const skillsCol = await col<SkillDoc>("skills")
+        const dbSkills = (await skillsCol.scan({})).map(e => e.doc).filter(s => s.active)
 
         if (dbSkills.length === 0) {
             log.debug(`[skill-selector] No skills found in DB to sync`)
@@ -351,14 +338,10 @@ export function initializeSkillSelector(): void {
 /**
  * Get all enabled skills from database (for debugging/testing)
  */
-export function getAllSkillsFromDB(): SkillDescriptor[] {
+export async function getAllSkillsFromDB(): Promise<SkillDescriptor[]> {
     try {
-        const db = getDb()
-        return db.query(`
-            SELECT id, name, description, category, tools, triggers, preferred_agents, body, version, version_num, active
-            FROM skills
-            WHERE active = 1
-        `).all() as SkillDescriptor[]
+        const skillsCol = await col<SkillDoc>("skills")
+        return (await skillsCol.scan({})).filter(e => e.doc.active).map(e => toSkillDescriptor(e.doc))
     } catch (err) {
         log.error(`[skill-selector] Failed to fetch skills:`, err)
         return []
@@ -368,14 +351,11 @@ export function getAllSkillsFromDB(): SkillDescriptor[] {
 /**
  * Get skill by name
  */
-export function getSkillByName(name: string): SkillDescriptor | undefined {
+export async function getSkillByName(name: string): Promise<SkillDescriptor | undefined> {
     try {
-        const db = getDb()
-        return db.query(`
-            SELECT id, name, description, category, tools, triggers, preferred_agents, body, version, version_num, active
-            FROM skills
-            WHERE name = ? AND active = 1
-        `).get(name) as SkillDescriptor | undefined
+        const skillsCol = await col<SkillDoc>("skills")
+        const entry = await skillsCol.get(name)
+        return entry && entry.doc.active ? toSkillDescriptor(entry.doc) : undefined
     } catch (err) {
         log.error(`[skill-selector] Failed to fetch skill by name:`, err)
         return undefined
@@ -385,14 +365,11 @@ export function getSkillByName(name: string): SkillDescriptor | undefined {
 /**
  * Get skills by category
  */
-export function getSkillsByCategory(category: string): SkillDescriptor[] {
+export async function getSkillsByCategory(category: string): Promise<SkillDescriptor[]> {
     try {
-        const db = getDb()
-        return db.query(`
-            SELECT id, name, description, category, tools, triggers, preferred_agents, body, version, version_num, active
-            FROM skills
-            WHERE category = ? AND active = 1
-        `).all(category) as SkillDescriptor[]
+        const skillsCol = await col<SkillDoc>("skills")
+        const entries = await skillsCol.findBy("category", category)
+        return entries.filter(e => e.doc.active).map(e => toSkillDescriptor(e.doc))
     } catch (err) {
         log.error(`[skill-selector] Failed to fetch skills by category:`, err)
         return []

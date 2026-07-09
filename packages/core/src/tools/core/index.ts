@@ -5,7 +5,8 @@
  */
 
 import type { Tool } from "../types.ts";
-import { getDb } from "../../storage/sqlite.ts";
+import { col } from "../../storage/hive.ts";
+import type { ToolDoc, SkillDoc, PlaybookDoc, McpToolDoc, TaskDoc } from "../../storage/collections.ts";
 import { logger } from "../../utils/logger.ts";
 import {
   searchCapabilities,
@@ -158,7 +159,6 @@ export const searchKnowledgeTool: Tool = {
     required: ["query"],
   },
   execute: async (params: Record<string, unknown>) => {
-    const db = getDb();
     const query = params.query as string;
     const type = (params.type as string) ?? "all";
     const limit = (params.limit as number) ?? 10;
@@ -186,22 +186,25 @@ export const searchKnowledgeTool: Tool = {
 
       const result: any = { query, type, tools: [], skills: [], playbook: [], toolsmcp: [] };
 
-      // ─── Hydration from SQLite (index stores only ids + search text) ──
+      // ─── Hydration from HiveDB collections (index stores only ids + search text) ──
 
       const coreCatalog = new Map(CORE_TOOL_CATALOG.map(t => [t.name, t]));
 
-      function hydrateTool(hit: CapabilityHit): any | null {
-        const row = db.query(`
-          SELECT id, name, description, category, enabled, active
-          FROM tools WHERE name = ?
-        `).get(hit.rawId) as any;
-        if (row) {
+      const toolsCol = await col<ToolDoc>("tools");
+      const skillsCol = await col<SkillDoc>("skills");
+      const playbookCol = await col<PlaybookDoc>("playbook");
+      const mcpToolsCol = await col<McpToolDoc>("mcpTools");
+
+      async function hydrateTool(hit: CapabilityHit): Promise<any | null> {
+        const entry = await toolsCol.get(hit.rawId);
+        if (entry) {
+          const row = entry.doc;
           return {
             id: row.id, name: row.name, description: row.description, category: row.category,
-            enabled: row.enabled === 1, active: row.active === 1, rank: hit.score,
+            enabled: row.enabled, active: row.active, rank: hit.score,
           };
         }
-        // Core catalog tools may not exist in the tools table
+        // Core catalog tools may not exist in the tools collection
         const cat = coreCatalog.get(hit.rawId);
         if (!cat) return null;
         return {
@@ -210,51 +213,45 @@ export const searchKnowledgeTool: Tool = {
         };
       }
 
-      function hydrateSkill(hit: CapabilityHit): any | null {
-        const s = db.query(`
-          SELECT id, name, description, category, tools, triggers, preferred_agents, body, active
-          FROM skills WHERE id = ? AND active = 1
-        `).get(hit.rawId) as any;
-        if (!s) return null;
+      async function hydrateSkill(hit: CapabilityHit): Promise<any | null> {
+        const entry = await skillsCol.get(hit.rawId);
+        const s = entry?.doc;
+        if (!s || !s.active) return null;
         return {
           id: s.id, name: s.name, description: s.description, category: s.category,
           tools: s.tools, triggers: s.triggers,
           preferred_agents: s.preferred_agents ? JSON.parse(s.preferred_agents) : [],
           body: s.body ? (s.body.length > 1500 ? s.body.substring(0, 1500) + "…" : s.body) : undefined,
-          active: s.active === 1, rank: hit.score,
+          active: s.active, rank: hit.score,
         };
       }
 
-      function hydratePlaybook(hit: CapabilityHit): any | null {
-        const p = db.query(`
-          SELECT id, rule, category, applicable_to, helpful_count, harmful_count, active
-          FROM playbook WHERE id = ? AND active = 1
-        `).get(Number.parseInt(hit.rawId, 10)) as any;
-        if (!p) return null;
+      async function hydratePlaybook(hit: CapabilityHit): Promise<any | null> {
+        const entry = await playbookCol.get(hit.rawId);
+        const p = entry?.doc;
+        if (!p || !p.active) return null;
         return {
           id: p.id, rule: p.rule, category: p.category,
           applicable_to: p.applicable_to ? JSON.parse(p.applicable_to) : null,
           helpful_count: p.helpful_count, harmful_count: p.harmful_count,
-          active: p.active === 1, rank: hit.score,
+          active: p.active, rank: hit.score,
         };
       }
 
-      function hydrateMcp(hit: CapabilityHit): any | null {
-        const t = db.query(`
-          SELECT id, server_name, tool_name, description, category, active
-          FROM mcp_tools WHERE id = ? AND active = 1
-        `).get(hit.rawId) as any;
-        if (!t) return null;
+      async function hydrateMcp(hit: CapabilityHit): Promise<any | null> {
+        const entry = await mcpToolsCol.get(hit.rawId);
+        const t = entry?.doc;
+        if (!t || !t.active) return null;
         return {
           id: t.id, full_name: t.id, server_name: t.server_name, tool_name: t.tool_name,
           description: t.description, category: t.category,
-          active: t.active === 1, rank: hit.score,
+          active: t.active, rank: hit.score,
         };
       }
 
       const seenIds = new Set<string>();
 
-      function mergeHits(hits: CapabilityHit[]): number {
+      async function mergeHits(hits: CapabilityHit[]): Promise<number> {
         let added = 0;
         for (const hit of hits) {
           if (seenIds.has(hit.id)) continue;
@@ -262,16 +259,16 @@ export const searchKnowledgeTool: Tool = {
           let bucket: any[] | null = null;
           switch (hit.type) {
             case "tool":
-              if (result.tools.length < limit) { entry = hydrateTool(hit); bucket = result.tools; }
+              if (result.tools.length < limit) { entry = await hydrateTool(hit); bucket = result.tools; }
               break;
             case "skill":
-              if (result.skills.length < limit) { entry = hydrateSkill(hit); bucket = result.skills; }
+              if (result.skills.length < limit) { entry = await hydrateSkill(hit); bucket = result.skills; }
               break;
             case "playbook":
-              if (result.playbook.length < limit) { entry = hydratePlaybook(hit); bucket = result.playbook; }
+              if (result.playbook.length < limit) { entry = await hydratePlaybook(hit); bucket = result.playbook; }
               break;
             case "mcp":
-              if (result.toolsmcp.length < limit) { entry = hydrateMcp(hit); bucket = result.toolsmcp; }
+              if (result.toolsmcp.length < limit) { entry = await hydrateMcp(hit); bucket = result.toolsmcp; }
               break;
           }
           if (entry && bucket) {
@@ -288,7 +285,7 @@ export const searchKnowledgeTool: Tool = {
       // (the old FTS5 rank was negative, lower = better).
 
       const hits1 = await searchCapabilities(normalizedQuery, { types, k: limit * 4 });
-      const totalFirst = mergeHits(hits1);
+      const totalFirst = await mergeHits(hits1);
 
       // ─── Pass 2: Bilingual fallback (ES → EN) ──────────────────────
       // HiveDB stems Spanish but does not translate: "correo" still won't
@@ -299,7 +296,7 @@ export const searchKnowledgeTool: Tool = {
         if (englishQuery.length > 0) {
           log.info(`[search_knowledge] Bilingual fallback: "${normalizedQuery}" → "${englishQuery}" (first pass: ${totalFirst} results)`);
           const hits2 = await searchCapabilities(englishQuery, { types, k: limit * 4 });
-          mergeHits(hits2);
+          await mergeHits(hits2);
         }
       }
 
@@ -419,8 +416,16 @@ export const reportProgressTool: Tool = {
 
     // Update task progress in DB if task_id provided
     if (taskId) {
-      const db = getDb();
-      db.query(`UPDATE tasks SET progress = ?, updated_at = unixepoch() WHERE id = ?`).run(progress, taskId);
+      try {
+        const tasksCol = await col<TaskDoc>("tasks");
+        const id = /^\d+$/.test(taskId) ? taskId.padStart(15, "0") : taskId;
+        const existing = await tasksCol.get(id);
+        if (existing) {
+          await tasksCol.put(id, { ...existing.doc, progress, updated_at: Date.now() }, { expectedVersion: existing.version });
+        }
+      } catch {
+        // Best-effort — task_id may not correspond to a real task.
+      }
     }
 
     // Send real-time update to the user's channel

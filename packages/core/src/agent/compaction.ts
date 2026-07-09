@@ -26,7 +26,8 @@ import {
 } from "./conversation-store"
 import { estimateTokens } from "../utils/toon"
 import { callLLM, resolveProviderConfig, getDefaultLLM, type ContentPart } from "./llm-client"
-import { getDb } from "../storage/sqlite"
+import { col, fromIndexable } from "../storage/hive"
+import type { AgentDoc, ModelDoc } from "../storage/collections"
 
 const log = logger.child("compaction")
 
@@ -47,29 +48,27 @@ export async function maybeCompact(
   notify?: { channel: string; userId: string }
 ): Promise<void> {
   try {
-    const totalTokens = getTotalTokens(threadId)
+    const totalTokens = await getTotalTokens(threadId)
 
     // Use model's context window if available, otherwise use default
-    const db = getDb()
     let effectiveThreshold = COMPACT_TOKEN_THRESHOLD
     try {
-      const coordinator = db.query<any, []>(
-        "SELECT a.model_id FROM agents a WHERE a.role = 'coordinator' LIMIT 1"
-      ).get()
-      if (coordinator?.model_id) {
-        const modelRow = db.query<any, [string]>(
-          "SELECT context_window FROM models WHERE id = ?"
-        ).get(coordinator.model_id.replace(/^[^/]+\//, ''))
-        if (modelRow?.context_window) {
-          effectiveThreshold = Math.floor(modelRow.context_window * 0.25)
+      const agentsCol = await col<AgentDoc>("agents")
+      const coordinators = await agentsCol.findBy("role", "coordinator", { limit: 1 })
+      const modelId = fromIndexable(coordinators[0]?.doc.model_id ?? null)
+      if (modelId) {
+        const modelsCol = await col<ModelDoc>("models")
+        const modelEntry = await modelsCol.get(modelId.replace(/^[^/]+\//, ''))
+        if (modelEntry?.doc.context_window) {
+          effectiveThreshold = Math.floor(modelEntry.doc.context_window * 0.25)
         }
       }
     } catch { /* use default threshold */ }
 
     if (totalTokens < effectiveThreshold) return
 
-    const summary = getSummary(threadId)
-    const totalMessages = getMessageCount(threadId)
+    const summary = await getSummary(threadId)
+    const totalMessages = await getMessageCount(threadId)
 
     // Already summarized up to near the current state
     if (summary && summary.last_message_id > totalMessages - KEEP_LAST_N_MESSAGES) return
@@ -88,7 +87,7 @@ export async function compactThread(
   threadId: string,
   notify?: { channel: string; userId: string }
 ): Promise<void> {
-  const allMessages = getHistory(threadId)
+  const allMessages = await getHistory(threadId)
   if (allMessages.length <= KEEP_LAST_N_MESSAGES) return
 
   // Find a clean cut point: the "keep" side must begin with a user turn so
@@ -107,7 +106,7 @@ export async function compactThread(
 
   const lastSummarizedId = toSummarize[toSummarize.length - 1].id
 
-  const existingSummary = getSummary(threadId)
+  const existingSummary = await getSummary(threadId)
   if (existingSummary && existingSummary.last_message_id >= lastSummarizedId) return
 
   // Cap transcript to avoid overflowing small model contexts
@@ -148,7 +147,7 @@ export async function compactThread(
   const summary = summaryResponse.content.trim()
   if (!summary) return
 
-  saveSummary(threadId, summary, toSummarize.length, lastSummarizedId)
+  await saveSummary(threadId, summary, toSummarize.length, lastSummarizedId)
   log.info(
     `[compaction] Thread ${threadId} compacted: ${toSummarize.length} msgs → ${estimateTokens(summary)} tokens`
   )

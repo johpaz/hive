@@ -141,7 +141,7 @@ async function applyDatabaseUpdates(): Promise<void> {
   const { getHiveDir } = await import("@johpaz/hive-agents-core/config/loader");
   const path = await import("node:path");
 
-  const dbPath = path.join(getHiveDir(), "data", "hive.db");
+  const dbPath = path.join(getHiveDir(), "data", "hivedb");
 
   if (!existsSync(dbPath)) {
     console.log(`   ℹ️  No se encontró base de datos existente. Se creará en el próximo 'hive start'.`);
@@ -151,29 +151,33 @@ async function applyDatabaseUpdates(): Promise<void> {
   console.log(`\n🔄 Verificando base de datos...`);
 
   try {
-    const { initializeDatabase, getDb } = await import("@johpaz/hive-agents-core/storage/sqlite");
+    const { ensureHiveDb } = await import("@johpaz/hive-agents-core/storage/bootstrap");
+    const { col } = await import("@johpaz/hive-agents-core/storage/hive");
 
-    // 1. Inicializar BD y aplicar sync de schema (ensureSchemaSync se ejecuta internamente)
-    initializeDatabase();
+    // 1. Inicializar BD y aplicar sync de índices (ensureHiveDb es idempotente)
+    await ensureHiveDb();
     console.log(`   ✅ Schema verificado`);
 
-    const db = getDb();
+    const toolsCol = await col("tools");
+    const modelsCol = await col("models");
+    const providersCol = await col("providers");
+    const skillsCol = await col("skills");
 
     // 2. Contar datos actuales antes del re-seed
-    const toolsBefore = (db.query("SELECT COUNT(*) as n FROM tools").get() as { n: number })?.n ?? 0;
-    const modelsBefore = (db.query("SELECT COUNT(*) as n FROM models").get() as { n: number })?.n ?? 0;
-    const providersBefore = (db.query("SELECT COUNT(*) as n FROM providers").get() as { n: number })?.n ?? 0;
-    const skillsBefore = (db.query("SELECT COUNT(*) as n FROM skills").get() as { n: number })?.n ?? 0;
+    const toolsBefore = await toolsCol.count();
+    const modelsBefore = await modelsCol.count();
+    const providersBefore = await providersCol.count();
+    const skillsBefore = await skillsCol.count();
 
-    // 3. Ejecutar re-seed (idempotente: INSERT OR IGNORE / INSERT OR REPLACE)
+    // 3. Ejecutar re-seed (idempotente: put() por id natural)
     const { seedAllData } = await import("@johpaz/hive-agents-core/storage/seed");
-    seedAllData();
+    await seedAllData();
 
     // 4. Contar datos después del re-seed
-    const toolsAfter = (db.query("SELECT COUNT(*) as n FROM tools").get() as { n: number })?.n ?? 0;
-    const modelsAfter = (db.query("SELECT COUNT(*) as n FROM models").get() as { n: number })?.n ?? 0;
-    const providersAfter = (db.query("SELECT COUNT(*) as n FROM providers").get() as { n: number })?.n ?? 0;
-    const skillsAfter = (db.query("SELECT COUNT(*) as n FROM skills").get() as { n: number })?.n ?? 0;
+    const toolsAfter = await toolsCol.count();
+    const modelsAfter = await modelsCol.count();
+    const providersAfter = await providersCol.count();
+    const skillsAfter = await skillsCol.count();
 
     // 5. Reportar cambios
     const newTools = toolsAfter - toolsBefore;

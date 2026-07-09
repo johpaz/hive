@@ -13,7 +13,8 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import * as path from "node:path";
 import { homedir } from "node:os";
 import { logger } from "../utils/logger.ts";
-import { getDb } from "../storage/sqlite.ts";
+import { updateDoc } from "../storage/hive.ts";
+import type { ChannelDoc } from "../storage/collections.ts";
 // @ts-ignore — no type definitions for qrcode-terminal
 import qrcodeTerminal from "qrcode-terminal";
 
@@ -181,8 +182,7 @@ export class WhatsAppChannel extends BaseChannel {
       this.log.warn(`WhatsApp disconnected: ${statusCode}`);
 
       try {
-        getDb().query(`UPDATE channels SET status = ? WHERE id = ?`)
-          .run(shouldReconnect ? "connecting" : "disconnected", this.accountId);
+        await updateDoc<ChannelDoc>("channels", this.accountId, { status: shouldReconnect ? "connecting" : "disconnected" });
       } catch { /* ignore DB errors */ }
 
       const needsSessionClear =
@@ -219,8 +219,7 @@ export class WhatsAppChannel extends BaseChannel {
       }
 
       try {
-        getDb().query(`UPDATE channels SET status = 'connected', last_active = ? WHERE id = ?`)
-          .run(Date.now(), this.accountId);
+        await updateDoc<ChannelDoc>("channels", this.accountId, { status: "connected", last_active: Date.now() });
       } catch { /* ignore DB errors */ }
     }
   }

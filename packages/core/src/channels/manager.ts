@@ -6,7 +6,8 @@ import { createDiscordChannel, type DiscordConfig } from "./discord.ts";
 import { createWebChatChannel, type WebChatConfig } from "./webchat.ts";
 import { createWhatsAppChannel, WhatsAppChannel, type WhatsAppConfig } from "./whatsapp.ts";
 import { createSlackChannel, type SlackConfig } from "./slack.ts";
-import { getDb } from "../storage/sqlite.ts";
+import { col } from "../storage/hive.ts";
+import type { ChannelDoc, AgentDoc } from "../storage/collections.ts";
 import { loadChannelConfig } from "../storage/crypto.ts";
 
 export class ChannelManager {
@@ -37,11 +38,9 @@ export class ChannelManager {
 
   private async initializeFromDB(): Promise<void> {
     try {
-      const db = getDb();
+      const channelsCol = await col<ChannelDoc>("channels");
       // Load all active channels - config may be empty for webchat
-      const rows = db.query(`
-        SELECT id, type, enabled, active FROM channels WHERE enabled = 1 AND active = 1
-      `).all() as Array<{ id: string; type: string; enabled: number; active: number }>;
+      const rows = (await channelsCol.scan({})).filter(e => e.doc.enabled && e.doc.active).map(e => e.doc);
 
       for (const row of rows) {
         let config: Record<string, unknown> = {};
@@ -125,7 +124,8 @@ export class ChannelManager {
         case "whatsapp": {
           let coordinatorId = "main";
           try {
-            const coordinator = getDb().query(`SELECT id FROM agents WHERE role = 'coordinator' LIMIT 1`).get() as { id: string } | null;
+            const agentsCol = await col<AgentDoc>("agents");
+            const coordinator = (await agentsCol.findBy("role", "coordinator", { limit: 1 }))[0];
             if (coordinator?.id) coordinatorId = coordinator.id;
           } catch { /* fallback to "main" */ }
           channel = createWhatsAppChannel({

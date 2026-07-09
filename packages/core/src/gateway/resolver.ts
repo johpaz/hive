@@ -1,4 +1,5 @@
-import { getDb } from "../storage/sqlite"
+import { col, updateDoc } from "../storage/hive"
+import type { UserIdentityDoc, UserDoc, AgentDoc } from "../storage/collections"
 
 export interface ResolveContextResult {
   userId: string
@@ -12,26 +13,25 @@ export interface ResolveContextOptions {
   channelUserId: string
 }
 
-export function resolveContext(options: ResolveContextOptions): ResolveContextResult {
+export async function resolveContext(options: ResolveContextOptions): Promise<ResolveContextResult> {
   const { channel, channelUserId } = options
-  const db = getDb()
 
-  const identity = db
-    .query<any, [string, string]>(
-      "SELECT user_id FROM user_identities WHERE channel = ? AND channel_user_id = ?"
-    )
-    .get(channel, channelUserId)
+  const identitiesCol = await col<UserIdentityDoc>("userIdentities")
+  const usersCol = await col<UserDoc>("users")
+  const agentsCol = await col<AgentDoc>("agents")
+
+  const allIdentities = await identitiesCol.scan({})
+  const identity = allIdentities.find(e => e.doc.channel === channel && e.doc.channel_user_id === channelUserId)
 
   let userId: string
   let isNewUser = false
 
   if (identity) {
-    userId = identity.user_id
+    userId = identity.doc.user_id
   } else {
     // Sistema mono-usuario: reutilizar el usuario del onboarding
-    const existingUser = db
-      .query<any, []>("SELECT id FROM users ORDER BY created_at ASC LIMIT 1")
-      .get() as { id: string } | undefined
+    const allUsers = await usersCol.scan({})
+    const existingUser = [...allUsers].sort((a, b) => a.doc.created_at - b.doc.created_at)[0]
 
     if (!existingUser) {
       throw new Error("No user found in database. Please run the onboarding process first.")
@@ -40,18 +40,15 @@ export function resolveContext(options: ResolveContextOptions): ResolveContextRe
     userId = existingUser.id
 
     // Vincular este canal al usuario existente (auto-link en el primer mensaje)
-    // INSERT OR REPLACE: si ya existe una fila (user_id, channel), actualiza channel_user_id
+    // put(): si ya existe una fila (user_id, channel), actualiza channel_user_id
     // con el valor real del canal (e.g. chat ID numérico de Telegram).
-    db.query(
-      "INSERT OR REPLACE INTO user_identities (user_id, channel, channel_user_id, linked_at) VALUES (?, ?, ?, ?)"
-    ).run(userId, channel, channelUserId, Math.floor(Date.now() / 1000))
+    await identitiesCol.put(`${userId}:${channel}`, {
+      user_id: userId, channel, channel_user_id: channelUserId, linked_at: Date.now(),
+    })
   }
 
-  const coordinatorAgent = db
-    .query<any, []>("SELECT id FROM agents WHERE role = 'coordinator' LIMIT 1")
-    .get()
-
-  const agentId = coordinatorAgent?.id || "bee"
+  const coordinators = await agentsCol.findBy("role", "coordinator", { limit: 1 })
+  const agentId = coordinators[0]?.id || "bee"
   // One canonical conversation thread is shared across channels. Transport
   // session IDs route replies; conversations.thread_id owns agent context.
   const threadId = userId
@@ -59,54 +56,25 @@ export function resolveContext(options: ResolveContextOptions): ResolveContextRe
   return { userId, threadId, agentId, isNewUser }
 }
 
-export function getDefaultAgentId(): string {
-  const db = getDb()
-  const coordinatorAgent = db
-    .query<any, []>("SELECT id FROM agents WHERE role = 'coordinator' LIMIT 1")
-    .get()
-
-  return coordinatorAgent?.id || "bee"
+export async function getDefaultAgentId(): Promise<string> {
+  const agentsCol = await col<AgentDoc>("agents")
+  const coordinators = await agentsCol.findBy("role", "coordinator", { limit: 1 })
+  return coordinators[0]?.id || "bee"
 }
 
-export function getUserById(userId: string): any {
-  const db = getDb()
-  return db.query<any, [string]>("SELECT * FROM users WHERE id = ?").get(userId)
+export async function getUserById(userId: string): Promise<UserDoc | undefined> {
+  const usersCol = await col<UserDoc>("users")
+  return (await usersCol.get(userId))?.doc
 }
 
-export function updateUserProfile(userId: string, updates: {
+export async function updateUserProfile(userId: string, updates: {
   name?: string
   language?: string
   timezone?: string
   occupation?: string
   notes?: string
-}): void {
-  const db = getDb()
-  const setClauses: string[] = []
-  const values: any[] = []
-
-  if (updates.name !== undefined) {
-    setClauses.push("name = ?")
-    values.push(updates.name)
-  }
-  if (updates.language !== undefined) {
-    setClauses.push("language = ?")
-    values.push(updates.language)
-  }
-  if (updates.timezone !== undefined) {
-    setClauses.push("timezone = ?")
-    values.push(updates.timezone)
-  }
-  if (updates.occupation !== undefined) {
-    setClauses.push("occupation = ?")
-    values.push(updates.occupation)
-  }
-  if (updates.notes !== undefined) {
-    setClauses.push("notes = ?")
-    values.push(updates.notes)
-  }
-
-  if (setClauses.length > 0) {
-    values.push(userId)
-    db.query(`UPDATE users SET ${setClauses.join(", ")} WHERE id = ?`).run(...values)
+}): Promise<void> {
+  if (Object.keys(updates).length > 0) {
+    await updateDoc<UserDoc>("users", userId, updates).catch(() => { /* not found */ })
   }
 }

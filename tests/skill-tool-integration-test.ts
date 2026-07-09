@@ -14,7 +14,9 @@
  * bun run tests/skill-tool-integration-test.ts
  */
 
-import { getDb, initializeDatabase } from "../packages/core/src/storage/sqlite";
+import { ensureHiveDb } from "../packages/core/src/storage/bootstrap";
+import { col } from "../packages/core/src/storage/hive";
+import type { AgentDoc, ToolDoc, SkillDoc } from "../packages/core/src/storage/collections";
 import { selectSkills, getMinimalSkills } from "../packages/core/src/agent/skill-selector";
 import { selectTools, syncToolCatalogToFTS } from "../packages/core/src/agent/tool-selector";
 import { compileContext } from "../packages/core/src/agent/context-compiler";
@@ -64,24 +66,25 @@ async function testInitializeAndSync(): Promise<TestResult> {
   printSubHeader("Test 1: Inicializar BD y Sincronizar FTS5");
   
   try {
-    initializeDatabase();
-    const db = getDb();
-    
-    // Sincronizar tools a FTS5
-    syncToolCatalogToFTS();
-    
-    // Verificar tools en FTS5
-    const toolCount = db.query("SELECT COUNT(*) as count FROM tools_fts").get() as { count: number };
-    printSuccess(`Tools en FTS5: ${toolCount.count}`);
-    
-    // Verificar skills en FTS5
-    const skillCount = db.query("SELECT COUNT(*) as count FROM skills_fts").get() as { count: number };
-    printSuccess(`Skills en FTS5: ${skillCount.count}`);
-    
+    await ensureHiveDb();
+
+    // Sincronizar tools al índice HiveDB
+    await syncToolCatalogToFTS();
+
+    // Verificar tools indexadas
+    const toolsCol = await col<ToolDoc>("tools");
+    const toolCount = await toolsCol.count();
+    printSuccess(`Tools en HiveDB: ${toolCount}`);
+
+    // Verificar skills indexadas
+    const skillsCol = await col<SkillDoc>("skills");
+    const skillCount = await skillsCol.count();
+    printSuccess(`Skills en HiveDB: ${skillCount}`);
+
     return {
       success: true,
       message: "BD sincronizada",
-      details: { tools: toolCount.count, skills: skillCount.count }
+      details: { tools: toolCount, skills: skillCount }
     };
   } catch (error) {
     return {
@@ -223,9 +226,9 @@ async function testContextInjection(): Promise<TestResult> {
   
   try {
     // Obtener un agente de test (coordinator)
-    const db = getDb();
-    const agent = db.query("SELECT id, name FROM agents WHERE role='coordinator' LIMIT 1").get() as { id: string; name: string } | undefined;
-    
+    const agentsCol = await col<AgentDoc>("agents");
+    const agent = (await agentsCol.findBy("role", "coordinator"))[0]?.doc;
+
     if (!agent) {
       return {
         success: false,

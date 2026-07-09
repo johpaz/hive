@@ -1,14 +1,15 @@
 /**
  * Hive CronScheduler
- * 
- * Croner-based scheduler for Hive with SQLite persistence.
+ *
+ * Croner-based scheduler for Hive with HiveDB persistence.
  * Manages recurring and one-shot cron jobs that execute through the agent pipeline.
  */
 
 import { Cron } from "croner";
-import type { Database } from "bun:sqlite";
 import { logger } from "../utils/logger";
 import { notifyTaskCompletion } from "./integration";
+import { col, toIndexable, fromIndexable } from "../storage/hive";
+import type { CronJobDoc, TaskRunDoc } from "../storage/collections";
 import type {
   CronJob,
   TaskRun,
@@ -20,38 +21,43 @@ import type {
 
 const log = logger.child("CronScheduler");
 
+function fromDoc(doc: CronJobDoc): CronJob {
+  return { ...doc, agent_id: fromIndexable(doc.agent_id) };
+}
+
+function toDoc(job: CronJob): CronJobDoc {
+  return { ...job, agent_id: toIndexable(job.agent_id) };
+}
+
 export class CronScheduler {
   private jobs: Map<string, Cron> = new Map();
-  private db: Database;
   private handler: CronJobExecutionHandler;
   private cleanupTaskId: string | null = null;
 
-  constructor(db: Database, handler: CronJobExecutionHandler) {
-    this.db = db;
+  constructor(handler: CronJobExecutionHandler) {
     this.handler = handler;
   }
 
   /**
    * Boot the scheduler - load all active jobs from DB and activate them
    */
-  boot(): void {
-    const tasks = this.db.query(`
-      SELECT * FROM cron_jobs WHERE status = 'active'
-    `).all() as CronJob[];
+  async boot(): Promise<void> {
+    const cronJobsCol = await col<CronJobDoc>("cronJobs");
+    const tasks = (await cronJobsCol.findBy("status", "active")).map(e => fromDoc(e.doc));
 
     for (const task of tasks) {
-      this.activate(task);
+      await this.activate(task);
     }
 
     log.info(`[boot] Loaded ${tasks.length} active job(s)`);
 
-    this.ensureCleanupTask();
+    await this.ensureCleanupTask();
   }
 
   /**
    * Activate a cron job - create or recreate its Croner instance
    */
-  activate(task: CronJob): void {
+  async activate(task: CronJob): Promise<void> {
     const existingJob = this.jobs.get(task.id);
     if (existingJob) {
       existingJob.stop();
@@ -66,10 +72,13 @@ export class CronScheduler {
 
     // Fix 2A: auto-pause jobs that exceeded the error threshold
     const MAX_ERRORS = 5;
+    const cronJobsCol = await col<CronJobDoc>("cronJobs");
     if (task.error_count >= MAX_ERRORS) {
-      this.db.query(
-        "UPDATE cron_jobs SET status = 'paused', last_error = ?, updated_at = ? WHERE id = ?"
-      ).run(`Auto-paused after ${MAX_ERRORS} consecutive errors`, new Date().toISOString(), task.id);
+      await this.updateJob(task.id, {
+        status: "paused",
+        last_error: `Auto-paused after ${MAX_ERRORS} consecutive errors`,
+        updated_at: new Date().toISOString(),
+      });
       log.warn(`[activate] Job "${task.name}" (${task.id}) auto-paused (error_count=${task.error_count})`);
       return;
     }
@@ -134,9 +143,7 @@ export class CronScheduler {
       if (nextRun) {
         const nextRunIso = nextRun.toISOString();
         // Fix 4: also update updated_at when writing next_run_at
-        this.db.query(
-          "UPDATE cron_jobs SET next_run_at = ?, updated_at = ? WHERE id = ?"
-        ).run(nextRunIso, new Date().toISOString(), task.id);
+        await this.updateJob(task.id, { next_run_at: nextRunIso, updated_at: new Date().toISOString() });
         log.info(`[activate] Job "${task.name}" (${task.id}) scheduled - next: ${nextRunIso}`);
       } else {
         log.warn(`[activate] Job "${task.name}" (${task.id}) has no next run date`);
@@ -146,16 +153,35 @@ export class CronScheduler {
     }
   }
 
+  /** Read-modify-write helper for cron_jobs partial updates, retrying on OCC conflict. */
+  private async updateJob(taskId: string, patch: Partial<CronJobDoc>): Promise<CronJobDoc | null> {
+    const cronJobsCol = await col<CronJobDoc>("cronJobs");
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const existing = await cronJobsCol.get(taskId);
+      if (!existing) return null;
+      const merged = { ...existing.doc, ...patch };
+      try {
+        await cronJobsCol.put(taskId, merged, { expectedVersion: existing.version });
+        return merged;
+      } catch {
+        // Version conflict — retry with a fresh read.
+      }
+    }
+    throw new Error(`CronScheduler.updateJob: too much contention on cronJobs/${taskId}`);
+  }
+
   /**
    * Execute a cron job - run it through the agent pipeline
    */
   private async execute(taskId: string): Promise<void> {
     // Fix 1: read fresh task data from DB to avoid stale closure snapshots
-    const task = this.db.query("SELECT * FROM cron_jobs WHERE id = ?").get(taskId) as CronJob | null;
-    if (!task) {
+    const cronJobsCol = await col<CronJobDoc>("cronJobs");
+    const taskEntry = await cronJobsCol.get(taskId);
+    if (!taskEntry) {
       log.warn(`[execute] Job "${taskId}" not found in DB — skipping`);
       return;
     }
+    const task = fromDoc(taskEntry.doc);
 
     const runId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
     const startedAt = new Date().toISOString();
@@ -163,11 +189,19 @@ export class CronScheduler {
 
     log.info(`[execute] Starting job "${task.name}" (${task.id}) run #${runId}`);
 
+    const taskRunsCol = await col<TaskRunDoc>("taskRuns");
     try {
-      this.db.query(`
-        INSERT INTO task_runs (id, task_id, status, started_at, payload_snapshot)
-        VALUES (?, ?, 'running', ?, ?)
-      `).run(runId, task.id, startedAt, task.payload);
+      await taskRunsCol.put(runId, {
+        id: runId,
+        task_id: task.id,
+        status: "running",
+        started_at: startedAt,
+        finished_at: null,
+        duration_ms: null,
+        error_message: null,
+        payload_snapshot: task.payload,
+        agent_response: null,
+      }, { expectedVersion: 0 });
     } catch (err) {
       log.error(`[execute] Failed to create task_run record: ${(err as Error).message}`);
     }
@@ -178,36 +212,31 @@ export class CronScheduler {
       const finishedAt = new Date().toISOString();
 
       if (result.success) {
-        this.db.query(`
-          UPDATE task_runs 
-          SET status = 'success', finished_at = ?, duration_ms = ?, agent_response = ?
-          WHERE id = ?
-        `).run(finishedAt, Math.round(duration), result.response?.slice(0, 1000) || null, runId);
+        await this.updateTaskRun(runId, {
+          status: "success",
+          finished_at: finishedAt,
+          duration_ms: Math.round(duration),
+          agent_response: result.response?.slice(0, 1000) || null,
+        });
 
-        this.db.query(`
-          UPDATE cron_jobs 
-          SET run_count = run_count + 1, last_run_at = ?, last_error = NULL
-          WHERE id = ?
-        `).run(finishedAt, task.id);
+        const refreshed = await this.updateJob(task.id, {
+          run_count: task.run_count + 1,
+          last_run_at: finishedAt,
+          last_error: null,
+        });
 
         const job = this.jobs.get(task.id);
         if (job) {
           const nextRun = job.nextRun();
           if (nextRun) {
-            this.db.query(
-              "UPDATE cron_jobs SET next_run_at = ? WHERE id = ?"
-            ).run(nextRun.toISOString(), task.id);
+            await this.updateJob(task.id, { next_run_at: nextRun.toISOString() });
           }
         }
 
         await notifyTaskCompletion(task.id, task.name, true, result.response);
 
         if (task.task_type === "one_shot") {
-          this.db.query(`
-            UPDATE cron_jobs
-            SET status = 'completed', completed_at = ?
-            WHERE id = ?
-          `).run(finishedAt, task.id);
+          await this.updateJob(task.id, { status: "completed", completed_at: finishedAt });
           this.deactivate(task.id);
           log.info(`[execute] One-shot job "${task.name}" (${task.id}) completed`);
         } else {
@@ -221,36 +250,46 @@ export class CronScheduler {
       const finishedAt = new Date().toISOString();
       const errorMessage = (err as Error).message;
 
-      this.db.query(`
-        UPDATE task_runs 
-        SET status = 'failed', finished_at = ?, duration_ms = ?, error_message = ?
-        WHERE id = ?
-      `).run(finishedAt, Math.round(duration), errorMessage, runId);
+      await this.updateTaskRun(runId, {
+        status: "failed",
+        finished_at: finishedAt,
+        duration_ms: Math.round(duration),
+        error_message: errorMessage,
+      });
 
-      this.db.query(`
-        UPDATE cron_jobs
-        SET error_count = error_count + 1, last_error = ?
-        WHERE id = ?
-      `).run(errorMessage, task.id);
+      const updated = await this.updateJob(task.id, {
+        error_count: task.error_count + 1,
+        last_error: errorMessage,
+      });
 
       log.error(`[execute] Job "${task.name}" (${task.id}) failed: ${errorMessage}`);
 
       // Fix 2B: auto-pause if error threshold reached
       const MAX_ERRORS = 5;
-      const updated = this.db.query(
-        "SELECT error_count FROM cron_jobs WHERE id = ?"
-      ).get(task.id) as { error_count: number } | null;
-
       if (updated && updated.error_count >= MAX_ERRORS) {
-        this.db.query(
-          "UPDATE cron_jobs SET status = 'paused', updated_at = ? WHERE id = ?"
-        ).run(new Date().toISOString(), task.id);
+        await this.updateJob(task.id, { status: "paused", updated_at: new Date().toISOString() });
         this.deactivate(task.id);
         log.warn(`[execute] Job "${task.name}" (${task.id}) auto-paused after ${MAX_ERRORS} errors`);
       }
 
       await notifyTaskCompletion(task.id, task.name, false, undefined, errorMessage);
     }
+  }
+
+  /** Read-modify-write helper for task_runs partial updates, retrying on OCC conflict. */
+  private async updateTaskRun(runId: string, patch: Partial<TaskRunDoc>): Promise<void> {
+    const taskRunsCol = await col<TaskRunDoc>("taskRuns");
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const existing = await taskRunsCol.get(runId);
+      if (!existing) return;
+      try {
+        await taskRunsCol.put(runId, { ...existing.doc, ...patch }, { expectedVersion: existing.version });
+        return;
+      } catch {
+        // Version conflict — retry with a fresh read.
+      }
+    }
+    log.warn(`[updateTaskRun] Too much contention on taskRuns/${runId}`);
   }
 
   /**
@@ -260,38 +299,45 @@ export class CronScheduler {
     log.error(`[error] Job "${task.name}" (${task.id}) error: ${error.message}`);
 
     // Fix 3: record Croner-level errors in task_runs for full history
-    const runId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
-    const now = new Date().toISOString();
-    try {
-      this.db.query(`
-        INSERT INTO task_runs (id, task_id, status, started_at, finished_at, duration_ms, error_message)
-        VALUES (?, ?, 'failed', ?, ?, 0, ?)
-      `).run(runId, task.id, now, now, error.message);
-    } catch (e) {
-      log.warn(`[handleError] Failed to insert task_run: ${(e as Error).message}`);
-    }
+    Promise.resolve().then(async () => {
+      const runId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+      const now = new Date().toISOString();
+      try {
+        const taskRunsCol = await col<TaskRunDoc>("taskRuns");
+        await taskRunsCol.put(runId, {
+          id: runId,
+          task_id: task.id,
+          status: "failed",
+          started_at: now,
+          finished_at: now,
+          duration_ms: 0,
+          error_message: error.message,
+          payload_snapshot: null,
+          agent_response: null,
+        }, { expectedVersion: 0 });
+      } catch (e) {
+        log.warn(`[handleError] Failed to insert task_run: ${(e as Error).message}`);
+      }
 
-    this.db.query(`
-      UPDATE cron_jobs
-      SET error_count = error_count + 1, last_error = ?
-      WHERE id = ?
-    `).run(error.message, task.id);
+      await this.updateJob(task.id, {
+        error_count: task.error_count + 1,
+        last_error: error.message,
+      });
+    });
   }
 
   /**
    * Pause a cron job
    */
-  pause(taskId: string): boolean {
+  async pause(taskId: string): Promise<boolean> {
     const job = this.jobs.get(taskId);
     if (job) {
       job.pause();
     }
 
-    const result = this.db.query(
-      "UPDATE cron_jobs SET status = 'paused' WHERE id = ?"
-    ).run(taskId);
+    const updated = await this.updateJob(taskId, { status: "paused" });
 
-    if (result.changes > 0) {
+    if (updated) {
       log.info(`[pause] Job "${taskId}" paused`);
       return true;
     }
@@ -303,21 +349,18 @@ export class CronScheduler {
   /**
    * Resume a paused cron job
    */
-  resume(taskId: string): boolean {
-    const task = this.db.query(
-      "SELECT * FROM cron_jobs WHERE id = ?"
-    ).get(taskId) as CronJob | undefined;
+  async resume(taskId: string): Promise<boolean> {
+    const cronJobsCol = await col<CronJobDoc>("cronJobs");
+    const taskEntry = await cronJobsCol.get(taskId);
 
-    if (!task) {
+    if (!taskEntry) {
       log.warn(`[resume] Job "${taskId}" not found`);
       return false;
     }
 
-    this.db.query(
-      "UPDATE cron_jobs SET status = 'active' WHERE id = ?"
-    ).run(taskId);
+    const updated = await this.updateJob(taskId, { status: "active" });
 
-    this.activate(task);
+    await this.activate(fromDoc(updated!));
     log.info(`[resume] Job "${taskId}" resumed`);
     return true;
   }
@@ -337,26 +380,25 @@ export class CronScheduler {
   /**
    * Delete a cron job - deactivate and remove from DB
    */
-  delete(taskId: string): boolean {
+  async delete(taskId: string): Promise<boolean> {
     this.deactivate(taskId);
 
-    const result = this.db.query(
-      "DELETE FROM cron_jobs WHERE id = ?"
-    ).run(taskId);
-
-    if (result.changes > 0) {
-      log.info(`[delete] Job "${taskId}" deleted`);
-      return true;
+    const cronJobsCol = await col<CronJobDoc>("cronJobs");
+    const existing = await cronJobsCol.get(taskId);
+    if (!existing) {
+      log.warn(`[delete] Job "${taskId}" not found`);
+      return false;
     }
 
-    log.warn(`[delete] Job "${taskId}" not found`);
-    return false;
+    await cronJobsCol.delete(taskId);
+    log.info(`[delete] Job "${taskId}" deleted`);
+    return true;
   }
 
   /**
    * Create a new cron job
    */
-  create(input: CreateCronJobInput): { id: string; nextRun?: string } {
+  async create(input: CreateCronJobInput): Promise<{ id: string; nextRun?: string }> {
     const id = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
     const now = new Date().toISOString();
 
@@ -394,40 +436,39 @@ export class CronScheduler {
       throw new Error("Invalid payload JSON");
     }
 
-    this.db.query(`
-      INSERT INTO cron_jobs (
-        id, name, task, task_type, cron_expression, fire_at, timezone,
-        start_at, stop_at, dom_and_dow,
-        max_runs, protect, interval_sec, agent_id, channel, payload, tool_name,
-        status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
-    `).run(
+    const doc: CronJobDoc = {
       id,
-      input.name,
-      input.task,
-      input.task_type,
-      input.cron_expression || null,
-      input.fire_at || null,
-      input.timezone,
-      input.start_at || null,
-      input.stop_at || null,
-      input.dom_and_dow ? 1 : 0,
-      input.max_runs || null,
-      input.protect !== false ? 1 : 0,
-      input.interval_sec || null,
-      input.agent_id || null,
-      input.channel || "system",
-      payloadJson,
-      input.tool_name || null,
-      now,
-      now
-    );
+      name: input.name,
+      task: input.task,
+      task_type: input.task_type,
+      cron_expression: input.cron_expression || null,
+      fire_at: input.fire_at || null,
+      timezone: input.timezone,
+      start_at: input.start_at || null,
+      stop_at: input.stop_at || null,
+      dom_and_dow: input.dom_and_dow ? 1 : 0,
+      max_runs: input.max_runs || null,
+      protect: input.protect !== false ? 1 : 0,
+      interval_sec: input.interval_sec || null,
+      agent_id: toIndexable(input.agent_id || null),
+      channel: input.channel || "system",
+      payload: payloadJson,
+      tool_name: input.tool_name || null,
+      status: "active",
+      run_count: 0,
+      error_count: 0,
+      last_error: null,
+      created_at: now,
+      updated_at: now,
+      last_run_at: null,
+      next_run_at: null,
+      completed_at: null,
+    };
 
-    const task = this.db.query(
-      "SELECT * FROM cron_jobs WHERE id = ?"
-    ).get(id) as CronJob;
+    const cronJobsCol = await col<CronJobDoc>("cronJobs");
+    await cronJobsCol.put(id, doc, { expectedVersion: 0 });
 
-    this.activate(task);
+    await this.activate(fromDoc(doc));
 
     const job = this.jobs.get(id);
     const nextRun = job?.nextRun()?.toISOString();
@@ -440,100 +481,42 @@ export class CronScheduler {
   /**
    * Update an existing cron job
    */
-  update(taskId: string, changes: UpdateCronJobInput): boolean {
-    const task = this.db.query(
-      "SELECT * FROM cron_jobs WHERE id = ?"
-    ).get(taskId) as CronJob | undefined;
+  async update(taskId: string, changes: UpdateCronJobInput): Promise<boolean> {
+    const cronJobsCol = await col<CronJobDoc>("cronJobs");
+    const taskEntry = await cronJobsCol.get(taskId);
 
-    if (!task) {
+    if (!taskEntry) {
       log.warn(`[update] Job "${taskId}" not found`);
       return false;
     }
 
-    const fields: string[] = [];
-    const values: any[] = [];
+    const patch: Partial<CronJobDoc> = {};
 
-    if (changes.name !== undefined) {
-      fields.push("name = ?");
-      values.push(changes.name);
-    }
-    if (changes.task !== undefined) {
-      fields.push("task = ?");
-      values.push(changes.task);
-    }
-    if (changes.task_type !== undefined) {
-      fields.push("task_type = ?");
-      values.push(changes.task_type);
-    }
-    if (changes.cron_expression !== undefined) {
-      fields.push("cron_expression = ?");
-      values.push(changes.cron_expression);
-    }
-    if (changes.fire_at !== undefined) {
-      fields.push("fire_at = ?");
-      values.push(changes.fire_at);
-    }
-    if (changes.timezone !== undefined) {
-      fields.push("timezone = ?");
-      values.push(changes.timezone);
-    }
-    if (changes.start_at !== undefined) {
-      fields.push("start_at = ?");
-      values.push(changes.start_at);
-    }
-    if (changes.stop_at !== undefined) {
-      fields.push("stop_at = ?");
-      values.push(changes.stop_at);
-    }
-    if (changes.dom_and_dow !== undefined) {
-      fields.push("dom_and_dow = ?");
-      values.push(changes.dom_and_dow ? 1 : 0);
-    }
-    if (changes.agent_id !== undefined) {
-      fields.push("agent_id = ?");
-      values.push(changes.agent_id);
-    }
-    if (changes.channel !== undefined) {
-      fields.push("channel = ?");
-      values.push(changes.channel);
-    }
-    if (changes.payload !== undefined) {
-      fields.push("payload = ?");
-      values.push(JSON.stringify(changes.payload));
-    }
-    if (changes.tool_name !== undefined) {
-      fields.push("tool_name = ?");
-      values.push(changes.tool_name);
-    }
-    if (changes.max_runs !== undefined) {
-      fields.push("max_runs = ?");
-      values.push(changes.max_runs);
-    }
-    if (changes.protect !== undefined) {
-      fields.push("protect = ?");
-      values.push(changes.protect ? 1 : 0);
-    }
-    if (changes.interval_sec !== undefined) {
-      fields.push("interval_sec = ?");
-      values.push(changes.interval_sec);
-    }
-    if (changes.status !== undefined) {
-      fields.push("status = ?");
-      values.push(changes.status);
-    }
+    if (changes.name !== undefined) patch.name = changes.name;
+    if (changes.task !== undefined) patch.task = changes.task;
+    if (changes.task_type !== undefined) patch.task_type = changes.task_type;
+    if (changes.cron_expression !== undefined) patch.cron_expression = changes.cron_expression;
+    if (changes.fire_at !== undefined) patch.fire_at = changes.fire_at;
+    if (changes.timezone !== undefined) patch.timezone = changes.timezone;
+    if (changes.start_at !== undefined) patch.start_at = changes.start_at;
+    if (changes.stop_at !== undefined) patch.stop_at = changes.stop_at;
+    if (changes.dom_and_dow !== undefined) patch.dom_and_dow = changes.dom_and_dow ? 1 : 0;
+    if (changes.agent_id !== undefined) patch.agent_id = toIndexable(changes.agent_id);
+    if (changes.channel !== undefined) patch.channel = changes.channel;
+    if (changes.payload !== undefined) patch.payload = JSON.stringify(changes.payload);
+    if (changes.tool_name !== undefined) patch.tool_name = changes.tool_name;
+    if (changes.max_runs !== undefined) patch.max_runs = changes.max_runs;
+    if (changes.protect !== undefined) patch.protect = changes.protect ? 1 : 0;
+    if (changes.interval_sec !== undefined) patch.interval_sec = changes.interval_sec;
+    if (changes.status !== undefined) patch.status = changes.status;
 
-    if (fields.length === 0) {
+    if (Object.keys(patch).length === 0) {
       return true;
     }
 
-    values.push(taskId);
-    this.db.query(`UPDATE cron_jobs SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+    const updatedDoc = await this.updateJob(taskId, patch);
 
-    const updatedTask = this.db.query(
-      "SELECT * FROM cron_jobs WHERE id = ?"
-    ).get(taskId) as CronJob;
-
-    this.activate(updatedTask);
+    await this.activate(fromDoc(updatedDoc!));
 
     log.info(`[update] Job "${taskId}" updated`);
     return true;
@@ -542,10 +525,9 @@ export class CronScheduler {
   /**
    * Get status of all cron jobs
    */
-  getStatus(): CronJobStatus[] {
-    const tasks = this.db.query(
-      "SELECT id, name, status FROM cron_jobs ORDER BY id"
-    ).all() as Array<{ id: string; name: string; status: string }>;
+  async getStatus(): Promise<CronJobStatus[]> {
+    const cronJobsCol = await col<CronJobDoc>("cronJobs");
+    const tasks = (await cronJobsCol.scan({})).map(e => e.doc).sort((a, b) => a.id.localeCompare(b.id));
 
     return tasks.map((task) => {
       const job = this.jobs.get(task.id);
@@ -563,15 +545,6 @@ export class CronScheduler {
    * Manually trigger a cron job execution
    */
   trigger(taskId: string): boolean {
-    const task = this.db.query(
-      "SELECT * FROM cron_jobs WHERE id = ?"
-    ).get(taskId) as CronJob | undefined;
-
-    if (!task) {
-      log.warn(`[trigger] Job "${taskId}" not found`);
-      return false;
-    }
-
     const job = this.jobs.get(taskId);
     if (!job) {
       log.warn(`[trigger] Job "${taskId}" has no active job`);
@@ -597,10 +570,9 @@ export class CronScheduler {
   /**
    * Ensure the cleanup job exists
    */
-  private ensureCleanupTask(): void {
-    const existing = this.db.query(
-      "SELECT id FROM cron_jobs WHERE name = '_hive_cleanup_runs'"
-    ).get() as { id: string } | undefined;
+  private async ensureCleanupTask(): Promise<void> {
+    const cronJobsCol = await col<CronJobDoc>("cronJobs");
+    const existing = (await cronJobsCol.scan({})).find(e => e.doc.name === "_hive_cleanup_runs");
 
     if (existing) {
       this.cleanupTaskId = existing.id;
@@ -609,7 +581,7 @@ export class CronScheduler {
     }
 
     try {
-      const result = this.create({
+      const result = await this.create({
         name: "_hive_cleanup_runs",
         task: "Automatic cleanup of old task_runs and completed one_shot jobs",
         task_type: "recurring",
@@ -629,34 +601,44 @@ export class CronScheduler {
   /**
    * Run cleanup - called by the internal cleanup job
    */
-  runCleanup(): void {
+  async runCleanup(): Promise<void> {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    this.db.query(`
-      DELETE FROM task_runs 
-      WHERE status IN ('success', 'failed') AND started_at < ?
-    `).run(thirtyDaysAgo);
-
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    this.db.query(`
-      UPDATE cron_jobs 
-      SET status = 'cancelled' 
-      WHERE task_type = 'one_shot' AND status = 'completed' AND completed_at < ?
-    `).run(sevenDaysAgo);
 
-    const tasks = this.db.query(`
-      SELECT DISTINCT task_id FROM task_runs
-    `).all() as { task_id: string }[];
+    const taskRunsCol = await col<TaskRunDoc>("taskRuns");
+    const allRuns = await taskRunsCol.scan({});
 
-    for (const { task_id } of tasks) {
-      this.db.query(`
-        DELETE FROM task_runs 
-        WHERE task_id = ? AND id NOT IN (
-          SELECT id FROM task_runs 
-          WHERE task_id = ? 
-          ORDER BY started_at DESC 
-          LIMIT 1000
-        )
-      `).run(task_id, task_id);
+    const oldRuns = allRuns.filter(e =>
+      (e.doc.status === "success" || e.doc.status === "failed") && e.doc.started_at < thirtyDaysAgo
+    );
+    for (const run of oldRuns) {
+      await taskRunsCol.delete(run.id);
+    }
+
+    const cronJobsCol = await col<CronJobDoc>("cronJobs");
+    const allJobs = await cronJobsCol.scan({});
+    const staleOneShots = allJobs.filter(e =>
+      e.doc.task_type === "one_shot" && e.doc.status === "completed" &&
+      e.doc.completed_at !== null && e.doc.completed_at < sevenDaysAgo
+    );
+    for (const job of staleOneShots) {
+      await this.updateJob(job.id, { status: "cancelled" });
+    }
+
+    // Keep only the most recent 1000 runs per task
+    const remainingRuns = allRuns.filter(r => !oldRuns.includes(r));
+    const runsByTask = new Map<string, typeof remainingRuns>();
+    for (const run of remainingRuns) {
+      const list = runsByTask.get(run.doc.task_id) ?? [];
+      list.push(run);
+      runsByTask.set(run.doc.task_id, list);
+    }
+    for (const [, runs] of runsByTask) {
+      if (runs.length <= 1000) continue;
+      const toDelete = runs.sort((a, b) => b.doc.started_at.localeCompare(a.doc.started_at)).slice(1000);
+      for (const run of toDelete) {
+        await taskRunsCol.delete(run.id);
+      }
     }
 
     log.info("[runCleanup] Cleanup completed");
@@ -665,35 +647,32 @@ export class CronScheduler {
   /**
    * Get task run history
    */
-  getHistory(taskId: string, limit = 50): TaskRun[] {
-    return this.db.query(`
-      SELECT * FROM task_runs 
-      WHERE task_id = ? 
-      ORDER BY started_at DESC 
-      LIMIT ?
-    `).all(taskId, limit) as TaskRun[];
+  async getHistory(taskId: string, limit = 50): Promise<TaskRun[]> {
+    const taskRunsCol = await col<TaskRunDoc>("taskRuns");
+    const runs = (await taskRunsCol.scan({})).map(e => e.doc).filter(r => r.task_id === taskId);
+    runs.sort((a, b) => b.started_at.localeCompare(a.started_at));
+    return runs.slice(0, limit);
   }
 
   /**
    * Get a single cron job by ID
    */
-  getTask(taskId: string): CronJob | null {
-    return this.db.query(
-      "SELECT * FROM cron_jobs WHERE id = ?"
-    ).get(taskId) as CronJob | null;
+  async getTask(taskId: string): Promise<CronJob | null> {
+    const cronJobsCol = await col<CronJobDoc>("cronJobs");
+    const entry = await cronJobsCol.get(taskId);
+    return entry ? fromDoc(entry.doc) : null;
   }
 
   /**
    * List all cron jobs
    */
-  listTasks(status?: string): CronJob[] {
-    if (status) {
-      return this.db.query(
-        "SELECT * FROM cron_jobs WHERE status = ? ORDER BY next_run_at"
-      ).all(status) as CronJob[];
-    }
-    return this.db.query(
-      "SELECT * FROM cron_jobs ORDER BY next_run_at"
-    ).all() as CronJob[];
+  async listTasks(status?: string): Promise<CronJob[]> {
+    const cronJobsCol = await col<CronJobDoc>("cronJobs");
+    const entries = status
+      ? await cronJobsCol.findBy("status", status)
+      : await cronJobsCol.scan({});
+    const tasks = entries.map(e => fromDoc(e.doc));
+    tasks.sort((a, b) => (a.next_run_at ?? "").localeCompare(b.next_run_at ?? ""));
+    return tasks;
   }
 }

@@ -1,16 +1,24 @@
-import { getDb } from "../../storage/sqlite.ts"
+import { col, updateDoc } from "../../storage/hive.ts"
+import type { McpServerDoc } from "../../storage/collections.ts"
 import { storeMcpHeaders, loadMcpHeaders, deleteMcpSecrets } from "../../storage/crypto.ts"
 import { logger } from "../../utils/logger.ts"
 
 const mcpLog = logger.child("mcp:api")
+
+/** Servers are looked up by id or by human-readable name, matching the old `WHERE id = ? OR name = ?`. */
+async function findMcpServer(idOrName: string) {
+  const mcpCol = await col<McpServerDoc>("mcpServers")
+  const byId = await mcpCol.get(idOrName)
+  if (byId) return byId
+  const all = await mcpCol.scan({})
+  return all.find(e => e.doc.name === idOrName)
+}
 
 export async function handleGetMcpServers(
   req: Request,
   addCorsHeaders: (r: Response, req: Request) => Response,
   mcpManager?: any
 ): Promise<Response> {
-  const db = getDb()
-
   // Get real-time server status from MCP manager
   const mcpServers = new Map<string, { status: string; tools: any[] }>()
   if (mcpManager) {
@@ -30,20 +38,19 @@ export async function handleGetMcpServers(
     mcpLog.warn(`[GET] No MCP Manager provided`)
   }
 
-  // Get all servers from database
-  const dbServers = db.query(`
-    SELECT * FROM mcp_servers ORDER BY name
-  `).all() as Record<string, unknown>[]
+  // Get all servers from the database
+  const mcpCol = await col<McpServerDoc>("mcpServers")
+  const dbServers = (await mcpCol.scan({})).map(e => e.doc).sort((a, b) => a.name.localeCompare(b.name))
 
   // Combine DB info with real-time status from MCP manager
   const allServers = await Promise.all(dbServers.map(async s => {
     // Try to find matching server in MCP Manager (by name or normalized name)
-    const normalizedName = (s.name as string).toLowerCase().replace(/[^a-z0-9-]/g, '-')
-    const mcpServer = mcpServers.get(s.name as string) || mcpServers.get(normalizedName)
-    const isEnabled = s.enabled === 1
+    const normalizedName = s.name.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+    const mcpServer = mcpServers.get(s.name) || mcpServers.get(normalizedName)
+    const isEnabled = s.enabled
 
     // Redact headers for safe UI display
-    const rawHeaders = await loadMcpHeaders(s.id as string)
+    const rawHeaders = await loadMcpHeaders(s.id)
     const headers = Object.keys(rawHeaders).length > 0
       ? Object.fromEntries(
           Object.entries(rawHeaders).map(([k, v]) => [
@@ -65,7 +72,7 @@ export async function handleGetMcpServers(
       config: {
         transport: s.transport,
         command: s.command,
-        args: s.args ? JSON.parse(s.args as string) : [],
+        args: s.args ? JSON.parse(s.args) : [],
         url: s.url,
         headers,
         enabled: isEnabled
@@ -80,7 +87,6 @@ export async function handleGetMcpServers(
 
 export async function handleCreateMcpServer(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const body = await req.json().catch(() => ({}))
-  const db = getDb()
 
   if (!body.name || !body.config) {
     return addCorsHeaders(new Response("Missing name or config", { status: 400 }), req)
@@ -91,19 +97,13 @@ export async function handleCreateMcpServer(req: Request, addCorsHeaders: (r: Re
   // Generate unique ID (name-based for consistency)
   const serverId = body.name.toLowerCase().replace(/[^a-z0-9-]/g, '-')
 
-  // Save to database
-  db.query(`
-    INSERT INTO mcp_servers(id, name, transport, command, args, url, enabled, builtin, status)
-    VALUES(?, ?, ?, ?, ?, ?, ?, 0, 'disconnected')
-  `).run(
-    serverId,
-    body.name,
-    body.config.transport || "stdio",
-    body.config.command || null,
-    body.config.args ? JSON.stringify(body.config.args) : null,
-    body.config.url || null,
-    body.config.enabled !== false ? 1 : 0
-  )
+  const mcpCol = await col<McpServerDoc>("mcpServers")
+  await mcpCol.put(serverId, {
+    id: serverId, name: body.name, transport: body.config.transport || "stdio",
+    command: body.config.command || null, args: body.config.args ? JSON.stringify(body.config.args) : null,
+    url: body.config.url || null, enabled: body.config.enabled !== false, active: false,
+    builtin: false, status: "disconnected", tools_count: 0,
+  })
 
   if (body.config.headers) {
     await storeMcpHeaders(serverId, body.config.headers)
@@ -123,9 +123,12 @@ export async function handleDeleteMcpServer(req: Request, addCorsHeaders: (r: Re
   }
 
   // Delete from DB and keychain
-  const row = getDb().query(`SELECT id FROM mcp_servers WHERE id = ? OR name = ?`).get(serverName, serverName) as { id: string } | undefined
-  getDb().query(`DELETE FROM mcp_servers WHERE id = ? OR name = ?`).run(serverName, serverName)
-  if (row?.id) await deleteMcpSecrets(row.id)
+  const entry = await findMcpServer(serverName)
+  if (entry) {
+    const mcpCol = await col<McpServerDoc>("mcpServers")
+    await mcpCol.delete(entry.id)
+    await deleteMcpSecrets(entry.id)
+  }
 
   return addCorsHeaders(Response.json({ success: true }), req)
 }
@@ -135,15 +138,15 @@ export async function handleGetMcpServerDetail(
   addCorsHeaders: (r: Response, req: Request) => Response,
   serverId: string
 ): Promise<Response> {
-  const db = getDb()
-  const server = db.query(`SELECT * FROM mcp_servers WHERE id = ? OR name = ?`).get(serverId, serverId) as Record<string, unknown> | undefined
+  const entry = await findMcpServer(serverId)
 
-  if (!server) {
+  if (!entry) {
     return addCorsHeaders(new Response("Server not found", { status: 404 }), req)
   }
+  const server = entry.doc
 
   // Load headers — unredacted, for editing
-  const rawDetail = await loadMcpHeaders(server.id as string)
+  const rawDetail = await loadMcpHeaders(server.id)
   const headers = Object.keys(rawDetail).length > 0 ? rawDetail as Record<string, string> : undefined
 
   return addCorsHeaders(Response.json({
@@ -151,11 +154,11 @@ export async function handleGetMcpServerDetail(
     name: server.name,
     transport: server.transport,
     command: server.command ?? null,
-    args: server.args ? JSON.parse(server.args as string) : [],
+    args: server.args ? JSON.parse(server.args) : [],
     url: server.url ?? null,
     headers,
-    enabled: server.enabled === 1,
-    builtin: server.builtin === 1,
+    enabled: server.enabled,
+    builtin: server.builtin,
     status: server.status,
     tools_count: server.tools_count ?? 0,
   }), req)
@@ -167,7 +170,6 @@ export async function handleUpdateMcpServer(req: Request, addCorsHeaders: (r: Re
   const parts = url.pathname.split("/").filter(Boolean)
   const serverName = parts[parts.length - 1]
   const body = await req.json().catch(() => ({}))
-  const db = getDb()
 
   if (!serverName || serverName === "servers") {
     return addCorsHeaders(new Response("Missing server name", { status: 400 }), req)
@@ -175,37 +177,20 @@ export async function handleUpdateMcpServer(req: Request, addCorsHeaders: (r: Re
 
   mcpLog.info(`Updating MCP server: ${serverName}`)
 
-  const updates: string[] = []
-  const params: unknown[] = []
+  const patch: Partial<McpServerDoc> = {}
+  if (body.transport !== undefined) patch.transport = body.transport
+  if (body.name !== undefined) patch.name = body.name
+  if (body.command !== undefined) patch.command = body.command
+  if (body.args !== undefined) patch.args = JSON.stringify(body.args)
+  if (body.url !== undefined) patch.url = body.url
+  if (body.enabled !== undefined) patch.enabled = !!body.enabled
 
-  if (body.transport !== undefined) {
-    updates.push("transport = ?")
-    params.push(body.transport)
-  }
-  if (body.name !== undefined) {
-    updates.push("name = ?")
-    params.push(body.name)
-  }
-  if (body.command !== undefined) {
-    updates.push("command = ?")
-    params.push(body.command)
-  }
-  if (body.args !== undefined) {
-    updates.push("args = ?")
-    params.push(JSON.stringify(body.args))
-  }
-  if (body.url !== undefined) {
-    updates.push("url = ?")
-    params.push(body.url)
-  }
-  if (body.enabled !== undefined) {
-    updates.push("enabled = ?")
-    params.push(body.enabled ? 1 : 0)
-  }
-  if (updates.length > 0) {
-    params.push(serverName)
-    params.push(serverName)
-    db.query(`UPDATE mcp_servers SET ${updates.join(", ")} WHERE id = ? OR name = ?`).run(...params as any[])
+  if (Object.keys(patch).length > 0) {
+    const entry = await findMcpServer(serverName)
+    if (entry) {
+      const mcpCol = await col<McpServerDoc>("mcpServers")
+      await mcpCol.put(entry.id, { ...entry.doc, ...patch }, { expectedVersion: entry.version })
+    }
   }
 
   if (body.headers) {
@@ -223,7 +208,7 @@ export async function handleStartMcpServer(req: Request, addCorsHeaders: (r: Res
     return addCorsHeaders(Response.json({ success: false, error: "serverId required" }), req)
   }
 
-  getDb().query(`UPDATE mcp_servers SET enabled = 1 WHERE id = ?`).run(serverId)
+  await updateDoc<McpServerDoc>("mcpServers", serverId, { enabled: true }).catch(() => { /* not found */ })
 
   return addCorsHeaders(Response.json({ success: true, serverId, enabled: true }), req)
 }
@@ -254,7 +239,7 @@ export async function handleToggleMcpServer(
     return addCorsHeaders(Response.json({ success: false, error: "Missing active field", message: "Falta el campo 'active'" }, { status: 400 }), req)
   }
 
-  getDb().query(`UPDATE mcp_servers SET active = ?, enabled = ? WHERE id = ?`).run(active ? 1 : 0, active ? 1 : 0, mcpId)
+  await updateDoc<McpServerDoc>("mcpServers", mcpId, { active: !!active, enabled: !!active }).catch(() => { /* not found */ })
 
   return addCorsHeaders(Response.json({ success: true, active, message: active ? "Servidor MCP activado" : "Servidor MCP desactivado" }), req)
 }
@@ -270,12 +255,10 @@ export async function handleMcpServerAction(
     return addCorsHeaders(new Response("MCP is disabled", { status: 404 }), req)
   }
 
-  const db = getDb()
-
   if (action === "connect") {
     // Check if server exists and is enabled in DB
-    const dbServer = db.query(`SELECT * FROM mcp_servers WHERE name = ? AND enabled = 1`).get(serverName)
-    if (!dbServer) {
+    const entry = await findMcpServer(serverName)
+    if (!entry || !entry.doc.enabled) {
       return new Response("Server not found or disabled", { status: 400 })
     }
 
@@ -283,7 +266,8 @@ export async function handleMcpServerAction(
 
     // Update tools count after connection
     const tools = mcpManager.getServerTools(serverName) || []
-    db.query(`UPDATE mcp_servers SET status = ?, tools_count = ? WHERE name = ?`).run("connected", tools.length, serverName)
+    const mcpCol = await col<McpServerDoc>("mcpServers")
+    await mcpCol.put(entry.id, { ...entry.doc, status: "connected", tools_count: tools.length }, { expectedVersion: entry.version })
 
     return addCorsHeaders(Response.json({ success: true, tools_count: tools.length }), req)
   }

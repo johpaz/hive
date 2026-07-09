@@ -1,6 +1,5 @@
 import { mkdirSync, existsSync, accessSync, constants } from "node:fs";
 import * as path from "node:path";
-import { getDb } from "../../storage/sqlite";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 

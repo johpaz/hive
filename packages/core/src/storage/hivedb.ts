@@ -1,14 +1,15 @@
 /**
- * HiveDB search database — singleton accessor
+ * HiveDB — singleton accessor
  *
- * HiveDB (@johpaz/hive-db) is the embedded Rust engine that replaced the
- * SQLite FTS5 virtual tables for capability search (tools, skills, playbook,
- * MCP tools). It provides Spanish-aware BM25 (accent folding + stemming),
- * lenient query parsing (raw user text never throws), per-field boosts and
- * optional vector search.
+ * HiveDB (@johpaz/hive-db) is the embedded Rust engine (redb + tantivy BM25 +
+ * hnsw_rs) that is the sole data store for Hive: capability search (tools,
+ * skills, playbook, MCP tools) via its BM25/hybrid index, and every other
+ * piece of relational-shaped data (users, agents, providers, models,
+ * conversations, cron, projects, ACE/playbook, ...) via its document
+ * collections (`db.collection<T>(name)`).
  *
- * The index lives next to hive.db under ~/.hive/data/hivedb (or
- * ~/.hive-dev/data/hivedb in dev). Relational data stays in SQLite.
+ * The database lives at ~/.hive/data/hivedb (or ~/.hive-dev/data/hivedb in
+ * dev).
  */
 
 import path from "node:path";
@@ -21,9 +22,9 @@ const log = logger.child("hivedb");
 let db: HiveDB | null = null;
 let opening: Promise<HiveDB> | null = null;
 
-export function getSearchDbPath(): string {
-  // Tests can point the search index at an ephemeral database.
-  if (process.env.HIVE_SEARCH_DB_PATH) return process.env.HIVE_SEARCH_DB_PATH;
+export function getHiveDbPath(): string {
+  // Tests can point the database at an ephemeral (":memory:") instance.
+  if (process.env.HIVE_DB_PATH) return process.env.HIVE_DB_PATH;
   return path.join(getHiveDir(), "data", "hivedb");
 }
 
@@ -31,13 +32,13 @@ export function getSearchDbPath(): string {
  * Get the shared HiveDB instance, opening it on first use.
  * Concurrent callers share the same open() promise.
  */
-export async function getSearchDb(): Promise<HiveDB> {
+export async function getHiveDb(): Promise<HiveDB> {
   if (db) return db;
   if (!opening) {
-    const dbPath = getSearchDbPath();
+    const dbPath = getHiveDbPath();
     opening = HiveDB.open(dbPath).then((opened) => {
       db = opened;
-      log.info(`[hivedb] Search index opened at ${dbPath}`);
+      log.info(`[hivedb] Opened at ${dbPath}`);
       return opened;
     });
     opening.catch(() => {
@@ -47,12 +48,12 @@ export async function getSearchDb(): Promise<HiveDB> {
   return opening;
 }
 
-export function closeSearchDb(): void {
+export function closeHiveDb(): void {
   if (db) {
     try {
       db.close();
     } catch (err) {
-      log.warn(`[hivedb] Error closing search index: ${(err as Error).message}`);
+      log.warn(`[hivedb] Error closing database: ${(err as Error).message}`);
     }
     db = null;
     opening = null;

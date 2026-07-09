@@ -1,4 +1,5 @@
-import { getDb } from "../storage/sqlite"
+import { col } from "../storage/hive"
+import type { ChannelDoc, ModelDoc, ProviderDoc } from "../storage/collections"
 import { loadProviderApiKey } from "../storage/crypto"
 import { logger } from "../utils/logger"
 import type { ImageInput, DocumentInput, VisionConfig } from "./types"
@@ -18,27 +19,19 @@ class MultimodalService {
     return MultimodalService.instance
   }
 
-  getChannelVisionConfig(channelId: string): VisionConfig {
-    const db = getDb()
-    const result = db.query(`
-      SELECT vision_enabled, ocr_provider, vision_provider, vision_model_id
-      FROM channels WHERE id = ?
-    `).get(channelId) as {
-      vision_enabled: number
-      ocr_provider: string | null
-      vision_provider: string | null
-      vision_model_id: string | null
-    } | undefined
+  async getChannelVisionConfig(channelId: string): Promise<VisionConfig> {
+    const channelsCol = await col<ChannelDoc>("channels")
+    const entry = await channelsCol.get(channelId)
 
-    if (!result) {
+    if (!entry) {
       return { visionEnabled: false, ocrProvider: null, visionProvider: null, visionModelId: null }
     }
 
     return {
-      visionEnabled: result.vision_enabled === 1,
-      ocrProvider: result.ocr_provider,
-      visionProvider: result.vision_provider,
-      visionModelId: result.vision_model_id,
+      visionEnabled: entry.doc.vision_enabled,
+      ocrProvider: entry.doc.ocr_provider,
+      visionProvider: entry.doc.vision_provider,
+      visionModelId: entry.doc.vision_model_id,
     }
   }
 
@@ -131,23 +124,21 @@ class MultimodalService {
   }
 
   private async getProviderApiKey(providerId: string): Promise<string | null> {
-    const db = getDb()
     const apiKey = await loadProviderApiKey(providerId)
     return apiKey || null
   }
 
   /** Modelo con capacidad de visión del provider según la BD; el literal queda como último recurso. */
-  private getVisionModel(providerId: string, fallback: string): string {
+  private async getVisionModel(providerId: string, fallback: string): Promise<string> {
     try {
-      const db = getDb()
-      const row = db.query(`
-        SELECT id FROM models
-        WHERE provider_id = ? AND model_type = 'llm'
-          AND (capabilities LIKE '%"vision"%' OR capabilities LIKE '%"ocr"%')
-        ORDER BY active DESC
-        LIMIT 1
-      `).get(providerId) as { id: string } | undefined
-      return row?.id || fallback
+      const modelsCol = await col<ModelDoc>("models")
+      const models = await modelsCol.findBy("provider_id", providerId)
+      const candidates = models.filter(e =>
+        e.doc.model_type === "llm" &&
+        (e.doc.capabilities?.includes('"vision"') || e.doc.capabilities?.includes('"ocr"'))
+      )
+      const best = [...candidates].sort((a, b) => Number(b.doc.active) - Number(a.doc.active))[0]
+      return best?.doc.id || fallback
     } catch {
       return fallback
     }
@@ -163,7 +154,7 @@ class MultimodalService {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
       body: JSON.stringify({
-        model: this.getVisionModel("openai", "gpt-4o-mini"),
+        model: await this.getVisionModel("openai", "gpt-4o-mini"),
         messages: [{
           role: "user",
           content: [
@@ -200,7 +191,7 @@ class MultimodalService {
     }
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${this.getVisionModel("gemini", "gemini-2.0-flash")}:generateContent?key=${key}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${await this.getVisionModel("gemini", "gemini-2.0-flash")}:generateContent?key=${key}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -246,7 +237,7 @@ class MultimodalService {
         "anthropic-dangerous-direct-browser-access": "true",
       },
       body: JSON.stringify({
-        model: this.getVisionModel("anthropic", "claude-haiku-4-5-20251001"),
+        model: await this.getVisionModel("anthropic", "claude-haiku-4-5-20251001"),
         max_tokens: 1000,
         messages: [{
           role: "user",
@@ -268,28 +259,26 @@ class MultimodalService {
     return textBlock?.text || ""
   }
 
-  getConfiguredVisionProviders(): Record<string, boolean> {
-    const db = getDb()
-    const hasDbKey = (providerId: string): boolean => {
-      const row = db.query(
-        `SELECT api_key_encrypted FROM providers WHERE id = ? AND api_key_encrypted IS NOT NULL AND api_key_encrypted != ''`
-      ).get(providerId) as { api_key_encrypted: string } | undefined
-      return !!row
-    }
+  async getConfiguredVisionProviders(): Promise<Record<string, boolean>> {
+    const hasDbKey = async (providerId: string): Promise<boolean> => !!(await loadProviderApiKey(providerId))
+
+    const [openai, gemini, anthropic] = await Promise.all([
+      hasDbKey("openai"), hasDbKey("gemini"), hasDbKey("anthropic"),
+    ])
 
     return {
-      openai: hasDbKey("openai") || !!(process.env.OPENAI_API_KEY),
-      gemini: hasDbKey("gemini") || !!(process.env.GEMINI_API_KEY),
-      anthropic: hasDbKey("anthropic") || !!(process.env.ANTHROPIC_API_KEY),
+      openai: openai || !!(process.env.OPENAI_API_KEY),
+      gemini: gemini || !!(process.env.GEMINI_API_KEY),
+      anthropic: anthropic || !!(process.env.ANTHROPIC_API_KEY),
     }
   }
 
-  modelSupportsVision(providerId: string, modelId: string): boolean {
-    const db = getDb()
-    const model = db.query(`SELECT capabilities FROM models WHERE id = ? AND provider_id = ?`).get(modelId, providerId) as { capabilities: string } | undefined
-    if (!model?.capabilities) return false
+  async modelSupportsVision(providerId: string, modelId: string): Promise<boolean> {
+    const modelsCol = await col<ModelDoc>("models")
+    const entry = await modelsCol.get(modelId)
+    if (!entry || entry.doc.provider_id !== providerId || !entry.doc.capabilities) return false
     try {
-      const caps = JSON.parse(model.capabilities) as string[]
+      const caps = JSON.parse(entry.doc.capabilities) as string[]
       return caps.includes("vision")
     } catch {
       return false

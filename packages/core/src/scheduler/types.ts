@@ -5,7 +5,6 @@
  * All names use "CronJob" terminology (formerly ScheduledTask).
  */
 
-import type { Database } from "bun:sqlite";
 import type { Cron } from "croner";
 
 /**

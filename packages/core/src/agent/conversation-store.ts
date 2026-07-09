@@ -1,22 +1,23 @@
 /**
- * Conversation Store — persists message history in the `conversations` table.
+ * Conversation Store — persists message history in the `conversations` HiveDB collection.
  * Replaces the LangGraph BunSqliteSaver + lg_checkpoints approach.
  *
- * Also manages: summaries (SQLite), scratchpad (HiveDB collection — first
- * table migrated off SQLite onto @johpaz/hive-db's document collections).
+ * Also manages: summaries and scratchpad, both HiveDB document collections.
  */
 
-import { getDb } from "../storage/sqlite"
-import { getSearchDb } from "../storage/hivedb"
+import { col, nextId, bumpRollup } from "../storage/hive"
+import { getHiveDb } from "../storage/hivedb"
 import { logger } from "../utils/logger"
 import type { LLMMessage, ContentPart } from "./llm-client"
 import { estimateTokens } from "../utils/toon"
+import type { ConversationDoc, SummaryDoc } from "../storage/collections"
 
 const log = logger.child("conv-store")
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface StoredMessage {
+  /** Per-thread monotonic sequence number (NOT globally unique — scope every comparison to a single threadId). */
   id: number
   thread_id: string
   channel: string
@@ -30,9 +31,30 @@ export interface StoredMessage {
   created_at: number
 }
 
+function storageId(threadId: string, seq: number): string {
+  return `${threadId}:${String(seq).padStart(15, "0")}`
+}
+
+function toStoredMessage(id: string, doc: ConversationDoc): StoredMessage {
+  const seq = parseInt(id.slice(id.lastIndexOf(":") + 1), 10)
+  return {
+    id: seq,
+    thread_id: doc.thread_id,
+    channel: doc.channel,
+    role: doc.role,
+    content: doc.content,
+    tool_calls_json: doc.tool_calls_json,
+    tool_call_id: doc.tool_call_id,
+    reasoning_content: doc.reasoning_content,
+    content_multimodal: doc.content_multimodal,
+    token_count: doc.token_count,
+    created_at: doc.created_at,
+  }
+}
+
 // ─── Message operations ───────────────────────────────────────────────────────
 
-export function addMessage(
+export async function addMessage(
   threadId: string,
   role: StoredMessage["role"],
   content: string | ContentPart[],
@@ -42,8 +64,7 @@ export function addMessage(
     tool_call_id?: string
     reasoning_content?: string
   }
-): number {
-  const db = getDb()
+): Promise<number> {
   // Handle multimodal content by extracting text for the content column
   const textContent = typeof content === "string"
     ? content
@@ -54,37 +75,41 @@ export function addMessage(
   const content_multimodal = Array.isArray(content) ? JSON.stringify(content) : null
   const tool_calls_json = opts?.tool_calls ? JSON.stringify(opts.tool_calls) : null
 
-  const result = db.query(`
-    INSERT INTO conversations (thread_id, channel, role, content, content_multimodal, tool_calls_json, tool_call_id, reasoning_content, token_count, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
-    RETURNING id
-  `).get(
-    threadId,
-    opts?.channel ?? "webchat",
+  const paddedSeq = await nextId(`conversations:${threadId}`)
+  const seq = parseInt(paddedSeq, 10)
+  const now = Date.now()
+
+  const conversationsCol = await col<ConversationDoc>("conversations")
+  await conversationsCol.put(storageId(threadId, seq), {
+    id: storageId(threadId, seq),
+    thread_id: threadId,
+    channel: opts?.channel ?? "webchat",
     role,
-    textContent,
+    content: textContent,
     content_multimodal,
     tool_calls_json,
-    opts?.tool_call_id ?? null,
-    opts?.reasoning_content ?? null,
+    tool_call_id: opts?.tool_call_id ?? null,
+    reasoning_content: opts?.reasoning_content ?? null,
     // Estimate tokens: content + tool_calls JSON
-    Math.max(1, estimateTokens(textContent) + estimateTokens(tool_calls_json ?? "")),
-  ) as { id: number }
+    token_count: Math.max(1, estimateTokens(textContent) + estimateTokens(tool_calls_json ?? "")),
+    created_at: now,
+    updated_at: now,
+  }, { expectedVersion: 0 })
 
-  return result.id
+  // Fire-and-forget — never block message persistence on the activity chart rollup.
+  const hour = new Date(now).toISOString().slice(0, 13)
+  bumpRollup("activityRollups", hour, { messageCount: 1 }).catch(() => {})
+
+  return seq
 }
 
 /**
  * Returns all messages for the thread ordered oldest → newest.
  */
-export function getHistory(threadId: string, limit = 200): StoredMessage[] {
-  const db = getDb()
-  return db.query(`
-    SELECT * FROM conversations
-    WHERE thread_id = ?
-    ORDER BY id ASC
-    LIMIT ?
-  `).all(threadId, limit) as StoredMessage[]
+export async function getHistory(threadId: string, limit = 200): Promise<StoredMessage[]> {
+  const conversationsCol = await col<ConversationDoc>("conversations")
+  const entries = await conversationsCol.scan({ prefix: `${threadId}:`, limit })
+  return entries.map(e => toStoredMessage(e.id, e.doc))
 }
 
 /**
@@ -95,15 +120,12 @@ export function getHistory(threadId: string, limit = 200): StoredMessage[] {
  * tool_call_id is not present in the loaded window (it was compacted away).
  * Sending orphaned tool messages to the LLM causes provider errors.
  */
-export function getRecentMessages(threadId: string, n: number): StoredMessage[] {
-  const db = getDb()
-  const rows = db.query(`
-    SELECT * FROM conversations
-    WHERE thread_id = ? AND role != 'tool'
-    ORDER BY id DESC
-    LIMIT ?
-  `).all(threadId, n) as StoredMessage[]
-  return stripLeadingOrphanedTools(rows.reverse())
+export async function getRecentMessages(threadId: string, n: number): Promise<StoredMessage[]> {
+  const conversationsCol = await col<ConversationDoc>("conversations")
+  const entries = await conversationsCol.scan({ prefix: `${threadId}:`, reverse: true })
+  const nonTool = entries.filter(e => e.doc.role !== "tool").slice(0, n)
+  const rows = nonTool.map(e => toStoredMessage(e.id, e.doc)).reverse()
+  return stripLeadingOrphanedTools(rows)
 }
 
 function stripLeadingOrphanedTools(rows: StoredMessage[]): StoredMessage[] {
@@ -135,32 +157,27 @@ function stripLeadingOrphanedTools(rows: StoredMessage[]): StoredMessage[] {
   return start > 0 ? rows.slice(start) : rows
 }
 
-export function getMessageCount(threadId: string): number {
-  const db = getDb()
-  const row = db.query(
-    "SELECT COUNT(*) as cnt FROM conversations WHERE thread_id = ?"
-  ).get(threadId) as { cnt: number }
-  return row.cnt
+export async function getMessageCount(threadId: string): Promise<number> {
+  const conversationsCol = await col<ConversationDoc>("conversations")
+  const entries = await conversationsCol.scan({ prefix: `${threadId}:` })
+  return entries.length
 }
 
-export function getTotalTokens(threadId: string): number {
-  const db = getDb()
-  const row = db.query(
-    "SELECT COALESCE(SUM(token_count), 0) as total FROM conversations WHERE thread_id = ?"
-  ).get(threadId) as { total: number }
-  return row.total
+export async function getTotalTokens(threadId: string): Promise<number> {
+  const conversationsCol = await col<ConversationDoc>("conversations")
+  const entries = await conversationsCol.scan({ prefix: `${threadId}:` })
+  return entries.reduce((sum, e) => sum + e.doc.token_count, 0)
 }
 
 /**
  * Messages after a given message ID (for incremental summary updates).
  */
-export function getMessagesAfter(threadId: string, afterId: number): StoredMessage[] {
-  const db = getDb()
-  return db.query(`
-    SELECT * FROM conversations
-    WHERE thread_id = ? AND id > ?
-    ORDER BY id ASC
-  `).all(threadId, afterId) as StoredMessage[]
+export async function getMessagesAfter(threadId: string, afterId: number): Promise<StoredMessage[]> {
+  const conversationsCol = await col<ConversationDoc>("conversations")
+  const entries = await conversationsCol.scan({ prefix: `${threadId}:` })
+  return entries
+    .map(e => toStoredMessage(e.id, e.doc))
+    .filter(m => m.id > afterId)
 }
 
 // ─── Convert stored messages → LLMMessage array ───────────────────────────────
@@ -188,29 +205,31 @@ export interface Summary {
   messages_covered: number
 }
 
-export function getSummary(threadId: string): Summary | null {
-  const db = getDb()
-  return db.query(
-    "SELECT summary, last_message_id, messages_covered FROM summaries WHERE thread_id = ?"
-  ).get(threadId) as Summary | null
+export async function getSummary(threadId: string): Promise<Summary | null> {
+  const summariesCol = await col<SummaryDoc>("summaries")
+  const entry = await summariesCol.get(threadId)
+  if (!entry) return null
+  return {
+    summary: entry.doc.summary,
+    last_message_id: entry.doc.last_message_id ? parseInt(entry.doc.last_message_id, 10) : 0,
+    messages_covered: entry.doc.messages_covered,
+  }
 }
 
-export function saveSummary(
+export async function saveSummary(
   threadId: string,
   summary: string,
   messagesCovered: number,
   lastMessageId: number
-): void {
-  const db = getDb()
-  db.query(`
-    INSERT INTO summaries (thread_id, summary, messages_covered, last_message_id)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(thread_id) DO UPDATE SET
-      summary        = excluded.summary,
-      messages_covered = excluded.messages_covered,
-      last_message_id  = excluded.last_message_id,
-      updated_at       = unixepoch()
-  `).run(threadId, summary, messagesCovered, lastMessageId)
+): Promise<void> {
+  const summariesCol = await col<SummaryDoc>("summaries")
+  const existing = await summariesCol.get(threadId)
+  await summariesCol.put(threadId, {
+    thread_id: threadId,
+    summary,
+    messages_covered: messagesCovered,
+    last_message_id: String(lastMessageId),
+  }, existing ? { expectedVersion: existing.version } : { expectedVersion: 0 })
 }
 
 // ─── Scratchpad (HiveDB collection) ────────────────────────────────────────────
@@ -248,7 +267,7 @@ function scratchpadNoteId(threadId: string, key: string): string {
 }
 
 async function scratchpadCollection() {
-  const db = await getSearchDb()
+  const db = await getHiveDb()
   return db.collection<ScratchpadDoc>("scratchpad")
 }
 
