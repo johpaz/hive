@@ -25,6 +25,8 @@ export interface Message {
   timestamp: string;
   metadata?: Record<string, unknown>;
   process?: MessageProcess;
+  /** Live raw reasoning/thinking text from the model, when the provider streams it. */
+  reasoning?: string;
   audio?: {
     base64?: string;
     url?: string;

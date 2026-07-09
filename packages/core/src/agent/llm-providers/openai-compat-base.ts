@@ -264,6 +264,7 @@ export abstract class OpenAICompatBase implements LLMProvider {
       }
       if (delta.reasoning_content) {
         reasoning_content += delta.reasoning_content
+        options.onReasoningToken?.(delta.reasoning_content)
       }
       if (delta.tool_calls) {
         for (const tc of delta.tool_calls) {

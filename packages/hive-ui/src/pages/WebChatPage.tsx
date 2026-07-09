@@ -22,7 +22,7 @@ export function WebChatPage() {
   const agents = useGlobalConfigStore((s) => s.agents);
   const fetchAgents = useGlobalConfigStore((s) => s.fetchAgents);
   const sessionId = currentUser?.id || "default";
-  const { handleStreamingChunk, handleAudioMessage, handleProgress, handleProcess, handleTyping, resetStreamingRef } = useChatStreaming(agentId, sessionId);
+  const { handleStreamingChunk, handleReasoningChunk, handleAudioMessage, handleProgress, handleProcess, handleTyping, resetStreamingRef } = useChatStreaming(agentId, sessionId);
   const narration = useNarration();
 
   const isConnected = status === "connected";
@@ -66,6 +66,7 @@ export function WebChatPage() {
   useEffect(() => {
     const unsubMsg = subscribe("message", handleStreamingChunk);
     const unsubResp = subscribe("response", handleStreamingChunk);
+    const unsubReasoning = subscribe("reasoning", handleReasoningChunk);
     const unsubAudio = subscribe("audio", handleAudioMessage);
     const unsubProgress = subscribe("progress", handleProgress);
     const unsubProcess = subscribe("process", handleProcess);
@@ -73,12 +74,13 @@ export function WebChatPage() {
     return () => {
       unsubMsg();
       unsubResp();
+      unsubReasoning();
       unsubAudio();
       unsubProgress();
       unsubProcess();
       unsubTyping();
     };
-  }, [subscribe, handleStreamingChunk, handleAudioMessage, handleProgress, handleProcess, handleTyping]);
+  }, [subscribe, handleStreamingChunk, handleReasoningChunk, handleAudioMessage, handleProgress, handleProcess, handleTyping]);
 
   useEffect(() => {
     if (isConnected) {

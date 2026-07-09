@@ -2285,6 +2285,16 @@ export async function startGateway(config: Config): Promise<void> {
                       isStep: false,
                     } as OutboundMessage));
                   },
+                  onReasoningToken: async (token: string) => {
+                    if (signal.aborted) return;
+                    ws.send(JSON.stringify({
+                      type: "reasoning",
+                      id: messageId,
+                      sessionId: routingSessionId,
+                      content: token,
+                      isChunk: true,
+                    } as OutboundMessage));
+                  },
                   onStep: async (step) => {
                     if (signal.aborted) return;
                     processReporter?.step(step);
@@ -2532,6 +2542,16 @@ export async function startGateway(config: Config): Promise<void> {
                     content: token,
                     isChunk: true,
                     isStep: false,
+                  } as OutboundMessage));
+                },
+                onReasoningToken: async (token: string) => {
+                  if (signal.aborted) return;
+                  ws.send(JSON.stringify({
+                    type: "reasoning",
+                    id: messageId,
+                    sessionId: routingSessionId,
+                    content: token,
+                    isChunk: true,
                   } as OutboundMessage));
                 },
                 onStep: async (step) => {

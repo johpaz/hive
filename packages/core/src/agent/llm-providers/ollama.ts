@@ -5,6 +5,16 @@ import type { ContentPart, LLMMessage } from "../llm-client"
 
 const log = logger.child("llm-client")
 
+// Local models known to support Ollama's `think` request flag (returns
+// message.thinking separate from message.content). Conservative allowlist —
+// unrecognized models don't get `think:true` since some may error on it
+// rather than silently ignore it.
+const THINKING_CAPABLE_MODEL_PATTERNS = [/deepseek-r1/i, /^qwq/i, /qwen3.*think/i]
+
+function supportsThinking(model: string): boolean {
+  return THINKING_CAPABLE_MODEL_PATTERNS.some((re) => re.test(model))
+}
+
 export class OllamaProvider implements LLMProvider {
   private _convertMessage(msg: LLMMessage): any {
     if (typeof msg.content === "string") {
@@ -94,20 +104,30 @@ export class OllamaProvider implements LLMProvider {
         ` num_ctx=${runtimeOptions.num_ctx}`
       )
 
+      const thinkEnabled = options.thinking?.enabled && supportsThinking(modelName)
+
       const stream = await client.chat({
         model: modelName,
         messages,
         tools: tools?.length ? tools : undefined,
         options: Object.keys(runtimeOptions).length ? runtimeOptions : undefined,
         stream: true,
-      })
+        ...(thinkEnabled ? { think: true } : {}),
+      } as any)
 
       let content = ""
+      let reasoning_content = ""
       let promptEvalCount = 0
       let evalCount = 0
       const tool_calls: LLMToolCall[] = []
 
       for await (const part of stream) {
+        const thinkingDelta = (part.message as any)?.thinking ?? ""
+        if (thinkingDelta) {
+          reasoning_content += thinkingDelta
+          options.onReasoningToken?.(thinkingDelta)
+        }
+
         const delta = part.message?.content ?? ""
         if (delta) {
           content += delta
@@ -133,6 +153,7 @@ export class OllamaProvider implements LLMProvider {
 
       return {
         content,
+        reasoning_content: reasoning_content || undefined,
         tool_calls: tool_calls.length ? tool_calls : undefined,
         stop_reason: tool_calls.length > 0 ? "tool_calls" : "stop",
         usage:

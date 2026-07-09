@@ -27,7 +27,7 @@ export interface InboundMessage {
 }
 
 export interface OutboundMessage {
-  type: "message" | "stream" | "status" | "error" | "pong" | "command_result" | "joined" | "typing" | "audio" | "welcome" | "progress" | "process";
+  type: "message" | "stream" | "status" | "error" | "pong" | "command_result" | "joined" | "typing" | "audio" | "welcome" | "progress" | "process" | "reasoning";
   sessionId: string;
   id?: string; // Message ID for streaming
   messageId?: string;

@@ -149,6 +149,7 @@ export class GeminiProvider implements LLMProvider {
     if (systemText) config.systemInstruction = systemText
     if (options.maxTokens) config.maxOutputTokens = options.maxTokens
     if (options.temperature !== undefined) config.temperature = options.temperature
+    if (options.thinking?.enabled) config.thinkingConfig = { includeThoughts: true }
     if (options.tools?.length) {
       config.tools = [{
         functionDeclarations: options.tools.map((t) => ({
@@ -181,9 +182,14 @@ export class GeminiProvider implements LLMProvider {
     const parts: any[] = candidate?.content?.parts ?? []
 
     let content = ""
+    let reasoning_content = ""
     const tool_calls: LLMToolCall[] = []
 
     for (const part of parts) {
+      if (part.thought && part.text) {
+        reasoning_content += part.text
+        continue
+      }
       if (part.text) content += part.text
       if (part.functionCall) {
         tool_calls.push({
@@ -200,9 +206,14 @@ export class GeminiProvider implements LLMProvider {
         : candidate?.finishReason === "MAX_TOKENS" ? "max_tokens"
           : "stop"
 
+    // Gemini has no streaming path (generateContent, not generateContentStream),
+    // so any thought content only arrives here — emit it as a single chunk.
+    if (reasoning_content) options.onReasoningToken?.(reasoning_content)
+
     const usageMeta = response.usageMetadata
     return {
       content,
+      reasoning_content: reasoning_content || undefined,
       tool_calls: tool_calls.length ? tool_calls : undefined,
       stop_reason,
       usage: usageMeta ? {

@@ -30,6 +30,7 @@ export interface ModelOptions {
   tools?: Record<string, any>
   maxSteps?: number
   onToken?: (token: string) => void
+  onReasoningToken?: (token: string) => void
   onStep?: (step: StepEvent) => Promise<void>
   threadId?: string
   userId?: string
@@ -97,6 +98,7 @@ export class AgentRunner {
           },
           signal: options.signal,
           onToken: options.onToken,
+          onReasoningToken: options.onReasoningToken,
         }
       )
 

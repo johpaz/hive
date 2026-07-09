@@ -1,6 +1,6 @@
 import { logger } from "../../utils/logger"
 import { normalizeToolName } from "./interface"
-import type { LLMCallOptions, LLMProvider, LLMResponse, LLMToolCall } from "./interface"
+import type { LLMCallOptions, LLMProvider, LLMResponse, LLMToolCall, ThinkingBlock } from "./interface"
 import type { ContentPart, LLMMessage } from "../llm-client"
 
 const log = logger.child("llm-client")
@@ -83,6 +83,17 @@ export class AnthropicProvider implements LLMProvider {
 
       if (msg.role === "assistant" && msg.tool_calls?.length) {
         const content: any[] = []
+        // Extended thinking blocks must be replayed verbatim (with signature) before
+        // any tool_use block, or the API rejects the request with a 400.
+        if (msg.thinking_blocks?.length) {
+          for (const tb of msg.thinking_blocks) {
+            content.push(
+              tb.type === "thinking"
+                ? { type: "thinking", thinking: tb.thinking, signature: tb.signature }
+                : { type: "redacted_thinking", data: tb.data }
+            )
+          }
+        }
         if (msg.content) content.push({ type: "text", text: msg.content })
         for (const tc of msg.tool_calls) {
           let input: Record<string, unknown>
@@ -140,6 +151,10 @@ export class AnthropicProvider implements LLMProvider {
       // Track partial tool inputs by index
       const partialInputs: Record<number, string> = {}
       const toolMeta: Record<number, { id: string; name: string }> = {}
+      // Track thinking/redacted_thinking blocks by index — needed both for live
+      // display (onReasoningToken) and to round-trip the signed block verbatim
+      // in the next turn if this response also contains tool calls.
+      const thinkingBlockState: Record<number, { type: "thinking" | "redacted_thinking"; thinking: string; signature: string; data: string }> = {}
 
       for await (const event of stream) {
         if (event.type === "content_block_start") {
@@ -148,6 +163,10 @@ export class AnthropicProvider implements LLMProvider {
             const originalName = toolNameMap.get(wireName) ?? wireName
             toolMeta[event.index] = { id: event.content_block.id, name: originalName }
             partialInputs[event.index] = ""
+          } else if (event.content_block.type === "thinking") {
+            thinkingBlockState[event.index] = { type: "thinking", thinking: "", signature: "", data: "" }
+          } else if ((event.content_block as any).type === "redacted_thinking") {
+            thinkingBlockState[event.index] = { type: "redacted_thinking", thinking: "", signature: "", data: (event.content_block as any).data ?? "" }
           }
         } else if (event.type === "content_block_delta") {
           if (event.delta.type === "text_delta") {
@@ -155,6 +174,10 @@ export class AnthropicProvider implements LLMProvider {
             if (options.onToken) options.onToken(event.delta.text)
           } else if (event.delta.type === "thinking_delta") {
             thinking_content += event.delta.thinking
+            options.onReasoningToken?.(event.delta.thinking)
+            if (thinkingBlockState[event.index]) thinkingBlockState[event.index].thinking += event.delta.thinking
+          } else if ((event.delta as any).type === "signature_delta") {
+            if (thinkingBlockState[event.index]) thinkingBlockState[event.index].signature += (event.delta as any).signature
           } else if (event.delta.type === "input_json_delta") {
             if (partialInputs[event.index] !== undefined) {
               partialInputs[event.index] += event.delta.partial_json
@@ -162,6 +185,16 @@ export class AnthropicProvider implements LLMProvider {
           }
         }
       }
+
+      const thinking_blocks: ThinkingBlock[] = Object.keys(thinkingBlockState)
+        .map(Number)
+        .sort((a, b) => a - b)
+        .map((idx) => {
+          const b = thinkingBlockState[idx]
+          return b.type === "thinking"
+            ? { type: "thinking" as const, thinking: b.thinking, signature: b.signature }
+            : { type: "redacted_thinking" as const, data: b.data }
+        })
 
       const finalMsg = await stream.finalMessage()
 
@@ -179,6 +212,7 @@ export class AnthropicProvider implements LLMProvider {
       return {
         content,
         thinking_content: thinking_content || undefined,
+        thinking_blocks: thinking_blocks.length ? thinking_blocks : undefined,
         tool_calls: tool_calls.length ? tool_calls : undefined,
         stop_reason:
           finalMsg.stop_reason === "tool_use" ? "tool_calls"

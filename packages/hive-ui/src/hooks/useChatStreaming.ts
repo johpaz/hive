@@ -122,6 +122,24 @@ export function useChatStreaming(agentId: string, sessionId: string) {
     [agentId, sessionId, addMessage, updateMessage, setLoading, clearSteps, setStreamingMessageId]
   );
 
+  // Reasoning always precedes the final answer's content chunks for a turn, so
+  // this doesn't drive loading/cleanup state — handleStreamingChunk's isChunk:false
+  // still owns "the whole turn is done".
+  const handleReasoningChunk = useCallback(
+    (data: any) => {
+      if (!data.content) return;
+      const messageId = streamingMessageIdRef.current || data.id || generateId();
+      const existingMessage = ensureAgentMessage(messageId, data.timestamp);
+
+      streamingMessageIdRef.current = messageId;
+      setStreamingMessageId(messageId);
+      updateMessage(messageId, {
+        reasoning: (existingMessage.reasoning || "") + data.content,
+      });
+    },
+    [ensureAgentMessage, updateMessage, setStreamingMessageId]
+  );
+
   const handleAudioMessage = useCallback(
     (data: any) => {
       const messageId = data.id || generateId();
@@ -221,6 +239,7 @@ export function useChatStreaming(agentId: string, sessionId: string) {
 
   return {
     handleStreamingChunk,
+    handleReasoningChunk,
     handleAudioMessage,
     handleProgress,
     handleProcess,

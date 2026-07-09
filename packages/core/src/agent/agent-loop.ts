@@ -50,6 +50,8 @@ export interface AgentLoopOptions {
   taskContext?: string | ContentPart[]
   onStep?: (step: StepEvent) => Promise<void>
   onToken?: (token: string) => void
+  /** Live reasoning/thinking tokens as they stream, for display only. */
+  onReasoningToken?: (token: string) => void
   /** User ID for context propagation */
   userId?: string
   /** Abort signal to stop generation mid-execution */
@@ -212,6 +214,10 @@ export async function* runAgent(
           opts.onToken?.(token)
         }
         : undefined,
+      onReasoningToken: opts.onReasoningToken,
+      // Always requested; each provider decides internally whether/how to honor
+      // it based on its own model-capability checks (safe no-op otherwise).
+      thinking: { enabled: true },
     })
 
     // Accumulate usage
@@ -248,6 +254,7 @@ export async function* runAgent(
       content: response.content,
       tool_calls: response.tool_calls,
       reasoning_content: response.reasoning_content,
+      thinking_blocks: response.thinking_blocks,
     })
     // Note: assistant messages with tool_calls are NOT persisted to DB.
     // Only the final text response to the user is saved.
@@ -716,6 +723,7 @@ export class AgentLoop {
       }
       signal?: AbortSignal
       onToken?: (token: string) => void
+      onReasoningToken?: (token: string) => void
       onStep?: (step: StepEvent) => Promise<void>
       /** Extra tools to force into the LLM loadout (tests/evals). */
       extraTools?: any[]
@@ -764,6 +772,7 @@ export class AgentLoop {
       userId,
       signal: config.signal,
       onToken: config.onToken,
+      onReasoningToken: config.onReasoningToken,
       onStep: config.onStep,
       extraTools: config.extraTools,
     })

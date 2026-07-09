@@ -34,10 +34,12 @@ function ProcessBlock({
   process,
   fallbackSteps,
   isStreaming,
+  reasoning,
 }: {
   process?: Message["process"];
   fallbackSteps: string[];
   isStreaming?: boolean;
+  reasoning?: string;
 }) {
   const fallbackItems = fallbackSteps.map((step, index) => ({
     id: `fallback-${index}-${step}`,
@@ -51,7 +53,7 @@ function ProcessBlock({
   const [manuallyOpen, setManuallyOpen] = useState(false);
   const open = isActive || manuallyOpen;
 
-  if (!items.length && !isActive) return null;
+  if (!items.length && !isActive && !reasoning) return null;
 
   const title = isActive ? "Pensando" : status === "error" ? "Proceso interrumpido" : "Proceso";
   const summary = process?.summary || (isActive ? "Trabajando en la respuesta" : `${items.length} pasos`);
@@ -72,6 +74,11 @@ function ProcessBlock({
       </button>
       {open && (
         <div className="space-y-2 border-t border-white/10 px-3 py-2">
+          {reasoning && (
+            <div className="whitespace-pre-wrap break-words text-[12px] italic leading-relaxed text-white/45 pb-2 mb-2 border-b border-white/5">
+              {reasoning}
+            </div>
+          )}
           {items.length > 0 ? items.map((item) => (
             <div key={item.id} className="flex min-w-0 items-start gap-2 text-xs text-white/60">
               <Zap className="mt-0.5 h-3 w-3 shrink-0 text-blue-400/70" />
@@ -80,12 +87,12 @@ function ProcessBlock({
                 {item.detail && <div className="mt-0.5 break-words text-[11px] text-white/35">{item.detail}</div>}
               </div>
             </div>
-          )) : (
+          )) : !reasoning ? (
             <div className="flex items-center gap-2 text-xs text-white/45">
               <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
               Analizando la solicitud
             </div>
-          )}
+          ) : null}
         </div>
       )}
     </div>
@@ -259,7 +266,7 @@ export function ChatMessage({ message, userName = "Tú", agentName = "Agente", i
   const isSystem = message.type === "system";
   const hasAudio = !!message.audio?.base64 || !!message.audio?.url;
   const hasContent = message.content.trim().length > 0;
-  const showProcess = !!message.process || currentSteps.length > 0 || (!!isStreaming && !hasContent);
+  const showProcess = !!message.process || !!message.reasoning || currentSteps.length > 0 || (!!isStreaming && !hasContent);
 
   if (isSystem) {
     return (
@@ -350,7 +357,7 @@ export function ChatMessage({ message, userName = "Tú", agentName = "Agente", i
         )}
 
         {showProcess && (
-          <ProcessBlock process={message.process} fallbackSteps={currentSteps} isStreaming={isStreaming} />
+          <ProcessBlock process={message.process} fallbackSteps={currentSteps} isStreaming={isStreaming} reasoning={message.reasoning} />
         )}
 
         {hasContent && (

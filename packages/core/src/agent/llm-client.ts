@@ -46,6 +46,14 @@ export type ContentPart =
   | { type: "image_base64"; base64: string; mimeType: string }
   | { type: "document"; base64: string; mimeType: string; fileName?: string }
 
+/** Raw Anthropic extended-thinking content block, round-tripped verbatim (signature required by the API when tool_use follows). */
+export interface ThinkingBlock {
+  type: "thinking" | "redacted_thinking"
+  thinking?: string
+  signature?: string
+  data?: string
+}
+
 export interface LLMMessage {
   role: "system" | "user" | "assistant" | "tool"
   content: string | ContentPart[]
@@ -54,6 +62,8 @@ export interface LLMMessage {
   name?: string
   /** Kimi K2 thinking mode — must be round-tripped when tool calls are present. */
   reasoning_content?: string
+  /** Anthropic extended thinking — must be round-tripped verbatim when tool calls are present. */
+  thinking_blocks?: ThinkingBlock[]
 }
 
 export interface LLMToolDef {
@@ -78,6 +88,8 @@ export interface LLMCallOptions {
   maxTokens?: number
   numGpu?: number
   onToken?: (token: string) => void
+  /** Live reasoning/thinking tokens as they stream, for display only (never sent back to the LLM). */
+  onReasoningToken?: (token: string) => void
   signal?: AbortSignal
   /** Enable extended thinking for supported models (Anthropic Claude 3.7+). */
   thinking?: { enabled: boolean; budget_tokens?: number }
@@ -92,6 +104,8 @@ export interface LLMResponse {
   reasoning_content?: string
   /** Anthropic extended thinking content (not sent to LLM, for display only). */
   thinking_content?: string
+  /** Anthropic extended thinking raw blocks — must be round-tripped verbatim when tool calls follow. */
+  thinking_blocks?: ThinkingBlock[]
 }
 
 // ─── Provider factory ─────────────────────────────────────────────────────────

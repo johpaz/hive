@@ -72,4 +72,71 @@ describe("useChatStreaming", () => {
     expect(state.streamingMessageId).toBeNull();
     expect(state.isLoading).toBe(false);
   });
+
+  it("accumulates live reasoning text and keeps it alongside the final content", () => {
+    const { result } = renderHook(() => useChatStreaming("main", "session-1"));
+
+    act(() => {
+      result.current.handleProcess({
+        type: "process",
+        id: "assistant-1",
+        messageId: "assistant-1",
+        processKind: "analysis",
+        processStatus: "thinking",
+        label: "Revisando tu solicitud",
+        timestamp: "2026-06-10T10:00:00.000Z",
+      });
+    });
+
+    act(() => {
+      result.current.handleReasoningChunk({
+        type: "reasoning",
+        id: "assistant-1",
+        isChunk: true,
+        content: "Primero necesito ",
+        timestamp: "2026-06-10T10:00:00.500Z",
+      });
+      result.current.handleReasoningChunk({
+        type: "reasoning",
+        id: "assistant-1",
+        isChunk: true,
+        content: "revisar la web.",
+        timestamp: "2026-06-10T10:00:00.800Z",
+      });
+    });
+
+    act(() => {
+      result.current.handleStreamingChunk({
+        type: "message",
+        id: "assistant-1",
+        isChunk: true,
+        content: "Hola",
+        timestamp: "2026-06-10T10:00:01.000Z",
+      });
+      result.current.handleStreamingChunk({
+        type: "message",
+        id: "assistant-1",
+        isChunk: true,
+        content: " mundo",
+        timestamp: "2026-06-10T10:00:02.000Z",
+      });
+    });
+
+    act(() => {
+      result.current.handleProcess({
+        type: "process",
+        id: "assistant-1",
+        messageId: "assistant-1",
+        processStatus: "done",
+        summary: "Listo",
+        timestamp: "2026-06-10T10:00:03.000Z",
+      });
+    });
+
+    const state = useChatStore.getState();
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0].reasoning).toBe("Primero necesito revisar la web.");
+    expect(state.messages[0].content).toBe("Hola mundo");
+    expect(state.messages[0].process?.status).toBe("done");
+  });
 });
