@@ -160,7 +160,7 @@ function toolErrorResult(
 }
 
 const DEFAULT_MAIN_THREAD_TOOL_NAMES = new Set([
-  // These tools depend on process-local singleton state (SQLite DB, live
+  // These tools depend on process-local singleton state (HiveDB handle, live
   // channel senders, schedulers, browser sessions, or in-memory services).
   "search_knowledge",
   "save_note",

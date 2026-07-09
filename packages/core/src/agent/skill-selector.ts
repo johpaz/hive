@@ -186,7 +186,7 @@ function matchTriggers(message: string, triggersJson: string | null): boolean {
  * 3. If trigger match found → return matching skill immediately
  * 4. Query the HiveDB capability index with the raw message
  * 5. Keep hits scoring at least RELEVANCE_RATIO of the top hit
- * 6. Hydrate skill details from SQLite and return top MAX_SKILLS_PER_TURN
+ * 6. Hydrate skill details from HiveDB and return top MAX_SKILLS_PER_TURN
  */
 export async function selectSkills(userMessage: string): Promise<SkillDescriptor[]> {
     const startTime = performance.now()
@@ -235,7 +235,7 @@ export async function selectSkills(userMessage: string): Promise<SkillDescriptor
         return []
     }
 
-    // Step 5: Hydrate full skill details from SQLite (already loaded above)
+    // Step 5: Hydrate full skill details from HiveDB (already loaded above)
     const skillMap = new Map(allSkills.map(s => [s.id, s]))
     const result: SkillDescriptor[] = []
 

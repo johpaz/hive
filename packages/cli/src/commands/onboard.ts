@@ -413,12 +413,12 @@ async function testLLMConnection(provider: string, apiKey: string, model: string
 }
 
 async function generateWorkspace(workspace: string, agentName: string, userName: string, userId: string, userLanguage: string, userTimezone: string, ethicsChoice: string): Promise<void> {
-  // Create workspace directory - .md files are now stored in SQLite
+  // Create workspace directory - .md files are now stored in HiveDB
   if (!fs.existsSync(workspace)) {
     fs.mkdirSync(workspace, { recursive: true });
   }
 
-  // Files are loaded from SQLite via the agent service
+  // Files are loaded from HiveDB via the agent service
   // Workspace directory is created but .md files are not generated here
   // The system will use default prompts from the database
 }

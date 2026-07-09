@@ -23,7 +23,7 @@ export type TaskStatus = "active" | "paused" | "completed" | "failed" | "cancell
 export type TaskRunStatus = "running" | "success" | "failed" | "timeout";
 
 /**
- * CronJob as stored in SQLite (cron_jobs table)
+ * CronJob as stored in the `cronJobs` HiveDB collection
  */
 export interface CronJob {
   id: string;

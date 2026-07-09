@@ -8,7 +8,7 @@
 export type NodeStatus = "PENDING" | "READY" | "RUNNING" | "COMPLETED" | "FAILED"
 
 export interface TaskNodeConfig {
-  /** Unique ID within this graph (can match SQLite task.id) */
+  /** Unique ID within this graph (can match the `tasks` collection's task.id) */
   id: string
   /** agents.id of the worker agent to execute */
   agentId: string
