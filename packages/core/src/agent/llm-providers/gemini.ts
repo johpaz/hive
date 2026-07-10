@@ -1,9 +1,72 @@
 import { logger } from "../../utils/logger"
-import { sanitizeMessages } from "./interface"
+import { sanitizeMessages, resolveMaxTokens } from "./interface"
 import type { LLMCallOptions, LLMProvider, LLMResponse, LLMToolCall } from "./interface"
 import type { ContentPart, LLMMessage } from "../llm-client"
 
 const log = logger.child("llm-client")
+
+/** Re-applies Gemini's structural invariants (INV-1/2/3) in place — needed both on the initial build and after compacting `contents` for a context-overflow retry. */
+function enforceGeminiConstraints(contents: any[]): void {
+  while (contents.length > 0 && contents[0].role === "model") {
+    log.warn(`[llm-client] Gemini: removed leading model turn (no preceding user turn)`)
+    contents.shift()
+  }
+
+  let changed = true
+  let safetyLimit = 10
+  while (changed && safetyLimit-- > 0) {
+    changed = false
+
+    for (let i = 0; i < contents.length; i++) {
+      const turn = contents[i]
+      const prev = i > 0 ? contents[i - 1] : null
+
+      // INV-3: merge consecutive model turns
+      if (turn.role === "model" && prev?.role === "model") {
+        prev.parts.push(...(turn.parts ?? []))
+        contents.splice(i, 1)
+        i--
+        changed = true
+        continue
+      }
+
+      // INV-1: model(fc) must come after user
+      if (turn.role === "model") {
+        const hasFc = turn.parts?.some((p: any) => p.functionCall)
+        if (hasFc && prev?.role !== "user") {
+          turn.parts = (turn.parts ?? []).filter((p: any) => !p.functionCall)
+          log.warn(`[llm-client] Gemini: stripped functionCall not after user turn (i=${i})`)
+          if (turn.parts.length === 0) { contents.splice(i, 1); i-- }
+          changed = true
+          continue
+        }
+      }
+
+      // INV-2: user(fr) must come after model(fc)
+      if (turn.role === "user") {
+        const hasFr = turn.parts?.some((p: any) => p.functionResponse)
+        const prevHasFc = prev?.role === "model" && prev?.parts?.some((p: any) => p.functionCall)
+        if (hasFr && !prevHasFc) {
+          turn.parts = (turn.parts ?? []).filter((p: any) => !p.functionResponse)
+          log.warn(`[llm-client] Gemini: stripped orphaned functionResponse (i=${i})`)
+          if (turn.parts.length === 0) { contents.splice(i, 1); i-- }
+          changed = true
+          continue
+        }
+      }
+    }
+  }
+
+  if (safetyLimit <= 0) {
+    log.error(`[llm-client] Gemini: constraint enforcement loop exhausted — message history may still violate Gemini constraints`)
+  }
+}
+
+/** Best-effort heuristic — Gemini has no structured error code for context overflow like llama.cpp's n_ctx. */
+function isGeminiContextOverflowError(err: any): boolean {
+  const msg = (err?.message ?? String(err) ?? "").toLowerCase()
+  return msg.includes("token") && (msg.includes("exceed") || msg.includes("too long") || msg.includes("maximum"))
+}
 
 export class GeminiProvider implements LLMProvider {
   private _convertContentPart(part: ContentPart): any {
@@ -90,66 +153,15 @@ export class GeminiProvider implements LLMProvider {
 
     // Gemini constraint enforcement
     const contents: any[] = rawContents
-
-    while (contents.length > 0 && contents[0].role === "model") {
-      log.warn(`[llm-client] Gemini: removed leading model turn (no preceding user turn)`)
-      contents.shift()
-    }
-
-    let changed = true
-    let safetyLimit = 10
-    while (changed && safetyLimit-- > 0) {
-      changed = false
-
-      for (let i = 0; i < contents.length; i++) {
-        const turn = contents[i]
-        const prev = i > 0 ? contents[i - 1] : null
-
-        // INV-3: merge consecutive model turns
-        if (turn.role === "model" && prev?.role === "model") {
-          prev.parts.push(...(turn.parts ?? []))
-          contents.splice(i, 1)
-          i--
-          changed = true
-          continue
-        }
-
-        // INV-1: model(fc) must come after user
-        if (turn.role === "model") {
-          const hasFc = turn.parts?.some((p: any) => p.functionCall)
-          if (hasFc && prev?.role !== "user") {
-            turn.parts = (turn.parts ?? []).filter((p: any) => !p.functionCall)
-            log.warn(`[llm-client] Gemini: stripped functionCall not after user turn (i=${i})`)
-            if (turn.parts.length === 0) { contents.splice(i, 1); i-- }
-            changed = true
-            continue
-          }
-        }
-
-        // INV-2: user(fr) must come after model(fc)
-        if (turn.role === "user") {
-          const hasFr = turn.parts?.some((p: any) => p.functionResponse)
-          const prevHasFc = prev?.role === "model" && prev?.parts?.some((p: any) => p.functionCall)
-          if (hasFr && !prevHasFc) {
-            turn.parts = (turn.parts ?? []).filter((p: any) => !p.functionResponse)
-            log.warn(`[llm-client] Gemini: stripped orphaned functionResponse (i=${i})`)
-            if (turn.parts.length === 0) { contents.splice(i, 1); i-- }
-            changed = true
-            continue
-          }
-        }
-      }
-    }
-
-    if (safetyLimit <= 0) {
-      log.error(`[llm-client] Gemini: constraint enforcement loop exhausted — message history may still violate Gemini constraints`)
-    }
+    enforceGeminiConstraints(contents)
 
     const config: any = {}
     if (systemText) config.systemInstruction = systemText
-    if (options.maxTokens) config.maxOutputTokens = options.maxTokens
+    const maxTokens = resolveMaxTokens(options.maxTokens, options.contextWindow)
+    if (maxTokens) config.maxOutputTokens = maxTokens
     if (options.temperature !== undefined) config.temperature = options.temperature
     if (options.thinking?.enabled) config.thinkingConfig = { includeThoughts: true }
+    if (options.signal) config.abortSignal = options.signal
     if (options.tools?.length) {
       config.tools = [{
         functionDeclarations: options.tools.map((t) => ({
@@ -162,7 +174,22 @@ export class GeminiProvider implements LLMProvider {
 
     log.info(`[llm-client] gemini/${options.model} — ${contents.length} turns, ${options.tools?.length ?? 0} tools`)
 
-    const response = await ai.models.generateContent({ model: options.model, contents, config })
+    let response
+    try {
+      response = await ai.models.generateContent({ model: options.model, contents, config })
+    } catch (err: any) {
+      if (!isGeminiContextOverflowError(err)) throw err
+      log.warn(`[llm-client] gemini: context overflow — compacting turns and retrying`)
+      const originalCount = contents.length
+      // Keep only the last ~33% of turns, then re-apply the structural invariants
+      // (compacting can orphan a functionCall/functionResponse pairing).
+      const keepRatio = Math.max(1, Math.floor(contents.length / 3))
+      contents.splice(0, contents.length - keepRatio)
+      enforceGeminiConstraints(contents)
+      if (config.maxOutputTokens) config.maxOutputTokens = Math.min(config.maxOutputTokens, 4096)
+      log.info(`[llm-client] gemini: compacted ${originalCount} turns → ${contents.length} turns, maxOutputTokens=${config.maxOutputTokens}`)
+      response = await ai.models.generateContent({ model: options.model, contents, config })
+    }
 
     const candidate = response.candidates?.[0]
 

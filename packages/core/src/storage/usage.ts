@@ -127,7 +127,10 @@ async function bumpUsageRollup(
   const MAX_RETRIES = 5;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     const existing = await rollupsCol.get(hour);
-    const doc = existing ? { ...existing.doc } : emptyRollup();
+    // Merge over emptyRollup() defaults, not just the raw existing doc — a rollup
+    // for this hour may have been created by recordToonSavings()'s generic
+    // bumpRollup() call, which never initializes byProvider/byModel.
+    const doc = existing ? { ...emptyRollup(), ...existing.doc } : emptyRollup();
 
     doc.inputTokens += delta.inputTokens;
     doc.outputTokens += delta.outputTokens;

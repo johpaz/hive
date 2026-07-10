@@ -1,5 +1,5 @@
 import { logger } from "../../utils/logger"
-import { sanitizeMessages } from "./interface"
+import { sanitizeMessages, resolveMaxTokens } from "./interface"
 import type { LLMCallOptions, LLMProvider, LLMResponse, LLMToolCall } from "./interface"
 import type { ContentPart, LLMMessage } from "../llm-client"
 
@@ -58,6 +58,9 @@ export class OllamaProvider implements LLMProvider {
       host,
       ...(Object.keys(headers).length ? { headers } : {}),
     })
+    // Ollama's client aborts all of its own in-flight streams — safe 1:1 with
+    // options.signal since a fresh client is created per call.
+    if (options.signal) options.signal.addEventListener("abort", () => client.abort(), { once: true })
 
     const messages = sanitizeMessages(options.messages).map((m): any => {
       if (m.role === "assistant" && m.tool_calls?.length) {
@@ -95,6 +98,8 @@ export class OllamaProvider implements LLMProvider {
     }
     if (options.numGpu !== undefined) runtimeOptions.num_gpu = options.numGpu
     if (options.temperature !== undefined) runtimeOptions.temperature = options.temperature
+    const maxTokens = resolveMaxTokens(options.maxTokens, options.contextWindow)
+    if (maxTokens) runtimeOptions.num_predict = maxTokens
 
     try {
 

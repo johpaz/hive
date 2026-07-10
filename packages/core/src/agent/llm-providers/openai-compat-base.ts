@@ -9,6 +9,40 @@ import type { ContentPart, LLMMessage } from "../llm-client"
 
 const log = logger.child("llm-client")
 
+/** Matches both generic "context length exceeded" phrasing and llama.cpp's exceed_context_size_error shape. */
+function isContextOverflowError(err: any, errMsg: string): boolean {
+  const status = err?.status ?? err?.response?.status
+  if (status !== 400) return false
+  if (err?.error?.type === "exceed_context_size_error" || err?.type === "exceed_context_size_error") return true
+  return errMsg.includes("context length") || errMsg.includes("input_tokens")
+    || errMsg.includes("maximum input length") || errMsg.includes("context size")
+}
+
+/** llama.cpp-style errors report the server's real context size in n_ctx — use it when present. */
+function extractRealContextSize(err: any): number | undefined {
+  return err?.error?.n_ctx ?? err?.n_ctx
+}
+
+/** Keeps system + last ~33% of messages, and shrinks max_tokens — using the real n_ctx when the error provided one. */
+function compactBodyForContextOverflow(body: any, err: any): void {
+  const kept: any[] = []
+  let systemMsg: any = null
+  for (const m of body.messages) {
+    if (m.role === "system") { systemMsg = m; continue }
+    kept.push(m)
+  }
+  const keepRatio = Math.max(1, Math.floor(kept.length / 3))
+  const trimmed = kept.slice(-keepRatio)
+  body.messages = systemMsg ? [systemMsg, ...trimmed] : trimmed
+
+  const realCtx = extractRealContextSize(err)
+  if (realCtx) {
+    body.max_tokens = Math.min(body.max_tokens ?? realCtx, Math.floor(realCtx * 0.25))
+  } else if (body.max_tokens) {
+    body.max_tokens = Math.min(body.max_tokens, 4096)
+  }
+}
+
 export abstract class OpenAICompatBase implements LLMProvider {
   constructor(protected readonly providerName: string) {}
 
@@ -130,34 +164,26 @@ export abstract class OpenAICompatBase implements LLMProvider {
       const status = err?.status ?? err?.response?.status
       const errMsg = (err?.error?.message ?? err?.message ?? "").toLowerCase()
 
-      // Retry 1: tools rejected by provider — remove tools and retry
-      if (sendTools && profile.retryWithoutToolsOnCodes.includes(status)) {
+      // Retry 1: context overflow — compact messages and retry. Checked BEFORE the
+      // tools-rejected branch below: a status-code-only check would otherwise catch
+      // a genuine context-overflow 400 first (many providers share 400 for both
+      // cases) and retry by stripping tools, which does nothing for an oversized
+      // prompt and just fails again the same way.
+      if (isContextOverflowError(err, errMsg)) {
+        log.warn(`[llm-client] ${this.providerName}: context overflow — compacting messages and retrying`)
+        const originalCount = body.messages.length
+        compactBodyForContextOverflow(body, err)
+        log.info(`[llm-client] ${this.providerName}: compacted ${originalCount} msgs → ${body.messages.length} msgs, max_tokens=${body.max_tokens}`)
+        response = await client.chat.completions.create(this.modifyRequestBody(body, options), { signal: options.signal })
+      }
+      // Retry 2: tools rejected by provider — remove tools and retry
+      else if (sendTools && profile.retryWithoutToolsOnCodes.includes(status)) {
         log.warn(`[llm-client] ${this.providerName}: tools rejected (HTTP ${status}) — retrying without tools`)
         const bodyNoTools = { ...body }
         delete bodyNoTools.tools
         delete bodyNoTools.tool_choice
         delete bodyNoTools.parallel_tool_calls
         response = await client.chat.completions.create(this.modifyRequestBody(bodyNoTools, options), { signal: options.signal })
-      }
-      // Retry 2: context overflow — compact messages and retry
-      else if (status === 400 && (errMsg.includes("context length") || errMsg.includes("input_tokens") || errMsg.includes("maximum input length"))) {
-        log.warn(`[llm-client] ${this.providerName}: context overflow — compacting messages and retrying`)
-        const compacted = [...body.messages]
-        const kept: any[] = []
-        let systemMsg: any = null
-        for (const m of compacted) {
-          if (m.role === "system") { systemMsg = m; continue }
-          kept.push(m)
-        }
-        // Keep only 33% of messages to free enough context budget
-        const keepRatio = Math.max(1, Math.floor(kept.length / 3))
-        const trimmed = kept.slice(-keepRatio)
-        body.messages = systemMsg ? [systemMsg, ...trimmed] : trimmed
-        // Reduce output budget to leave more room for input
-        if (body.max_tokens) body.max_tokens = Math.min(body.max_tokens, 4096)
-
-        log.info(`[llm-client] ${this.providerName}: compacted ${compacted.length} msgs → ${body.messages.length} msgs, max_tokens=${body.max_tokens}`)
-        response = await client.chat.completions.create(this.modifyRequestBody(body, options), { signal: options.signal })
       }
       else {
         throw err
@@ -216,28 +242,19 @@ export abstract class OpenAICompatBase implements LLMProvider {
       const status = err?.status ?? err?.response?.status
       const errMsg = (err?.error?.message ?? err?.message ?? "").toLowerCase()
 
-      if (sendTools && profile.retryWithoutToolsOnCodes.includes(status)) {
+      if (isContextOverflowError(err, errMsg)) {
+        log.warn(`[llm-client] ${this.providerName}: context overflow — compacting messages and retrying stream`)
+        const originalCount = body.messages.length
+        compactBodyForContextOverflow(body, err)
+        log.info(`[llm-client] ${this.providerName}: compacted ${originalCount} msgs → ${body.messages.length} msgs, max_tokens=${body.max_tokens}`)
+        stream = await client.chat.completions.create({ ...this.modifyRequestBody(body, options), stream: true }, { signal: options.signal })
+      } else if (sendTools && profile.retryWithoutToolsOnCodes.includes(status)) {
         log.warn(`[llm-client] ${this.providerName}: tools rejected (HTTP ${status}) — retrying stream without tools`)
         const bodyNoTools = { ...body }
         delete bodyNoTools.tools
         delete bodyNoTools.tool_choice
         delete bodyNoTools.parallel_tool_calls
         stream = await client.chat.completions.create({ ...this.modifyRequestBody(bodyNoTools, options), stream: true }, { signal: options.signal })
-      } else if (status === 400 && (errMsg.includes("context length") || errMsg.includes("input_tokens") || errMsg.includes("maximum input length"))) {
-        log.warn(`[llm-client] ${this.providerName}: context overflow — compacting messages and retrying stream`)
-        const compacted = [...body.messages]
-        const kept: any[] = []
-        let systemMsg: any = null
-        for (const m of compacted) {
-          if (m.role === "system") { systemMsg = m; continue }
-          kept.push(m)
-        }
-        const keepRatio = Math.max(1, Math.floor(kept.length / 3))
-        const trimmed = kept.slice(-keepRatio)
-        body.messages = systemMsg ? [systemMsg, ...trimmed] : trimmed
-        if (body.max_tokens) body.max_tokens = Math.min(body.max_tokens, 4096)
-        log.info(`[llm-client] ${this.providerName}: compacted ${compacted.length} msgs → ${body.messages.length} msgs, max_tokens=${body.max_tokens}`)
-        stream = await client.chat.completions.create({ ...this.modifyRequestBody(body, options), stream: true }, { signal: options.signal })
       } else {
         throw err
       }
