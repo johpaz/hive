@@ -1,5 +1,5 @@
 import { logger } from "../../utils/logger"
-import { normalizeToolName } from "./interface"
+import { normalizeToolName, resolveMaxTokens } from "./interface"
 import type { LLMCallOptions, LLMProvider, LLMResponse, LLMToolCall, ThinkingBlock } from "./interface"
 import type { ContentPart, LLMMessage } from "../llm-client"
 
@@ -122,7 +122,7 @@ export class AnthropicProvider implements LLMProvider {
 
     const body: any = {
       model: options.model,
-      max_tokens: options.maxTokens ?? 16384,
+      max_tokens: resolveMaxTokens(options.maxTokens, options.contextWindow) ?? 16384,
       messages: anthropicMessages,
     }
     if (systemText) body.system = systemText
@@ -146,7 +146,7 @@ export class AnthropicProvider implements LLMProvider {
     // Streaming via messages.stream()
     const useStream = true  // Always stream for better UX
     if (useStream) {
-      const stream = client.messages.stream({ ...body, ...(options.signal ? {} : {}) })
+      const stream = client.messages.stream(body, options.signal ? { signal: options.signal } : undefined)
 
       // Track partial tool inputs by index
       const partialInputs: Record<number, string> = {}

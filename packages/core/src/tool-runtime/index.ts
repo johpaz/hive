@@ -235,6 +235,25 @@ async function executeInMainThread(job: {
   }
 }
 
+/**
+ * Bounds a single tool execution to its own timeout window (per-operation, not
+ * an aggregate turn deadline). A slow tool loses its race and yields a normal
+ * error result — the underlying promise is left to settle on its own (main-thread
+ * tools have no cross-realm handle to kill), but the caller is freed to move on.
+ */
+export function executeInMainThreadWithTimeout(
+  job: { toolCall: ToolCallLike; allTools: RuntimeTool[]; toolConfig: ExecuteToolBatchOptions["toolConfig"] },
+  timeoutMs: number,
+): Promise<unknown> {
+  const toolName = job.toolCall.function.name
+  return Promise.race([
+    executeInMainThread(job),
+    new Promise<unknown>((resolve) => {
+      setTimeout(() => resolve(toolErrorResult(toolName, `Tool execution timed out after ${timeoutMs}ms`)), timeoutMs)
+    }),
+  ])
+}
+
 class ToolWorkerPool {
   private workers: WorkerSlot[] = []
   private queue: QueuedJob[] = []
@@ -492,11 +511,11 @@ export async function executeToolBatch(options: ExecuteToolBatchOptions): Promis
     const results: ToolBatchResult[] = []
     for (const toolCall of options.toolCalls) {
       const startedAt = performance.now()
-      const result = await executeInMainThread({
+      const result = await executeInMainThreadWithTimeout({
         toolCall,
         allTools: options.allTools,
         toolConfig: options.toolConfig,
-      })
+      }, runtimeConfig.toolTimeoutMs)
       results.push({
         toolCall,
         toolName: toolCall.function.name,

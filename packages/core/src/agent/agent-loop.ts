@@ -33,7 +33,30 @@ import { createStuckLoopDetector, getInterventionMessage, type StuckLoopState } 
 
 const log = logger.child("agent-loop")
 
-const DEFAULT_MAX_WALL_CLOCK_MS = 5 * 60 * 1000
+// Per-operation budget for a single LLM call — NOT an aggregate deadline for the
+// whole turn. Each call gets its own fresh window; a slow-but-healthy multi-step
+// turn (many quick operations) is never killed just for taking a while overall.
+const LLM_CALL_TIMEOUT_MS = 3 * 60 * 1000
+
+export class LLMCallTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`LLM call timed out after ${ms}ms`)
+    this.name = "LLMCallTimeoutError"
+  }
+}
+
+/** Bounds a single async operation to its own timeout window, independent of any caller. */
+export async function withTimeout<T>(op: () => Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new LLMCallTimeoutError(timeoutMs)), timeoutMs)
+  })
+  try {
+    return await Promise.race([op(), timeout])
+  } finally {
+    clearTimeout(timer!)
+  }
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,9 +117,6 @@ export async function* runAgent(
 
   const agentName = agent.name || opts.agentId
   const maxIterations = agent.max_iterations || 10
-  // max_wall_clock_ms has no column in the schema — always falls back to the default.
-  const maxWallClockMs = DEFAULT_MAX_WALL_CLOCK_MS
-  const wallClockDeadline = Date.now() + maxWallClockMs
 
   // Stuck-loop protection
   const stuckDetector = createStuckLoopDetector(loadConfig())
@@ -195,30 +215,35 @@ export async function* runAgent(
       break
     }
 
-    if (Date.now() > wallClockDeadline) {
-      log.warn(`[agent-loop] Wall-clock timeout exceeded (${maxWallClockMs}ms). Breaking.`)
-      finalContent = "La tarea tomó demasiado tiempo. Te sugiero dividirla en pasos más pequeños o darme más detalles para continuar."
-      break
-    }
-
     iterations++
 
     let streamedThisCall = false
-    const response = await callLLM({
-      ...providerCfg,
-      messages: clearOldToolResults(messages) as LLMMessage[],
-      tools: ctx.tools.length > 0 ? ctx.tools : undefined,
-      onToken: opts.onToken
-        ? (token: string) => {
-          streamedThisCall = true
-          opts.onToken?.(token)
-        }
-        : undefined,
-      onReasoningToken: opts.onReasoningToken,
-      // Always requested; each provider decides internally whether/how to honor
-      // it based on its own model-capability checks (safe no-op otherwise).
-      thinking: { enabled: true },
-    })
+    let response: Awaited<ReturnType<typeof callLLM>>
+    try {
+      response = await withTimeout(() => callLLM({
+        ...providerCfg,
+        messages: clearOldToolResults(messages) as LLMMessage[],
+        tools: ctx.tools.length > 0 ? ctx.tools : undefined,
+        signal: opts.signal,
+        onToken: opts.onToken
+          ? (token: string) => {
+            streamedThisCall = true
+            opts.onToken?.(token)
+          }
+          : undefined,
+        onReasoningToken: opts.onReasoningToken,
+        // Always requested; each provider decides internally whether/how to honor
+        // it based on its own model-capability checks (safe no-op otherwise).
+        thinking: { enabled: true },
+      }), LLM_CALL_TIMEOUT_MS)
+    } catch (err) {
+      if (err instanceof LLMCallTimeoutError) {
+        log.warn(`[agent-loop] ${err.message} at iteration ${iterations}. Breaking.`)
+        finalContent = "El modelo tardó demasiado en responder. Intentá de nuevo o simplificá la consulta."
+        break
+      }
+      throw err
+    }
 
     // Accumulate usage
     if (response.usage) {

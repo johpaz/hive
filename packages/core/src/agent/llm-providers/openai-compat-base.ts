@@ -2,6 +2,7 @@ import { logger } from "../../utils/logger"
 import {
   sanitizeMessages, requiresTemperature1, OPENAI_COMPAT_BASE_URLS,
   getProviderProfile, modelSupportsTools, normalizeToolName, normalizeToolSchema,
+  resolveMaxTokens,
 } from "./interface"
 import type { LLMCallOptions, LLMProvider, LLMResponse, LLMToolCall } from "./interface"
 import type { ContentPart, LLMMessage } from "../llm-client"
@@ -84,12 +85,8 @@ export abstract class OpenAICompatBase implements LLMProvider {
       messages: messagesForProvider,
       temperature: requiresTemperature1(this.providerName, options.model) ? 1 : (options.temperature ?? 0.7),
     }
-    if (options.maxTokens) {
-      body.max_tokens = options.maxTokens
-    } else if (options.contextWindow) {
-      // Reserve 15% of context window for output tokens, cap at 8192
-      body.max_tokens = Math.min(8192, Math.floor(options.contextWindow * 0.15))
-    }
+    const maxTokens = resolveMaxTokens(options.maxTokens, options.contextWindow)
+    if (maxTokens) body.max_tokens = maxTokens
     if (options.numCtx && isLocal) body.num_ctx = options.numCtx
 
     const profile = getProviderProfile(this.providerName)
@@ -128,7 +125,7 @@ export abstract class OpenAICompatBase implements LLMProvider {
 
     let response
     try {
-      response = await client.chat.completions.create(this.modifyRequestBody(body, options))
+      response = await client.chat.completions.create(this.modifyRequestBody(body, options), { signal: options.signal })
     } catch (err: any) {
       const status = err?.status ?? err?.response?.status
       const errMsg = (err?.error?.message ?? err?.message ?? "").toLowerCase()
@@ -140,7 +137,7 @@ export abstract class OpenAICompatBase implements LLMProvider {
         delete bodyNoTools.tools
         delete bodyNoTools.tool_choice
         delete bodyNoTools.parallel_tool_calls
-        response = await client.chat.completions.create(this.modifyRequestBody(bodyNoTools, options))
+        response = await client.chat.completions.create(this.modifyRequestBody(bodyNoTools, options), { signal: options.signal })
       }
       // Retry 2: context overflow — compact messages and retry
       else if (status === 400 && (errMsg.includes("context length") || errMsg.includes("input_tokens") || errMsg.includes("maximum input length"))) {
@@ -160,7 +157,7 @@ export abstract class OpenAICompatBase implements LLMProvider {
         if (body.max_tokens) body.max_tokens = Math.min(body.max_tokens, 4096)
 
         log.info(`[llm-client] ${this.providerName}: compacted ${compacted.length} msgs → ${body.messages.length} msgs, max_tokens=${body.max_tokens}`)
-        response = await client.chat.completions.create(this.modifyRequestBody(body, options))
+        response = await client.chat.completions.create(this.modifyRequestBody(body, options), { signal: options.signal })
       }
       else {
         throw err
@@ -214,7 +211,7 @@ export abstract class OpenAICompatBase implements LLMProvider {
   ): Promise<LLMResponse> {
     let stream
     try {
-      stream = await client.chat.completions.create({ ...this.modifyRequestBody(body, options), stream: true })
+      stream = await client.chat.completions.create({ ...this.modifyRequestBody(body, options), stream: true }, { signal: options.signal })
     } catch (err: any) {
       const status = err?.status ?? err?.response?.status
       const errMsg = (err?.error?.message ?? err?.message ?? "").toLowerCase()
@@ -225,7 +222,7 @@ export abstract class OpenAICompatBase implements LLMProvider {
         delete bodyNoTools.tools
         delete bodyNoTools.tool_choice
         delete bodyNoTools.parallel_tool_calls
-        stream = await client.chat.completions.create({ ...this.modifyRequestBody(bodyNoTools, options), stream: true })
+        stream = await client.chat.completions.create({ ...this.modifyRequestBody(bodyNoTools, options), stream: true }, { signal: options.signal })
       } else if (status === 400 && (errMsg.includes("context length") || errMsg.includes("input_tokens") || errMsg.includes("maximum input length"))) {
         log.warn(`[llm-client] ${this.providerName}: context overflow — compacting messages and retrying stream`)
         const compacted = [...body.messages]
@@ -240,7 +237,7 @@ export abstract class OpenAICompatBase implements LLMProvider {
         body.messages = systemMsg ? [systemMsg, ...trimmed] : trimmed
         if (body.max_tokens) body.max_tokens = Math.min(body.max_tokens, 4096)
         log.info(`[llm-client] ${this.providerName}: compacted ${compacted.length} msgs → ${body.messages.length} msgs, max_tokens=${body.max_tokens}`)
-        stream = await client.chat.completions.create({ ...this.modifyRequestBody(body, options), stream: true })
+        stream = await client.chat.completions.create({ ...this.modifyRequestBody(body, options), stream: true }, { signal: options.signal })
       } else {
         throw err
       }

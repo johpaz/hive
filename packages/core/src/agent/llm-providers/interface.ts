@@ -125,6 +125,25 @@ function deepStripSchema(obj: unknown): any {
   return result
 }
 
+// ─── Output token budget ───────────────────────────────────────────────────────
+
+const OUTPUT_RESERVE_RATIO = 0.15
+const MAX_OUTPUT_TOKENS_CEILING = 32768
+
+/**
+ * Derives the output token budget from the model's context_window (BD), reserving
+ * a fraction of it for generation. An explicit maxTokens always wins. The ceiling
+ * only guards against a misconfigured/absurd context_window — it must stay well
+ * above what any real seeded model's 15% reserve would produce (200k window → 30k),
+ * or every large-context model silently gets clamped to the same fixed number
+ * regardless of what's actually configured.
+ */
+export function resolveMaxTokens(explicitMaxTokens?: number, contextWindow?: number): number | undefined {
+  if (explicitMaxTokens) return explicitMaxTokens
+  if (!contextWindow) return undefined
+  return Math.min(MAX_OUTPUT_TOKENS_CEILING, Math.floor(contextWindow * OUTPUT_RESERVE_RATIO))
+}
+
 // ─── Temperature constraints ──────────────────────────────────────────────────
 
 /**

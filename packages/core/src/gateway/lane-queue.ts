@@ -29,7 +29,11 @@ export class LaneQueue {
   constructor(options: LaneQueueOptions = {}) {
     this.options = {
       maxConcurrency: options.maxConcurrency ?? 1,
-      taskTimeoutMs: options.taskTimeoutMs ?? 300000,
+      // Last-resort safety net for a runaway session, not the primary timeout
+      // mechanism — that now lives per-operation in agent-loop.ts (per LLM call)
+      // and tool-runtime/index.ts (per tool call), which can each fail fast
+      // without killing an otherwise-healthy multi-step turn.
+      taskTimeoutMs: options.taskTimeoutMs ?? 30 * 60 * 1000,
     };
   }
 
