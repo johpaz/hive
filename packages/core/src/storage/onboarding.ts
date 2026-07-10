@@ -446,18 +446,19 @@ export async function saveVoiceConfig(data: {
     const sttProviderId = await resolveVoiceProviderId(data.sttProvider);
     const ttsProviderId = await resolveVoiceProviderId(data.ttsProvider);
 
-    // Save STT API key to provider if provided
+    // Save STT API key to provider if provided.
+    // Note: this deliberately does NOT flip the provider's enabled/active flags —
+    // groq/openai/gemini/qwen are shared rows between voice (STT/TTS) and LLM chat,
+    // and voice's own "configured" check only looks at whether a key is stored, so
+    // touching those flags here would silently surface a voice-only key as a fully
+    // active LLM chat provider.
     if (data.sttApiKey && sttProviderId) {
-      const existing = await providersCol.get(sttProviderId);
-      if (existing) await providersCol.put(sttProviderId, { ...existing.doc, enabled: true, active: true }, { expectedVersion: existing.version });
       await storeProviderApiKey(sttProviderId, data.sttApiKey);
       log.info("✅ STT API key guardada en keychain", { provider: sttProviderId });
     }
 
-    // Save TTS API key to provider if provided
+    // Save TTS API key to provider if provided (see note above).
     if (data.ttsApiKey && ttsProviderId) {
-      const existing = await providersCol.get(ttsProviderId);
-      if (existing) await providersCol.put(ttsProviderId, { ...existing.doc, enabled: true, active: true }, { expectedVersion: existing.version });
       await storeProviderApiKey(ttsProviderId, data.ttsApiKey);
       log.info("✅ TTS API key guardada en keychain", { provider: ttsProviderId });
     }

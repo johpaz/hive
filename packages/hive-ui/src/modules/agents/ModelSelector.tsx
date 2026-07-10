@@ -42,8 +42,10 @@ export function ModelSelector({
     return baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1");
   };
 
-  // Dropdown options: only active providers with API key
-  const providerOptions = providers.filter(p => (p.enabled || p.active) && hasApiKey(p));
+  // Dropdown options: only active LLM providers with API key.
+  // category gates out providers activated purely for voice/OCR (e.g. elevenlabs, piper)
+  // from ever appearing as a chat provider option.
+  const providerOptions = providers.filter(p => (p.enabled || p.active) && hasApiKey(p) && (p.category ?? "llm") === "llm");
 
   // Configured provider (even if inactive) for display in trigger
   const configuredProvider = providers.find(p => p.id === selectedProviderId);

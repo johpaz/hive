@@ -70,9 +70,10 @@ export async function handleSaveVoiceProviderKey(
       return addCorsHeaders(Response.json({ success: false, error: "Unknown provider" }, { status: 400 }), req)
     }
 
-    // Activar sin pisar name/category/base_url existentes
-    await providersCol.put(providerId, { ...provider.doc, enabled: true, active: true }, { expectedVersion: provider.version })
-
+    // No tocar enabled/active: groq/openai/gemini/qwen son filas compartidas entre voz
+    // (STT/TTS) y chat LLM, y "configurado" para voz sólo depende de si hay key guardada
+    // (ver handleGetConfiguredVoiceProviders) — activar el provider aquí lo expondría
+    // como proveedor de chat completo sin que el usuario lo haya elegido para eso.
     await storeProviderApiKey(providerId, apiKey)
 
     return addCorsHeaders(Response.json({ success: true, provider: providerId }), req)

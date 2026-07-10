@@ -483,7 +483,7 @@ export async function seedAllData(): Promise<void> {
       await putIfAbsent(providersCol, provider.id, {
         id: provider.id, name: provider.name, base_url: provider.baseUrl || null,
         category: (provider.category || "llm") as ProviderDoc["category"],
-        num_ctx: null, num_gpu: -1, enabled: true, active: false, created_at: now,
+        num_ctx: null, num_gpu: -1, enabled: false, active: false, created_at: now,
       });
       providerCount++;
     }
@@ -495,6 +495,20 @@ export async function seedAllData(): Promise<void> {
         await providersCol.put("ollama", { ...ollama.doc, base_url: ollamaHost }, { expectedVersion: ollama.version });
         log.info(`[seed] ✅ Ollama base_url set to ${ollamaHost} (from OLLAMA_HOST env)`);
       }
+    }
+    // Older DBs were seeded with enabled=true hardcoded regardless of the user's own
+    // activation (active). enabled/active are otherwise always kept in sync by every
+    // mutation path (toggle, update, voice key save), so reconciling them here undoes
+    // exactly that stale default without touching providers the user genuinely activated.
+    let reconciledCount = 0;
+    for (const row of await providersCol.scan({})) {
+      if (row.doc.enabled !== row.doc.active) {
+        await providersCol.put(row.id, { ...row.doc, enabled: row.doc.active }, { expectedVersion: row.version });
+        reconciledCount++;
+      }
+    }
+    if (reconciledCount > 0) {
+      log.info(`[seed] 🔧 Reconciled ${reconciledCount} provider(s) with a stale enabled≠active state`);
     }
     log.info(`[seed] ✅ ${providerCount} providers procesados`);
 
