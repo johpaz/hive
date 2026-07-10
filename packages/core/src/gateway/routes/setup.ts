@@ -38,12 +38,12 @@ export async function handleSetupProviders(
   const providers = (await providersCol.scan({})).map(e => e.doc).filter(p => p.category === "llm")
   const models = (await modelsCol.scan({})).map(e => e.doc).filter(m => m.model_type === "llm")
 
-  const llmModelsByProvider = new Map<string, { id: string; name: string }[]>()
+  const llmModelsByProvider = new Map<string, { id: string; name: string; context_window: number }[]>()
   for (const model of models) {
     if (!llmModelsByProvider.has(model.provider_id)) {
       llmModelsByProvider.set(model.provider_id, [])
     }
-    llmModelsByProvider.get(model.provider_id)!.push({ id: model.id, name: model.name })
+    llmModelsByProvider.get(model.provider_id)!.push({ id: model.id, name: model.name, context_window: model.context_window })
   }
 
   const result = providers

@@ -135,7 +135,7 @@ interface ModelsState {
   getModelsByProvider: (providerId: string) => Model[];
   deleteModel: (id: string) => Promise<void>;
   updateModel: (id: string, data: { name?: string; id?: string }) => Promise<void>;
-  loadHiveAgentsModel: (modelId: string, ctx?: number) => Promise<{ success: boolean; loading: boolean; model_id?: string; ctx?: number }>;
+  loadHiveAgentsModel: (modelId: string, ctx: number) => Promise<{ success: boolean; loading: boolean; model_id?: string; ctx?: number }>;
   getHiveAgentsModelStatus: () => Promise<{ success: boolean; loaded: boolean; model?: { name?: string; ctx?: number } }>;
 }
 
@@ -256,7 +256,7 @@ const createModelsSlice = (set: any, get: any) => ({
     });
   },
 
-  loadHiveAgentsModel: async (modelId: string, ctx = 50000) => {
+  loadHiveAgentsModel: async (modelId: string, ctx: number) => {
     return await apiClient<{ success: boolean; loading: boolean; model_id?: string; ctx?: number }>(
       "/api/providers/hiveagents/load-model",
       {

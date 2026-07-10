@@ -24,6 +24,7 @@ import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { CheckCircle2, XCircle, Sparkles, Hexagon, Volume2, Loader2 } from "lucide-react";
 import { useLoaderStore } from "@/stores/useLoaderStore";
+import { useHiveAgentsModelLoad } from "@/hooks/useHiveAgentsModelLoad";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/api";
 import { getApiBaseUrl } from "@/lib/gateway-url";
@@ -156,9 +157,12 @@ export default function SetupPage() {
   const { showLoader, hideLoader } = useLoaderStore();
   const [verificationStatus, setVerificationStatus] = useState<"idle" | "verifying" | "success" | "error">("idle");
   const [stepError, setStepError] = useState<string | null>(null);
-  const [providers, setProviders] = useState<{ id: string; name: string; models: { id: string; name: string }[] }[]>([]);
+  const [providers, setProviders] = useState<{ id: string; name: string; models: { id: string; name: string; context_window?: number }[] }[]>([]);
   const [ollamaModels, setOllamaModels] = useState<{ id: string; name: string }[] | null>(null);
   const [ollamaDetecting, setOllamaDetecting] = useState(false);
+  const [hiveagentsLoading, setHiveagentsLoading] = useState(false);
+  const [hiveagentsLoadError, setHiveagentsLoadError] = useState<string | null>(null);
+  const { load: loadHiveAgentsModel } = useHiveAgentsModelLoad();
   const [ethicsList, setEthicsList] = useState<{ id: string; name: string; description: string | null; content: string; isDefault: boolean; active: boolean }[]>([]);
 
   useEffect(() => {
@@ -649,7 +653,25 @@ export default function SetupPage() {
                   <Label htmlFor="model">Modelo</Label>
                   <Select
                     value={wizardData.model}
-                    onValueChange={(value) => updateData({ model: value })}
+                    disabled={hiveagentsLoading}
+                    onValueChange={async (value) => {
+                      setHiveagentsLoadError(null);
+                      if (wizardData.provider === "hiveagents") {
+                        const contextWindow = selectedProvider?.models.find((m) => m.id === value)?.context_window;
+                        if (!contextWindow) {
+                          setHiveagentsLoadError("No se pudo determinar el context_window del modelo.");
+                          return;
+                        }
+                        setHiveagentsLoading(true);
+                        const loaded = await loadHiveAgentsModel(value, contextWindow);
+                        setHiveagentsLoading(false);
+                        if (!loaded) {
+                          setHiveagentsLoadError("No se pudo confirmar la carga del modelo. Intentá de nuevo.");
+                          return;
+                        }
+                      }
+                      updateData({ model: value });
+                    }}
                   >
                     <SelectTrigger className={cn(!wizardData.model && stepError?.includes("modelo") && "border-red-500")}>
                       <SelectValue placeholder="Selecciona un modelo" />
@@ -662,6 +684,14 @@ export default function SetupPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {hiveagentsLoading && (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin" /> Cargando modelo en HiveAgents…
+                    </p>
+                  )}
+                  {hiveagentsLoadError && (
+                    <p className="text-xs text-red-600">{hiveagentsLoadError}</p>
+                  )}
                 </div>
               )}
             </CardContent>

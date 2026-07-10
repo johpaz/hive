@@ -205,9 +205,17 @@ export async function handleLoadHiveAgentsModel(
 ): Promise<Response> {
   const body = await req.json().catch(() => ({}))
   const modelId = body.model_id || body.modelId
-  const ctx = typeof body.ctx === "number" && body.ctx > 0 ? body.ctx : 50000
   if (!modelId) {
     return addCorsHeaders(Response.json({ error: "model_id is required" }, { status: 400 }), req)
+  }
+
+  let ctx = typeof body.ctx === "number" && body.ctx > 0 ? body.ctx : undefined
+  if (!ctx) {
+    const modelsCol = await col<ModelDoc>("models")
+    const modelEntry = await modelsCol.get(modelId as string)
+    // The model's own context_window (BD) is the source of truth for how much
+    // context to request when mounting it — never a hardcoded fallback.
+    ctx = modelEntry?.doc.context_window || 50000
   }
 
   const providersCol = await col<ProviderDoc>("providers")

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useCallback } from "react";
+import { useEffect, useMemo } from "react";
 
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useProviders } from "@/hooks/useProviders";
-import { useGlobalConfigStore } from "@/stores/useGlobalConfigStore";
+import { useHiveAgentsModelLoad } from "@/hooks/useHiveAgentsModelLoad";
 import { loader } from "@/stores/useLoaderStore";
 import { toast } from "@/components/ui/sonner";
 
@@ -18,10 +18,6 @@ interface ModelSelectorProps {
   typeFilter?: string;
 }
 
-const HIVEAGENTS_POLL_INTERVAL_MS = 2500;
-const HIVEAGENTS_LOAD_TIMEOUT_MS = 300000;
-const HIVEAGENTS_LOAD_CTX = 50000;
-
 export function ModelSelector({
   selectedProviderId,
   selectedModelId,
@@ -31,10 +27,7 @@ export function ModelSelector({
   typeFilter,
 }: ModelSelectorProps) {
   const { providers, models } = useProviders();
-  const loadHiveAgentsModel = useGlobalConfigStore((state) => state.loadHiveAgentsModel);
-  const getHiveAgentsModelStatus = useGlobalConfigStore((state) => state.getHiveAgentsModelStatus);
-
-  const hiveagentsAbortRef = useRef<{ abort: boolean } | null>(null);
+  const { load: loadHiveAgentsModel, cancel: cancelHiveAgentsLoad } = useHiveAgentsModelLoad();
 
   const hasApiKey = (p: typeof providers[number]) => {
     if (p.id === "ollama" || p.id === "hiveagents") return true;
@@ -91,36 +84,17 @@ export function ModelSelector({
     }
   };
 
-  const waitForHiveAgentsModel = useCallback(async (modelId: string): Promise<boolean> => {
-    const abortRef = { abort: false };
-    hiveagentsAbortRef.current = abortRef;
-    const start = Date.now();
-
-    try {
-      await loadHiveAgentsModel(modelId, HIVEAGENTS_LOAD_CTX);
-    } catch {
-      return false;
-    }
-
-    while (!abortRef.abort && Date.now() - start < HIVEAGENTS_LOAD_TIMEOUT_MS) {
-      try {
-        const status = await getHiveAgentsModelStatus();
-        if (status.loaded && status.model?.name === modelId) {
-          return true;
-        }
-      } catch {
-        // ignore polling errors
-      }
-      await new Promise((resolve) => setTimeout(resolve, HIVEAGENTS_POLL_INTERVAL_MS));
-    }
-
-    return false;
-  }, [loadHiveAgentsModel, getHiveAgentsModelStatus]);
-
   const handleModelChange = async (modelId: string) => {
     if (selectedProviderId === "hiveagents" && modelId) {
+      const contextWindow = modelOptions.find((m) => m.id === modelId)?.contextWindow;
+      if (!contextWindow) {
+        toast.error("No se pudo determinar el context_window del modelo", {
+          description: "Revisá la configuración del modelo en la base de datos.",
+        });
+        return;
+      }
       loader.show("Cargando modelo en HiveAgents…");
-      const loaded = await waitForHiveAgentsModel(modelId);
+      const loaded = await loadHiveAgentsModel(modelId, contextWindow);
       loader.hide();
       if (!loaded) {
         toast.error("No se pudo confirmar la carga del modelo", {
@@ -138,13 +112,8 @@ export function ModelSelector({
 
   // Cancel any in-flight hiveagents polling when provider/model changes
   useEffect(() => {
-    return () => {
-      if (hiveagentsAbortRef.current) {
-        hiveagentsAbortRef.current.abort = true;
-        hiveagentsAbortRef.current = null;
-      }
-    };
-  }, [selectedProviderId, selectedModelId]);
+    return () => cancelHiveAgentsLoad();
+  }, [selectedProviderId, selectedModelId, cancelHiveAgentsLoad]);
 
   return (
     <div className="space-y-4">

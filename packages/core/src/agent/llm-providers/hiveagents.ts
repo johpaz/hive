@@ -207,8 +207,12 @@ export class HiveAgentsProvider extends OpenAICompatBase {
       log.info(`[hiveagents] Model ${modelId} already loaded`)
       return
     }
-    log.warn(`[hiveagents] Model ${modelId} not loaded. Triggering load with ctx=${HIVEAGENTS_DEFAULT_LOAD_CTX}`)
-    const result = await loadHiveAgentsModel(modelId, options.apiKey, options.baseUrl)
+    // The model's own context_window (BD, via resolveProviderConfig) is the source
+    // of truth for how much context to request when mounting it — only fall back
+    // to the generic default when it's genuinely unavailable.
+    const ctx = options.contextWindow || HIVEAGENTS_DEFAULT_LOAD_CTX
+    log.warn(`[hiveagents] Model ${modelId} not loaded. Triggering load with ctx=${ctx}`)
+    const result = await loadHiveAgentsModel(modelId, options.apiKey, options.baseUrl, ctx)
     if (!result.success) {
       log.warn(`[hiveagents] Auto-load failed for ${modelId}: ${result.error}`)
     }
