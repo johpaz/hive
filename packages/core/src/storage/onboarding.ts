@@ -8,7 +8,6 @@ import {
   loadProviderApiKey,
   loadChannelConfig,
 } from "./crypto";
-import { seedAllData, SEED_DATA } from "./seed";
 import { SkillLoader } from "@johpaz/hive-agents-skills";
 import type {
   UserDoc, ProviderDoc, ModelDoc, AgentDoc, ChannelDoc, McpServerDoc,
@@ -81,19 +80,9 @@ function genId(): string {
 
 export async function initOnboardingDb(): Promise<void> {
   try {
+    // ensureHiveDb() already reseeds the static catalogs unconditionally on
+    // every call — no separate userCount gate/seedAllData() call needed here.
     await ensureHiveDb();
-
-    const usersCol = await col<UserDoc>("users");
-    const userCount = await usersCol.count();
-
-    if (userCount > 0) {
-      log.info("✅ DB ya inicializada con " + userCount + " usuario(s). Saltando seed.");
-      return;
-    }
-
-    log.info("🌱 Ejecutando seed de datos...");
-    await seedAllData();
-    log.info("✅ Seed completado correctamente.");
   } catch (e) {
     log.error("⚠️ Fallo al inicializar/poblar la DB:", { error: (e as Error).message });
   }

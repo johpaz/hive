@@ -13,6 +13,7 @@
 
 import { getHiveDb } from "./hivedb";
 import { col } from "./hive";
+import { seedAllData } from "./seed";
 
 interface IndexSpec {
   collection: string;
@@ -83,12 +84,15 @@ async function ensureIndexes(): Promise<void> {
 }
 
 /**
- * Seeds the static catalogs. Populated stage-by-stage as each collection's
- * write path lands (Stage 1 fills in users/providers/models; Stage 2 adds
- * channels/skills/tools/ethics/mcp; ...). Empty for now.
+ * Seeds the static catalogs (tools, skills, providers, models, mcp servers,
+ * channels, ethics, ACE playbook) from their canonical source every boot —
+ * same "reseed every boot so code changes always take effect" behavior the
+ * old SQLite seedAllData() had. Fully idempotent: uses putIfAbsent for
+ * user-toggleable fields (enabled/active) and doesn't touch `users`, so it's
+ * safe to call unconditionally before any onboarding has happened.
  */
 async function ensureSeedData(): Promise<void> {
-  // Filled in during Stage 1+ (see storage/seed.ts).
+  await seedAllData();
 }
 
 let bootstrapped = false;
