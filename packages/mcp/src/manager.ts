@@ -300,12 +300,35 @@ export class MCPClientManager {
 
     this.log.debug(`Calling MCP tool: ${serverName}/${toolName}`, { args });
 
-    const result = await state.client.callTool({
-      name: toolName,
-      arguments: args,
-    });
+    try {
+      const result = await state.client.callTool({ name: toolName, arguments: args });
+      return result.content;
+    } catch (error) {
+      // The remote server dropped/expired the session (SSE/Streamable HTTP transports
+      // hold sessionId client-side with no expiry signal — a server restart or timeout
+      // invalidates it silently). Reconnect this one server (fresh Client + Transport,
+      // re-runs the MCP initialize handshake to get a new session) and retry once.
+      if (!this.isSessionError(error)) throw error;
 
-    return result.content;
+      this.log.warn(`MCP tool call ${serverName}/${toolName} failed with a stale session — reconnecting and retrying once: ${(error as Error).message}`);
+      await this.reconnectServer(serverName);
+
+      const retryState = this.servers.get(serverName);
+      if (!retryState?.client) throw error;
+
+      const result = await retryState.client.callTool({ name: toolName, arguments: args });
+      return result.content;
+    }
+  }
+
+  private isSessionError(error: unknown): boolean {
+    const msg = (error as Error)?.message ?? String(error);
+    return /session/i.test(msg) && (msg.includes("401") || /transport/i.test(msg));
+  }
+
+  private async reconnectServer(name: string): Promise<void> {
+    await this.disconnectServer(name);
+    await this.connectServer(name);
   }
 
   async readResource(serverName: string, uri: string): Promise<unknown> {
