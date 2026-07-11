@@ -1,5 +1,5 @@
 ---
-name: busqueda_fts5
+name: capability_discovery
 description: "Core discovery skill - find any capability with a single keyword"
 version: 1.2.0
 author: Hive Team
@@ -20,7 +20,7 @@ triggers:
 
 ---
 
-# busqueda_fts5 — Sistema de Discovery
+# capability_discovery — Sistema de Discovery
 
 Arrancás con solo 4 herramientas. Todo lo demás se descubre con **search_knowledge**.
 
@@ -32,9 +32,9 @@ search_knowledge(query="email")
 
 Eso solo — sin type, sin frases largas — devuelve tools, skills, MCP y playbook relacionados con "email".
 
-**NO hagas esto:** `search_knowledge(type="tools", query="enviar correo electrónico")` — AND entre palabras no encuentra nada.
+**Evitá esto:** `search_knowledge(type="tools", query="enviar correo electrónico")` — el motor rankea por relevancia (BM25), así que una frase larga no falla, pero diluye el resultado: cada palabra de más sesga el ranking hacia coincidencias parciales y mezcla resultados menos relevantes.
 
-**SÍ hagas esto:** `search_knowledge(query="email")` — encuentra todo lo relacionado.
+**Preferí esto:** `search_knowledge(query="email")` — una palabra precisa da el resultado más ajustado y encuentra todo lo relacionado.
 
 ## Cuándo especificar type
 

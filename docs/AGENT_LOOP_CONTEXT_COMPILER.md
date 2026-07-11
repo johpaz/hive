@@ -39,7 +39,7 @@ compileContext() (packages/core/src/agent/context-compiler.ts)
 [STEP-2] Load Scratchpad (DB: scratchpad table)
 [STEP-3c] Load MCP Tools (MCP Manager + DB: mcp_servers)
 [STEP-4] Build Minimal Tool Set (createAllTools)
-[STEP-8b] Skill Loadout (FTS5: skills_fts)
+[STEP-8b] Skill Loadout (HiveDB: capability index, type=skill)
 [STEP-9] Load Conversation History (DB: conversations)
 [STEP-9b] Load Summary (DB: summaries)
 [STEP-10] Build System Prompt (prompt-builder.ts)
@@ -105,8 +105,8 @@ key2: value2
 1. Query: `SELECT id, name, status FROM mcp_servers WHERE enabled = 1`
 2. Para cada server: `mcpManager.getServerTools(server.id)`
 3. Crea executors con nombre sanitizado: `{serverName}__{toolName}`
-4. Sync a DB: `syncMCPToolsToDB()` → tabla `mcp_tools`
-5. Sync a FTS5: `syncMCPToolsToFTS()` → `mcp_tools_fts`
+4. Sync a DB: `syncMCPToolsToDB()` → colección `mcpTools` (HiveDB)
+5. Sync al índice de capacidades: `syncMCPToolsToFTS()` → documentos `type=mcp` en el índice único de HiveDB (el nombre de la función es legado de la época SQLite/FTS5; hoy no toca ninguna tabla FTS5, ver `capability-search.ts`)
 
 **Importante**: Las herramientas MCP **NO** se inyectan en el contexto LLM por defecto. Se descubren dinámicamente vía `search_knowledge(type="mcp")`.
 
@@ -141,14 +141,14 @@ const MINIMAL_TOOLS = new Set([
 ---
 
 ### [STEP-8b] Skill Loadout (Instrucciones de Tareas)
-**Origen**: Tabla `skills` + FTS5 (`skills_fts`)  
-**Archivo**: `context-compiler.ts` líneas 267-309  
+**Origen**: Colección `skills` (HiveDB) + índice de capacidades compartido (HiveDB, BM25 híbrido vía tantivy)  
+**Archivo**: `context-compiler.ts` líneas 289-311  
 **Módulo**: `skill-selector.ts`
 
 **Skills MÍNIMAS (SIEMPRE activas)**:
 ```typescript
 const MINIMAL_SKILL_NAMES = [
-  "busqueda_fts5",    // Core: cómo encontrar tools/skills/MCP/playbook
+  "capability_discovery", // Core: cómo encontrar tools/skills/MCP/playbook
   "canvas_report",    // Display resultados con charts, tables, cards
   "memory_manager",   // Notas persistentes que sobreviven compresión
 ]
@@ -156,15 +156,15 @@ const MINIMAL_SKILL_NAMES = [
 
 **Skills DESCUBIERTAS (coordinator only)**:
 - Función: `selectSkills(userMessage)` de `skill-selector.ts`
-- Usa FTS5 bm25() scoring en `skills_fts`
+- Usa `searchCapabilities()` (`capability-search.ts`), un único índice HiveDB con scoring BM25 (tantivy) + stemming en español
 - Máximo: `MAX_SKILLS_PER_TURN = 4` skills
-- Threshold: `MIN_RELEVANCE_THRESHOLD = -15` (bm25 score)
+- Corte: `applyRelativeCutoff(hits, RELEVANCE_RATIO=0.3)` — relativo al score del mejor hit, no un umbral absoluto (el viejo `-15` de FTS5 ya no existe)
 
-**Proceso FTS5**:
+**Proceso de búsqueda** (compartido por tool/skill/playbook selector, ver `capability-search.ts`):
 1. Filtra stopwords del mensaje del usuario
-2. Construye query con prefix matching: `"gener*" AND "códig*"`
-3. Ejecuta: `SELECT *, bm25(skills_fts) as score FROM skills_fts MATCH ? ORDER BY score LIMIT 4`
-4. Retorna skills con score > -15 (más cercano a 0 = más relevante)
+2. `searchCapabilities(query, { types: ["skill"] })` → `db.queryHybrid()` sobre el índice único de HiveDB. Los términos se combinan con OR (`Occur::Should` en tantivy), no AND — una query de varias palabras no falla, pero diluye precisión
+3. Se descartan hits por debajo del 30% del score del mejor resultado (`applyRelativeCutoff`)
+4. Retorna hasta 4 skills, ordenadas por score
 
 **Inyección en contexto**:
 ```
@@ -390,7 +390,7 @@ El Context Compiler implementa 4 estrategias:
 
 ### 2. SELECCIONAR (Select)
 - **Tool Loadout**: Máx 4 tools mínimas + descubrimiento dinámico
-- **Playbook Filtering**: Reglas ACE aplicables vía FTS5
+- **Playbook Filtering**: Reglas ACE aplicables vía el índice de capacidades de HiveDB (BM25 híbrido)
 - **Historial Selectivo**: Últimos 15 mensajes + resumen
 
 ### 3. COMPRIMIR (Compress)
@@ -403,7 +403,12 @@ El Context Compiler implementa 4 estrategias:
 
 ---
 
-## 🔍 Selectores FTS5 (Búsqueda Semántica)
+## 🔍 Selectores de Capacidades (Búsqueda Semántica vía HiveDB)
+
+Los tres selectores comparten un único módulo de búsqueda, `capability-search.ts` — ya no hay
+tablas FTS5 separadas por tipo. Hay un solo índice HiveDB (tantivy, BM25 híbrido con stemming
+en español) con un campo `filters.type` (`tool` | `skill` | `playbook` | `mcp`) para discriminar,
+y los términos de una query se combinan con OR (`Occur::Should`), no AND.
 
 ### Tool Selector (`tool-selector.ts`)
 **Función**: `selectTools(userMessage)`
@@ -411,17 +416,14 @@ El Context Compiler implementa 4 estrategias:
 **Configuración**:
 ```typescript
 const MAX_TOOLS_PER_TURN = 12
-const MIN_RELEVANCE_THRESHOLD = -30  // bm25 score
+const RELEVANCE_RATIO = 0.3  // fracción del score del mejor hit, no un umbral absoluto
 ```
 
 **Proceso**:
 1. Filtra stopwords del mensaje
-2. Construye query FTS5 con prefix matching
-3. Ejecuta: `SELECT *, bm25(tools_fts) FROM tools_fts MATCH ? ORDER BY score`
-4. Retorna tools con score > -30
-
-**Tablas FTS5**:
-- `tools_fts`: tool_name, name, description, category
+2. `searchCapabilities(query, { types: ["tool"] })` → `db.queryHybrid()` sobre el índice de HiveDB
+3. `applyRelativeCutoff(hits, 0.3)` — descarta hits por debajo del 30% del mejor score
+4. Retorna hasta 12 tools
 
 ### Skill Selector (`skill-selector.ts`)
 **Función**: `selectSkills(userMessage)`
@@ -429,21 +431,35 @@ const MIN_RELEVANCE_THRESHOLD = -30  // bm25 score
 **Configuración**:
 ```typescript
 const MAX_SKILLS_PER_TURN = 4
-const MIN_RELEVANCE_THRESHOLD = -15
+const RELEVANCE_RATIO = 0.3
 ```
-
-**Tablas FTS5**:
-- `skills_fts`: id, name, description, category, tools, triggers, body
 
 ### Playbook Selector (`playbook-selector.ts`)
 **Función**: `selectPlaybookRules(userMessage)`
 
-**Tablas FTS5**:
-- `playbook_fts`: rule, category, applicable_to
+**Configuración**:
+```typescript
+const MAX_RULES_PER_TURN = 5
+const RELEVANCE_RATIO = 0.3
+```
+
+**Documento indexado** (mismo esquema para los 4 tipos, ver `capability-search.ts`):
+- `id`: `tool:${name}` | `skill:${id}` | `playbook:${rowid}` | `mcp:${id}`
+- `name` (boost BM25 4.0), `tags` (boost 3.0), `body` (boost 2.0)
+- `filters`: `{ type }` (+ `server_id` en documentos MCP, para hot-reload por servidor)
 
 ---
 
 ## 🗄️ Tablas de Base de Datos (Contexto)
+
+> ⚠️ **Nota de vigencia**: esta sección quedó escrita en la era SQLite. Hive migró su storage
+> a HiveDB (`@johpaz/hive-db`) — `storage/schema.ts` y `storage/sqlite.ts`, citados más arriba,
+> ya no existen. Las "tablas" de abajo hoy son colecciones de documentos HiveDB (`col<XDoc>("nombre")`
+> en `storage/hive.ts`, tipadas en `storage/collections.ts`), no tablas SQL. Los nombres y el
+> propósito de cada una siguen siendo una referencia razonable, pero las columnas/queries SQL de
+> esta sección no están verificadas contra el código actual — solo se corrigió explícitamente lo
+> relacionado a FTS5 (búsqueda). Para el resto, tratar como una guía aproximada y confirmar contra
+> `storage/collections.ts` antes de confiar en un detalle puntual.
 
 ### Tablas Principales
 
@@ -463,14 +479,15 @@ const MIN_RELEVANCE_THRESHOLD = -15
 | `projects` | Proyectos multi-paso | name, status, progress, task |
 | `tasks` | Tareas atómicas | project_id, name, status, result |
 
-### Índices FTS5
+### Índice de Capacidades (HiveDB)
 
-```sql
-CREATE VIRTUAL TABLE tools_fts USING fts5(tool_name, name, description, category);
-CREATE VIRTUAL TABLE skills_fts USING fts5(id, name, description, category, tools, triggers, body);
-CREATE VIRTUAL TABLE playbook_fts USING fts5(rule, category, applicable_to);
-CREATE VIRTUAL TABLE mcp_tools_fts USING fts5(server_name, tool_name, description, category);
-```
+Ya no existen las 4 tablas virtuales FTS5 de arriba. Desde la migración a HiveDB hay un único
+índice (tantivy, BM25 híbrido) compartido por tools, skills, playbook y MCP tools, discriminado
+por `filters.type` — ver `packages/core/src/agent/capability-search.ts`:
+
+- `id`: `tool:${name}` | `skill:${id}` | `playbook:${rowid}` | `mcp:${id}`
+- `name` (boost 4.0), `tags` (boost 3.0), `body` (boost 2.0)
+- `filters`: `{ type }` (+ `server_id` en documentos MCP)
 
 ---
 
@@ -520,7 +537,7 @@ const TOKEN_COMPACT_THRESHOLD = 6000
 
 const MINIMAL_TOOLS = ["save_note", "notify", "report_progress", "search_knowledge"]
 
-const MINIMAL_SKILL_NAMES = ["busqueda_fts5", "canvas_report", "memory_manager"]
+const MINIMAL_SKILL_NAMES = ["capability_discovery", "canvas_report", "memory_manager"]
 ```
 
 ### Tool Selector (`tool-selector.ts`)
@@ -552,7 +569,7 @@ const maxIterations = agent.max_iterations || 10
 │  [STEP-2]  Load Scratchpad (DB: scratchpad)                 │
 │  [STEP-3c] Load MCP Tools (MCP Manager + DB: mcp_servers)   │
 │  [STEP-4]  Build Minimal Tool Set (createAllTools)          │
-│  [STEP-8b] Skill Loadout (FTS5: skills_fts)                 │
+│  [STEP-8b] Skill Loadout (HiveDB: capability index, type=skill)                 │
 │  [STEP-9]  Load Conversation History (DB: conversations)    │
 │  [STEP-9b] Load Summary (DB: summaries)                     │
 │  [STEP-10] Build System Prompt (ethics + agent + user)      │
@@ -615,8 +632,8 @@ const maxIterations = agent.max_iterations || 10
    - Se activan vía search_knowledge
 
 5. **Skills** (4-8):
-   - 3 mínimas (busqueda_fts5, canvas_report, memory_manager)
-   - 1-5 descubiertas vía FTS5
+   - 3 mínimas (capability_discovery, canvas_report, memory_manager)
+   - 1-5 descubiertas vía el índice de capacidades de HiveDB (BM25 híbrido)
 
 ### Para Worker Agent:
 1. **System Prompt** (reducido):
@@ -672,7 +689,7 @@ agent-loop.ts
 
 1. **Contexto Dinámico**: No todo está pre-cargado. Herramientas y skills se descubren vía `search_knowledge` durante la ejecución.
 
-2. **FTS5 para Selección**: Usa SQLite FTS5 bm25() scoring para selección semántica de tools/skills/playbook.
+2. **BM25 híbrido para Selección**: Usa un único índice de HiveDB (tantivy BM25 + stemming en español) para selección semántica de tools/skills/playbook/MCP — ya no hay tablas FTS5 de SQLite.
 
 3. **Compresión Inteligente**: Cuando el historial > 6000 tokens, usa resumen + últimos 15 mensajes.
 

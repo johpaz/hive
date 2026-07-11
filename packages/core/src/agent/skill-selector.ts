@@ -37,7 +37,7 @@ const log = logger.child("skill-selector")
  * - task_orchestrator: usa notify (comunicación entre agentes)
  */
 export const MINIMAL_SKILL_NAMES = new Set([
-  "busqueda_fts5",    // Core: cómo descubrir tools, MCP, skills, playbook
+  "capability_discovery", // Core: cómo descubrir tools, MCP, skills, playbook
   "memory_manager",   // Asociada a save_note
   "canvas_report",    // Asociada a report_progress
   "task_orchestrator", // Asociada a notify y agent coordination
@@ -95,7 +95,7 @@ const MAX_SKILLS_PER_TURN = 4  // Increased from 2 to allow more skills
  */
 const RELEVANCE_RATIO = 0.3
 
-/** Stopwords to filter out before FTS5 query construction */
+/** Stopwords to filter out before BM25 query construction */
 const STOPWORDS = new Set([
     "que", "con", "para", "por", "una", "uno", "los", "las", "del",
     "como", "esta", "esto", "ese", "eso", "the", "and", "for",

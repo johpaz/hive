@@ -605,7 +605,7 @@ cp ~/.hive/data/hive.db ~/backup-hive-$(date +%Y%m%d).db
 | Pilar | Descripción |
 |-------|-------------|
 | **Tools** | 68 herramientas nativas: filesystem, web, browser automation, cron, agentes/workers, Canvas, A2UI, voz, reuniones y Office. |
-| **Skills** | 28 habilidades incluidas: agentes, A2UI/Canvas, CLI, cron, filesystem, reuniones, Office, voz, web y búsqueda FTS5. |
+| **Skills** | 28 habilidades incluidas: agentes, A2UI/Canvas, CLI, cron, filesystem, reuniones, Office, voz, web y descubrimiento de capacidades. |
 | **MCP** | Compatible con Model Context Protocol para extender funcionalidades con tools externas descubiertas en runtime. |
 | **Ética** | Límites claros definidos en ETHICS.md — tu agente siempre sabe qué puede y qué no puede hacer. |
 
@@ -627,7 +627,7 @@ cp ~/.hive/data/hive.db ~/backup-hive-$(date +%Y%m%d).db
 
 **Distribución actual de tools nativas:** filesystem 7, web 2, browser 7, cron 8, CLI 1, memoria 5, agentes/workers/bus/modelos 9, Canvas 7, A2UI 4, voz 2, core 4, Office 8, reuniones 4.
 
-**Distribución actual de skills incluidas:** agentes 5, Canvas/A2UI 6, CLI 2, cron 2, filesystem 3, reuniones 1, Office 1, búsqueda FTS5 1, voz 3, web 4.
+**Distribución actual de skills incluidas:** agentes 5, Canvas/A2UI 6, CLI 2, cron 2, filesystem 3, reuniones 1, Office 1, descubrimiento de capacidades 1, voz 3, web 4.
 
 ## Arquitectura técnica
 
@@ -662,7 +662,7 @@ El Context Compiler es el componente central del motor. Se ejecuta antes de cada
 - El agente puede escribir al scratchpad usando la tool `save_note(key, value)`
 
 **3.3 — Playbook del ACE (SELECCIONAR)**
-- Busca con FTS5 en la tabla `playbook` usando keywords del mensaje del usuario
+- Busca en el índice de capacidades de HiveDB (BM25 híbrido) sobre la colección `playbook` usando keywords del mensaje del usuario
 - Inyecta máximo 5 reglas relevantes (`active=1`, `helpful_count > harmful_count`)
 - Las reglas son aprendidas automáticamente por el Curator del ACE
 
@@ -675,7 +675,7 @@ El Context Compiler es el componente central del motor. Se ejecuta antes de cada
 | 3 — Descubrimiento | El agente usa `search_knowledge(type="tools"|"mcp"|"skills")` para encontrar capacidades relevantes |
 | 4 — Inyección dinámica | `agent-loop` agrega tools nativas/MCP descubiertas al loadout y adjunta skills asociadas |
 
-El turno arranca pequeño para reducir ruido en modelos locales: 4 tools en contexto, 68 executors nativos disponibles para inyección y tools MCP disponibles vía descubrimiento. Las skills mínimas (`busqueda_fts5`, `memory_manager`, `canvas_report`, `task_orchestrator`) enseñan al agente cómo buscar capacidades antes de usarlas. Las skills descubiertas se listan inicialmente y sus cuerpos se inyectan cuando sus tools entran al loadout.
+El turno arranca pequeño para reducir ruido en modelos locales: 4 tools en contexto, 68 executors nativos disponibles para inyección y tools MCP disponibles vía descubrimiento. Las skills mínimas (`capability_discovery`, `memory_manager`, `canvas_report`, `task_orchestrator`) enseñan al agente cómo buscar capacidades antes de usarlas. Las skills descubiertas se listan inicialmente y sus cuerpos se inyectan cuando sus tools entran al loadout.
 
 **3.5 — Ética (capa constitucional)**
 - Carga todas las reglas de la tabla `ethics` — sin filtrar, sin comprimir
@@ -689,7 +689,7 @@ El turno arranca pequeño para reducir ruido en modelos locales: 4 tools en cont
   2. Identidad del agente (agents.system_prompt + description)
   3. Hive Capabilities Manifest (hive_capabilities table)
   4. Perfil del usuario (users table)
-  5. Reglas del playbook relevantes (FTS5, máx. 5)
+  5. Reglas del playbook relevantes (índice de capacidades HiveDB, máx. 5)
   6. Notas del scratchpad (filtradas por thread_id)
   7. Entorno (agent_id, thread_id, fecha/hora local)
 

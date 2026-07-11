@@ -58,7 +58,7 @@ const MINIMAL_TOOLS = new Set([
 // MINIMAL SKILL SET — fixed always-available skills
 // These skills are ALWAYS in context - the agent uses them to discover everything else
 const MINIMAL_SKILL_NAMES = [
-  "busqueda_fts5",    // Core: how to find tools, skills, MCP, playbook via search_knowledge
+  "capability_discovery", // Core: how to find tools, skills, MCP, playbook via search_knowledge
   "memory_manager",   // Persistent notes that survive context compression
   "canvas_report",    // Display results to users with charts, tables, cards
   "task_orchestrator", // Agent coordination via notify

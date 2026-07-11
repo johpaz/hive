@@ -117,7 +117,7 @@ const ES_EN_DICT: Record<string, string[]> = {
 };
 
 /**
- * Translate a Spanish query to English equivalents for FTS5 fallback.
+ * Translate a Spanish query to English equivalents for the bilingual BM25 fallback.
  * Returns an array of English keyword tokens.
  */
 function translateQueryToEnglish(query: string): string {

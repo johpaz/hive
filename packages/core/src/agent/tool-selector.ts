@@ -87,7 +87,7 @@ const MAX_TOOLS_PER_TURN = 12
  */
 const RELEVANCE_RATIO = 0.3
 
-/** Stopwords to filter out before FTS5 query construction */
+/** Stopwords to filter out before BM25 query construction */
 const STOPWORDS = new Set([
     "que", "con", "para", "por", "una", "uno", "los", "las", "del",
     "como", "esta", "esto", "ese", "eso", "the", "and", "for",
@@ -114,11 +114,11 @@ const CONVERSATIONAL_PATTERNS = [
 //
 // These 47 tools are the core toolset. Each has:
 // - name: unique identifier
-// - description: what the tool does (used for FTS5 matching)
+// - description: what the tool does (used for BM25 matching)
 // - category: semantic domain for grouping
 // - abstractionLevel: atomic (single operation) vs orchestration (manages multiple)
 //
-// The descriptions are enriched with Spanish/English keywords for better FTS5 matching.
+// The descriptions are enriched with Spanish/English keywords for better BM25 matching.
 
 export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
     // Cron tools (cron.*)
@@ -441,7 +441,7 @@ export async function syncToolCatalogToFTS(tools?: ToolDescriptor[]): Promise<vo
 /**
  * Enrich tool description with category-specific keywords
  * 
- * This improves FTS5 matching for both English and Spanish queries.
+ * This improves BM25 matching for both English and Spanish queries.
  */
 function enrichToolDescription(tool: ToolDescriptor): string {
     const keywordsByCategory: Record<string, string> = {
