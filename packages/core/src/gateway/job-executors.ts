@@ -87,12 +87,20 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
   }
 
   try {
-    const threadId = `task-${Date.now()}-${workerId}`;
+    // Resume from the checkpoint on a re-claimed job (payload can't know this)
+    const run = runId ? await getRun(runId) : null;
+    const resume = !!run?.state_json;
+    const threadId = run?.thread_id || `task-${Date.now()}-${workerId}`;
+
     const result = await runAgentIsolated({
       agentId: workerId,
       taskDescription,
       threadId,
       mcpManager,
+      runId,
+      resume,
+      durable: !!runId,
+      signal,
     });
 
     if (signal.aborted) {
@@ -158,12 +166,20 @@ const projectTaskExecutor: JobExecutor = async (job, signal) => {
   } as Partial<TaskDoc>).catch(() => {});
 
   try {
-    const threadId = `project-${taskId}-${Date.now()}`;
+    // Resume from the checkpoint on a re-claimed job (payload can't know this)
+    const run = runId ? await getRun(runId) : null;
+    const resume = !!run?.state_json;
+    const threadId = run?.thread_id || `project-${taskId}-${Date.now()}`;
+
     const result = await runAgentIsolated({
       agentId: workerId,
       taskDescription,
       threadId,
       mcpManager,
+      runId,
+      resume,
+      durable: !!runId,
+      signal,
     });
 
     if (signal.aborted) {

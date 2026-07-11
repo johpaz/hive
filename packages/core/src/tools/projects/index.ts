@@ -191,6 +191,13 @@ export const taskCreateTool: Tool = {
         }, { expectedVersion: projectEntry.version });
       }
 
+      // Kick the driver so dependency-free tasks start without waiting for
+      // the 10s poll.
+      try {
+        const { getTaskDriver } = await import("../../scheduler/task-driver.ts");
+        void getTaskDriver().kick("task_create");
+      } catch { /* driver not initialized (e.g. tests) */ }
+
       return {
         ok: true,
         task_id: id,
@@ -201,6 +208,67 @@ export const taskCreateTool: Tool = {
       };
     } catch (error) {
       return { ok: false, error: `Failed to create task: ${(error as Error).message}` };
+    }
+  },
+};
+
+// ─── task_complete ───────────────────────────────────────────────────────────
+
+export const taskCompleteTool: Tool = {
+  name: "task_complete",
+  description: "Mark a project task as completed (or failed) manually, unblocking its dependents. Spanish: completar tarea, marcar tarea lista, cerrar tarea",
+  parameters: {
+    type: "object",
+    properties: {
+      task_id: { type: "string", description: "Task ID" },
+      result: { type: "string", description: "Result summary (optional)" },
+      failed: { type: "boolean", description: "Mark as failed instead of completed" },
+      error: { type: "string", description: "Error description when failed=true" },
+    },
+    required: ["task_id"],
+  },
+  execute: async (params: Record<string, unknown>) => {
+    const taskId = params.task_id as string;
+    const result = (params.result as string) ?? null;
+    const failed = params.failed === true;
+    const error = (params.error as string) ?? null;
+
+    try {
+      const tasksCol = await col<TaskDoc>("tasks");
+      const entry = await tasksCol.get(taskId);
+      if (!entry) {
+        return { ok: false, error: `Task not found: ${taskId}` };
+      }
+      const task = entry.doc;
+      if (task.status === "completed") {
+        return { ok: true, task_id: taskId, status: "completed", message: "Task was already completed." };
+      }
+
+      const now = Date.now();
+      await tasksCol.put(taskId, {
+        ...task,
+        status: failed ? "failed" : "completed",
+        progress: failed ? task.progress : 100,
+        result: result ?? task.result,
+        error: failed ? (error ?? "Marked as failed") : null,
+        completed_at: failed ? null : now,
+        updated_at: now,
+      }, { expectedVersion: entry.version });
+
+      // Kick the driver so dependent tasks get evaluated right away
+      try {
+        const { getTaskDriver } = await import("../../scheduler/task-driver.ts");
+        void getTaskDriver().kick("task_complete");
+      } catch { /* driver not initialized (e.g. tests) */ }
+
+      return {
+        ok: true,
+        task_id: taskId,
+        status: failed ? "failed" : "completed",
+        message: `Task "${task.name}" marked as ${failed ? "failed" : "completed"}.`,
+      };
+    } catch (err) {
+      return { ok: false, error: `Failed to complete task: ${(err as Error).message}` };
     }
   },
 };
@@ -276,5 +344,5 @@ export const projectStatusTool: Tool = {
 // ─── Export all tools ────────────────────────────────────────────────────────
 
 export function createProjectTools(): Tool[] {
-  return [projectCreateTool, taskCreateTool, projectStatusTool];
+  return [projectCreateTool, taskCreateTool, taskCompleteTool, projectStatusTool];
 }

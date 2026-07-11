@@ -942,12 +942,19 @@ export async function* runAgent(
 /**
  * Run a worker agent in an isolated context.
  * Returns the final response string.
+ *
+ * Passing `runId` + `durable` links the run to an existing AgentRun so the
+ * worker checkpoints per round-trip and can resume mid-task after a crash.
  */
 export async function runAgentIsolated(opts: {
   agentId: string
   taskDescription: string | ContentPart[]
   threadId: string
   mcpManager?: MCPClientManager | null
+  runId?: string
+  resume?: boolean
+  durable?: boolean
+  signal?: AbortSignal
 }): Promise<string> {
   let lastContent = ""
   for await (const chunk of runAgent({
@@ -957,6 +964,10 @@ export async function runAgentIsolated(opts: {
     isolated: true,
     taskContext: opts.taskDescription,
     mcpManager: opts.mcpManager,
+    runId: opts.runId,
+    resume: opts.resume,
+    durable: opts.durable,
+    signal: opts.signal,
   })) {
     if (chunk.agent?.messages?.[0]?.content) {
       lastContent = chunk.agent.messages[0].content
