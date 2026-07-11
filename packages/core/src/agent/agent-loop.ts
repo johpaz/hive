@@ -988,6 +988,10 @@ export class AgentLoop {
         system_prompt?: string
         channel?: string
         raw_user_message?: string
+        /** Durable run options — checkpoint/resume via agentRuns. */
+        run_id?: string
+        resume?: boolean
+        durable?: boolean
       }
       signal?: AbortSignal
       onToken?: (token: string) => void
@@ -1043,6 +1047,10 @@ export class AgentLoop {
       onReasoningToken: config.onReasoningToken,
       onStep: config.onStep,
       extraTools: config.extraTools,
+      runId: config.configurable?.run_id,
+      resume: config.configurable?.resume,
+      durable: config.configurable?.durable,
+      runKind: "chat",
     })
   }
 

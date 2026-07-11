@@ -48,10 +48,17 @@ export interface JobExecutorResult {
   error?: string;
 }
 
+export interface JobLiveCallbacks {
+  onToken?: (token: string) => void;
+  onStep?: (step: unknown) => Promise<void>;
+  /** Sends an already-serialized frame to the live socket (webchat turns). */
+  sendRaw?: (payload: string) => void;
+}
+
 export type JobExecutor = (
   job: JobDoc,
   signal: AbortSignal,
-  callbacks?: { onToken?: (token: string) => void; onStep?: (step: unknown) => Promise<void> }
+  callbacks?: JobLiveCallbacks
 ) => Promise<JobExecutorResult>;
 
 const executors = new Map<JobType, JobExecutor>();
@@ -65,6 +72,7 @@ export class DurableLaneQueue {
   private maxGlobalConcurrency: number;
   private taskTimeoutMs: number;
   private runningCount = 0;
+  private runningAborts = new Map<string, { lane: string; controller: AbortController }>();
   private dispatchTimers = new Map<string, ReturnType<typeof setInterval>>();
   private leaseCheckTimer: ReturnType<typeof setInterval> | null = null;
   private bootId: string;
@@ -91,7 +99,7 @@ export class DurableLaneQueue {
     priority?: number;
     max_attempts?: number;
     not_before?: number;
-    callbacks?: { onToken?: (token: string) => void; onStep?: (step: unknown) => Promise<void> };
+    callbacks?: JobLiveCallbacks;
   }): Promise<JobDoc> {
     const job = await createJob({
       lane: input.lane,
@@ -113,18 +121,27 @@ export class DurableLaneQueue {
   }
 
   /**
-   * Cancel a job by id (pending or running).
+   * Cancel a job by id (pending or running). A running job also gets its
+   * AbortSignal fired so the executor stops streaming/working.
    */
   async cancel(jobId: string): Promise<boolean> {
+    const running = this.runningAborts.get(jobId);
+    if (running) running.controller.abort();
     return cancelJob(jobId);
   }
 
   /**
-   * Cancel all pending/running jobs in a lane.
+   * Cancel all pending and running jobs in a lane.
    */
   async cancelLane(lane: string): Promise<number> {
-    const pending = await findPendingJobsByLane(lane, 100);
     let count = 0;
+    for (const [jobId, entry] of this.runningAborts) {
+      if (entry.lane === lane) {
+        entry.controller.abort();
+        if (await cancelJob(jobId)) count++;
+      }
+    }
+    const pending = await findPendingJobsByLane(lane, 100);
     for (const job of pending) {
       if (await cancelJob(job.id)) count++;
     }
@@ -182,13 +199,17 @@ export class DurableLaneQueue {
    * Dispatch pending jobs for a single lane, respecting global concurrency.
    */
   private async dispatchLane(lane: string): Promise<void> {
-    while (this.runningCount < this.maxGlobalConcurrency) {
+    for (;;) {
       const pending = await findPendingJobsByLane(lane, 1);
       if (pending.length === 0) break;
 
       const job = pending[0];
+      // Interactive chat turns bypass the global cap: a busy batch of
+      // workers/goals must not make the webchat stop responding.
+      if (job.type !== "chat_turn" && this.runningCount >= this.maxGlobalConcurrency) break;
+
       const claimed = await claimJob(job.id, this.bootId);
-      if (!claimed) continue; // someone else won or not_before
+      if (!claimed) continue; // someone else won the claim — re-read the lane
 
       this.runningCount++;
       this.executeJob(claimed, lane).catch((err) => {
@@ -206,6 +227,7 @@ export class DurableLaneQueue {
    */
   private async executeJob(job: JobDoc, lane: string): Promise<void> {
     const abortController = new AbortController();
+    this.runningAborts.set(job.id, { lane, controller: abortController });
     const timeoutId = setTimeout(() => abortController.abort(), this.taskTimeoutMs);
 
     let leasedHere = true;
@@ -243,6 +265,7 @@ export class DurableLaneQueue {
       clearTimeout(timeoutId);
       clearInterval(leaseRenewer);
       leasedHere = false;
+      this.runningAborts.delete(job.id);
       this.runningCount--;
       // Try to dispatch next job in this lane
       this.scheduleDispatch(lane);
@@ -276,7 +299,7 @@ export class DurableLaneQueue {
 }
 
 // Live callback stash — not serializable, kept in memory only
-const liveCallbacks = new Map<string, { onToken?: (token: string) => void; onStep?: (step: unknown) => Promise<void> }>();
+const liveCallbacks = new Map<string, JobLiveCallbacks>();
 
 // Singleton
 let _durableQueue: DurableLaneQueue | null = null;

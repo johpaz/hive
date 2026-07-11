@@ -38,6 +38,10 @@ export interface ModelOptions {
   channel?: string
   rawUserMessage?: string
   signal?: AbortSignal
+  /** Durable run options — checkpoint/resume via agentRuns (see run-store). */
+  runId?: string
+  resume?: boolean
+  durable?: boolean
 }
 
 export interface ModelResponse {
@@ -95,6 +99,9 @@ export class AgentRunner {
             // system_prompt intentionally omitted — context-compiler builds it
             channel: options.channel,
             raw_user_message: options.rawUserMessage,
+            run_id: options.runId,
+            resume: options.resume,
+            durable: options.durable,
           },
           signal: options.signal,
           onToken: options.onToken,

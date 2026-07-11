@@ -19,7 +19,7 @@ import { runAgent, runAgentIsolated } from "../agent/agent-loop";
 import { createRun, completeRun, failRun, interruptRun, getRun } from "../agent/run-store";
 import { getDurableQueue } from "./durable-queue";
 import { sendToUserChannel } from "./channel-notify";
-import { addMessage } from "../agent/conversation-store";
+import { runWebchatTurn, type WebchatTurnPayload } from "./webchat-turn";
 import { agentBus } from "../events/agent-bus";
 import { resolveContext } from "./resolver";
 import type { MCPClientManager } from "@johpaz/hive-agents-mcp";
@@ -35,56 +35,20 @@ export function setJobExecutorMCPManager(m: MCPClientManager | null): void {
 // ─── chat_turn executor ─────────────────────────────────────────────────────
 
 const chatTurnExecutor: JobExecutor = async (job, signal, callbacks) => {
-  const payload = JSON.parse(job.payload_json);
-  const agentId = payload.agentId as string;
-  const threadId = payload.threadId as string;
-  const userMessage = payload.userMessage as string;
-  const channel = payload.channel as string | null;
-  const userId = payload.userId as string | null | undefined;
-  const systemPrompt = payload.systemPrompt as string | undefined;
-  const runId = job.run_id;
+  const payload = JSON.parse(job.payload_json) as WebchatTurnPayload;
 
-  log.info(`[chat_turn] Job ${job.id} → agent=${agentId} thread=${threadId}`);
+  log.info(`[chat_turn] Job ${job.id} → source=${payload.source} session=${payload.sessionId}`);
 
-  // Resume is decided by the checkpoint, not the payload: on a re-claimed job
-  // the payload still says resume=false, but the run may hold a checkpoint
-  // from the crashed attempt.
-  const run = runId ? await getRun(runId) : null;
-  const resume = !!run?.state_json;
-
-  let lastContent = "";
   try {
-    for await (const chunk of runAgent({
-      agentId,
-      userMessage,
-      threadId,
-      channel: channel ?? undefined,
-      systemPromptOverride: systemPrompt,
-      mcpManager,
-      userId: userId ?? undefined,
+    // Live path: sendRaw streams to the socket exactly like the old LaneQueue
+    // closure. Rehydrated path (crash recovery): no callbacks → the turn runs
+    // headless and delivers via the user's channel.
+    const content = await runWebchatTurn(
+      payload,
+      callbacks?.sendRaw ? { sendRaw: callbacks.sendRaw } : null,
       signal,
-      runId,
-      resume,
-      durable: true,
-      runKind: "chat",
-      onToken: callbacks?.onToken
-        ? (token: string) => { if (!signal.aborted) callbacks.onToken?.(token) }
-        : undefined,
-    })) {
-      if (chunk.agent?.messages?.[0]?.content) {
-        lastContent = chunk.agent.messages[0].content;
-      }
-    }
-
-    // No live callbacks means nobody streamed this response (the turn was
-    // re-executed after a crash/reboot): deliver the result via the channel.
-    if (!callbacks && lastContent && channel && userId) {
-      await sendToUserChannel(channel, userId, lastContent).catch((err) =>
-        log.warn(`[chat_turn] Failed to notify channel after crash-recovery: ${(err as Error).message}`)
-      );
-    }
-
-    return { ok: true, result: lastContent };
+    );
+    return { ok: true, result: content };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }

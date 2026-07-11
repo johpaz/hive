@@ -10,8 +10,8 @@
  */
 
 import { resolveUserId, resolveAgentId } from "../../storage/onboarding";
-import { laneQueue } from "../lane-queue";
-import { AgentRunner } from "../../agent/providers";
+import { enqueueChatTurn } from "../webchat-turn";
+import { getJob } from "../job-store";
 import { getDefaultLLM } from "../../agent/llm-client";
 import { logger } from "../../utils/logger";
 import { saveScratchpadNote, listAllScratchpadNotes } from "../../agent/conversation-store";
@@ -107,53 +107,58 @@ export async function handleChat(
       ), req);
     }
 
-    // Create runner
-    const runner = new AgentRunner({} as any);
-
-    let responseContent = "";
-    let responseError: string | null = null;
-
-    // Enqueue in lane queue for processing
-    laneQueue.enqueue(threadId, async (_task, signal) => {
-      if (signal.aborted) return;
-
-      try {
-        log.info(`[chat] Generating response for thread ${threadId}...`);
-
-        const response = await runner.generate({
-          provider: provider as any,
-          messages,
-          rawUserMessage: message,
-          maxTokens: 4096,
-          maxSteps: 15,
-          threadId,
-          userId: finalUserId,
-          agentId: finalAgentId,
-          channel,
-          onStep: async (step) => {
-            if (step.type === "text" && step.message) {
-              log.debug(`[chat] Step: ${step.message.substring(0, 100)}`);
-            }
-            if (step.type === "tool_result" && step.message) {
-              log.debug(`[chat] Tool result: ${step.message.substring(0, 100)}`);
-            }
-          },
-        });
-
-        responseContent = response.content?.trim() || "Task completed.";
-        log.info(`[chat] Response generated: ${responseContent.substring(0, 100)}...`);
-
-      } catch (error) {
-        log.error(`[chat] Error for thread ${threadId}: ${(error as Error).message}`);
-        responseError = (error as Error).message;
-      }
+    // Enqueue a durable chat_turn job: it survives a crash and re-executes,
+    // delivering through the webchat channel if this HTTP client is gone.
+    const job = await enqueueChatTurn({
+      lane: threadId,
+      payload: {
+        source: "api",
+        sessionId: threadId,
+        content: messageContent,
+        rawContent: message,
+        userId: finalUserId,
+        agentId: finalAgentId,
+        channel,
+      },
     });
 
-    // Wait for processing to complete (with timeout)
+    log.info(`[chat] Enqueued chat_turn job ${job.id} for thread ${threadId}`);
+
+    // Wait for the job to complete (with timeout)
     const startTime = Date.now();
     const timeout = 120000; // 2 minutes timeout
 
-    while (!responseContent && !responseError) {
+    for (;;) {
+      const current = await getJob(job.id);
+
+      if (current?.status === "completed") {
+        let responseContent = "";
+        try {
+          responseContent = current.result_json ? String(JSON.parse(current.result_json) ?? "") : "";
+        } catch {
+          responseContent = current.result_json ?? "";
+        }
+        return addCorsHeaders(
+          Response.json({
+            success: true,
+            thread_id: threadId,
+            content: responseContent || "Task completed.",
+          }),
+          req
+        );
+      }
+
+      if (current && (current.status === "failed" || current.status === "cancelled" || current.status === "interrupted")) {
+        return addCorsHeaders(
+          Response.json({
+            success: false,
+            error: current.error || `Job ${current.status}`,
+            thread_id: threadId,
+          }, { status: 500 }),
+          req
+        );
+      }
+
       if (Date.now() - startTime > timeout) {
         return addCorsHeaders(
           Response.json({
@@ -164,28 +169,9 @@ export async function handleChat(
           req
         );
       }
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
 
-    if (responseError) {
-      return addCorsHeaders(
-        Response.json({
-          success: false,
-          error: responseError,
-          thread_id: threadId,
-        }, { status: 500 }),
-        req
-      );
+      await new Promise(resolve => setTimeout(resolve, 150));
     }
-
-    return addCorsHeaders(
-      Response.json({
-        success: true,
-        thread_id: threadId,
-        content: responseContent,
-      }),
-      req
-    );
 
   } catch (error) {
     log.error(`[chat] Handler error: ${(error as Error).message}`);

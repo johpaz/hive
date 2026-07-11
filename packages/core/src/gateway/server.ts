@@ -2,7 +2,7 @@ import type { Config } from "../config/loader";
 import { loadConfig, getHiveDir } from "../config/loader";
 import { logger, onLogEntry } from "../utils/logger";
 import { sessionManager, parseSessionId } from "./session";
-import { laneQueue } from "./lane-queue";
+import { enqueueChatTurn, initWebchatTurnRunner } from "./webchat-turn";
 import {
   type InboundMessage,
   type OutboundMessage,
@@ -226,6 +226,12 @@ export async function startGateway(config: Config): Promise<void> {
         initJobExecutors();
         const durableQueue = initDurableQueue({ maxGlobalConcurrency: 4 });
         setJobExecutorMCPManager(agent?.getMCPManager() ?? null);
+        // chat_turn jobs re-execute through this runner (live or post-crash)
+        initWebchatTurnRunner({
+          runner,
+          getProvider: () => dbProvider,
+          getModel: () => dbModel,
+        });
         log.info(`🔀 DurableQueue initialized (maxConcurrency=${durableQueue.getMaxGlobalConcurrency()})`);
 
         // Initialize TaskDriver (project/task engine)
@@ -2047,47 +2053,14 @@ export async function startGateway(config: Config): Promise<void> {
           const sessionId = data.sessionId;
           ws.send(JSON.stringify({ type: "typing", isTyping: true, sessionId } as OutboundMessage));
 
-          laneQueue.enqueue(sessionId, async (_task, signal) => {
-            if (signal.aborted) {
-              ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId } as OutboundMessage));
-              return;
-            }
-            try {
-              const { userId, threadId: conversationThreadId } = await resolveContext({ channel: "webchat", channelUserId: sessionId });
-              const messages = [{ role: "user" as const, content: interactionMsg }];
-              let streamedContent = "";
-              const messageId = crypto.randomUUID();
-
-              const response = await runner.generate({
-                provider: dbProvider as any,
-                messages,
-                maxTokens: 4096,
-                tools: prepareTools(agent, conversationThreadId),
-                maxSteps: 15,
-                threadId: conversationThreadId,
-                userId,
-                onToken: async (token: string) => {
-                  if (signal.aborted) return;
-                  streamedContent += token;
-                  ws.send(JSON.stringify({ type: "message", id: messageId, sessionId, content: token, isChunk: true, isStep: false } as OutboundMessage));
-                },
-                onStep: async (step) => {
-                  if (signal.aborted) return;
-                  log.debug(`[a2ui:action TOOL] ${step.type}: ${step.toolName || ""}`);
-                },
-              });
-
-              ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId } as OutboundMessage));
-
-              const content = streamedContent || response.content?.trim() || "";
-              if (content && streamedContent.length === 0) {
-                ws.send(JSON.stringify({ type: "message", sessionId, content, isStep: false } as OutboundMessage));
-              }
-            } catch (error) {
-              ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId } as OutboundMessage));
-              ws.send(JSON.stringify({ type: "error", sessionId, error: (error as Error).message } as OutboundMessage));
-              log.error(`A2UI action agent error: ${(error as Error).message}`);
-            }
+          enqueueChatTurn({
+            lane: sessionId,
+            payload: { source: "a2ui", sessionId, content: interactionMsg },
+            live: { sendRaw: (payload) => ws.send(payload) },
+          }).catch((error) => {
+            ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId } as OutboundMessage));
+            ws.send(JSON.stringify({ type: "error", sessionId, error: (error as Error).message } as OutboundMessage));
+            log.error(`A2UI action enqueue error: ${(error as Error).message}`);
           });
 
           return;
@@ -2122,47 +2095,14 @@ export async function startGateway(config: Config): Promise<void> {
 
             ws.send(JSON.stringify({ type: "typing", isTyping: true, sessionId } as OutboundMessage));
 
-            laneQueue.enqueue(sessionId, async (_task, signal) => {
-              if (signal.aborted) {
-                ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId } as OutboundMessage));
-                return;
-              }
-              try {
-                const { userId, threadId: conversationThreadId } = await resolveContext({ channel: "webchat", channelUserId: sessionId });
-                const messages = [{ role: "user" as const, content: interactionMsg }];
-                let streamedContent = "";
-                const messageId = crypto.randomUUID();
-
-                const response = await runner.generate({
-                  provider: dbProvider as any,
-                  messages,
-                  maxTokens: 4096,
-                  tools: prepareTools(agent, conversationThreadId),
-                  maxSteps: 15,
-                  threadId: conversationThreadId,
-                  userId,
-                  onToken: async (token: string) => {
-                    if (signal.aborted) return;
-                    streamedContent += token;
-                    ws.send(JSON.stringify({ type: "message", id: messageId, sessionId, content: token, isChunk: true, isStep: false } as OutboundMessage));
-                  },
-                  onStep: async (step) => {
-                    if (signal.aborted) return;
-                    log.debug(`[canvas:interact TOOL] ${step.type}: ${step.toolName || ""}`);
-                  },
-                });
-
-                ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId } as OutboundMessage));
-
-                const content = streamedContent || response.content?.trim() || "";
-                if (content && streamedContent.length === 0) {
-                  ws.send(JSON.stringify({ type: "message", sessionId, content, isStep: false } as OutboundMessage));
-                }
-              } catch (error) {
-                ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId } as OutboundMessage));
-                ws.send(JSON.stringify({ type: "error", sessionId, error: (error as Error).message } as OutboundMessage));
-                log.error(`Canvas interact agent error: ${(error as Error).message}`);
-              }
+            enqueueChatTurn({
+              lane: sessionId,
+              payload: { source: "canvas", sessionId, content: interactionMsg },
+              live: { sendRaw: (payload) => ws.send(payload) },
+            }).catch((error) => {
+              ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId } as OutboundMessage));
+              ws.send(JSON.stringify({ type: "error", sessionId, error: (error as Error).message } as OutboundMessage));
+              log.error(`Canvas interact enqueue error: ${(error as Error).message}`);
             });
           }
 
@@ -2193,7 +2133,7 @@ export async function startGateway(config: Config): Promise<void> {
 
         // Stop generation (like ChatGPT/Claude stop button)
         if (msg.type === "stop") {
-          const cancelled = laneQueue.cancel(msg.sessionId);
+          const cancelled = (await getDurableQueue().cancelLane(msg.sessionId)) > 0;
           log.info(`[stop] Session ${msg.sessionId} — cancelled: ${cancelled}`);
           ws.send(JSON.stringify({
             type: "typing",
@@ -2211,7 +2151,6 @@ export async function startGateway(config: Config): Promise<void> {
         }
 
         // Handle audio messages from WebChat
-        let webchatPreferAudio = false;
         if (msg.type === "audio" && msg.audio) {
           log.info(`WebChat audio from session ${msg.sessionId}`);
 
@@ -2248,8 +2187,6 @@ export async function startGateway(config: Config): Promise<void> {
 
             log.info(`📝 Transcribed: ${messageContent.substring(0, 100)}...`);
 
-            webchatPreferAudio = true;
-
             ws.send(JSON.stringify({
               type: "message",
               sessionId: msg.sessionId,
@@ -2262,171 +2199,19 @@ export async function startGateway(config: Config): Promise<void> {
               sessionId: msg.sessionId,
             } as OutboundMessage));
 
-            laneQueue.enqueue(msg.sessionId, async (_task, signal) => {
-              let processReporter: ReturnType<typeof createWebChatProcessReporter> | null = null;
-              if (signal.aborted) {
-                ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId: msg.sessionId } as OutboundMessage));
-                ws.send(JSON.stringify({ type: "error", sessionId: msg.sessionId, error: "Task cancelled" } as OutboundMessage));
-                return;
-              }
-
-              try {
-                const { userId, threadId: conversationThreadId } = await resolveContext({
-                  channel: "webchat",
-                  channelUserId: msg.sessionId,
-                });
-                const unifiedSessionId = conversationThreadId;
-                const routingSessionId = msg.sessionId;
-                const messages = [{ role: "user" as const, content: messageContent }];
-                const messageId = crypto.randomUUID();
-                processReporter = createWebChatProcessReporter(ws, routingSessionId, messageId);
-                processReporter.start("Revisando la transcripcion");
-                log.info(`Generating response for session ${unifiedSessionId}...`);
-
-                // Streaming: send tokens as they arrive
-                let streamedContent = "";
-                let reportedWriting = false;
-
-                const response = await runner.generate({
-                  provider: dbProvider as any,
-                  messages,
-                  maxTokens: 4096,
-                  tools: prepareTools(agent, unifiedSessionId),
-                  maxSteps: 15,
-                  threadId: unifiedSessionId,
-                  userId,
-                  onToken: async (token: string) => {
-                    if (signal.aborted) return;
-                    if (!reportedWriting && token.trim()) {
-                      reportedWriting = true;
-                      processReporter?.writing();
-                    }
-                    streamedContent += token;
-                    // Send chunk to client
-                    ws.send(JSON.stringify({
-                      type: "message",
-                      id: messageId,
-                      sessionId: routingSessionId,
-                      content: token,
-                      isChunk: true,
-                      isStep: false,
-                    } as OutboundMessage));
-                  },
-                  onReasoningToken: async (token: string) => {
-                    if (signal.aborted) return;
-                    ws.send(JSON.stringify({
-                      type: "reasoning",
-                      id: messageId,
-                      sessionId: routingSessionId,
-                      content: token,
-                      isChunk: true,
-                    } as OutboundMessage));
-                  },
-                  onStep: async (step) => {
-                    if (signal.aborted) return;
-                    processReporter?.step(step);
-
-                    // "tool_result" = resultado de herramienta → solo si pide enviarse al usuario
-                    if (step.type === "tool_result" && step.message) {
-                      try {
-                        const result = JSON.parse(step.message);
-                        if (result._sendToUser || result.status) {
-                          const userMessage = result.message || result.status || "";
-                          if (userMessage) {
-                            ws.send(JSON.stringify({
-                              type: "progress",
-                              sessionId: routingSessionId,
-                              content: userMessage,
-                            } as OutboundMessage));
-                          }
-                          return;
-                        }
-                      } catch { }
-                    }
-                  },
-                });
-
-                // Use streamed content from onToken, fallback to response.content
-                const content = streamedContent || response.content?.trim() || "";
-                log.info(`Response sent to session ${unifiedSessionId} (${content.length} chars)`);
-
-                const voiceCfg = await voiceService.getChannelVoiceConfig("webchat");
-                const shouldSpeak = webchatPreferAudio;
-                let responseType: "text" | "audio" = "text";
-                let ttsProviderUsed: string | null = null;
-                let ttsMimeType: string | null = null;
-
-                ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId: routingSessionId } as OutboundMessage));
-
-                // Don't send text message if already streamed (content came via onToken)
-                const alreadyStreamed = streamedContent.length > 0;
-
-                if (content && !alreadyStreamed) {
-                  if (shouldSpeak) {
-                    if (!voiceCfg.ttsProvider) {
-                      ws.send(JSON.stringify({
-                        type: "message",
-                        id: messageId,
-                        sessionId: routingSessionId,
-                        content: `${content}\n\n🔊 Para recibir respuestas en audio, configura el proveedor TTS en Configuración > Canales > WebChat (ej: elevenlabs)`,
-                        isStep: false,
-                      } as OutboundMessage));
-                    } else {
-                      try {
-                        log.info(`🔊 TTS enabled, synthesizing audio for WebChat...`);
-                        const audioOutput = await voiceService.speak(content, voiceCfg.ttsProvider, voiceCfg.ttsVoiceId || undefined);
-                        ttsProviderUsed = voiceCfg.ttsProvider;
-                        ttsMimeType = audioOutput.mimeType;
-                        responseType = "audio";
-                        const base64Audio = (audioOutput.data as Buffer).toString("base64");
-                        log.info(`Audio generated: ${base64Audio.length} bytes, mimeType: ${audioOutput.mimeType}`);
-                        ws.send(JSON.stringify({
-                          type: "message",
-                          id: messageId,
-                          sessionId: routingSessionId,
-                          content,
-                          audio: base64Audio,
-                          mimeType: audioOutput.mimeType,
-                          isStep: false
-                        } as OutboundMessage));
-                      } catch (ttsError) {
-                        log.error(`TTS failed: ${(ttsError as Error).message}), sending text instead`);
-                        ws.send(JSON.stringify({ type: "message", id: messageId, sessionId: routingSessionId, content, isStep: false } as OutboundMessage));
-                      }
-                    }
-                  } else {
-                    ws.send(JSON.stringify({ type: "message", id: messageId, sessionId: routingSessionId, content, isStep: false } as OutboundMessage));
-                  }
-                } else if (alreadyStreamed && shouldSpeak && voiceCfg.ttsProvider) {
-                  try {
-                    log.info(`🔊 TTS enabled, synthesizing audio after streaming...`);
-                    const audioOutput = await voiceService.speak(content, voiceCfg.ttsProvider, voiceCfg.ttsVoiceId || undefined);
-                    const base64Audio = (audioOutput.data as Buffer).toString("base64");
-                    log.info(`Audio generated after streaming: ${base64Audio.length} bytes`);
-                    ws.send(JSON.stringify({
-                      type: "message",
-                      id: messageId,
-                      sessionId: routingSessionId,
-                      content,
-                      audio: base64Audio,
-                      mimeType: audioOutput.mimeType,
-                      isStep: false
-                    } as OutboundMessage));
-                  } catch (ttsError) {
-                    log.error(`TTS after streaming failed: ${(ttsError as Error).message}), skipping audio`);
-                  }
-                }
-                processReporter.done("Listo");
-              } catch (error) {
-                processReporter?.error("No se pudo completar la respuesta");
-                ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId: msg.sessionId } as OutboundMessage));
-                ws.send(JSON.stringify({
-                  type: "error",
-                  sessionId: msg.sessionId,
-                  error: (error as Error).message,
-                } as OutboundMessage));
-                log.error(`Error for session ${msg.sessionId}: ${(error as Error).message}`);
-              }
+            enqueueChatTurn({
+              lane: msg.sessionId,
+              payload: {
+                source: "audio",
+                sessionId: msg.sessionId,
+                content: messageContent,
+                preferAudio: true,
+              },
+              live: { sendRaw: (payload) => ws.send(payload) },
+            }).catch((error) => {
+              ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId: msg.sessionId } as OutboundMessage));
+              ws.send(JSON.stringify({ type: "error", sessionId: msg.sessionId, error: (error as Error).message } as OutboundMessage));
+              log.error(`Audio turn enqueue error: ${(error as Error).message}`);
             });
           } catch (error) {
             ws.send(JSON.stringify({
@@ -2454,238 +2239,28 @@ export async function startGateway(config: Config): Promise<void> {
             sessionId: msg.sessionId,
           } as OutboundMessage));
 
-          laneQueue.enqueue(msg.sessionId, async (_task, signal) => {
-            let processReporter: ReturnType<typeof createWebChatProcessReporter> | null = null;
-            if (signal.aborted) {
-              ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId: msg.sessionId } as OutboundMessage));
-              ws.send(JSON.stringify({ type: "error", sessionId: msg.sessionId, error: "Task cancelled" } as OutboundMessage));
-              return;
-            }
-
-            try {
-              const { userId, threadId: conversationThreadId } = await resolveContext({
-                channel: "webchat",
-                channelUserId: msg.sessionId,
-              });
-              const unifiedSessionId = conversationThreadId;
-              const routingSessionId = msg.sessionId;
-              const messageId = crypto.randomUUID();
-              processReporter = createWebChatProcessReporter(ws, routingSessionId, messageId);
-              processReporter.start(msg.image || msg.document ? "Revisando tu solicitud y adjuntos" : "Revisando tu solicitud");
-
-              // Multimodal: process image/document if present
-              let finalMessageContent = msg.content;
-              let contentParts: any[] | undefined = undefined;
-              const visionConfig = await multimodalService.getChannelVisionConfig("webchat");
-
-              if (msg.image || msg.document) {
-                log.info(`🖼️ Multimodal content detected from WebChat session ${unifiedSessionId}`);
-                processReporter.step({ type: "tool_result" });
-
-                if (msg.image) {
-                  try {
-                    const imageInput = {
-                      type: "base64" as const,
-                      data: msg.image.base64,
-                      mimeType: msg.image.mimeType || "image/jpeg",
-                      caption: msg.image.caption
-                    };
-
-                    const activeModelId = dbModel;
-                    const activeProviderId = dbProvider;
-                    const modelHasVision = activeModelId && activeProviderId
-                      ? await multimodalService.modelSupportsVision(activeProviderId, activeModelId)
-                      : false;
-
-                    if (visionConfig.visionEnabled && modelHasVision) {
-                      contentParts = await multimodalService.processImage(imageInput, visionConfig.visionModelId || undefined);
-                      log.info(`🖼️ Image sent as vision ContentParts (model supports vision)`);
-                    } else {
-                      const ocrProvider = visionConfig.ocrProvider || (["openai", "gemini", "anthropic"].includes(dbProvider) ? dbProvider : "openai");
-                      log.info(`🖼️ Model lacks vision or vision disabled, using OCR via ${ocrProvider}...`);
-                      const ocrText = await multimodalService.ocrImage(imageInput, ocrProvider);
-                      finalMessageContent = ocrText
-                        ? `[Imagen adjunta — contenido extraído por OCR]\n${ocrText}\n\n${finalMessageContent || ""}`
-                        : finalMessageContent || "";
-                      log.info(`🖼️ OCR result: ${ocrText.substring(0, 100)}...`);
-                    }
-                  } catch (imgError) {
-                    log.error(`❌ Image processing failed: ${(imgError as Error).message}`);
-                  }
-                }
-
-                if (msg.document) {
-                  try {
-                    const ocrProvider = visionConfig.ocrProvider || (["openai", "gemini", "anthropic"].includes(dbProvider) ? dbProvider : "openai");
-                    log.info(`📄 Document detected from WebChat, extracting text via OCR (${ocrProvider})...`);
-                    const docImage = {
-                      type: "base64" as const,
-                      data: msg.document.base64,
-                      mimeType: msg.document.mimeType || "application/pdf",
-                      caption: (msg.document as any).fileName || (msg.document as any).caption
-                    };
-                    const ocrText = await multimodalService.ocrImage(docImage, ocrProvider);
-                    finalMessageContent = ocrText
-                      ? `[Documento adjunto]\n${ocrText}\n\n${finalMessageContent || ""}`
-                      : finalMessageContent || "";
-                    log.info(`📄 Document OCR result: ${ocrText.substring(0, 100)}...`);
-                  } catch (docError) {
-                    log.error(`❌ Document processing failed: ${(docError as Error).message}`);
-                  }
-                }
-              }
-
-              const messages: any[] = contentParts
-                ? [{ role: "user" as const, content: contentParts }]
-                : [{ role: "user" as const, content: finalMessageContent }];
-
-              log.info(`Generating response for session ${unifiedSessionId} (multimodal: ${!!(msg.image || msg.document)})...`);
-
-              // Streaming: send tokens as they arrive
-              let streamedContent = "";
-              let reportedWriting = false;
-
-              const response = await runner.generate({
-                provider: dbProvider as any,
-                messages,
-                maxTokens: 4096,
-                tools: prepareTools(agent, unifiedSessionId),
-                maxSteps: 15,
-                threadId: unifiedSessionId,
-                userId,
-                signal,
-                onToken: async (token: string) => {
-                  if (signal.aborted) return;
-                  if (!reportedWriting && token.trim()) {
-                    reportedWriting = true;
-                    processReporter?.writing();
-                  }
-                  streamedContent += token;
-                  // Send chunk to client
-                  ws.send(JSON.stringify({
-                    type: "message",
-                    id: messageId,
-                    sessionId: routingSessionId,
-                    content: token,
-                    isChunk: true,
-                    isStep: false,
-                  } as OutboundMessage));
-                },
-                onReasoningToken: async (token: string) => {
-                  if (signal.aborted) return;
-                  ws.send(JSON.stringify({
-                    type: "reasoning",
-                    id: messageId,
-                    sessionId: routingSessionId,
-                    content: token,
-                    isChunk: true,
-                  } as OutboundMessage));
-                },
-                onStep: async (step) => {
-                  if (signal.aborted) return;
-                  processReporter?.step(step);
-
-                  // "tool_result" = resultado de herramienta → solo si pide enviarse al usuario
-                  if (step.type === "tool_result" && step.message) {
-                    try {
-                      const result = JSON.parse(step.message);
-                      if (result._sendToUser || result.status) {
-                        const userMessage = result.message || result.status || "";
-                        if (userMessage) {
-                          ws.send(JSON.stringify({
-                            type: "progress",
-                            sessionId: routingSessionId,
-                            content: userMessage,
-                          } as OutboundMessage));
-                        }
-                        return;
-                      }
-                    } catch { }
-                  }
-                },
-              });
-
-              // Use streamed content from onToken, fallback to response.content
-              const content = streamedContent || response.content?.trim() || "";
-              log.info(`Response sent to session ${unifiedSessionId} (${content.length} chars)`);
-
-              const voiceConfig = await voiceService.getChannelVoiceConfig("webchat");
-              const shouldSpeak = webchatPreferAudio;
-              let responseType: "text" | "audio" = "text";
-              let ttsProviderUsed: string | null = null;
-              let ttsMimeType: string | null = null;
-
-              ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId: routingSessionId } as OutboundMessage));
-
-              // Don't send text message if already streamed (content came via onToken)
-              const alreadyStreamed = streamedContent.length > 0;
-
-              if (content && !alreadyStreamed) {
-                if (shouldSpeak) {
-                  if (!voiceConfig.ttsProvider) {
-                    ws.send(JSON.stringify({
-                      type: "message",
-                      id: messageId,
-                      sessionId: routingSessionId,
-                      content: `${content}\n\n🔊 Para recibir respuestas en audio, configura el proveedor TTS en Configuración > Canales > WebChat (ej: elevenlabs)`,
-                      isStep: false
-                    } as OutboundMessage));
-                  } else {
-                    try {
-                      log.info(`🔊 TTS enabled, synthesizing audio for WebChat...`);
-                      const audioOutput = await voiceService.speak(content, voiceConfig.ttsProvider, voiceConfig.ttsVoiceId || undefined);
-                      ttsProviderUsed = voiceConfig.ttsProvider;
-                      ttsMimeType = audioOutput.mimeType;
-                      responseType = "audio";
-                      const base64Audio = (audioOutput.data as Buffer).toString("base64");
-                      ws.send(JSON.stringify({
-                        type: "message",
-                        id: messageId,
-                        sessionId: routingSessionId,
-                        content,
-                        audio: base64Audio,
-                        mimeType: audioOutput.mimeType,
-                        isStep: false
-                      } as OutboundMessage));
-                    } catch (ttsError) {
-                      log.error(`TTS failed: ${(ttsError as Error).message}), sending text instead`);
-                      ws.send(JSON.stringify({ type: "message", id: messageId, sessionId: routingSessionId, content, isStep: false } as OutboundMessage));
-                    }
-                  }
-                } else {
-                  ws.send(JSON.stringify({ type: "message", id: messageId, sessionId: routingSessionId, content, isStep: false } as OutboundMessage));
-                }
-              } else if (alreadyStreamed && shouldSpeak && voiceConfig.ttsProvider) {
-                try {
-                  log.info(`🔊 TTS enabled, synthesizing audio after streaming...`);
-                  const audioOutput = await voiceService.speak(content, voiceConfig.ttsProvider, voiceConfig.ttsVoiceId || undefined);
-                  const base64Audio = (audioOutput.data as Buffer).toString("base64");
-                  log.info(`Audio generated after streaming: ${base64Audio.length} bytes`);
-                  ws.send(JSON.stringify({
-                    type: "message",
-                    id: messageId,
-                    sessionId: routingSessionId,
-                    content,
-                    audio: base64Audio,
-                    mimeType: audioOutput.mimeType,
-                    isStep: false
-                  } as OutboundMessage));
-                } catch (ttsError) {
-                  log.error(`TTS after streaming failed: ${(ttsError as Error).message}), skipping audio`);
-                }
-              }
-              processReporter.done("Listo");
-            } catch (error) {
-              processReporter?.error("No se pudo completar la respuesta");
-              // Detener typing aunque falle — nunca dejar el spinner infinito
-              ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId: msg.sessionId } as OutboundMessage));
-              ws.send(JSON.stringify({
-                type: "error",
-                sessionId: msg.sessionId,
-                error: (error as Error).message,
-              } as OutboundMessage));
-              log.error(`Error for session ${msg.sessionId}: ${(error as Error).message}`);
-            }
+          enqueueChatTurn({
+            lane: msg.sessionId,
+            payload: {
+              source: "message",
+              sessionId: msg.sessionId,
+              content: msg.content,
+              image: msg.image
+                ? { base64: msg.image.base64, mimeType: msg.image.mimeType, caption: msg.image.caption }
+                : undefined,
+              document: msg.document
+                ? { base64: msg.document.base64, mimeType: msg.document.mimeType, fileName: (msg.document as any).fileName ?? (msg.document as any).caption }
+                : undefined,
+            },
+            live: { sendRaw: (payload) => ws.send(payload) },
+          }).catch((error) => {
+            ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId: msg.sessionId } as OutboundMessage));
+            ws.send(JSON.stringify({
+              type: "error",
+              sessionId: msg.sessionId,
+              error: (error as Error).message,
+            } as OutboundMessage));
+            log.error(`Message turn enqueue error: ${(error as Error).message}`);
           });
 
           return;
@@ -2714,7 +2289,7 @@ export async function startGateway(config: Config): Promise<void> {
         log.debug(`WebSocket disconnected: ${data.sessionId}`);
         logSubscribers.delete(data.sessionId);
         sessionManager.delete(data.sessionId);
-        laneQueue.cancel(data.sessionId);
+        getDurableQueue().cancelLane(data.sessionId).catch(() => {});
         unsubscribeCanvas(ws);
         canvasManager.unregisterSession(`canvas:${data.sessionId}`);
 
