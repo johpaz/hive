@@ -14,11 +14,12 @@
 import { registerExecutor, type JobExecutor } from "./durable-queue";
 import { logger } from "../utils/logger";
 import { col, updateDoc } from "../storage/hive";
-import type { JobDoc, TaskDoc } from "../storage/collections";
+import type { JobDoc, TaskDoc, AgentRunDoc } from "../storage/collections";
 import { runAgent, runAgentIsolated } from "../agent/agent-loop";
-import { createRun, completeRun, failRun, interruptRun, getRun } from "../agent/run-store";
+import { createRun, completeRun, failRun, interruptRun, getRun, reclaimRun, bumpTurn, startLeaseRenewal, stopLeaseRenewal } from "../agent/run-store";
 import { getDurableQueue } from "./durable-queue";
 import { sendToUserChannel } from "./channel-notify";
+import { verifyGoal } from "../agent/goal-runner";
 import { runWebchatTurn, type WebchatTurnPayload } from "./webchat-turn";
 import { agentBus } from "../events/agent-bus";
 import { resolveContext } from "./resolver";
@@ -208,40 +209,132 @@ const projectTaskExecutor: JobExecutor = async (job, signal) => {
 };
 
 // ─── goal_run executor ──────────────────────────────────────────────────────
-// (Phase 3 will flesh this out; for now it's a placeholder that runs the agent loop)
+// Multi-turn orchestration: run a turn → verify the goal → continue with the
+// verifier's feedback until the goal is met or the budget runs out. The goal
+// AgentRun row (job.run_id) is the orchestrator record: goal_attempts,
+// turns_used and tokens_used accumulate across turns and the budget is HARD.
+// Turns are plain (non-durable) runs on the same thread — a mid-turn crash
+// re-runs the current attempt; conversation history preserves prior progress.
 
 const goalRunExecutor: JobExecutor = async (job, signal) => {
   const payload = JSON.parse(job.payload_json);
   const agentId = payload.agentId as string;
   const threadId = payload.threadId as string;
   const goal = payload.goal as string;
-  const runId = job.run_id;
+  const checkTool = (payload.goal_check_tool as string | null) ?? null;
+  const budget = (payload.budget ?? {}) as { maxIterations?: number; maxTurns?: number; maxTokens?: number };
+  const maxIterationsPerTurn = budget.maxIterations ?? 20;
+  const maxTurns = budget.maxTurns ?? 10;
+  const maxTokens = budget.maxTokens ?? 200_000;
+  const maxAttempts = (payload.maxAttempts as number | undefined) ?? 5;
+  const goalRunId = job.run_id;
 
-  log.info(`[goal_run] Job ${job.id} → agent=${agentId} goal="${goal}"`);
+  log.info(`[goal_run] Job ${job.id} → agent=${agentId} goal="${goal}" maxAttempts=${maxAttempts}`);
+
+  const goalRun = await getRun(goalRunId);
+  if (!goalRun) return { ok: false, error: `Goal run ${goalRunId} not found` };
+  const channel = goalRun.channel;
+  const notifyUserId = goalRun.user_id;
+
+  const notify = async (text: string) => {
+    if (channel && notifyUserId) {
+      await sendToUserChannel(channel, notifyUserId, text).catch(() => {});
+    }
+  };
+
+  await reclaimRun(goalRunId).catch(() => {});
+  startLeaseRenewal(goalRunId);
 
   try {
+    let attempts = goalRun.goal_attempts ?? 0;
     let lastContent = "";
-    for await (const chunk of runAgent({
-      agentId,
-      userMessage: `Goal: ${goal}`,
-      threadId,
-      signal,
-      runId,
-      resume: payload.resume ?? false,
-      durable: true,
-      runKind: "goal",
-      goal: { text: goal, checkTool: payload.goal_check_tool },
-      budget: payload.budget ?? { maxIterations: 50 },
-    })) {
-      if (chunk.agent?.messages?.[0]?.content) {
-        lastContent = chunk.agent.messages[0].content;
+    let lastReason = "";
+
+    for (;;) {
+      if (signal.aborted) {
+        await interruptRun(goalRunId, "Goal run aborted").catch(() => {});
+        return { ok: false, error: "Aborted" };
       }
+
+      // HARD budget check against the accumulated goal run row
+      const current = await getRun(goalRunId);
+      const turnsUsed = current?.turns_used ?? 0;
+      const tokensUsed = current?.tokens_used ?? 0;
+      if (attempts >= maxAttempts || turnsUsed >= maxTurns || tokensUsed >= maxTokens) {
+        const summary = `intentos ${attempts}/${maxAttempts}, turnos ${turnsUsed}/${maxTurns}, tokens ${tokensUsed}/${maxTokens}`;
+        await failRun(goalRunId, `Goal not met — budget exhausted (${summary}). ${lastReason}`.trim());
+        await notify(`❌ Meta no cumplida: "${goal}". Presupuesto agotado (${summary}).${lastReason ? ` Última razón: ${lastReason}` : ""}`);
+        return { ok: false, error: `Goal budget exhausted (${summary})` };
+      }
+
+      const turnMessage = attempts === 0
+        ? `Meta: ${goal}\n\nTrabajá hasta cumplir esta meta. Explicá el resultado al terminar.`
+        : `La meta aún no se verificó como cumplida.\nMeta: "${goal}"\nRazón del verificador: ${lastReason}\nPresupuesto restante: ${maxAttempts - attempts} intento(s), ${maxTurns - turnsUsed} turno(s).\nContinuá trabajando para cumplirla.`;
+
+      // One turn (non-durable: the goal row carries the durable state)
+      let turnTokens = 0;
+      let turnContent = "";
+      for await (const chunk of runAgent({
+        agentId,
+        userMessage: turnMessage,
+        threadId,
+        signal,
+        mcpManager,
+        budget: { maxIterations: maxIterationsPerTurn },
+      })) {
+        const msgs = (chunk as any).agent?.messages;
+        if (msgs?.[0]?.content) turnContent = msgs[0].content;
+        const usage = (chunk as any).usage;
+        if (usage) turnTokens = (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
+      }
+
+      attempts++;
+      lastContent = turnContent || lastContent;
+      await bumpTurn(goalRunId, turnTokens).catch(() => {});
+      await updateDoc<AgentRunDoc>("agentRuns", goalRunId, {
+        goal_attempts: attempts,
+        updated_at: Date.now(),
+      } as Partial<AgentRunDoc>).catch(() => {});
+
+      // Verify: deterministic tool when configured, LLM verifier otherwise
+      const providerCfg = await resolveGoalProviderCfg(agentId);
+      const verdict = await verifyGoal(goal, checkTool, [
+        { role: "user", content: `Meta: ${goal}` },
+        { role: "assistant", content: turnContent || "(sin respuesta)" },
+      ], providerCfg);
+
+      if (verdict.met) {
+        await completeRun(goalRunId, lastContent);
+        await notify(`✅ Meta cumplida: "${goal}". ${verdict.reason}`);
+        log.info(`[goal_run] Goal met after ${attempts} attempt(s): ${verdict.reason}`);
+        return { ok: true, result: { met: true, attempts, reason: verdict.reason, content: lastContent } };
+      }
+
+      lastReason = verdict.reason;
+      log.info(`[goal_run] Attempt ${attempts}/${maxAttempts} not met: ${verdict.reason}`);
     }
-    return { ok: true, result: lastContent };
   } catch (err) {
+    await failRun(goalRunId, (err as Error).message).catch(() => {});
     return { ok: false, error: (err as Error).message };
+  } finally {
+    stopLeaseRenewal(goalRunId);
   }
 };
+
+async function resolveGoalProviderCfg(agentId: string) {
+  const { fromIndexable } = await import("../storage/hive");
+  const { resolveProviderConfig, getDefaultLLM } = await import("../agent/llm-client");
+  const agentsCol = await col<{ provider_id?: string | null; model_id?: string | null }>("agents");
+  const entry = await agentsCol.get(agentId);
+  let providerId = entry ? fromIndexable(entry.doc.provider_id ?? null) : null;
+  let modelId = entry ? fromIndexable(entry.doc.model_id ?? null) : null;
+  if (!providerId || !modelId) {
+    const dflt = await getDefaultLLM();
+    providerId = providerId || dflt?.provider || "";
+    modelId = modelId || dflt?.model || "";
+  }
+  return resolveProviderConfig(providerId, modelId);
+}
 
 // ─── Register all executors ─────────────────────────────────────────────────
 

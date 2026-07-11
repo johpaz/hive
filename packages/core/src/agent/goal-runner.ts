@@ -10,18 +10,16 @@
  * 3. Between turns: compact context, inject goal/reason/budget reminder
  * 4. On completion: persist success/failure + notify channel
  *
- * The═budget═is═HARD: iterations, tokens, and turns all count across the
+ * The budget is HARD: iterations, tokens, and turns all count across the
  * entire run (not per-turn). This prevents endless loops.
  */
 
 import { logger } from "../utils/logger";
-import { callLLM, resolveProviderConfig, getDefaultLLM, type LLMMessage } from "./llm-client";
-import { createRun, getRun, completeRun, failRun, interruptRun, bumpTurn } from "./run-store";
-import { sendToUserChannel } from "../gateway/channel-notify";
+import { callLLM, type LLMMessage } from "./llm-client";
+import { createRun } from "./run-store";
 import { clearOldToolResults } from "./compaction";
-import { getBootId } from "../storage/boot-id";
+import { loadConfig } from "../config/loader";
 import { getDurableQueue } from "../gateway/durable-queue";
-import type { AgentDoc } from "../storage/collections";
 
 const log = logger.child("goal-runner");
 
@@ -87,7 +85,7 @@ export async function runGoal(opts: GoalRunOptions): Promise<GoalRunResult> {
       threadId: opts.threadId,
       goal: opts.goal,
       goal_check_tool: opts.goalCheckTool,
-      resume: false,
+      maxAttempts,
       budget: {
         maxIterations: maxIterationsPerTurn,
         maxTurns,
@@ -127,21 +125,26 @@ export async function verifyGoal(
   if (checkTool) {
     try {
       const { executeToolBatch } = await import("../tool-runtime");
-      const toolResults = await executeToolBatch({
-        toolCalls: [{
-          id: "goal-check",
-          function: { name: checkTool, arguments: JSON.stringify({ goal }) },
-        }],
-        allTools: [],
-        toolConfig: {},
-      });
-      const result = toolResults[0];
-      if (result?.ok) {
-        const content = String(result.result);
-        const met = content.toLowerCase().includes("true") || content.toLowerCase().includes('"met": true');
-        return { met, reason: met ? "Goal check tool confirmed success" : "Goal check tool returned false" };
+      const { createAllTools } = await import("../tools/index");
+      const allTools = createAllTools(loadConfig());
+      const toolDef = allTools.find((t) => t.name === checkTool);
+      if (!toolDef) {
+        log.warn(`[verifyGoal] Check tool "${checkTool}" not found in the tool registry — falling back to LLM verifier`);
+      } else {
+        const toolResults = await executeToolBatch({
+          toolCalls: [{
+            id: "goal-check",
+            function: { name: checkTool, arguments: JSON.stringify({ goal }) },
+          }],
+          allTools,
+          toolConfig: {},
+        });
+        const result = toolResults[0];
+        if (result?.ok) {
+          return interpretCheckResult(result.result);
+        }
+        return { met: false, reason: `Check tool failed: ${result?.error?.message ?? "unknown"}` };
       }
-      return { met: false, reason: `Check tool failed: ${result?.error?.message ?? "unknown"}` };
     } catch (err) {
       log.warn(`[verifyGoal] Check tool "${checkTool}" failed: ${(err as Error).message}`);
       // Fall through to LLM verifier
@@ -179,4 +182,34 @@ export async function verifyGoal(
     log.warn(`[verifyGoal] LLM verification failed: ${(err as Error).message}`);
     return { met: false, reason: `Verification error: ${(err as Error).message}` };
   }
+}
+
+/**
+ * Interpret a check tool's result strictly: an object with a boolean `met`,
+ * a bare boolean, or a JSON string with `met` — anything else is not met.
+ */
+function interpretCheckResult(raw: unknown): { met: boolean; reason: string } {
+  if (typeof raw === "boolean") {
+    return { met: raw, reason: raw ? "Check tool returned true" : "Check tool returned false" };
+  }
+  if (raw && typeof raw === "object" && "met" in (raw as Record<string, unknown>)) {
+    const obj = raw as { met: unknown; reason?: unknown };
+    return { met: obj.met === true, reason: typeof obj.reason === "string" ? obj.reason : `Check tool met=${obj.met === true}` };
+  }
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (trimmed === "true" || trimmed === "false") {
+      return { met: trimmed === "true", reason: `Check tool returned "${trimmed}"` };
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object" && "met" in parsed) {
+        return { met: parsed.met === true, reason: typeof parsed.reason === "string" ? parsed.reason : `Check tool met=${parsed.met === true}` };
+      }
+      if (typeof parsed === "boolean") {
+        return { met: parsed, reason: `Check tool returned ${parsed}` };
+      }
+    } catch { /* not JSON */ }
+  }
+  return { met: false, reason: "Check tool result had no interpretable met/true signal" };
 }
