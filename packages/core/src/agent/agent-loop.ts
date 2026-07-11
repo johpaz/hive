@@ -30,6 +30,19 @@ import type { ContentPart } from "../multimodal/types"
 import { loadConfig } from "../config/loader"
 import { executeToolBatch } from "../tool-runtime"
 import { createStuckLoopDetector, getInterventionMessage, type StuckLoopState } from "./stuck-loop"
+import {
+  createRun as createAgentRun,
+  checkpoint as checkpointRun,
+  completeRun,
+  failRun,
+  interruptRun,
+  getRun,
+  deserializeCheckpoint,
+  bumpTurn,
+  startLeaseRenewal,
+  stopLeaseRenewal,
+  type RunCheckpointState,
+} from "./run-store"
 
 const log = logger.child("agent-loop")
 
@@ -83,6 +96,25 @@ export interface AgentLoopOptions {
   rawUserMessage?: string
   /** Extra tools to force into the LLM loadout (used by tests/evals). */
   extraTools?: any[]
+  /** Run ID for an existing AgentRun — enables resume from checkpoint */
+  runId?: string
+  /** Whether to resume from a previously saved checkpoint */
+  resume?: boolean
+  /** Run budget — overrides agent.max_iterations when set */
+  budget?: {
+    maxIterations?: number
+    maxTurns?: number | null
+    maxTokens?: number | null
+  }
+  /** Goal-based continuation parameters */
+  goal?: {
+    text: string
+    checkTool?: string
+  }
+  /** Whether to checkpoint this run durably (default false for chat; auto-promoted for long turns) */
+  durable?: boolean
+  /** Kind of run for the AgentRun record */
+  runKind?: "chat" | "worker" | "goal" | "cron" | "project"
 }
 
 export type { StepEvent as AgentStepEvent }
@@ -116,7 +148,13 @@ export async function* runAgent(
   const agent = agentEntry.doc
 
   const agentName = agent.name || opts.agentId
-  const maxIterations = agent.max_iterations || 10
+  const maxIterations = opts.budget?.maxIterations ?? agent.max_iterations ?? 10
+
+  // ── Durable run tracking ─────────────────────────────────────────────────
+  let runId: string | null = opts.runId ?? null
+  let isDurable = !!opts.durable || !!opts.runId || !!opts.goal
+  const runKind = opts.runKind ?? (opts.isolated ? "worker" : "chat")
+  const DURABLE_PROMOTION_THRESHOLD = 6 // promote chat to durable after N iterations
 
   // Stuck-loop protection
   const stuckDetector = createStuckLoopDetector(loadConfig())
@@ -192,19 +230,78 @@ export async function* runAgent(
     messages.push({ role: "user", content: opts.userMessage })
   }
 
+  // ── Resume from checkpoint ─────────────────────────────────────────────────
+  let injectedToolNames: string[] = []
+  let systemPromptSkillSections: string[] = []
+  let resumedFromPending = false
   let iterations = 0
   let totalInputTokens = 0
   let totalOutputTokens = 0
+  let lastToolSignature = ""
+  let consecutiveRepeat = 0
+  let idleIterations = 0
+
+  if (opts.resume && runId) {
+    const existing = await getRun(runId)
+    if (existing && existing.state_json) {
+      const restored = deserializeCheckpoint(existing)
+      if (restored) {
+        messages = restored.messages
+        injectedToolNames = restored.injectedToolNames ?? []
+        systemPromptSkillSections = restored.systemPromptSkillSections ?? []
+        iterations = restored.iterations ?? 0
+        totalInputTokens = restored.totalInputTokens ?? 0
+        totalOutputTokens = restored.totalOutputTokens ?? 0
+        lastToolSignature = restored.lastToolSignature ?? ""
+        consecutiveRepeat = restored.consecutiveRepeat ?? 0
+        idleIterations = restored.idleIterations ?? 0
+        if (existing.pending_tool_calls_json) {
+          try {
+            const pending = JSON.parse(existing.pending_tool_calls_json)
+            const interruptedMsgs = pending.map((tc: any) => ({
+              role: "tool" as const,
+              content: "[interrupted] El proceso se reinició mientras esta herramienta corría. El resultado no está disponible — decidí si reintentar o continuar sin él.",
+              tool_call_id: tc.id,
+            }))
+            messages.push(...interruptedMsgs)
+            resumedFromPending = true
+            log.info(`[agent-loop] Resume: injected ${interruptedMsgs.length} synthetic [interrupted] tool message(s)`)
+          } catch { /* ignore bad json */ }
+        }
+        log.info(`[agent-loop] Resume: restored ${messages.length} messages, ${iterations} iterations from run ${runId}`)
+      }
+    }
+  }
+
+  // ── Create AgentRun if durable ────────────────────────────────────────────
+  if (!runId && isDurable) {
+    const run = await createAgentRun({
+      thread_id: opts.threadId,
+      agent_id: opts.agentId,
+      user_id: opts.userId ?? "",
+      channel: opts.channel ?? null,
+      kind: runKind,
+      max_iterations: maxIterations,
+      max_turns: opts.budget?.maxTurns ?? null,
+      max_tokens: opts.budget?.maxTokens ?? null,
+      goal: opts.goal?.text ?? null,
+      goal_check_tool: opts.goal?.checkTool ?? null,
+      resume_policy: "resume",
+    })
+    runId = run.id
+    log.info(`[agent-loop] Created durable run ${runId} (kind=${runKind})`)
+  }
+
+  // Start lease renewal timer if durable
+  if (runId && isDurable) {
+    startLeaseRenewal(runId)
+  }
+
   let finalContent = ""
   // Whether finalContent was already emitted to the stream (normal completion path
   // yields it at the top of the iteration; internal breaks set finalContent without yielding)
   let finalEmitted = false
-  // Loop detection: track last tool call signature to break identical consecutive calls
-  let lastToolSignature = ""
-  let consecutiveRepeat = 0
   let loopDetected = false
-  // Stall detection: iterations without a forward-progress tool call (write/click/navigate)
-  let idleIterations = 0
   const PROGRESS_TOOLS = new Set(["browser_type", "browser_click", "browser_navigate"])
 
   // ── The loop ────────────────────────────────────────────────────────────
@@ -306,6 +403,29 @@ export async function* runAgent(
     }
 
     const hiveConfig = loadConfig()
+
+    // ── Checkpoint: persist pending tool_calls BEFORE execution ──────────────
+    // If the process crashes mid-tool, the resume will inject synthetic
+    // [interrupted] tool messages instead of re-executing the tool.
+    if (runId && isDurable) {
+      try {
+        await checkpointRun(runId, {
+          version: 1,
+          messages: [...messages],
+          iterations,
+          totalInputTokens,
+          totalOutputTokens,
+          lastToolSignature,
+          consecutiveRepeat,
+          idleIterations,
+          injectedToolNames,
+          systemPromptSkillSections,
+        }, response.tool_calls)
+      } catch (err) {
+        log.warn(`[agent-loop] Pre-tool checkpoint failed: ${(err as Error).message}`)
+      }
+    }
+
     const toolResults = await executeToolBatch({
       toolCalls: response.tool_calls,
       allTools: ctx.allTools,
@@ -604,6 +724,63 @@ export async function* runAgent(
       nodeId: opts.agentId,
       changes: { status: "thinking", currentTool: null },
     })
+
+    // ── Post-tool checkpoint (pending_tool_calls cleared) ───────────────────
+    // Track injected tools for checkpoint
+    if (toolResults.some(r => r.toolName === "search_knowledge")) {
+      const alreadyTracked = new Set(injectedToolNames)
+      for (const tr of toolResults) {
+        if (tr.toolName !== "search_knowledge") {
+          const nativeTool = ctx.allTools.find(t => t.name === tr.toolName)
+          if (nativeTool && !alreadyTracked.has(tr.toolName)) {
+            injectedToolNames.push(tr.toolName)
+            alreadyTracked.add(tr.toolName)
+          }
+        }
+      }
+    }
+
+    // Auto-promote to durable for long-running chat turns
+    if (!isDurable && !opts.isolated && iterations >= DURABLE_PROMOTION_THRESHOLD) {
+      isDurable = true
+      const promoted = await createAgentRun({
+        thread_id: opts.threadId,
+        agent_id: opts.agentId,
+        user_id: opts.userId ?? "",
+        channel: opts.channel ?? null,
+        kind: "chat",
+        max_iterations: maxIterations,
+        resume_policy: "resume",
+      })
+      runId = promoted.id
+      startLeaseRenewal(runId)
+      log.info(`[agent-loop] Auto-promoted to durable run ${runId} at iteration ${iterations}`)
+    }
+
+    if (runId && isDurable) {
+      try {
+        await checkpointRun(runId, {
+          version: 1,
+          messages: [...messages],
+          iterations,
+          totalInputTokens,
+          totalOutputTokens,
+          lastToolSignature,
+          consecutiveRepeat,
+          idleIterations,
+          injectedToolNames,
+          systemPromptSkillSections,
+        }, null) // null = no pending tool calls (tools just completed)
+      } catch (err) {
+        log.warn(`[agent-loop] Post-tool checkpoint failed: ${(err as Error).message}`)
+      }
+    }
+
+    // Budget check: tokens
+    if (opts.budget?.maxTokens && (totalInputTokens + totalOutputTokens) >= opts.budget.maxTokens) {
+      log.info(`[agent-loop] Token budget exhausted (${totalInputTokens + totalOutputTokens}/${opts.budget.maxTokens})`)
+      break
+    }
   }
 
   // ── Synthesis call when max iterations hit without a text response ────────
@@ -692,6 +869,32 @@ export async function* runAgent(
     `[agent-loop] Done: agent=${agentName} iterations=${iterations} ` +
     `tokens=${totalInputTokens + totalOutputTokens} elapsed=${durationMs}ms`
   )
+
+  // ── Durable run finalization ──────────────────────────────────────────────
+  if (runId && isDurable) {
+    // Ensure final iteration count is persisted (loop may have broken before the
+    // in-loop post-tool checkpoint was reached, e.g. when LLM returns text immediately).
+    try {
+      await checkpointRun(runId, {
+        version: 1,
+        messages: [...messages],
+        iterations,
+        totalInputTokens,
+        totalOutputTokens,
+        lastToolSignature,
+        consecutiveRepeat,
+        idleIterations,
+        injectedToolNames,
+        systemPromptSkillSections,
+      }, null)
+    } catch { /* best-effort */ }
+    stopLeaseRenewal(runId)
+    if (opts.signal?.aborted) {
+      await interruptRun(runId, "Generation aborted by signal").catch(() => {})
+    } else {
+      await completeRun(runId).catch(() => {})
+    }
+  }
 }
 
 // ─── Isolated worker execution (Fase 4.4) ───────────────────────────────────

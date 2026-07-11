@@ -28,11 +28,19 @@ const _pkgVersion = (() => {
 import { cpus as osCpus } from "node:os";
 import { ensureHiveDb } from "../storage/bootstrap";
 import { col, fromIndexable, nextId } from "../storage/hive";
+import { reconcileOnBoot } from "../storage/reconcile";
+import { getBootId } from "../storage/boot-id";
+import { stopAllLeaseRenewals, interruptRun } from "../agent/run-store";
+import { shutdownToolRuntime } from "../tool-runtime";
+import { initDurableQueue, getDurableQueue } from "./durable-queue";
+import { initJobExecutors, setJobExecutorMCPManager } from "./job-executors";
+import { initTaskDriver } from "../scheduler/task-driver";
 import type { UserDoc, AgentDoc } from "../storage/collections";
 import { canvasManager } from "../canvas/canvas-manager.ts";
 import { subscribeCanvas, unsubscribeCanvas, emitCanvas, getCanvasSnapshot, removeCanvasComponent } from "../canvas/emitter";
 import { resolveCanvasInteraction } from "../tools/canvas/index";
 import { randomUUID } from "crypto";
+import { circuitBreakerRegistry } from "../resilience/circuit-breaker.ts";
 import { loadMcpHeaders } from "../storage/crypto.ts";
 import { resolveContext } from "./resolver";
 import { voiceService } from "../voice/index";
@@ -208,16 +216,21 @@ export async function startGateway(config: Config): Promise<void> {
 
       // ── Initialize New Cron Scheduler (Croner-based) ───────────────────────
       try {
-        // Repair orphaned task_runs (status='running' from previous crash)
-        const taskRunsCol = await col<import("../storage/collections").TaskRunDoc>("taskRuns")
-        const orphaned = (await taskRunsCol.scan({})).filter(e => e.doc.status === "running")
-        for (const run of orphaned) {
-          await taskRunsCol.put(run.id, {
-            ...run.doc,
-            status: "timeout",
-            finished_at: new Date().toISOString(),
-          }, { expectedVersion: run.version })
-        }
+        // ── Reconcile stale rows from previous crash ──────────────────────
+        // taskRuns running→timeout, meetings active→stopped, agentRuns expired
+        // lease→interrupted, jobQueue expired lease→reclaim/interrupt.
+        const bootId = getBootId();
+        await reconcileOnBoot(bootId);
+
+        // Initialize durable queue + executors
+        initJobExecutors();
+        const durableQueue = initDurableQueue({ maxGlobalConcurrency: 4 });
+        setJobExecutorMCPManager(agent?.getMCPManager() ?? null);
+        log.info(`🔀 DurableQueue initialized (maxConcurrency=${durableQueue.getMaxGlobalConcurrency()})`);
+
+        // Initialize TaskDriver (project/task engine)
+        initTaskDriver();
+        log.info("📋 TaskDriver initialized");
 
         // Create and boot scheduler
         const handler = createTaskHandler();
@@ -771,7 +784,12 @@ export async function startGateway(config: Config): Promise<void> {
         // ── Health (must be before UI routing so it works in dev mode too) ───
         if (url.pathname === "/health" || url.pathname === "/health/") {
           const uptime = Math.floor((Date.now() - startTime) / 1000);
-          return addCorsHeaders(Response.json({ status: "ok", version: _pkgVersion, uptime }), req);
+          return addCorsHeaders(Response.json({
+            status: "ok",
+            version: _pkgVersion,
+            uptime,
+            circuitBreakers: circuitBreakerRegistry.getAllStats(),
+          }), req);
         }
 
         // ── Dashboard / UI ────────────────────────────────────────────────────
@@ -1848,6 +1866,15 @@ export async function startGateway(config: Config): Promise<void> {
 
         sessionManager.create(data.sessionId, ws);
 
+        // ── Heartbeat ping (server→client every 30s) ──────────────────────
+        // Prevents proxy/load-balancer idle timeouts from killing the socket.
+        const pingInterval = setInterval(() => {
+          try {
+            if (ws.readyState === 1) ws.send(JSON.stringify({ type: "ping" }));
+          } catch { /* ignore */ }
+        }, 30_000);
+        (data as any)._pingInterval = pingInterval;
+
         const channel = channelManager?.getChannel("webchat") as any;
         if (channel?.registerConnection) channel.registerConnection(ws);
 
@@ -2678,6 +2705,12 @@ export async function startGateway(config: Config): Promise<void> {
           return;
         }
 
+        // Clear heartbeat ping timer
+        if ((data as any)._pingInterval) {
+          clearInterval((data as any)._pingInterval);
+          (data as any)._pingInterval = null;
+        }
+
         log.debug(`WebSocket disconnected: ${data.sessionId}`);
         logSubscribers.delete(data.sessionId);
         sessionManager.delete(data.sessionId);
@@ -2777,6 +2810,28 @@ export async function startGateway(config: Config): Promise<void> {
   process.on("SIGTERM", async () => {
     log.info("Received SIGTERM, shutting down gracefully...");
     watchers.forEach((close) => close());
+
+    // ── Durable runs: stop lease renewals + interrupt active runs ──────────
+    try {
+      stopAllLeaseRenewals();
+      const { findExpiredRuns } = await import("../agent/run-store");
+      const { findRunsByStatus } = await import("../agent/run-store");
+      const activeRuns = await findRunsByStatus("running");
+      for (const run of activeRuns) {
+        if (run.boot_id === getBootId()) {
+          await interruptRun(run.id, "Process shutdown (SIGTERM)").catch(() => {});
+        }
+      }
+      log.info(`[SIGTERM] Interrupted ${activeRuns.length} active durable run(s)`);
+    } catch (err) {
+      log.warn(`[SIGTERM] Failed to cleanup durable runs: ${(err as Error).message}`);
+    }
+
+    // ── Shutdown tool runtime (dispose worker pool) ──────────────────────
+    try {
+      shutdownToolRuntime();
+      log.info("[SIGTERM] Tool runtime disposed");
+    } catch { }
 
     const mcp = agent?.getMCPManager();
     if (mcp) {

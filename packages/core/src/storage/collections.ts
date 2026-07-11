@@ -265,6 +265,61 @@ export interface CursorDoc {
 
 // ─── Stage 5: scheduler ───────────────────────────────────────────────────────
 
+export interface AgentRunDoc {
+  id: string
+  thread_id: string
+  agent_id: string
+  user_id: string
+  channel: string | null
+  kind: "chat" | "worker" | "goal" | "cron" | "project"
+  status: "running" | "completed" | "failed" | "interrupted" | "aborted"
+
+  iterations_used: number
+  max_iterations: number
+  turns_used: number
+  max_turns: number | null
+  tokens_used: number
+  max_tokens: number | null
+
+  goal: string | null
+  goal_check_tool: string | null
+  goal_attempts: number
+
+  state_json: string
+  state_bytes: number
+  pending_tool_calls_json: string | null
+  checkpointed_at: number
+
+  boot_id: string
+  lease_expires_at: number
+  resume_policy: "resume" | "mark_interrupted" | "discard"
+
+  error: string | null
+  created_at: number
+  updated_at: number
+  finished_at: number | null
+}
+
+export interface JobDoc {
+  id: string
+  lane: string
+  type: "chat_turn" | "worker_task" | "project_task" | "goal_run"
+  status: "pending" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
+  priority: number
+  payload_json: string
+  run_id: string
+  attempts: number
+  max_attempts: number
+  not_before: number
+  boot_id: string | null
+  lease_expires_at: number | null
+  result_json: string | null
+  error: string | null
+  created_at: number
+  started_at: number | null
+  finished_at: number | null
+}
+
 export interface CronJobDoc {
   id: string
   name: string
@@ -288,6 +343,8 @@ export interface CronJobDoc {
   run_count: number
   error_count: number
   last_error: string | null
+  misfire_policy?: "skip" | "fire_once"
+  misfire_grace_min?: number
   created_at: string
   updated_at: string
   last_run_at: string | null
@@ -353,6 +410,11 @@ export interface TaskDoc {
   result: string | null
   error: string | null
   metadata: string | null
+  job_id: string | null
+  run_id: string | null
+  thread_id: string | null
+  started_at: number | null
+  attempts: number
   created_at: number
   updated_at: number
   completed_at: number | null

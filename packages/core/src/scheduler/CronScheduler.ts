@@ -39,17 +39,73 @@ export class CronScheduler {
   }
 
   /**
-   * Boot the scheduler - load all active jobs from DB and activate them
+   * Boot the scheduler - load all active jobs from DB and activate them.
+   * Also detects misfires (next_run_at/fire_at in the past) and handles
+   * them according to misfire_policy.
    */
   async boot(): Promise<void> {
     const cronJobsCol = await col<CronJobDoc>("cronJobs");
     const tasks = (await cronJobsCol.findBy("status", "active")).map(e => fromDoc(e.doc));
 
+    const now = new Date();
+    let misfireCount = 0;
+
     for (const task of tasks) {
-      await this.activate(task);
+      // ── Misfire detection ──────────────────────────────────────────────
+      const misfirePolicy = task.misfire_policy ?? "skip";
+      const graceMin = task.misfire_grace_min ?? 60;
+      const graceCutoff = new Date(now.getTime() - graceMin * 60 * 1000);
+
+      let misfireTime: Date | null = null;
+      if (task.task_type === "recurring" && task.next_run_at) {
+        const nextRun = new Date(task.next_run_at);
+        if (nextRun < now) {
+          misfireTime = nextRun;
+        }
+      } else if (task.task_type === "one_shot" && task.fire_at) {
+        const fireAt = new Date(task.fire_at);
+        if (fireAt < now) {
+          misfireTime = fireAt;
+        }
+      }
+
+      if (misfireTime) {
+        misfireCount++;
+        const withinGrace = misfireTime >= graceCutoff;
+
+        if (misfirePolicy === "fire_once" && withinGrace) {
+          log.info(`[boot:misfire] Job "${task.name}" (${task.id}) misfired at ${misfireTime.toISOString()} — executing now (fire_once, within grace)`);
+          // Activate the job first (so the Croner handle exists for future runs)
+          await this.activate(task);
+          // Then execute it immediately
+          this.execute(task.id).catch((err) => {
+            log.error(`[boot:misfire] Catch-up execution failed for "${task.name}": ${(err as Error).message}`);
+          });
+        } else if (misfirePolicy === "fire_once" && !withinGrace) {
+          log.warn(`[boot:misfire] Job "${task.name}" (${task.id}) misfired at ${misfireTime.toISOString()} — outside grace window (${graceMin}min), skipping catch-up`);
+          if (task.task_type === "recurring") {
+            await this.updateJob(task.id, {
+              last_error: `Missed run at ${misfireTime.toISOString()} (outside grace)`,
+              updated_at: now.toISOString(),
+            });
+          }
+          await this.activate(task);
+        } else {
+          // skip policy
+          log.info(`[boot:misfire] Job "${task.name}" (${task.id}) misfired at ${misfireTime.toISOString()} — skipping (misfire_policy=skip)`);
+          await this.updateJob(task.id, {
+            last_error: `Missed run at ${misfireTime.toISOString()} (policy: skip)`,
+            updated_at: now.toISOString(),
+          });
+          await this.activate(task);
+        }
+      } else {
+        // No misfire — activate normally
+        await this.activate(task);
+      }
     }
 
-    log.info(`[boot] Loaded ${tasks.length} active job(s)`);
+    log.info(`[boot] Loaded ${tasks.length} active job(s)${misfireCount > 0 ? `, ${misfireCount} misfire(s) detected` : ""}`);
 
     await this.ensureCleanupTask();
   }
@@ -458,6 +514,8 @@ export class CronScheduler {
       run_count: 0,
       error_count: 0,
       last_error: null,
+      misfire_policy: input.misfire_policy ?? "skip",
+      misfire_grace_min: input.misfire_grace_min ?? 60,
       created_at: now,
       updated_at: now,
       last_run_at: null,

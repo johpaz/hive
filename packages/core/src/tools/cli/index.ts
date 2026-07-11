@@ -30,6 +30,10 @@ const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
 
 export const cliExecTool: Tool = {
   name: "cli_exec",
+  // Long-running commands need a generous runtime ceiling (the tool allows
+  // its own per-call `timeout` up to 300s, so the harness timeout must be
+  // above that to avoid the worker killing a still-running command).
+  timeoutMs: 330000,
   description: "Execute shell/bash commands in the agent workspace. NOTE: do NOT use for scheduling tasks, use cron.create instead. Spanish: ejecutar comando, terminal, bash, script, consola",
   parameters: {
     type: "object",

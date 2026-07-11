@@ -41,6 +41,9 @@ import * as meeting from "./meeting/index.ts";
 // API (1) - HTTP client for REST APIs
 import * as api from "./api/index.ts";
 
+// Projects (3) - project/task management
+import * as projects from "./projects/index.ts";
+
 /**
  * Creates all tools with proper configuration
  */
@@ -78,6 +81,9 @@ export function createAllTools(config: Config): Tool[] {
 
     // API (1)
     ...api.createTools(),
+
+    // PROJECTS (3)
+    ...projects.createProjectTools(),
   ];
 }
 

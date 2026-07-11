@@ -4,6 +4,7 @@ import { dirname, join } from "node:path"
 import { availableParallelism } from "node:os"
 import type { Config } from "../config/loader.ts"
 import { loadConfig } from "../config/loader.ts"
+import type { Config } from "../config/loader.ts"
 
 export type ToolCallLike = {
   id: string
@@ -16,6 +17,8 @@ export type ToolCallLike = {
 export type RuntimeTool = {
   name: string
   execute?: (params: Record<string, unknown>, config?: any) => Promise<unknown>
+  /** Per-tool timeout (ms) override from the Tool definition. */
+  timeoutMs?: number
 }
 
 export type ToolRuntimeConfig = {
@@ -479,6 +482,26 @@ function resolveRuntimeConfig(config?: ToolRuntimeConfig): Required<ToolRuntimeC
   }
 }
 
+/**
+ * Resolve the effective timeout (ms) for a single tool call.
+ * Priority: Tool.timeoutMs → config.tools.timeouts[name] → workerPool.toolTimeoutMs.
+ */
+function resolveToolTimeout(
+  toolName: string,
+  allTools: RuntimeTool[],
+  hiveConfig: Config,
+  baseTimeoutMs: number,
+): number {
+  // 1. Tool definition timeoutMs (carried on the RuntimeTool via ContextTool cast)
+  const def = allTools.find((t) => t.name === toolName)
+  if (def?.timeoutMs && def.timeoutMs > 0) return def.timeoutMs
+  // 2. config.tools.timeouts[name]
+  const cfgOverride = hiveConfig?.tools?.timeouts?.[toolName]
+  if (typeof cfgOverride === "number" && cfgOverride > 0) return cfgOverride
+  // 3. base (workerPool.toolTimeoutMs)
+  return baseTimeoutMs
+}
+
 function getPool(maxWorkers: number): ToolWorkerPool {
   if (!sharedPool || sharedPoolSize !== maxWorkers) {
     sharedPool = new ToolWorkerPool(maxWorkers)
@@ -511,11 +534,17 @@ export async function executeToolBatch(options: ExecuteToolBatchOptions): Promis
     const results: ToolBatchResult[] = []
     for (const toolCall of options.toolCalls) {
       const startedAt = performance.now()
+      const effectiveTimeout = resolveToolTimeout(
+        toolCall.function.name,
+        options.allTools,
+        hiveConfig,
+        runtimeConfig.toolTimeoutMs,
+      )
       const result = await executeInMainThreadWithTimeout({
         toolCall,
         allTools: options.allTools,
         toolConfig: options.toolConfig,
-      }, runtimeConfig.toolTimeoutMs)
+      }, effectiveTimeout)
       results.push({
         toolCall,
         toolName: toolCall.function.name,
@@ -542,7 +571,12 @@ export async function executeToolBatch(options: ExecuteToolBatchOptions): Promis
       toolConfig: options.toolConfig,
       hiveConfig,
       mainThreadToolNames,
-      timeoutMs: runtimeConfig.toolTimeoutMs,
+      timeoutMs: resolveToolTimeout(
+        toolCall.function.name,
+        options.allTools,
+        hiveConfig,
+        runtimeConfig.toolTimeoutMs,
+      ),
     })))
 
     return results.sort((a, b) => {

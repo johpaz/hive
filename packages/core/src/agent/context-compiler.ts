@@ -72,6 +72,8 @@ export interface ContextTool {
   description: string
   parameters: Record<string, unknown>
   execute?: (params: Record<string, unknown>) => Promise<unknown>
+  /** Per-tool timeout (ms) override from the Tool definition. */
+  timeoutMs?: number
 }
 
 export interface CompiledContext {
@@ -263,6 +265,7 @@ export async function compileContext(opts: {
     description: t.description || "",
     parameters: t.parameters as any,
     execute: t.execute,
+    timeoutMs: t.timeoutMs,
   }))
 
   const allTools = [...nativeTools, ...mcpToolExecutors]

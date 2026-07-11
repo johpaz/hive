@@ -13,6 +13,8 @@ export interface Tool {
     properties: Record<string, ToolParameter>;
     required?: string[];
   };
+  /** Per-tool timeout (ms) override. Falls back to config.tools.timeouts[name] → workerPool.toolTimeoutMs. */
+  timeoutMs?: number;
   execute: (
     params: Record<string, unknown>,
     config?: any

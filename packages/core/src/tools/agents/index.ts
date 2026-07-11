@@ -385,18 +385,20 @@ export const agentArchiveTool: Tool = {
 
 export const taskDelegateTool: Tool = {
   name: "task_delegate",
-  description: "Delegate a task to a worker agent and execute it immediately (blocking). Spanish: delegar tarea, asignar worker, ejecutar por agente, delegate_task",
+  description: "Delegate a task to a worker agent. mode=sync (default) blocks until done; mode=async enqueues and returns immediately. Spanish: delegar tarea, asignar worker, ejecutar por agente, delegate_task",
   parameters: {
     type: "object",
     properties: {
       worker_id: { type: "string", description: "ID of the worker agent" },
       task_description: { type: "string", description: "Clear, detailed instructions for the worker" },
+      mode: { type: "string", enum: ["sync", "async"], description: "sync (default, blocking 2min timeout) or async (enqueued, non-blocking)" },
     },
     required: ["worker_id", "task_description"],
   },
   execute: async (params: Record<string, unknown>, config?: any) => {
     const workerId = params.worker_id as string;
     const taskDescription = params.task_description as string;
+    const mode = (params.mode as string) ?? "sync";
 
     const agentsCol = await col<AgentDoc>("agents");
     const workerEntry = await agentsCol.get(workerId);
@@ -410,19 +412,110 @@ export const taskDelegateTool: Tool = {
     }
 
     const taskName = taskDescription.slice(0, 60);
+
+    // ── Async mode: create TaskDoc + enqueue worker_task in durable queue ──
+    if (mode === "async") {
+      try {
+        const { nextId, toIndexable } = await import("../../storage/hive.ts");
+        const { createRun } = await import("../../agent/run-store.ts");
+        const { getDurableQueue } = await import("../../gateway/durable-queue.ts");
+
+        const taskId = await nextId("tasks");
+        const now = Date.now();
+        const tasksCol = await col<TaskDoc>("tasks");
+        await tasksCol.put(taskId, {
+          id: taskId,
+          project_id: toIndexable(null),
+          agent_id: toIndexable(workerId),
+          parent_task_id: null,
+          name: taskName,
+          description: taskDescription,
+          status: "pending",
+          progress: 0,
+          priority: 0,
+          depends_on: null,
+          result: null,
+          error: null,
+          metadata: null,
+          job_id: null,
+          run_id: null,
+          thread_id: null,
+          started_at: null,
+          attempts: 0,
+          created_at: now,
+          updated_at: now,
+          completed_at: null,
+        }, { expectedVersion: 0 });
+
+        const run = await createRun({
+          thread_id: `task-${taskId}-${workerId}`,
+          agent_id: workerId,
+          user_id: config?.configurable?.user_id ?? "",
+          channel: config?.configurable?.channel ?? null,
+          kind: "worker",
+          max_iterations: worker.max_iterations || 10,
+          resume_policy: "resume",
+        });
+
+        const queue = getDurableQueue();
+        const job = await queue.enqueue({
+          lane: `task:${taskId}`,
+          type: "worker_task",
+          run_id: run.id,
+          payload: {
+            workerId,
+            taskDescription,
+            taskName,
+            taskId,
+          },
+        });
+
+        await import("../../storage/hive.ts").then(({ updateDoc }) =>
+          updateDoc<TaskDoc>("tasks", taskId, {
+            job_id: job.id,
+            run_id: run.id,
+            thread_id: `task-${taskId}-${workerId}`,
+            updated_at: Date.now(),
+          } as Partial<TaskDoc>)
+        );
+
+        agentBus.notifyTaskStarted(workerId, worker.name, 0, taskName, "");
+
+        return {
+          ok: true,
+          task_id: taskId,
+          job_id: job.id,
+          run_id: run.id,
+          worker_id: workerId,
+          worker_name: worker.name,
+          status: "queued",
+          message: `Task enqueued (async). Use task_status with task_id="${taskId}" to check progress.`,
+        };
+      } catch (err) {
+        return { ok: false, error: `Async delegation failed: ${(err as Error).message}` };
+      }
+    }
+
+    // ── Sync mode: blocking execution with 2min timeout (existing behavior) ──
     agentBus.notifyTaskStarted(workerId, worker.name, 0, taskName, "");
 
-    log.info(`[task_delegate] Delegating to ${worker.name} (${workerId})`);
+    log.info(`[task_delegate] Delegating (sync) to ${worker.name} (${workerId})`);
 
     try {
       const { runAgentIsolated } = await import("../../agent/agent-loop.ts");
 
       const threadId = `task-${Date.now()}-${workerId}`;
-      const result = await runAgentIsolated({
-        agentId: workerId,
-        taskDescription,
-        threadId,
-      });
+      const SYNC_TIMEOUT_MS = 2 * 60 * 1000;
+
+      const { withTimeout } = await import("../../agent/agent-loop.ts");
+      const result = await withTimeout(
+        () => runAgentIsolated({
+          agentId: workerId,
+          taskDescription,
+          threadId,
+        }),
+        SYNC_TIMEOUT_MS,
+      );
 
       agentBus.notifyTaskCompleted(workerId, worker.name, 0, taskName, "", result);
 
@@ -462,9 +555,8 @@ export const taskDelegateCodeTool: Tool = {
     const taskInstructions = params.task_instructions as string;
 
     return {
-      ok: true,
-      cli,
-      message: `Code task delegated to ${cli}: ${taskInstructions.substring(0, 100)}...`,
+      ok: false,
+      error: `Code Bridge not implemented yet. CLI "${cli}" delegation is a stub. The task was not executed: "${taskInstructions.substring(0, 100)}..."`,
     };
   },
 };
@@ -473,33 +565,58 @@ export const taskDelegateCodeTool: Tool = {
 
 export const taskStatusTool: Tool = {
   name: "task_status",
-  description: "Get execution status of one or more delegated tasks. Spanish: estado tarea delegada, verificar progreso, consultar tarea",
+  description: "Get execution status of one or more delegated tasks. Accepts string or numeric IDs. Spanish: estado tarea delegada, verificar progreso, consultar tarea",
   parameters: {
     type: "object",
     properties: {
-      task_ids: { type: "array", description: "List of task IDs", items: { type: "number" } },
+      task_ids: {
+        type: "array",
+        description: "List of task IDs (strings or numbers)",
+        items: { type: "string" },
+      },
     },
     required: ["task_ids"],
   },
   execute: async (params: Record<string, unknown>) => {
-    const taskIds = params.task_ids as number[];
+    const taskIds = params.task_ids as Array<string | number>;
 
     try {
       const tasksCol = await col<TaskDoc>("tasks");
       const ids = taskIds.map((id) => String(id).padStart(15, "0"));
       const entries = await Promise.all(ids.map((id) => tasksCol.get(id)));
-      const tasks = entries.filter((e): e is NonNullable<typeof e> => !!e).map(e => e.doc);
+      const tasks = entries.filter((e): e is NonNullable<typeof e> => !!e).map((e) => e.doc);
 
-      return {
-        ok: true,
-        task_count: tasks.length,
-        tasks: tasks.map((t) => ({
-          id: parseInt(t.id, 10),
+      const result = await Promise.all(tasks.map(async (t) => {
+        let jobStatus: string | null = null;
+        if (t.job_id) {
+          try {
+            const { getJob } = await import("../../gateway/job-store.ts");
+            const job = await getJob(t.job_id);
+            if (job) {
+              jobStatus = job.status;
+            }
+          } catch { /* non-critical */ }
+        }
+        return {
+          id: t.id,
           name: t.name,
           status: t.status,
           progress: t.progress,
           result: t.result,
-        })),
+          error: t.error,
+          job_id: t.job_id,
+          run_id: t.run_id,
+          job_status: jobStatus,
+          attempts: t.attempts ?? 0,
+          started_at: t.started_at,
+          completed_at: t.completed_at,
+        };
+      }));
+
+      return {
+        ok: true,
+        task_count: result.length,
+        tasks: result,
       };
     } catch (error) {
       return { ok: false, error: `Failed to get task status: ${(error as Error).message}` };

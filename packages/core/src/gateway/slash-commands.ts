@@ -211,3 +211,60 @@ registerSlashCommand({
     return { commands };
   },
 });
+
+registerSlashCommand({
+  name: "goal",
+  description: "Start a goal-based autonomous run: /goal <meta> [--tries N] [--check-tool tool]",
+  handler: async (sessionId, args) => {
+    if (args.length === 0) {
+      return { success: false, message: "Usage: /goal <meta> [--tries N] [--check-tool tool]" };
+    }
+
+    let goalText = "";
+    let tries: number | undefined;
+    let checkTool: string | undefined;
+
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i];
+      if (arg === "--tries" && args[i + 1]) {
+        tries = parseInt(args[i + 1], 10);
+        i++;
+      } else if (arg === "--check-tool" && args[i + 1]) {
+        checkTool = args[i + 1];
+        i++;
+      } else {
+        goalText += (goalText ? " " : "") + arg;
+      }
+    }
+
+    if (!goalText) {
+      return { success: false, message: "Goal text is required" };
+    }
+
+    try {
+      const { resolveContext } = await import("./resolver");
+      const { resolveAgentId } = await import("../storage/onboarding");
+      const { runGoal } = await import("../agent/goal-runner");
+
+      const { userId, threadId, agentId } = await resolveContext({ channel: "webchat", channelUserId: sessionId });
+      const goalAgentId = agentId || (await resolveAgentId(null)) || "main";
+
+      const result = await runGoal({
+        agentId: goalAgentId,
+        threadId,
+        userId,
+        channel: "webchat",
+        goal: goalText,
+        goalCheckTool: checkTool ?? null,
+        maxAttempts: tries,
+      });
+
+      return {
+        success: true,
+        message: `Goal run enqueued: "${goalText}"\nMax attempts: ${tries ?? 5}\nCheck tool: ${checkTool ?? "LLM verifier"}\n${result.reason}`,
+      };
+    } catch (error) {
+      return { success: false, message: `Failed to start goal run: ${(error as Error).message}` };
+    }
+  },
+});

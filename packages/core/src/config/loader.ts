@@ -148,6 +148,10 @@ const ToolsConfigSchema = z.object({
   canvas: CanvasConfigSchema.optional(),
   workerPool: WorkerPoolConfigSchema.optional(),
   sandbox: SandboxConfigSchema.optional(),
+  // Per-tool timeout overrides (ms) keyed by tool name. Falls back to
+  // workerPool.toolTimeoutMs when absent. Long-running tools like cli_exec
+  // should set a higher value (e.g. 600000 = 10min).
+  timeouts: z.record(z.string(), z.number()).optional(),
 });
 
 const ContextConfigSchema = z.object({
