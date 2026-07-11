@@ -191,7 +191,7 @@ export async function resolveProviderConfig(
   const modelsCol = await col<import("../storage/collections").ModelDoc>("models")
 
   const providerEntry = await providersCol.get(providerId)
-  const providerRow = providerEntry?.doc.enabled ? providerEntry.doc : undefined
+  const providerRow = (providerEntry?.doc.enabled && providerEntry?.doc.active) ? providerEntry.doc : undefined
 
   // Load model's context window for token budget management
   const modelEntry = await modelsCol.get(modelId)
