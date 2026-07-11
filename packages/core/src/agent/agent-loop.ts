@@ -37,6 +37,7 @@ import {
   failRun,
   interruptRun,
   getRun,
+  reclaimRun,
   deserializeCheckpoint,
   bumpTurn,
   startLeaseRenewal,
@@ -292,10 +293,24 @@ export async function* runAgent(
     log.info(`[agent-loop] Created durable run ${runId} (kind=${runKind})`)
   }
 
+  // Re-running an existing run (e.g. a job re-claimed after a crash): reconcile
+  // may have left it "interrupted" with a stale boot_id, and the lease renewer
+  // self-stops unless status is "running" — take ownership before executing.
+  if (opts.runId && isDurable) {
+    await reclaimRun(opts.runId).catch((err) =>
+      log.warn(`[agent-loop] Failed to reclaim run ${opts.runId}: ${(err as Error).message}`)
+    )
+  }
+
   // Start lease renewal timer if durable
   if (runId && isDurable) {
     startLeaseRenewal(runId)
   }
+
+  // The try wraps the whole loop + synthesis + finalization WITHOUT re-indenting
+  // the body: it guarantees the durable run never stays "running" with a live
+  // lease when the loop throws or the consumer abandons the generator.
+  try {
 
   let finalContent = ""
   // Whether finalContent was already emitted to the stream (normal completion path
@@ -893,6 +908,31 @@ export async function* runAgent(
       await interruptRun(runId, "Generation aborted by signal").catch(() => {})
     } else {
       await completeRun(runId).catch(() => {})
+    }
+  }
+
+  } catch (err) {
+    // The loop threw (LLM/tool error): release the run so reconcile never sees
+    // a phantom "running" row with a self-renewing lease.
+    if (runId && isDurable) {
+      if (opts.signal?.aborted) {
+        await interruptRun(runId, "Generation aborted by signal").catch(() => {})
+      } else {
+        await failRun(runId, (err as Error).message).catch(() => {})
+      }
+    }
+    throw err
+  } finally {
+    if (runId) {
+      stopLeaseRenewal(runId)
+      if (isDurable) {
+        // Consumer abandoned the generator (break/.return()) before the normal
+        // finalization ran: leave the run resumable instead of phantom-running.
+        const finalState = await getRun(runId).catch(() => null)
+        if (finalState && finalState.status === "running") {
+          await interruptRun(runId, "Loop terminated early without finalization").catch(() => {})
+        }
+      }
     }
   }
 }

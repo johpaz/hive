@@ -23,6 +23,7 @@ import {
   cancelJob,
   reclaimOrInterrupt,
   findPendingJobsByLane,
+  findAllPendingJobs,
   findExpiredLeases,
   getJob,
 } from "./job-store";
@@ -131,12 +132,27 @@ export class DurableLaneQueue {
   }
 
   /**
-   * Start the lease expiry checker. Called once during boot.
+   * Start the lease expiry checker and dispatch any jobs left pending by a
+   * previous boot. Called once during boot.
    */
   start(): void {
     if (this.leaseCheckTimer) return;
     this.leaseCheckTimer = setInterval(() => this.checkExpiredLeases(), LEASE_CHECK_INTERVAL_MS);
     log.info(`[start] Lease checker running every ${LEASE_CHECK_INTERVAL_MS}ms`);
+    // Without this, jobs reclaimed to "pending" by reconcileOnBoot (or enqueued
+    // right before a crash) would sit until a new enqueue touched their lane.
+    this.dispatchPendingLanes().catch((err) => {
+      log.error(`[start] Failed to dispatch pending lanes: ${(err as Error).message}`);
+    });
+  }
+
+  private async dispatchPendingLanes(): Promise<void> {
+    const pending = await findAllPendingJobs();
+    const lanes = new Set(pending.map((j) => j.lane));
+    for (const lane of lanes) this.scheduleDispatch(lane);
+    if (lanes.size > 0) {
+      log.info(`[dispatchPendingLanes] Re-dispatching ${pending.length} pending job(s) across ${lanes.size} lane(s)`);
+    }
   }
 
   stop(): void {

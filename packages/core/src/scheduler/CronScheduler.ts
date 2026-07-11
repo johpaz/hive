@@ -81,17 +81,25 @@ export class CronScheduler {
           this.execute(task.id).catch((err) => {
             log.error(`[boot:misfire] Catch-up execution failed for "${task.name}": ${(err as Error).message}`);
           });
+        } else if (task.task_type === "one_shot") {
+          // A missed one-shot that won't be caught up can never fire again
+          // (its fire_at is in the past); activating it would leave a zombie
+          // "active" job forever.
+          log.warn(`[boot:misfire] One-shot "${task.name}" (${task.id}) missed at ${misfireTime.toISOString()} (policy=${misfirePolicy}${misfirePolicy === "fire_once" ? ", outside grace" : ""}) → failed`);
+          await this.updateJob(task.id, {
+            status: "failed",
+            last_error: `Missed while down (fire_at=${misfireTime.toISOString()}, policy=${misfirePolicy})`,
+            updated_at: now.toISOString(),
+          });
         } else if (misfirePolicy === "fire_once" && !withinGrace) {
           log.warn(`[boot:misfire] Job "${task.name}" (${task.id}) misfired at ${misfireTime.toISOString()} — outside grace window (${graceMin}min), skipping catch-up`);
-          if (task.task_type === "recurring") {
-            await this.updateJob(task.id, {
-              last_error: `Missed run at ${misfireTime.toISOString()} (outside grace)`,
-              updated_at: now.toISOString(),
-            });
-          }
+          await this.updateJob(task.id, {
+            last_error: `Missed run at ${misfireTime.toISOString()} (outside grace)`,
+            updated_at: now.toISOString(),
+          });
           await this.activate(task);
         } else {
-          // skip policy
+          // skip policy — recurring re-schedules its next occurrence via Croner
           log.info(`[boot:misfire] Job "${task.name}" (${task.id}) misfired at ${misfireTime.toISOString()} — skipping (misfire_policy=skip)`);
           await this.updateJob(task.id, {
             last_error: `Missed run at ${misfireTime.toISOString()} (policy: skip)`,

@@ -177,6 +177,23 @@ export async function interruptRun(runId: string, reason: string): Promise<void>
   log.warn(`[interruptRun] Run ${runId} interrupted: ${reason}`);
 }
 
+/**
+ * Take ownership of an existing run before (re-)executing it. After a crash,
+ * reconcile leaves the row "interrupted" with the dead process's boot_id; the
+ * lease renewer self-stops unless status is "running", so both must be reset.
+ */
+export async function reclaimRun(runId: string): Promise<void> {
+  const now = Date.now();
+  await updateDoc<AgentRunDoc>("agentRuns", runId, {
+    status: "running",
+    boot_id: getBootId(),
+    lease_expires_at: now + LEASE_DURATION_MS,
+    error: null,
+    finished_at: null,
+    updated_at: now,
+  });
+}
+
 export async function getRun(runId: string): Promise<AgentRunDoc | null> {
   const c = await col<AgentRunDoc>("agentRuns");
   const entry = await c.get(runId);

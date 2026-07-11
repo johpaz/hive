@@ -85,14 +85,15 @@ export async function reconcileOnBoot(bootId: string): Promise<ReconcileResult> 
     log.warn(`[reconcileOnBoot] Failed to repair meetings: ${(err as Error).message}`);
   }
 
-  // 3. agentRuns: running + expired lease → interrupted or re-enqueueable
+  // 3. agentRuns: any "running" row is orphaned at boot — HiveDB is
+  // single-process and this process just started, so no run can actually be
+  // executing. Waiting out the lease would leave fast restarts (< lease
+  // duration) unrepaired forever.
   try {
     const agentRunsCol = await col<AgentRunDoc>("agentRuns");
     const runningRuns = await agentRunsCol.findBy("status", "running");
-    const now = Date.now();
     for (const entry of runningRuns) {
       const run = entry.doc;
-      if (run.lease_expires_at >= now) continue;
 
       if (run.kind === "chat") {
         await interruptRun(run.id, "Process restarted while chat turn was in flight");
@@ -118,15 +119,14 @@ export async function reconcileOnBoot(bootId: string): Promise<ReconcileResult> 
     log.warn(`[reconcileOnBoot] Failed to repair agentRuns: ${(err as Error).message}`);
   }
 
-  // 4. jobQueue: running + expired lease → reclaim (pending) or interrupted
+  // 4. jobQueue: any "running" row is orphaned at boot (same single-process
+  // argument as above) → reclaim (pending) or interrupt, ignoring the lease.
   try {
     const jobsCol = await col<JobDoc>("jobQueue");
     const runningJobs = await jobsCol.findBy("status", "running");
-    const now2 = Date.now();
     for (const entry of runningJobs) {
       const job = entry.doc;
-      if (job.lease_expires_at === null || job.lease_expires_at >= now2) continue;
-      const result_doc = await reclaimOrInterrupt(job.id);
+      const result_doc = await reclaimOrInterrupt(job.id, { force: true });
       if (result_doc?.status === "pending") result.jobsReclaimed++;
       else if (result_doc?.status === "interrupted") result.jobsInterrupted++;
     }
@@ -139,17 +139,21 @@ export async function reconcileOnBoot(bootId: string): Promise<ReconcileResult> 
     log.warn(`[reconcileOnBoot] Failed to repair jobQueue: ${(err as Error).message}`);
   }
 
-  // 5. tasks: in_progress without a live job → pending (attempts+1) or failed
+  // 5. tasks: in_progress/queued without a live job → pending (attempts+1) or failed
   try {
     const tasksCol = await col<TaskDoc>("tasks");
-    const inProgress = await tasksCol.findBy("status", "in_progress");
+    const inProgress = [
+      ...(await tasksCol.findBy("status", "in_progress")),
+      ...(await tasksCol.findBy("status", "queued")),
+    ];
     const { getJob } = await import("../gateway/job-store");
     for (const entry of inProgress) {
       const task = entry.doc;
       let hasLiveJob = false;
       if (task.job_id) {
         const job = await getJob(task.job_id);
-        if (job && job.status === "running") {
+        // pending counts as live: the durable queue re-dispatches it at boot
+        if (job && (job.status === "running" || job.status === "pending")) {
           hasLiveJob = true;
         }
       }

@@ -89,33 +89,56 @@ export class TaskDriver {
           }
         }
 
-        // All deps completed (or no deps) → enqueue project_task
+        // All deps completed (or no deps) → claim + enqueue project_task
         const workerId = task.agent_id && task.agent_id !== "__none__"
           ? task.agent_id
           : (await resolveAgentId(null)) || "main";
 
-        const run = await createRun({
-          thread_id: `project-${task.project_id}-${task.id}`,
-          agent_id: workerId,
-          user_id: "",
-          channel: null,
-          kind: "project",
-          max_iterations: 20,
-          resume_policy: "resume",
-        });
+        // OCC claim pending→queued BEFORE enqueueing: the job may wait in the
+        // queue past the next poll, and a still-"pending" task would be
+        // enqueued again on every kick.
+        try {
+          await tasksCol.put(task.id, {
+            ...task,
+            status: "queued",
+            updated_at: Date.now(),
+          }, { expectedVersion: entry.version });
+        } catch {
+          continue; // another kick claimed it first
+        }
 
-        const queue = getDurableQueue();
-        await queue.enqueue({
-          lane: `task:${task.id}`,
-          type: "project_task",
-          run_id: run.id,
-          payload: {
-            taskId: task.id,
-            workerId,
-            taskDescription: task.description ?? task.name,
-          },
-          priority: task.priority,
-        });
+        try {
+          const run = await createRun({
+            thread_id: `project-${task.project_id}-${task.id}`,
+            agent_id: workerId,
+            user_id: "",
+            channel: null,
+            kind: "project",
+            max_iterations: 20,
+            resume_policy: "resume",
+          });
+
+          const queue = getDurableQueue();
+          await queue.enqueue({
+            lane: `task:${task.id}`,
+            type: "project_task",
+            run_id: run.id,
+            payload: {
+              taskId: task.id,
+              workerId,
+              taskDescription: task.description ?? task.name,
+            },
+            priority: task.priority,
+          });
+        } catch (err) {
+          // Claim succeeded but enqueue failed — release the task so a later
+          // kick can retry it.
+          await updateDoc<TaskDoc>("tasks", task.id, {
+            status: "pending",
+            updated_at: Date.now(),
+          } as Partial<TaskDoc>).catch(() => {});
+          throw err;
+        }
 
         enqueued++;
         log.info(`[kick:${reason}] Enqueued project_task for task ${task.id} (${task.name})`);
@@ -152,7 +175,7 @@ export class TaskDriver {
 
         const allCompleted = tasks.every((t) => t.status === "completed");
         const anyFailed = tasks.some((t) => t.status === "failed" || t.status === "blocked");
-        const anyPending = tasks.some((t) => t.status === "pending" || t.status === "in_progress");
+        const anyPending = tasks.some((t) => t.status === "pending" || t.status === "queued" || t.status === "in_progress");
 
         if (allCompleted) {
           await updateDoc<ProjectDoc>("projects", project.id, {

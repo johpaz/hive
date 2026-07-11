@@ -403,7 +403,8 @@ export interface TaskDoc {
   parent_task_id: string | null
   name: string
   description: string | null
-  status: "pending" | "in_progress" | "completed" | "failed" | "blocked"
+  /** "queued" = claimed by the TaskDriver and enqueued, awaiting execution. */
+  status: "pending" | "queued" | "in_progress" | "completed" | "failed" | "blocked"
   progress: number
   priority: number
   depends_on: string | null

@@ -16,7 +16,7 @@ import { logger } from "../utils/logger";
 import { col, updateDoc } from "../storage/hive";
 import type { JobDoc, TaskDoc } from "../storage/collections";
 import { runAgent, runAgentIsolated } from "../agent/agent-loop";
-import { createRun, completeRun, failRun, interruptRun } from "../agent/run-store";
+import { createRun, completeRun, failRun, interruptRun, getRun } from "../agent/run-store";
 import { getDurableQueue } from "./durable-queue";
 import { sendToUserChannel } from "./channel-notify";
 import { addMessage } from "../agent/conversation-store";
@@ -46,6 +46,12 @@ const chatTurnExecutor: JobExecutor = async (job, signal, callbacks) => {
 
   log.info(`[chat_turn] Job ${job.id} → agent=${agentId} thread=${threadId}`);
 
+  // Resume is decided by the checkpoint, not the payload: on a re-claimed job
+  // the payload still says resume=false, but the run may hold a checkpoint
+  // from the crashed attempt.
+  const run = runId ? await getRun(runId) : null;
+  const resume = !!run?.state_json;
+
   let lastContent = "";
   try {
     for await (const chunk of runAgent({
@@ -58,7 +64,7 @@ const chatTurnExecutor: JobExecutor = async (job, signal, callbacks) => {
       userId: userId ?? undefined,
       signal,
       runId,
-      resume: payload.resume ?? false,
+      resume,
       durable: true,
       runKind: "chat",
       onToken: callbacks?.onToken
@@ -69,6 +75,15 @@ const chatTurnExecutor: JobExecutor = async (job, signal, callbacks) => {
         lastContent = chunk.agent.messages[0].content;
       }
     }
+
+    // No live callbacks means nobody streamed this response (the turn was
+    // re-executed after a crash/reboot): deliver the result via the channel.
+    if (!callbacks && lastContent && channel && userId) {
+      await sendToUserChannel(channel, userId, lastContent).catch((err) =>
+        log.warn(`[chat_turn] Failed to notify channel after crash-recovery: ${(err as Error).message}`)
+      );
+    }
+
     return { ok: true, result: lastContent };
   } catch (err) {
     return { ok: false, error: (err as Error).message };

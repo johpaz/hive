@@ -174,16 +174,20 @@ export async function failJob(jobId: string, error: string, bootId: string = get
 /**
  * Re-enqueue a job whose lease has expired back to pending, bumping its
  * attempt count (already bumped at claim time). If attempts >= max_attempts,
- * marks it as failed instead.
+ * marks it as interrupted instead.
+ *
+ * `force` skips the lease-expiry check: at boot every "running" row belongs to
+ * a dead process (HiveDB is single-process), so waiting out a 30-min lease
+ * would only delay recovery.
  */
-export async function reclaimOrInterrupt(jobId: string): Promise<JobDoc | null> {
+export async function reclaimOrInterrupt(jobId: string, opts?: { force?: boolean }): Promise<JobDoc | null> {
   const c = await col<JobDoc>("jobQueue");
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     const entry = await c.get(jobId);
     if (!entry) return null;
     const doc = entry.doc;
     if (doc.status !== "running") return null;
-    if (doc.lease_expires_at === null || doc.lease_expires_at > Date.now()) return null;
+    if (!opts?.force && (doc.lease_expires_at === null || doc.lease_expires_at > Date.now())) return null;
 
     const now = Date.now();
     if (doc.attempts >= doc.max_attempts) {

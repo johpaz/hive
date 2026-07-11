@@ -4,7 +4,6 @@ import { dirname, join } from "node:path"
 import { availableParallelism } from "node:os"
 import type { Config } from "../config/loader.ts"
 import { loadConfig } from "../config/loader.ts"
-import type { Config } from "../config/loader.ts"
 
 export type ToolCallLike = {
   id: string
