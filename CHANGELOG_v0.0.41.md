@@ -1,8 +1,41 @@
 # CHANGELOG v0.0.41 — Hive
 
+## ⚠️ Breaking: SQLite queda completamente reemplazado por HiveDB — sin migración de datos
+
+Esta versión termina lo que empezó como migración puntual de búsqueda (FTS5→HiveDB) y del motor
+de colecciones (probado primero en `scratchpad`): **ya no queda una sola tabla SQLite en Hive.**
+Las ~30 entidades de la app —`users`, `providers`, `models`, `agents`, `channels`,
+`conversations`, `summaries`, `scratchpad`, `skills`, `tools`, `ethics`, `mcpServers`,
+`mcpTools`, `traces`, `playbook`, `cronJobs`, `projects`, `tasks`, `agentBusMessages`,
+`meetingSessions`, tokens de auth, registros de uso, etc. (ver `storage/collections.ts`)— corren
+ahora sobre colecciones de documentos de HiveDB (`@johpaz/hive-db`: redb + tantivy + hnsw_rs).
+`packages/core/src/storage/schema.ts` y `storage/sqlite.ts` fueron eliminados del repo.
+
+**No hay ruta de migración automática desde el `hive.db` (SQLite) de instalaciones anteriores.**
+El bootstrap nuevo (`storage/bootstrap.ts`) lo deja explícito en su propio comentario: *"A
+brand-new install never has legacy SQLite data to migrate"* — no existe un import de datos
+viejos. Cualquier instalación existente que actualice arranca con la base HiveDB vacía (solo el
+seed por defecto: catálogo de providers/modelos/tools/skills/ética) y el `hive.db` anterior
+queda en disco sin usarse, ignorado por completo por el código nuevo.
+
+**Por qué se acepta ahora:** la distribución todavía tiene pocos usuarios activos, y mantener un
+importador para ~30 formas de tabla distintas —de un esquema que probablemente va a seguir
+moviéndose mientras HiveDB madura— es mucho más costoso que pedirle a los pocos usuarios
+actuales que reinstalen. Es la ventana más barata para hacer este corte limpio.
+
+**Si actualizás desde una versión anterior:**
+- Backup de `~/.hive/data/hive.db` antes de actualizar si te interesa conservar algo del
+  historial — no hay forma de reimportarlo automáticamente, pero el archivo queda intacto por si
+  se arma un importador manual más adelante.
+- Vas a tener que recorrer el wizard de Setup de nuevo (providers, agente, canales, voz).
+- Agentes, conversaciones y configuración de providers/keys de la instalación anterior no
+  aparecen — es un estado nuevo, no un upgrade en el sentido tradicional.
+
+---
+
 ## Resumen
 
-Esta versión reemplaza **FTS5 de SQLite por HiveDB** (`@johpaz/hive-db`, motor Rust embebido propio) como motor de búsqueda de capacidades del agente (tools, skills, playbook, MCP), con soporte real de español (acentos, stemming) y parsing tolerante a texto crudo. Sobre ese mismo motor se estrena el nuevo tier de **colecciones de documentos** de HiveDB, y `scratchpad` se convierte en la primera tabla de Hive migrada fuera de SQLite. También se **elimina por completo el soporte de LLM local** (`llama-server`), se **consolida HiveAgents a un solo modelo** (Qwen-AgentWorld, optimizado para agentes/tool-use), se reescribe la **resolución de providers de voz** (STT/TTS) para que dependa de la base de datos en vez de adivinar por el nombre del modelo, y se retiran los **modelos/providers hardcodeados como fallback** (`gpt-4o`, `gpt-4o-mini`, `whisper-large-v3-turbo`, `gemini-2.0-flash`...) en favor de resolución real contra la base de datos en creación de agentes, compactación de contexto, reuniones y OCR.
+Esta versión reemplaza **FTS5 de SQLite por HiveDB** (`@johpaz/hive-db`, motor Rust embebido propio) como motor de búsqueda de capacidades del agente (tools, skills, playbook, MCP), con soporte real de español (acentos, stemming) y parsing tolerante a texto crudo. Sobre ese mismo motor se estrena el nuevo tier de **colecciones de documentos** de HiveDB — probado primero en `scratchpad` y luego extendido al resto de la base (ver sección de arriba), completando la salida de SQLite. También se **elimina por completo el soporte de LLM local** (`llama-server`), se **consolida HiveAgents a un solo modelo** (Qwen-AgentWorld, optimizado para agentes/tool-use), se reescribe la **resolución de providers de voz** (STT/TTS) para que dependa de la base de datos en vez de adivinar por el nombre del modelo, y se retiran los **modelos/providers hardcodeados como fallback** (`gpt-4o`, `gpt-4o-mini`, `whisper-large-v3-turbo`, `gemini-2.0-flash`...) en favor de resolución real contra la base de datos en creación de agentes, compactación de contexto, reuniones y OCR.
 
 ---
 
@@ -72,11 +105,11 @@ redactado para el motor viejo, con una instrucción de comportamiento que dejó 
 
 ---
 
-## Colecciones de Documentos en HiveDB + Primera Tabla Migrada: `scratchpad`
+## Colecciones de Documentos en HiveDB: Motor General + Caso Detallado `scratchpad`
 
 ### Motor: Gate G10 (hiveBD, `@johpaz/hive-db@0.2.0`)
 
-Nuevo cuarto tier de almacenamiento junto al event-log, la memoria semántica y la working memory: CRUD mutable de documentos JSON sobre `redb`, pensado como la pieza que faltaba para eventualmente reemplazar tablas relacionales de SQLite.
+Cuarto tier de almacenamiento junto al event-log, la memoria semántica y la working memory: CRUD mutable de documentos JSON sobre `redb` — la pieza que permitió reemplazar por completo las tablas relacionales de SQLite (ver el aviso de breaking change al inicio del documento: la migración terminó cubriendo las ~30 entidades de la app, no solo `scratchpad`).
 
 - **Versionado optimista:** `put(id, doc, { expectedVersion })` — `expectedVersion: 0` crea solo si no existe; falla con `version conflict` si no coincide.
 - **Índices secundarios de igualdad**, opcionalmente `unique`, con backfill automático al crearse.
@@ -85,16 +118,19 @@ Nuevo cuarto tier de almacenamiento junto al event-log, la memoria semántica y 
 - API TypeScript: `db.collection<T>(name)` → `.put/.get/.delete/.scan/.count/.createIndex/.findBy`; `db.batch(ops)`.
 - Publicado en npm como `@johpaz/hive-db@0.2.0` (junto con G9, distribución multiplataforma con `@napi-rs/cli`: 6 targets).
 
-### Hive: `scratchpad` migrado de SQLite a una colección HiveDB
+### Bootstrap general: `storage/bootstrap.ts` reemplaza `initializeDatabase()` + `seedAllData()` + `runStartupMigrations()`
 
-Primera tabla real migrada fuera de SQLite (se descartó `tool_cache` como candidata inicial: existía en el schema pero no tenía ningún código que la usara).
+Con la salida completa de SQLite ya no hace falta una lista de migraciones version-gated: `ensureHiveDb()` abre la base, asegura los índices secundarios de cada colección (~30 entradas en `INDEXES`, cubriendo las relaciones que antes eran foreign keys — `models.provider_id`, `agents.user_id`, `tasks.project_id`, etc.) y reseedea los catálogos estáticos en cada boot vía `putIfAbsent`, para no pisar `enabled`/`active` que el usuario ya haya tocado.
+
+### Caso detallado — `scratchpad`: primer módulo migrado a mano, documentado como referencia del patrón
+
+`scratchpad` fue el primer módulo migrado fuera de SQLite (se descartó `tool_cache` como candidata inicial: existía en el schema pero no tenía ningún código que la usara), y quedó documentado en detalle porque el mismo patrón se aplicó después al resto de las colecciones:
 
 - **Diseño:** `id = "<threadId>:<key>"` — listar las notas de un hilo es un `scan({ prefix })`, sin necesitar índice secundario.
 - `packages/core/src/agent/conversation-store.ts`: `saveScratchpadNote` / `getScratchpad` / `deleteScratchpadNote` ahora async sobre `HiveDB.collection("scratchpad")`; nueva `listAllScratchpadNotes` para el panel admin.
 - Desempate de orden por `seq` monotónico por proceso: dos notas guardadas en el mismo tick de reloj (fácil con llamadas `await` rápidas) ya no quedan en orden ambiguo — mejora real sobre el comportamiento anterior en SQLite, donde `ORDER BY updated_at DESC` tenía la misma ambigüedad silenciosa en empates.
 - Call sites actualizados a `await`: `context-compiler.ts` (inyección de notas al system prompt), `tools/core/index.ts` (tool `save_note`, ahora delega en `saveScratchpadNote` en vez de duplicar el SQL), `gateway/routes/chat.ts` (`/api/notes`, `handleGetNotes`/`handleUpdateNote`).
 - Contrato de API sin cambios para el frontend: `listAllScratchpadNotes` devuelve el mismo shape snake_case + epoch-segundos que antes (`packages/hive-ui/src/types/notes-crons.ts` solo cambia `id: number` → `string`; `NotesPanel.tsx` no requirió cambios).
-- **Migración `v0.0.44`**: dropea la tabla `scratchpad` y su índice en instalaciones existentes. Las notas no se migran (pérdida de datos aceptada en fase de desarrollo); es solo el motor el que cambia.
 - Tests nuevos: `tests/scratchpad.test.ts` (7 tests de integración).
 
 ---
@@ -163,16 +199,21 @@ Antes, `VoiceService.transcribe()`/`speak()` adivinaban el provider por prefijos
 
 ---
 
-## Migraciones de Base de Datos
+## Migraciones de Base de Datos (histórico, previo al corte final a HiveDB)
 
-| Versión | Qué hace |
+Estos pasos corrieron sobre el `runStartupMigrations()` de SQLite **durante la transición**,
+antes del corte final descrito arriba. Con `storage/schema.ts`/`storage/sqlite.ts` eliminados y
+`runStartupMigrations()` reemplazado por `storage/bootstrap.ts`, ya no existen ni corren — quedan
+acá como registro de lo que pasó con el esquema viejo en el camino hacia HiveDB.
+
+| Versión | Qué hacía |
 |---|---|
 | `v0.0.41` | Desvincula agentes de `local-llama`, borra sus modelos/provider; corrige categoría de `elevenlabs`/`piper` a `tts`. |
 | `v0.0.42` | Dropea triggers `skills_ai/au/ad` y las 4 tablas virtuales FTS5 (orden importa: los triggers deben ir primero). |
 | `v0.0.43` | Recalcula ids de `mcp_tools` con el `mcpToolFullName` corregido (prefijo de servidor acortado, no el nombre de la tool). |
 | `v0.0.44` | Dropea la tabla `scratchpad` (notas ahora en HiveDB; sin migración de datos). |
 
-Todas idempotentes vía `schema_migrations`, corren en cada arranque (`runStartupMigrations`).
+Todas corrían de forma idempotente vía `schema_migrations`, en cada arranque.
 
 ---
 
