@@ -45,6 +45,31 @@ Reportado en producción: buscar una palabra genérica devolvía el catálogo en
 - Retirados los tests obsoletos de FTS5 (`test_fts5_query.ts`, `test_fts5_db.ts`, `fts5-improvement-test.ts`, `verify_fts_robust.ts`, `test_mcp_fts5.ts`, `test_search_knowledge.ts`, `test_mcp_search.ts`, `test_mcp_search_validation.ts`) → nuevo `tests/hivedb-search.test.ts` (9 tests de integración sobre índice `:memory:`).
 - `docs/ARCHITECTURE.md`, `docs/SKILLS-MANUAL-USUARIO.md`: referencias a FTS5 actualizadas a HiveDB.
 
+### Complemento: el propio agente seguía "pensando" en FTS5
+
+La migración de motor había quedado completa en el código, pero no en lo que el agente lee de
+sí mismo en cada turno — el skill core que enseña a usar `search_knowledge` seguía nombrado y
+redactado para el motor viejo, con una instrucción de comportamiento que dejó de ser cierta.
+
+- **Bug de comportamiento real, no solo cosmético**: el skill siempre-cargado `busqueda_fts5`
+  instruía *"AND entre palabras no encuentra nada"* — cierto para FTS5 (que ANDea términos
+  bareword por defecto), pero falso para HiveDB: se verificó contra el motor
+  (`hiveBD/crates/hivedb-index/src/text.rs`) que los términos se combinan con `Occur::Should`
+  (OR), rankeados por BM25. El agente venía recibiendo una regla activamente incorrecta sobre
+  su propia herramienta de descubrimiento en cada conversación.
+- Renombrado el skill `busqueda_fts5` → `capability_discovery` (carpeta, `name` del frontmatter,
+  y las dos listas `MINIMAL_SKILL_NAMES` en `skill-selector.ts`/`context-compiler.ts`); corregida
+  la guía de comportamiento: una frase de varias palabras ya no falla, solo diluye precisión
+  frente a una keyword única.
+- Comentarios de código que describían el matching actual como "FTS5" (`tool-selector.ts`,
+  `skill-selector.ts`, `tools/core/index.ts`) actualizados a "BM25".
+- `docs/AGENT_LOOP_CONTEXT_COMPILER.md` y `README.md`: reescritas las secciones específicas de
+  FTS5 (selectores, umbrales, esquema de índice) para reflejar el índice único de HiveDB y el
+  corte relativo de relevancia (`0.3 × mejor score`, no los umbrales absolutos negativos viejos:
+  `-30`/`-15`). Señalado (no reescrito) que ambos documentos aún describen el resto de la capa de
+  storage como si fuera SQLite —incluyendo referencias a `storage/schema.ts`/`storage/sqlite.ts`,
+  que ya no existen— como deuda documental pendiente más allá del alcance de FTS5.
+
 ---
 
 ## Colecciones de Documentos en HiveDB + Primera Tabla Migrada: `scratchpad`
