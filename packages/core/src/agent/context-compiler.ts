@@ -462,7 +462,7 @@ export async function compileContext(opts: {
         .filter((line): line is string => !!line)
 
       if (causalLines.length > 0) {
-        systemPrompt += `\n\n# CAUSAL CONTEXT\n${causalLines.join("\n")}\n`
+        systemPrompt += `\n\n# CAUSAL CONTEXT (decisiones y tool calls de este turno, previos a la compactación — priorizá la conversación actual; usalo solo para no repetir algo que ya funcionó o ya falló)\n${causalLines.join("\n")}\n`
         log.info(`[context-compiler] [STEP-9d] ✅ Injected ${causalLines.length} causal context item(s)`)
       }
     } catch (err) {
