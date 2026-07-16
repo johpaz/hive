@@ -232,12 +232,14 @@ export interface TraceDoc {
   duration_ms: number | null
   tokens_used: number | null
   created_at: number
+  /** G9 causal stream id for this run (agent-loop.ts's causalStreamId), when the causal log is enabled. */
+  causal_stream_id?: string | null
 }
 
 export interface ReflectionDoc {
   id: string
   trace_ids: string
-  insight_type: "success_pattern" | "failure_pattern" | "optimization" | "ethics_violation"
+  insight_type: "success_pattern" | "failure_pattern" | "optimization" | "ethics_violation" | "root_cause" | "learning_proposal"
   description: string
   affected_tools: string | null
   affected_agents: string | null

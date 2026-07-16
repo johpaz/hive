@@ -23,6 +23,8 @@ export interface TraceInput {
   errorMessage?: string | null
   durationMs?: number
   tokensUsed?: number
+  /** G9 causal stream id for this run, when the causal log is enabled. */
+  causalStreamId?: string | null
 }
 
 /**
@@ -49,6 +51,7 @@ export function saveTrace(trace: TraceInput): void {
         duration_ms: trace.durationMs ?? null,
         tokens_used: trace.tokensUsed ?? null,
         created_at: now,
+        causal_stream_id: trace.causalStreamId ?? null,
       })
 
       // Denormalized field the Curator scans for stale-worker detection,

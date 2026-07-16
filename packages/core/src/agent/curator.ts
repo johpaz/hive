@@ -140,6 +140,9 @@ function mapInsightTypeToCategory(
     failure_pattern: "error_avoidance",
     optimization: "optimization",
     ethics_violation: "error_avoidance",
+    // G9 evaluateHarness() insights (reflector.ts's analyzeCausalThreads)
+    root_cause: "error_avoidance",
+    learning_proposal: "response_quality",
   }
   return map[type] ?? "optimization"
 }

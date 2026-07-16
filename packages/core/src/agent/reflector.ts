@@ -52,9 +52,12 @@ export async function runReflector(): Promise<void> {
     log.info(`[reflector] Analyzing ${traces.length} traces...`)
 
     // G9: when enabled, per-tool insights use whole-history stats from HiveDB's
-    // event log (toolStats) instead of counters built from just this batch.
+    // event log (toolStats) instead of counters built from just this batch, and
+    // causal threads add root-cause/learning-proposal insights on top.
     const causalDb = loadConfig().causalLog?.enabled ? await getHiveDb() : null
-    const insights = await analyzeTracesLocally(traces, causalDb)
+    const localInsights = await analyzeTracesLocally(traces, causalDb)
+    const causalInsights = await analyzeCausalThreads(traces, causalDb)
+    const insights = [...localInsights, ...causalInsights]
 
     if (insights.length === 0) {
       log.debug("[reflector] No insights generated")
@@ -100,11 +103,113 @@ export async function runReflector(): Promise<void> {
 // ─── Local analysis (heuristic, no LLM call needed for basic patterns) ────────
 
 interface Insight {
-  type: "success_pattern" | "failure_pattern" | "optimization" | "ethics_violation"
+  type: "success_pattern" | "failure_pattern" | "optimization" | "ethics_violation" | "root_cause" | "learning_proposal"
   description: string
   affectedTools?: string[]
   affectedAgents?: string[]
   confidence: number
+}
+
+// ─── G9 causal-thread analysis (evaluateHarness) ──────────────────────────────
+
+interface DecisionNode {
+  seq: number
+  agent: string
+  description: string
+}
+
+interface CausalThreadShape {
+  decisions: DecisionNode[]
+  toolCalls: Array<{ seq: number; agent: string; tool: string }>
+  anomalies: unknown[]
+}
+
+interface HarnessFinding {
+  kind: "inefficientLoop" | "objectiveDrift" | "rootCause" | "insufficientEvidence"
+  seq?: number
+  description: string
+}
+
+interface HarnessProposal {
+  description: string
+  confidence: number
+}
+
+interface HarnessEvaluationShape {
+  processQuality: number
+  outputQuality: number
+  rootCause?: { seq: number; agent: string }
+  findings: HarnessFinding[]
+  proposals: HarnessProposal[]
+}
+
+/**
+ * Evaluate the causal thread of every distinct G9 stream touched by this
+ * batch of traces (one thread per agent-loop invocation — see
+ * agent-loop.ts's causalStreamId) with HiveDB's harness loop, and turn its
+ * root cause / findings / learning proposals into reflector insights.
+ *
+ * Runs alongside, not instead of, analyzeTracesLocally(): it needs a full
+ * causal thread per stream, so it operates per-run rather than per-batch.
+ */
+async function analyzeCausalThreads(traces: TraceDoc[], causalDb: HiveDB | null): Promise<Insight[]> {
+  if (!causalDb) return []
+
+  const insights: Insight[] = []
+  const streamIds = new Set(traces.map((t) => t.causal_stream_id).filter((s): s is string => !!s))
+
+  for (const streamId of streamIds) {
+    try {
+      const thread = (await causalDb.causalThread(streamId)) as CausalThreadShape
+      if (!thread.decisions?.length && !thread.toolCalls?.length) continue
+
+      const subset = traces.filter((t) => t.causal_stream_id === streamId)
+      const originalIntent = subset[0]?.input_summary ?? ""
+      const success = subset.every((t) => t.success)
+
+      const evaluation = (await causalDb.evaluateHarness({
+        causalThread: thread,
+        similarEpisodes: [],
+        originalIntent,
+        currentState: { success },
+        minConfidence: 0.5,
+      })) as HarnessEvaluationShape
+
+      if (evaluation.rootCause) {
+        const decision = thread.decisions?.find((d) => d.seq === evaluation.rootCause!.seq)
+        insights.push({
+          type: "root_cause",
+          description: decision
+            ? `Root cause in stream ${streamId}: ${decision.description}`
+            : `Root cause identified at seq ${evaluation.rootCause.seq} in stream ${streamId} (agent ${evaluation.rootCause.agent}).`,
+          affectedAgents: [evaluation.rootCause.agent],
+          confidence: 0.6,
+        })
+      }
+
+      for (const finding of evaluation.findings ?? []) {
+        if (finding.kind === "inefficientLoop" || finding.kind === "rootCause") {
+          insights.push({
+            type: "root_cause",
+            description: finding.description,
+            confidence: 0.6,
+          })
+        }
+      }
+
+      for (const proposal of evaluation.proposals ?? []) {
+        insights.push({
+          type: "learning_proposal",
+          description: proposal.description,
+          confidence: proposal.confidence,
+        })
+      }
+    } catch (err) {
+      log.warn(`[reflector] Causal-thread analysis failed for stream ${streamId}: ${(err as Error).message}`)
+    }
+  }
+
+  return insights
 }
 
 async function analyzeTracesLocally(traces: TraceDoc[], causalDb: HiveDB | null): Promise<Insight[]> {
