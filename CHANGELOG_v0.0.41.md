@@ -35,7 +35,7 @@ actuales que reinstalen. Es la ventana más barata para hacer este corte limpio.
 
 ## Resumen
 
-Esta versión reemplaza **FTS5 de SQLite por HiveDB** (`@johpaz/hive-db`, motor Rust embebido propio) como motor de búsqueda de capacidades del agente (tools, skills, playbook, MCP), con soporte real de español (acentos, stemming) y parsing tolerante a texto crudo. Sobre ese mismo motor se estrena el nuevo tier de **colecciones de documentos** de HiveDB — probado primero en `scratchpad` y luego extendido al resto de la base (ver sección de arriba), completando la salida de SQLite. También se **elimina por completo el soporte de LLM local** (`llama-server`), se **consolida HiveAgents a un solo modelo** (Qwen-AgentWorld, optimizado para agentes/tool-use), se reescribe la **resolución de providers de voz** (STT/TTS) para que dependa de la base de datos en vez de adivinar por el nombre del modelo, y se retiran los **modelos/providers hardcodeados como fallback** (`gpt-4o`, `gpt-4o-mini`, `whisper-large-v3-turbo`, `gemini-2.0-flash`...) en favor de resolución real contra la base de datos en creación de agentes, compactación de contexto, reuniones y OCR.
+Esta versión reemplaza **FTS5 de SQLite por HiveDB** (`@johpaz/hive-db`, motor Rust embebido propio) como motor de búsqueda de capacidades del agente (tools, skills, playbook, MCP), con soporte real de español (acentos, stemming) y parsing tolerante a texto crudo. Sobre ese mismo motor se estrena el nuevo tier de **colecciones de documentos** de HiveDB — probado primero en `scratchpad` y luego extendido al resto de la base (ver sección de arriba), completando la salida de SQLite. Sobre esas mismas colecciones se construye el nuevo **harness de tareas de larga duración**: el agent loop pasa de turnos cortos en memoria a un runner durable con checkpoints, cola persistente, metas verificables (`/goal`) y recuperación automática tras crash (ver sección dedicada más abajo). Sobre el event log de HiveDB (motor propio `hiveBD`, no la capa de colecciones) se integra además el **harness causal G9**: memoria de decisiones/tool-calls y aprendizaje retrospectivo detrás de un flag apagado por defecto (`causalLog.enabled`), validado con LLM real — ver sección dedicada. También se **elimina por completo el soporte de LLM local** (`llama-server`), se **consolida HiveAgents a un solo modelo** (Qwen-AgentWorld, optimizado para agentes/tool-use), se reescribe la **resolución de providers de voz** (STT/TTS) para que dependa de la base de datos en vez de adivinar por el nombre del modelo, y se retiran los **modelos/providers hardcodeados como fallback** (`gpt-4o`, `gpt-4o-mini`, `whisper-large-v3-turbo`, `gemini-2.0-flash`...) en favor de resolución real contra la base de datos en creación de agentes, compactación de contexto, reuniones y OCR.
 
 ---
 
@@ -135,6 +135,172 @@ Con la salida completa de SQLite ya no hace falta una lista de migraciones versi
 
 ---
 
+## Harness de Tareas de Larga Duración: Checkpoints, Cola Durable y Metas Verificables
+
+### Por qué
+
+Diagnóstico contra el código: el agent loop funcionaba bien para turnos interactivos cortos pero no para trabajo autónomo de horas — `max_iterations = 10` sin checkpoint (al tope sintetiza y cierra), estado del run 100% en memoria (un reinicio de proceso mataba cualquier tarea en vuelo sin resume), `LaneQueue` era un `Map` en memoria no durable, `task_delegate` era bloqueante con `task_status` vestigial, el motor de projects/tasks era solo registro sin recovery de huérfanas, y el cron no tenía catch-up de disparos perdidos durante un downtime. Contra el marco de "loops" de Anthropic: time-based/cron cubierto, pero goal-based (meta verificable + presupuesto) y proactive, no.
+
+**Restricción de diseño clave:** HiveDB solo admite un proceso con la base abierta, así que la durabilidad se resuelve con checkpoints + cola durable + leases por `boot_id` en un diseño single-process, no multiproceso.
+
+### Checkpoints del agent loop (`agentRuns`)
+
+- Nueva colección `agentRuns` (HiveDB): serializa `messages`, contadores de iteración/tokens, nombres de tools inyectadas y secciones de skill del system prompt (`agent/run-store.ts`), con escritura OCC (`expectedVersion`).
+- Checkpoint tras cada round-trip de tools y en cada transición de status; `state_json` acotado a ≤ 1.5 MB (compactación + imágenes base64 reemplazadas por `"[imagen omitida]"`, tool results viejos truncados si excede).
+- **Idempotencia ante crash:** antes de ejecutar un batch de tools se persiste `pending_tool_calls_json`; si el proceso muere a mitad de una tool, esa tool **no se re-ejecuta** al reanudar — se inyecta un mensaje sintético `role: "tool"` con `"[interrupted] El proceso se reinició mientras esta herramienta corría…"` y el LLM decide cómo seguir.
+- Chat corto sigue siendo liviano por defecto (fila `agentRuns` sin `state_json`); se promueve a durable automáticamente cuando un turno supera ~6 iteraciones.
+- `runAgent` queda envuelto en try/catch/finally: una excepción hace `failRun` + libera el lease; el abandono del generator (el consumidor corta el stream) deja el run `interrupted` con el checkpoint preservado.
+
+### Cola durable (`jobQueue`)
+
+- Nueva colección `jobQueue` con prioridad, `lane` (sesión o `task:<id>`, 1 job corriendo por lane), `attempts`/`max_attempts` y lease por `boot_id` (`gateway/job-store.ts`).
+- `gateway/durable-queue.ts` (`DurableLaneQueue`) envuelve la `LaneQueue` en memoria existente con persistencia por transición de estado, re-despacho de todo lo `pending` al boot, cancelación real de jobs corriendo, y `maxGlobalConcurrency` (default 4) — los jobs `chat_turn` quedan **fuera** de ese cap global para que workers ocupados no congelen el webchat.
+- `gateway/job-executors.ts`: registro `type → executor` (`chat_turn`, `worker_task`, `project_task`, `goal_run`); cada job se puede re-ejecutar por completo desde su `payload_json` (100% serializable, sin closures) porque callbacks vivos como `ws.send`/`onToken` no lo son.
+
+### Chat durable
+
+- Los 5 caminos de chat (WS message/audio/a2ui/canvas + API HTTP) ahora encolan jobs `chat_turn` en vez de correr el loop directo (`gateway/server.ts`, `gateway/routes/chat.ts`).
+- `gateway/webchat-turn.ts`: el turno corre con un payload 100% serializable; si hay socket vivo recibe callbacks efímeros (streaming en caliente), si no, corre headless y entrega la respuesta por `sendToUserChannel` — así un turno interrumpido por crash se re-ejecuta al reiniciar y de todos modos le llega al canal, aunque el cliente HTTP original ya haya recibido un 504.
+
+### Metas verificables (`/goal`)
+
+- Nuevo `agent/goal-runner.ts`: `runGoal(...)` orquesta múltiples turnos durables hasta cumplir una meta o agotar presupuesto — verificación por tool determinística (`goal_check_tool`) o, si no hay una, por LLM verificador que responde JSON `{met, reason}`.
+- Meta no cumplida con presupuesto restante → compacta contexto y sigue con el próximo turno; presupuesto agotado → síntesis final y `failed`. Presupuesto duro siempre activo (iteraciones/turnos/tokens por run, no por turno).
+- Nuevo comando `/goal <meta> [--tries N] [--check-tool tool]` (`gateway/slash-commands.ts`) que encola un `goal_run` asíncrono.
+
+### Delegación asíncrona y motor de proyectos/tareas
+
+- `task_delegate mode=async` (`tools/agents/index.ts`) ya no bloquea: crea la `TaskDoc`, encola `worker_task` en su propia lane y devuelve `{task_id, status: "queued"}` de inmediato (el modo síncrono se conserva con timeout de 2 min); `task_status` ahora reporta estado/progreso/resultado reales en vez de ser vestigial.
+- Los workers de `worker_task`/`project_task` corren aislados, checkpointean y pueden reanudar a mitad de tarea.
+- Nuevo `tools/projects/index.ts`: `project_create`, `task_create` (con dependencias), `project_status`.
+- Nuevo `scheduler/task-driver.ts` (`TaskDriver`): event-driven (kick al completar cada job + poll de respaldo cada 10s) — tareas `pending` con dependencias `completed` se reclaman con OCC y se encolan como `project_task`; una dependencia `failed` bloquea a sus dependientes. `TaskGraph` se usa solo para validar el grafo (ciclos) al crear; el motor de ejecución real es HiveDB + la cola durable, no el `DAGScheduler` in-memory existente (que queda sin invocar para este flujo).
+
+### Catch-up de cron
+
+- `scheduler/CronScheduler.ts`: al boot se detectan disparos perdidos (recurrentes con `next_run_at` vencido; one-shots activos con `fire_at` vencido). Dentro de `misfire_grace_min` (default 60) se ejecutan una vez; fuera de gracia, los recurrentes se reagendan y los one-shots quedan `failed` con `last_error: "missed while down"` — nunca quedan zombies en estado `active` para siempre.
+- Nuevo campo `misfire_policy: "skip" | "fire_once"` por `CronJobDoc`, expuesto en creación/actualización y en la tool de cron.
+
+### Reconciliación al boot y cierre ordenado
+
+- Nuevo `storage/reconcile.ts` (`reconcileOnBoot`): como HiveDB es de un solo proceso, **toda** fila `running` al boot pertenece a un proceso muerto y se repara de inmediato sin esperar a que venza el lease — runs de chat pasan a `interrupted` con aviso al canal; runs worker/goal/project/cron se re-encolan o quedan `interrupted`; tareas `queued`/`in_progress` sin job vivo vuelven a `pending` o `failed` según intentos agotados. Los leases quedan como respaldo en runtime, no como mecanismo primario.
+- `SIGTERM`: aborta runs activos y espera a que checkpointeen antes de cerrar (`server.ts`), sumado a `shutdownToolRuntime()`.
+
+### Quick wins
+
+- Timeout configurable por tool (`Tool.timeoutMs?`, `tools.timeouts` en config — `config/loader.ts`, `tool-runtime/index.ts`), con default largo para `cli_exec`.
+- Heartbeat de WebSocket cada 30s (servidor → cliente) para sobrevivir proxies con tools largas.
+- Retención: `agentRuns`/`jobQueue` limpian `state_json` al terminar el run; cap de 500 runs por thread.
+- Circuit breakers expuestos en `/health` junto con métricas de cola/runs activos.
+
+### Bugs de durabilidad encontrados y corregidos en revisión
+
+Una versión anterior de la implementación se dio por completa, pero la revisión encontró que la Fase 2 (chat durable) no estaba cableada y la Fase 3 (goal continuation) era un placeholder (`verifyGoal` corría el check tool con `allTools: []` y decidía con `includes("true")`), además de 7 bugs de durabilidad:
+
+1. Una excepción del LLM dejaba el run `running` con el lease renovándose para siempre (faltaba el try/finally; `failRun` estaba importado pero nunca se llamaba).
+2. Los jobs `pending` de un boot anterior nunca se volvían a despachar.
+3. El reclaim esperaba leases de 30 min (jobs) / 2 min (runs) aunque el proceso es único — un reinicio rápido dejaba runs huérfanos para siempre.
+4. `resume` se leía del payload (siempre `false` en un reclaim), así que el checkpoint nunca se usaba, y el run reanudado quedaba `interrupted` sin renovar el lease.
+5. El `TaskDriver` encolaba sin claim OCC — el poll de 10s duplicaba jobs.
+6. Import duplicado de `Config` en `tool-runtime/index.ts` (error de TypeScript introducido por la implementación base).
+7. Un one-shot de cron perdido fuera de la ventana de gracia quedaba `active` para siempre.
+
+### Archivos
+
+**Nuevos:** `storage/boot-id.ts`, `storage/reconcile.ts`, `agent/run-store.ts`, `agent/goal-runner.ts`, `gateway/job-store.ts`, `gateway/durable-queue.ts`, `gateway/job-executors.ts`, `gateway/webchat-turn.ts`, `scheduler/task-driver.ts`, `tools/projects/index.ts`.
+
+**Modificados:** `agent/agent-loop.ts` (checkpoint/resume/budget + try/finally), `agent/providers/index.ts` (opciones durables en `generate`), `gateway/server.ts` (wiring de boot, call sites WS → `enqueueChatTurn`, cancel → `cancelLane`, SIGTERM, heartbeat WS, `/health`), `gateway/routes/chat.ts`, `gateway/slash-commands.ts` (`/goal`), `scheduler/CronScheduler.ts` (misfire), `storage/collections.ts` + `bootstrap.ts` (`AgentRunDoc`, `JobDoc`, `TaskDoc.queued`, índices nuevos), `tools/agents/index.ts` (`task_delegate` async, `task_status` real), `tool-runtime/index.ts` (timeouts por tool), `config/loader.ts` (`tools.timeouts`).
+
+### Verificación
+
+55 tests nuevos del harness en verde (`run-store`, `job-store`, `agent-loop-resume`, `retention-cap`, `agent-loop-integration`, `durable-queue`, `goal-runner`, `cron-misfire`, `task-driver`, `agent-loop-failure`) + 45 tests adyacentes sin regresión, typecheck limpio (solo los 2 errores de TS preexistentes conocidos, no relacionados), y smoke de boot con `SIGKILL` simulado a los 20s seguido de un segundo boot limpio sobre la base "sucia".
+
+**Pendiente manual** (requiere entorno configurado, no cubierto por CI): turno de webchat real con streaming + stop, `kill -9` con un worker en vuelo y verificación visual del resume.
+
+### Limitaciones conocidas
+
+- Los turnos de un `goal_run` no checkpointean intra-turno: un crash a mitad de turno re-ejecuta ese intento completo (el historial del thread preserva el progreso previo).
+- El payload de un `chat_turn` multimodal guarda imagen/documento en base64 dentro de `payload_json` (se limpia con la retención de 500 jobs/run).
+- Un turno de la API HTTP recuperado tras un crash responde por el canal de webchat; el cliente HTTP original no recibe esa respuesta (ya recibió un 504).
+
+---
+
+## Harness Causal G9: Memoria de Decisiones sobre el Event Log de HiveDB
+
+### Por qué
+
+El motor propio (`hiveBD`) ya traía implementada su capa de análisis causal retrospectivo (Gate G9: `causalThread`/`buildAgentContext`/`evaluateHarness`/`toolStats`, sobre un event log append-only separado del tier de colecciones) desde antes de esta versión — pero `hive` nunca llegó a llamar `db.append()` en ningún lado. Todo el pipeline de aprendizaje existente (`reflector.ts`/`curator.ts`) operaba a ciegas sobre el último lote de 30 traces, sin memoria causal de qué decisión causó qué llamada a herramienta ni de la cadena completa de un run.
+
+**G9 no reemplaza** el harness de tareas de larga duración de la sección anterior — son capas distintas: G9 es observabilidad/aprendizaje retrospectivo sobre el event log, no cola de jobs, checkpoint/lease, ni verificación de metas (eso lo sigue resolviendo el harness durable). El propio contrato de hiveBD (`docs/AGENT_INTEGRATION.md`) es explícito en esa separación.
+
+### hiveBD: generalización a motor multi-agente + fix de `correlation`
+
+- **v0.3.0**: el harness G9 dejó de asumir implícitamente el vocabulario de hiveCode — documentado como contrato genérico (`docs/AGENT_INTEGRATION.md`, vocabulario MUST/SHOULD/MAY de eventos) con un ejemplo deliberadamente ajeno (triage de tickets de soporte). Se corrigió además un bug real de contrato: `ToolLedger` parseaba `outcome` como string en minúsculas mientras `CausalThread` esperaba el shape tipado (`"Ok" | "Timeout" | {Err}`) — ambas proyecciones ahora comparten `parse_tool_outcome()`. Se resolvió también una colisión de nombres entre el marcador de proyección `CausalThread` y el struct de datos homónimo (renombrado a `CausalThreadProjection`).
+- **v0.3.1**: el binding napi (`JsEventInput`) no exponía `correlation` — el lado de lectura (`JsEvent`) sí lo tenía, un gap asimétrico que dejaba `objectiveDrift` permanentemente imposible de disparar para cualquier consumidor JS/TS, sin ningún error visible.
+
+### Integración en `hive`: flag `causalLog.enabled` (apagado por defecto)
+
+Nuevo flag en `config/loader.ts` (env `HIVE_CAUSAL_LOG=true`) — agrega N+M+1 llamadas `await db.append()` al camino crítico de cada turno, así que arranca apagado hasta validar impacto real en producción.
+
+- **`agent-loop.ts`**: cada invocación de `runAgent()` mintea un `causalStreamId` (reusado en resume vía `opts.runId`, nunca el `threadId` persistente — `causalThread()` reconstruye sin proyección checkpointeada, así que un hilo de meses sería O(historial completo) en cada llamada) y emite `IntentLogged` → `StateTransition` (uno por decisión del LLM, encadenado a la decisión anterior) → `ToolCall` (uno por herramienta, encadenado a la decisión que lo pidió, no a la tool anterior) con el shape canónico de `outcome` derivado directo de `ToolBatchResult.ok/timedOut/error`.
+- **`reflector.ts`**: `toolStats()` reemplaza los contadores armados a mano sobre el lote de 30 traces por agregados de *todo el historial* del event log para los insights de fallas/latencia por tool. Nueva `analyzeCausalThreads()`: `evaluateHarness()` por cada stream causal tocado por el batch agrega insights `root_cause` (causa raíz de una falla, con evidencia causal real) y `learning_proposal` (propuestas con score de confianza propio del harness) — fuente adicional, no reemplaza el análisis local existente.
+- **`curator.ts`**: `mapInsightTypeToCategory()` extendido para los 2 tipos nuevos (`root_cause`→`error_avoidance`, `learning_proposal`→`response_quality`).
+- **`context-compiler.ts`**: nueva sección `# CAUSAL CONTEXT` en el system prompt vía `buildAgentContext()`, inyectada solo cuando la compactación ya se disparó ese turno (no en cada turno — es un round-trip real a la DB), con una línea explicando qué es y cómo pesarla frente a la conversación actual. `episodicSimilarity` queda deliberadamente afuera: requiere embeddings que hive no genera en ningún lado todavía.
+
+### 2 bugs reales encontrados en la validación (no solo simulados — confirmados con LLM real)
+
+Una simulación local de actividad de agente (mocks) y una prueba real contra Gemini 3.5 Flash encontraron:
+
+1. **Insights duplicados**: `evaluateHarness()` siempre emite tanto `rootCause` como un `finding` equivalente `{kind:"rootCause"}` desde la misma resolución — el código original los convertía en 2 insights separados, duplicando cada regla de playbook por cada falla real.
+2. **Reforzamiento roto**: el texto de la regla `root_cause` incluía el `causalStreamId` (único por run) — como `curator.ts` solo refuerza una regla existente cuando el prefijo de 60 caracteres coincide exacto, cada ocurrencia de la *misma* causa raíz en runs distintos creaba una regla nueva en vez de incrementar `helpful_count` de una existente. El playbook iba a crecer sin límite con tráfico real.
+
+### Prototipo de factibilidad: suscripciones en tiempo real
+
+Nuevo `hive causal watch [--agent <id>] [--stream <id>]` (`watchCausalEvents()` en `storage/causal-events.ts`, sobre `db.events()` de HiveDB) — live-tail del event log causal. Probado de punta a punta contra un turno real de Gemini.
+
+**Hallazgo real durante la verificación**: HiveDB solo permite un proceso con la base de datos abierta a la vez, sin modo de solo-lectura compartido — `hive causal watch` no puede correr en paralelo con un `hive dev`/`hive start` activo sobre la misma base. Falla ahora con un mensaje claro en vez de un stack trace críptico. Conectar esto al layer de WebSocket/UI (para que sea útil observando un gateway real en vivo) queda para la siguiente versión.
+
+### Scripts de validación real
+
+- `scripts/bench-causal-log.ts`: compara latencia real (LLM real, no mock) con el flag apagado/prendido, intercalado para promediar el jitter de red del LLM en vez de que se confunda con el costo del flag.
+- `scripts/inspect-playbook-health.ts`: reporte de salud del playbook sin costo de cuota — incluye detectores de regresión directos de los 2 bugs de arriba (prefijos duplicados, identificadores tipo UUID filtrados en el texto de las reglas).
+
+### Verificación
+
+19 tests nuevos (`agent-loop-integration`, `reflector`, `curator`, `context-compiler`, `causal-events`, `skill-selector`), suite completa sin regresiones, y validación real contra Gemini 3.5 Flash en cada fase (no solo mocks).
+
+### Limitaciones conocidas
+
+- `objectiveDrift` queda técnicamente cableado pero no se dispara en la práctica: hive comparte un solo `correlation` por turno, sin clasificador de cambio de tema.
+- La corrida real de `bench-causal-log.ts` (3 muestras) fue inconclusa — el jitter de red del LLM domina por completo la señal con esa cantidad de muestras; hacen falta más para una decisión de "prender por defecto".
+- El playbook no tiene datos orgánicos de G9 todavía — falta una ventana real de uso multi-día.
+
+---
+
+## Fix: Function-Calling Roto en Gemini/Anthropic/Ollama por Schema de Arrays sin `items`
+
+Encontrado incidentalmente durante la validación real de G9: una llamada real a Gemini falló con `GenerateContentRequest...items: missing field` — el tool `office_escribir_xlsx` declaraba un campo `datos: { type: "array" }` sin `items`. Es JSON Schema válido (items es opcional por spec), pero el validador de function-calling de Gemini lo rechaza.
+
+Auditado el catálogo completo de 73 tools nativos: solo ese tool tenía el problema. Pero el riesgo real no es solo los tools propios de hive — un servidor MCP externo, fuera de control, podría mandar el mismo schema inválido y romper igual, así que el fix va al límite de wire, no solo al tool puntual:
+
+- Nueva `ensureArrayItems()` en `agent/llm-providers/interface.ts`: rellena recursivamente un `items: {}` (acepta cualquier cosa) en todo nodo `{type:"array"}` sin uno.
+- Cableada en `normalizeToolSchema()` (los 10 providers OpenAI-compatible ya la heredan automáticamente) y agregada directo en los 3 adaptadores que arman su request sin pasar por ahí: `gemini.ts`, `anthropic.ts`, `ollama.ts`.
+- Fix puntual también en `office_escribir_xlsx.ts` (defensa en profundidad — el schema fuente debe ser válido en sí mismo, más allá de cualquier parche a nivel adaptador).
+
+Verificado en producción real: se repitió el mismo mensaje que había fallado, la segunda llamada (la que antes rompía) ahora responde bien.
+
+---
+
+## Fix: Headers Redundantes Anidados en el System Prompt (Ética + 29 Skills)
+
+Encontrado auditando manualmente el system prompt real compilado en busca de fugas/duplicados. No era duplicación de texto exacto (por eso no lo detectaban los chequeos automáticos previos), sino jerarquía de headers rota: contenido que se auto-titula con un `#` (H1) quedando anidado DEBAJO de su propio wrapper `##` (H2) — el mismo concepto repetido dos o tres veces por sección.
+
+- **Ética por defecto** (`storage/seed.ts`): el contenido de la regla `default` empezaba con su propio `# Ética del Agente`, redundante con el wrapper (`# ÉTICA Y REGLAS CONSTITUCIONALES` + `## Ética por Defecto` del `rule.name`). Corregido en la plantilla fuente y en el documento ya sembrado en la base de datos local (el seed es `putIfAbsent`, no pisa lo que ya existe).
+- **Las 29 skills empaquetadas**: mismo patrón, sistémico — cada `SKILL.md` se autotitula después del frontmatter (para que se lea bien standalone), pero los 4 puntos de inyección al system prompt (`context-compiler.ts`, 3 en `agent-loop.ts`) ya envuelven el body con su propio `## <nombre_skill>`. Arreglado en un único punto (`toSkillDescriptor()` en `skill-selector.ts`), sin tocar los 29 archivos fuente ni los 4 call sites — cada skill sigue siendo legible standalone, pero la copia que recibe el LLM sale limpia.
+
+Verificado contra la base de datos real: la jerarquía de headers del system prompt de Bee quedó consistente (`#` > `##`, sin anidamiento invertido) en una prueba real con Gemini.
+
+---
+
 ## HiveAgents: Modelo Único + Validación de API Key
 
 ### Consolidación a Qwen-AgentWorld
@@ -199,29 +365,11 @@ Antes, `VoiceService.transcribe()`/`speak()` adivinaban el provider por prefijos
 
 ---
 
-## Migraciones de Base de Datos (histórico, previo al corte final a HiveDB)
-
-Estos pasos corrieron sobre el `runStartupMigrations()` de SQLite **durante la transición**,
-antes del corte final descrito arriba. Con `storage/schema.ts`/`storage/sqlite.ts` eliminados y
-`runStartupMigrations()` reemplazado por `storage/bootstrap.ts`, ya no existen ni corren — quedan
-acá como registro de lo que pasó con el esquema viejo en el camino hacia HiveDB.
-
-| Versión | Qué hacía |
-|---|---|
-| `v0.0.41` | Desvincula agentes de `local-llama`, borra sus modelos/provider; corrige categoría de `elevenlabs`/`piper` a `tts`. |
-| `v0.0.42` | Dropea triggers `skills_ai/au/ad` y las 4 tablas virtuales FTS5 (orden importa: los triggers deben ir primero). |
-| `v0.0.43` | Recalcula ids de `mcp_tools` con el `mcpToolFullName` corregido (prefijo de servidor acortado, no el nombre de la tool). |
-| `v0.0.44` | Dropea la tabla `scratchpad` (notas ahora en HiveDB; sin migración de datos). |
-
-Todas corrían de forma idempotente vía `schema_migrations`, en cada arranque.
-
----
-
 ## Otros Cambios
 
-- `packages/core/package.json`: nueva dependencia `@johpaz/hive-db@^0.2.0`.
+- `packages/core/package.json`: nueva dependencia `@johpaz/hive-db`, bumpeada durante la versión de `^0.2.0` a `^0.3.1` (ver "Harness Causal G9" más abajo).
 - `packages/hive-ui/src/lib/constants.ts`: removida constante `DEFAULT_MODEL = "gpt-4"` sin uso.
-- `bun.lock`: `@johpaz/hive-agents-mcp`/`@johpaz/hive-agents-skills` de `workspace:*` a `^0.0.40` (versión fijada del monorepo).
+- `bun.lock`: `@johpaz/hive-agents-mcp`/`@johpaz/hive-agents-skills`/`@johpaz/hive-agents-core` de `workspace:*` a versión fijada del monorepo — bug real destapado al final de la versión: los rangos habían quedado en `^0.0.40` mientras el monorepo ya estaba en `0.0.41`, y con paquetes `0.0.x` el caret no flota entre patches, así que `bun install` fallaba por completo (caía a buscar los paquetes internos en el registro público, donde no existen). Corregido a `^0.0.41`.
 - `docs/DOCUMENTO-EXPLICATIVO-COMPONENTES.md`: referencias a `local-llama`/`LocalLLMCard`/`/api/llm-local` retiradas (consistente con la remoción del provider).
 - `docs/AGENT_FORM_FILL_EVAL.md` eliminado (el test `tests/agent-form-fill-eval.test.ts` y su fixture siguen intactos, solo se retiró la doc standalone — sin otras referencias en el repo).
 - `CHANGELOG_v0.0.39.md` eliminado del repo — no se encontró la razón en el diff ni referencias rotas resultantes; si fue accidental, avisar para restaurarlo desde `git show 83527d8:CHANGELOG_v0.0.39.md`.
