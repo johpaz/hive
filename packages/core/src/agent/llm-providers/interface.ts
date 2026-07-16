@@ -110,8 +110,34 @@ export function normalizeToolSchema(
   schema: Record<string, unknown>,
   profile: ProviderProfile
 ): Record<string, unknown> {
-  if (!profile.stripAdditionalProperties) return schema
-  return deepStripSchema(schema)
+  const withItems = ensureArrayItems(schema)
+  if (!profile.stripAdditionalProperties) return withItems
+  return deepStripSchema(withItems)
+}
+
+/**
+ * Recursively ensures every `{ type: "array" }` node in a JSON Schema has an
+ * `items` sub-schema. `items` is optional per the JSON Schema spec, but some
+ * providers' function-calling validators (Gemini in particular) reject arrays
+ * without one — found via a real Gemini call rejecting a tool with a bare
+ * `datos: { type: "array" }` field. An empty `{}` items schema (accept
+ * anything) is always a safe, permissive default, so this runs unconditionally
+ * for every provider, not just ones with a matching profile flag — the same
+ * schema bug in an MCP-provided tool (outside hive's control) would break the
+ * exact same way, so this has to protect the wire path, not just hive's own
+ * tool definitions.
+ */
+export function ensureArrayItems(obj: unknown): any {
+  if (typeof obj !== "object" || obj === null) return obj
+  if (Array.isArray(obj)) return obj.map(ensureArrayItems)
+  const result: any = {}
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    result[k] = ensureArrayItems(v)
+  }
+  if (result.type === "array" && !result.items) {
+    result.items = {}
+  }
+  return result
 }
 
 function deepStripSchema(obj: unknown): any {

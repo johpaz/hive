@@ -38,7 +38,9 @@ export const officeEscribirXlsxTool: Tool = {
           type: "object",
           properties: {
             nombre: { type: "string" },
-            datos: { type: "array" },
+            // datos puede ser array de objetos o array de arrays (aoa) — el tool
+            // acepta ambos en runtime (ver Array.isArray(datos[0]) más abajo).
+            datos: { type: "array", items: { type: "object" } },
             encabezados: { type: "array", items: { type: "string" } },
           },
         },

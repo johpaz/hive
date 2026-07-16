@@ -1,5 +1,5 @@
 import { logger } from "../../utils/logger"
-import { normalizeToolName, resolveMaxTokens } from "./interface"
+import { normalizeToolName, resolveMaxTokens, ensureArrayItems } from "./interface"
 import type { LLMCallOptions, LLMProvider, LLMResponse, LLMToolCall, ThinkingBlock } from "./interface"
 import type { ContentPart, LLMMessage } from "../llm-client"
 
@@ -133,7 +133,7 @@ export class AnthropicProvider implements LLMProvider {
       return {
         name: wireName,
         description: t.function.description,
-        input_schema: t.function.parameters,
+        input_schema: ensureArrayItems(t.function.parameters),
       }
     })
 

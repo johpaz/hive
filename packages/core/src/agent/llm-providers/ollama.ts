@@ -1,5 +1,5 @@
 import { logger } from "../../utils/logger"
-import { sanitizeMessages, resolveMaxTokens } from "./interface"
+import { sanitizeMessages, resolveMaxTokens, ensureArrayItems } from "./interface"
 import type { LLMCallOptions, LLMProvider, LLMResponse, LLMToolCall } from "./interface"
 import type { ContentPart, LLMMessage } from "../llm-client"
 
@@ -86,7 +86,7 @@ export class OllamaProvider implements LLMProvider {
       function: {
         name: t.function.name,
         description: t.function.description,
-        parameters: t.function.parameters,
+        parameters: ensureArrayItems(t.function.parameters),
       },
     }))
 
