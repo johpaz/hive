@@ -69,6 +69,7 @@
     "./utils/logger": "./src/utils/logger.ts",
     "./storage/hive": "./src/storage/hive.ts",
     "./storage/hivedb": "./src/storage/hivedb.ts",
+    "./storage/causal-events": "./src/storage/causal-events.ts",
     "./storage/bootstrap": "./src/storage/bootstrap.ts",
     "./storage/collections": "./src/storage/collections.ts",
     "./storage/onboarding": "./src/storage/onboarding.ts",

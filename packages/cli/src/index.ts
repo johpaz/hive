@@ -10,6 +10,7 @@ import { logs } from "./commands/logs";
 import { chat } from "./commands/chat";
 import { sessions } from "./commands/sessions";
 import { cron } from "./commands/cron";
+import { causal } from "./commands/causal";
 import { doctor } from "./commands/doctor";
 import { securityAudit } from "./commands/security";
 import { installService } from "./commands/service";
@@ -80,6 +81,8 @@ Sesiones y cron:
   cron add                   Añadir tarea programada
   cron remove <id>           Eliminar tarea programada
   cron logs                  Ver logs de ejecuciones cron
+  causal watch [--agent <id>] [--stream <id>]
+                             Live-tail del event log causal G9 (sin replay histórico)
 
 Sistema:
   doctor                     Diagnóstico completo y auto-reparación
@@ -165,6 +168,9 @@ async function main(): Promise<void> {
       break;
     case "cron":
       await cron(subcommand, args.slice(2));
+      break;
+    case "causal":
+      await causal(subcommand, args.slice(2));
       break;
     case "doctor":
       await doctor();
