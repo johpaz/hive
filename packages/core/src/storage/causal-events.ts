@@ -21,6 +21,13 @@ export type { Event as CausalEvent, EventPattern as CausalEventPattern }
  *
  * Note: `pattern.kind` matches exactly one kind at a time, not an OR of
  * several — call watchCausalEvents() once per kind if you need more than one.
+ *
+ * Process constraint (confirmed by testing): getHiveDb() opens the database
+ * exclusively — there is no shared/read-only mode, so this can only be
+ * called from within the SAME process as whatever else has the DB open
+ * (e.g. embedded inside the gateway). A separate process (like the `hive
+ * causal watch` CLI) calling this while a `hive` gateway is already running
+ * against the same DB fails fast with an "already open" error.
  */
 export async function watchCausalEvents(
   pattern: EventPattern
