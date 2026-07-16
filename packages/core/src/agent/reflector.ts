@@ -175,20 +175,30 @@ async function analyzeCausalThreads(traces: TraceDoc[], causalDb: HiveDB | null)
         minConfidence: 0.5,
       })) as HarnessEvaluationShape
 
+      // Description deliberately omits streamId/seq: curator.ts only reinforces
+      // an existing rule when its first-60-chars prefix matches exactly, so any
+      // per-run identifier in the text would make every occurrence of the same
+      // underlying root cause mint a brand new playbook rule instead of
+      // reinforcing one (confirmed via a local before/after canary run).
       if (evaluation.rootCause) {
         const decision = thread.decisions?.find((d) => d.seq === evaluation.rootCause!.seq)
         insights.push({
           type: "root_cause",
           description: decision
-            ? `Root cause in stream ${streamId}: ${decision.description}`
-            : `Root cause identified at seq ${evaluation.rootCause.seq} in stream ${streamId} (agent ${evaluation.rootCause.agent}).`,
+            ? `Root cause: decision "${decision.description}" (agent ${evaluation.rootCause.agent}) preceded a tool failure.`
+            : `Root cause: a decision by agent ${evaluation.rootCause.agent} preceded a tool failure.`,
           affectedAgents: [evaluation.rootCause.agent],
           confidence: 0.6,
         })
       }
 
+      // Only inefficientLoop findings here: harness.rs's find_root_cause() always
+      // emits evaluation.rootCause and an equivalent finding{kind:"rootCause"}
+      // together from the same resolution — including both would double-insight
+      // every single failure. The block above already covers it, with a richer
+      // description (the actual decision text, not just its seq).
       for (const finding of evaluation.findings ?? []) {
-        if (finding.kind === "inefficientLoop" || finding.kind === "rootCause") {
+        if (finding.kind === "inefficientLoop") {
           insights.push({
             type: "root_cause",
             description: finding.description,

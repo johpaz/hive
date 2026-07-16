@@ -230,4 +230,91 @@ describe("reflector: G9 causal-thread evaluation (evaluateHarness)", () => {
     expect(all.some((e) => e.doc.insight_type === "root_cause")).toBe(false);
     expect(all.some((e) => e.doc.insight_type === "learning_proposal")).toBe(false);
   });
+
+  test("a single tool-call failure produces exactly one root_cause insight, not two", async () => {
+    // Regression guard: harness.rs's find_root_cause() emits both
+    // evaluation.rootCause AND an equivalent finding{kind:"rootCause"} from the
+    // same resolution — analyzeCausalThreads() must only turn that into one
+    // insight, not two, per failure.
+    process.env.HIVE_CAUSAL_LOG = "true";
+    const db = await getHiveDb();
+
+    const streamId = "stream-single-failure";
+    const intentSeq = await db.append({
+      agentId: "agent-1",
+      streamId,
+      kind: "IntentLogged",
+      payload: JSON.stringify({ actor: "agent-1", intent: "deploy the checkout service" }),
+    });
+    const decisionSeq = await db.append({
+      agentId: "agent-1",
+      streamId,
+      kind: "StateTransition",
+      payload: JSON.stringify({ description: "Calling deploy_service" }),
+      causation: intentSeq,
+    });
+    await db.append({
+      agentId: "agent-1",
+      streamId,
+      kind: "ToolCall",
+      payload: JSON.stringify({ tool: "deploy_service", outcome: { Err: "boom" } }),
+      causation: decisionSeq,
+    });
+
+    await seedTrace({ tool_used: "deploy_service", success: false, causal_stream_id: streamId });
+    for (let i = 0; i < 9; i++) {
+      await seedTrace({ tool_used: "ok_tool", success: true });
+    }
+
+    await runReflector();
+
+    const reflectionsCol = await col<ReflectionDoc>("reflections");
+    const all = await reflectionsCol.scan({});
+    const rootCauseInsights = all.filter((e) => e.doc.insight_type === "root_cause");
+    expect(rootCauseInsights.length).toBe(1);
+  });
+
+  test("the same underlying root cause across two different streams reinforces one playbook rule instead of duplicating it", async () => {
+    process.env.HIVE_CAUSAL_LOG = "true";
+    const db = await getHiveDb();
+
+    async function seedFailingStream(streamId: string) {
+      const intentSeq = await db.append({
+        agentId: "agent-1",
+        streamId,
+        kind: "IntentLogged",
+        payload: JSON.stringify({ actor: "agent-1", intent: "deploy the checkout service" }),
+      });
+      const decisionSeq = await db.append({
+        agentId: "agent-1",
+        streamId,
+        kind: "StateTransition",
+        payload: JSON.stringify({ description: "Calling deploy_service" }),
+        causation: intentSeq,
+      });
+      await db.append({
+        agentId: "agent-1",
+        streamId,
+        kind: "ToolCall",
+        payload: JSON.stringify({ tool: "deploy_service", outcome: { Err: "boom" } }),
+        causation: decisionSeq,
+      });
+      await seedTrace({ tool_used: "deploy_service", success: false, causal_stream_id: streamId });
+    }
+
+    await seedFailingStream("stream-reinforce-a");
+    await seedFailingStream("stream-reinforce-b");
+    for (let i = 0; i < 8; i++) {
+      await seedTrace({ tool_used: "ok_tool", success: true });
+    }
+
+    await runReflector();
+
+    const playbookCol = await col<import("../packages/core/src/storage/collections").PlaybookDoc>("playbook");
+    const rootCauseRules = (await playbookCol.scan({})).filter((e) =>
+      e.doc.rule.includes('decision "Calling deploy_service"')
+    );
+    expect(rootCauseRules.length).toBe(1);
+    expect(rootCauseRules[0].doc.helpful_count).toBe(2);
+  });
 });
