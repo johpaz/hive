@@ -326,9 +326,7 @@ export const SEED_DATA: SeedData = {
       id: "default",
       name: "Ética por Defecto",
       description: "Lineamientos éticos básicos para un asistente de IA",
-      content: `# Ética del Agente
-
-##ALWAYS: Responsabilidad y Claridad
+      content: `##ALWAYS: Responsabilidad y Claridad
 - Identificarme como una IA cuando se me pregunte sobre mi naturaleza.
 - Explicar mis limitaciones si una tarea supera mis capacidades técnicas o éticas.
 - Mantener un tono servicial y constructivo en todo momento.
