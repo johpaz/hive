@@ -59,11 +59,27 @@ export interface SkillDescriptor {
     active: boolean
 }
 
+/**
+ * Every bundled SKILL.md self-titles right after its frontmatter (e.g.
+ * "# Canvas Report Skill\n\n## Cuándo se Activa...") for standalone
+ * readability — but every system-prompt injection site wraps the body with
+ * its own `## <skill.name>` header, so the leading H1 becomes a *higher*
+ * heading level nested under a lower one (malformed hierarchy) and repeats
+ * the same title twice, for free tokens on every turn. Strip it here, once,
+ * so the 29 source files keep their own title for anyone reading them
+ * standalone, while every injected copy stays clean.
+ */
+function stripRedundantTitle(body: string): string {
+    // Bodies carry a leading blank line from the frontmatter's closing "---",
+    // so the H1 isn't at position 0 — allow leading whitespace before it.
+    return body.replace(/^\s*# .+\n+/, "")
+}
+
 function toSkillDescriptor(doc: SkillDoc): SkillDescriptor {
     return {
         id: doc.id, name: doc.name, description: doc.description ?? "", category: doc.category,
         tools: doc.tools, triggers: doc.triggers, preferred_agents: doc.preferred_agents,
-        body: doc.body, version: doc.version, version_num: doc.version_num, active: doc.active,
+        body: stripRedundantTitle(doc.body), version: doc.version, version_num: doc.version_num, active: doc.active,
     }
 }
 
