@@ -15,6 +15,8 @@
 
 import { logger } from "../utils/logger"
 import { col, fromIndexable } from "../storage/hive"
+import { getHiveDb } from "../storage/hivedb"
+import type { HiveDB, EventInput } from "@johpaz/hive-db"
 import type { AgentDoc } from "../storage/collections"
 import { callLLM, resolveProviderConfig, getDefaultLLM, type LLMMessage } from "./llm-client"
 import { addMessage } from "./conversation-store"
@@ -69,6 +71,37 @@ export async function withTimeout<T>(op: () => Promise<T>, timeoutMs: number): P
     return await Promise.race([op(), timeout])
   } finally {
     clearTimeout(timer!)
+  }
+}
+
+/**
+ * Append one G9 causal event (IntentLogged/StateTransition/ToolCall) to HiveDB's
+ * event log. Never throws: a broken causal log must never break the agent loop.
+ * See hiveBD's docs/AGENT_INTEGRATION.md for the payload vocabulary contract.
+ */
+async function appendCausalEvent(
+  db: HiveDB,
+  input: {
+    agentId: string
+    streamId: string
+    kind: EventInput["kind"]
+    payload: Record<string, unknown>
+    causation?: number
+    correlation?: string
+  }
+): Promise<number | undefined> {
+  try {
+    return await db.append({
+      agentId: input.agentId,
+      streamId: input.streamId,
+      kind: input.kind,
+      payload: JSON.stringify(input.payload),
+      causation: input.causation,
+      correlation: input.correlation,
+    })
+  } catch (err) {
+    log.warn(`[agent-loop] causal event append failed (kind=${input.kind}): ${(err as Error).message}`)
+    return undefined
   }
 }
 
@@ -156,6 +189,34 @@ export async function* runAgent(
   let isDurable = !!opts.durable || !!opts.runId || !!opts.goal
   const runKind = opts.runKind ?? (opts.isolated ? "worker" : "chat")
   const DURABLE_PROMOTION_THRESHOLD = 6 // promote chat to durable after N iterations
+
+  // ── G9 causal event log (HiveDB) ─────────────────────────────────────────
+  // One stream per invocation (a chat turn, or a runAgentIsolated() task) — NOT
+  // the persistent chat threadId, since causalThread() reconstructs without a
+  // checkpointed projection and a months-old thread would be O(full history)
+  // on every call. On resume, opts.runId is reused so the stream isn't split.
+  const causalLogEnabled = !!loadConfig().causalLog?.enabled
+  const causalDb = causalLogEnabled ? await getHiveDb() : null
+  const causalStreamId = opts.runId || crypto.randomUUID()
+  // hive has no mid-turn topic-change classifier yet, so the whole stream shares
+  // one correlation id. objectiveDrift is technically wired but won't fire in
+  // practice until that heuristic exists (documented v1 limitation).
+  const causalCorrelationId = crypto.randomUUID()
+  let lastCausalSeq: number | undefined
+  if (causalDb) {
+    const intentText = opts.rawUserMessage || (typeof opts.userMessage === "string"
+      ? opts.userMessage
+      : Array.isArray(opts.userMessage)
+        ? opts.userMessage.filter(p => p.type === "text").map(p => (p as any).text).join("\n")
+        : String(opts.userMessage))
+    lastCausalSeq = await appendCausalEvent(causalDb, {
+      agentId: opts.agentId,
+      streamId: causalStreamId,
+      kind: "IntentLogged",
+      payload: { actor: opts.agentId, intent: intentText.slice(0, 2000) },
+      correlation: causalCorrelationId,
+    })
+  }
 
   // Stuck-loop protection
   const stuckDetector = createStuckLoopDetector(loadConfig())
@@ -363,6 +424,24 @@ export async function* runAgent(
       totalOutputTokens += response.usage.output_tokens
     }
 
+    // G9: record this LLM response as a causal "decision", chained off the
+    // previous decision (or the initial IntentLogged for the first one).
+    if (causalDb) {
+      const description = response.content?.trim()
+        || (response.tool_calls?.length
+          ? `Calling ${response.tool_calls.map((tc) => tc.function.name).join(", ")}`
+          : "(empty response)")
+      const seq = await appendCausalEvent(causalDb, {
+        agentId: opts.agentId,
+        streamId: causalStreamId,
+        kind: "StateTransition",
+        payload: { description: description.slice(0, 2000) },
+        causation: lastCausalSeq,
+        correlation: causalCorrelationId,
+      })
+      if (seq !== undefined) lastCausalSeq = seq
+    }
+
     // Emit agent chunk (compatible with providers/index.ts)
     const agentMsg: any = { content: response.content }
     if (response.tool_calls?.length) agentMsg.tool_calls = response.tool_calls
@@ -494,6 +573,25 @@ export async function* runAgent(
         errorMessage: toolResultLLM.startsWith("[Tool Error]") ? toolResultLLM : null,
         durationMs: toolMs,
       })
+
+      // G9: record the tool call, caused by the decision that requested it.
+      // Canonical outcome shape ("Ok" | "Timeout" | {Err}) — see
+      // hiveBD docs/AGENT_INTEGRATION.md; anything else silently counts as Ok.
+      if (causalDb) {
+        const outcome = batchResult.timedOut
+          ? "Timeout"
+          : batchResult.ok
+            ? "Ok"
+            : { Err: batchResult.error?.message ?? toolResultLLM.slice(0, 300) }
+        await appendCausalEvent(causalDb, {
+          agentId: opts.agentId,
+          streamId: causalStreamId,
+          kind: "ToolCall",
+          payload: { tool: toolName, latency_ms: toolMs, outcome },
+          causation: lastCausalSeq,
+          correlation: causalCorrelationId,
+        })
+      }
 
       // Emit tool chunk (TOON encoded for LLM)
       yield { tools: { messages: [{ content: toolResultLLM, tool_call_id: tc.id }] } }

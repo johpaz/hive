@@ -14,7 +14,7 @@
 process.env.HIVE_DB_PATH = ":memory:";
 
 import { describe, test, expect, beforeEach, afterEach, spyOn } from "bun:test";
-import { closeHiveDb } from "../packages/core/src/storage/hivedb";
+import { closeHiveDb, getHiveDb } from "../packages/core/src/storage/hivedb";
 import { ensureHiveDb } from "../packages/core/src/storage/bootstrap";
 import { resetBootId } from "../packages/core/src/storage/boot-id";
 import { col, toIndexable } from "../packages/core/src/storage/hive";
@@ -458,5 +458,146 @@ describe("agent-loop integration: durable run + checkpoint/resume", () => {
 
     // Verify token usage accumulated across resume
     expect(resumedRun!.tokens_used).toBeGreaterThan(0);
+  });
+});
+
+describe("agent-loop integration: G9 causal event log", () => {
+  const prevFlag = process.env.HIVE_CAUSAL_LOG;
+
+  beforeEach(() => {
+    process.env.HIVE_CAUSAL_LOG = "true";
+  });
+
+  afterEach(() => {
+    if (prevFlag === undefined) delete process.env.HIVE_CAUSAL_LOG;
+    else process.env.HIVE_CAUSAL_LOG = prevFlag;
+  });
+
+  test("causalThread() reflects chained decisions and tool calls after a multi-step run", async () => {
+    let callNum = 0;
+    callLLMSpy.mockImplementation(async () => {
+      callNum++;
+      if (callNum === 1) {
+        return {
+          content: "",
+          tool_calls: [
+            { id: "tc-g9-1", type: "function" as const, function: { name: "fake_tool", arguments: '{"step":1}' } },
+          ],
+          stop_reason: "tool_calls" as const,
+          usage: { input_tokens: 100, output_tokens: 50 },
+        };
+      }
+      return {
+        content: "Listo.",
+        stop_reason: "stop" as const,
+        usage: { input_tokens: 100, output_tokens: 50 },
+      };
+    });
+
+    executeToolBatchSpy.mockImplementation(async (opts: any) => {
+      return opts.toolCalls.map((tc: any) => ({
+        toolCall: tc,
+        toolName: tc.function.name,
+        result: { output: "ok" },
+        ok: true,
+        durationMs: 12,
+      }));
+    });
+
+    const runId = "g9-stream-1";
+    await collectChunks({
+      agentId: "test-agent",
+      userMessage: "Hacé algo",
+      threadId: "thread-g9",
+      runId,
+      durable: true,
+      budget: { maxIterations: 5 },
+    });
+
+    const db = await getHiveDb();
+    const thread = await db.causalThread(runId) as any;
+
+    expect(thread.decisions.length).toBe(2);
+    expect(thread.toolCalls.length).toBe(1);
+    expect(thread.toolCalls[0].tool).toBe("fake_tool");
+    expect(thread.toolCalls[0].outcome).toBe("Ok");
+    // Tool call caused by the decision that requested it
+    expect(thread.toolCalls[0].causedBy).toBe(thread.decisions[0].seq);
+    // Second decision chained off the first
+    expect(thread.decisions[1].causedBy).toBe(thread.decisions[0].seq);
+  });
+
+  test("3 repeated tool errors with the same message trigger an errorLoop anomaly", async () => {
+    let callNum = 0;
+    callLLMSpy.mockImplementation(async () => {
+      callNum++;
+      if (callNum <= 3) {
+        return {
+          content: "",
+          tool_calls: [
+            { id: `tc-err-${callNum}`, type: "function" as const, function: { name: "flaky_tool", arguments: "{}" } },
+          ],
+          stop_reason: "tool_calls" as const,
+          usage: { input_tokens: 50, output_tokens: 20 },
+        };
+      }
+      return {
+        content: "No pude completarlo.",
+        stop_reason: "stop" as const,
+        usage: { input_tokens: 50, output_tokens: 20 },
+      };
+    });
+
+    executeToolBatchSpy.mockImplementation(async (opts: any) => {
+      return opts.toolCalls.map((tc: any) => ({
+        toolCall: tc,
+        toolName: tc.function.name,
+        result: { error: true, message: "boom" },
+        ok: false,
+        durationMs: 5,
+        error: { name: "Error", message: "boom" },
+      }));
+    });
+
+    const runId = "g9-stream-errorloop";
+    await collectChunks({
+      agentId: "test-agent",
+      userMessage: "Probá la herramienta",
+      threadId: "thread-g9-err",
+      runId,
+      durable: true,
+      budget: { maxIterations: 5 },
+    });
+
+    const db = await getHiveDb();
+    const thread = await db.causalThread(runId) as any;
+
+    const errorLoop = thread.anomalies.find((a: any) => a.kind === "errorLoop");
+    expect(errorLoop).toBeDefined();
+    expect(errorLoop.tool).toBe("flaky_tool");
+    expect(errorLoop.repetitions).toBeGreaterThanOrEqual(3);
+  });
+
+  test("causalLog.enabled=false (default) never touches the event log", async () => {
+    process.env.HIVE_CAUSAL_LOG = "false";
+    callLLMSpy.mockResolvedValue({
+      content: "Hola.",
+      stop_reason: "stop",
+      usage: { input_tokens: 50, output_tokens: 20 },
+    });
+
+    const runId = "g9-stream-disabled";
+    await collectChunks({
+      agentId: "test-agent",
+      userMessage: "Hola",
+      threadId: "thread-g9-off",
+      runId,
+      durable: true,
+    });
+
+    const db = await getHiveDb();
+    const thread = await db.causalThread(runId) as any;
+    expect(thread.decisions.length).toBe(0);
+    expect(thread.toolCalls.length).toBe(0);
   });
 });

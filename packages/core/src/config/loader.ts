@@ -250,6 +250,13 @@ const CronConfigSchema = z.object({
   timezone: z.string().optional(),
 });
 
+// G9 causal event log (HiveDB): IntentLogged/StateTransition/ToolCall emission
+// from agent-loop.ts, consumed by reflector/curator/context-compiler. Off by
+// default — each turn adds N+M+1 awaited db.append() calls to the critical path.
+const CausalLogConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+});
+
 const RetryConfigSchema = z.object({
   maxAttempts: z.number().optional(),
   initialDelayMs: z.number().optional(),
@@ -358,6 +365,7 @@ const ConfigSchema = z.object({
   mcp: MCPConfigSchema.optional(),
   memory: MemoryConfigSchema.optional(),
   cron: CronConfigSchema.optional(),
+  causalLog: CausalLogConfigSchema.optional(),
   retry: RetryConfigSchema.optional(),
   security: SecurityConfigSchema.optional(),
   hooks: HooksConfigSchema.optional(),
@@ -498,6 +506,9 @@ function buildDefaultConfig(): Config {
       dbPath: path.join(hiveDir, "cron.db"),
       maxConcurrentJobs: 5,
       timezone: "UTC",
+    },
+    causalLog: {
+      enabled: process.env.HIVE_CAUSAL_LOG === "true",
     },
     retry: {
       maxAttempts: 3,
