@@ -37,6 +37,8 @@ import { resolveUserId } from "../storage/onboarding"
 import { getMCPManager as getSingletonMCPManager } from "../mcp/singleton"
 import { syncMCPToolsToDB, syncMCPToolsToFTS } from "../mcp/tool-sync"
 import { getUserDate, getUserTime } from "../utils/date"
+import { loadConfig } from "../config/loader"
+import { getHiveDb } from "../storage/hivedb"
 
 const log = logger.child("context-compiler")
 
@@ -84,6 +86,39 @@ export interface CompiledContext {
   skills: SkillDescriptor[]  // Skills loaded (minimal + discovered)
 }
 
+// ─── G9 causal context (buildAgentContext) ────────────────────────────────
+
+interface AgentContextItemShape {
+  type: "decision" | "toolCall" | "anomaly" | "episode" | "phaseSummary"
+  seq?: number
+  phase?: string
+  text?: string
+  taskId?: string
+  summary?: string
+  keyDecisions?: number[]
+}
+
+interface AgentContextShape {
+  items: AgentContextItemShape[]
+  similarEpisodes: Array<{ taskId: string; summary: string }>
+  anomalies: AgentContextItemShape[]
+}
+
+function formatCausalContextItem(item: AgentContextItemShape): string | null {
+  switch (item.type) {
+    case "decision":
+    case "toolCall":
+    case "phaseSummary":
+      return item.text ? `- ${item.text}` : null
+    case "anomaly":
+      return item.text ? `- ⚠ ${item.text}` : null
+    case "episode":
+      return item.summary ? `- (episodio previo) ${item.summary}` : null
+    default:
+      return null
+  }
+}
+
 /** Maps the stored AgentDoc (sentinel-encoded FKs) to the shape context-compiler works with. */
 function fromAgentDoc(doc: AgentDoc) {
   return {
@@ -120,6 +155,8 @@ export async function compileContext(opts: {
   isolated?: boolean
   taskContext?: string | ContentPart[]
   mcpManager?: MCPClientManager | null
+  /** G9 causal stream id for this invocation (agent-loop.ts's causalStreamId). */
+  causalStreamId?: string
 }): Promise<CompiledContext> {
   const { agentId, threadId, mcpManager, userMessage, isolated, taskContext } = opts
 
@@ -351,7 +388,8 @@ export async function compileContext(opts: {
   let messages: LLMMessage[]
 
   const compactThreshold = Math.floor(modelContextWindow * COMPACT_RATIO)
-  if (summary && totalTokens > compactThreshold) {
+  const compactionFired = !!(summary && totalTokens > compactThreshold)
+  if (compactionFired) {
     // Use summary + recent messages (Strategy: COMPRESS)
     messages = [
       { role: "system", content: `[Conversation Summary]: ${summary.summary}` },
@@ -394,6 +432,42 @@ export async function compileContext(opts: {
     // TOON comprime el formato clave-valor
     const scratchpadContent = formatContext(scratchpadData)
     systemPrompt += `\n\n# SCRATCHPAD (Persistent Notes)\n${scratchpadContent}\n`
+  }
+
+  // G9: causal context window (buildAgentContext) — only when compaction has
+  // already fired this turn (a real DB round-trip, not a per-turn cost) and
+  // there's a causal stream to build it from. episodicSimilarity is omitted:
+  // it requires embeddings hive doesn't generate anywhere yet.
+  if (compactionFired && opts.causalStreamId && loadConfig().causalLog?.enabled) {
+    try {
+      const causalDb = await getHiveDb()
+      const objectiveSource = taskContext || userMessage
+      const currentObjective = typeof objectiveSource === "string"
+        ? objectiveSource
+        : Array.isArray(objectiveSource)
+          ? objectiveSource.filter((p) => p.type === "text").map((p) => (p as any).text).join("\n")
+          : String(objectiveSource)
+      const causalMaxTokens = Math.max(500, Math.min(4000, Math.floor(modelContextWindow * 0.05)))
+
+      const causalCtx = (await causalDb.buildAgentContext({
+        taskId: opts.causalStreamId,
+        currentPhase: "current",
+        currentObjective: currentObjective.slice(0, 2000),
+        maxTokens: causalMaxTokens,
+        strategy: { causalAnchors: true, compressCompletedPhases: true },
+      })) as AgentContextShape
+
+      const causalLines = [...(causalCtx.items ?? []), ...(causalCtx.anomalies ?? [])]
+        .map(formatCausalContextItem)
+        .filter((line): line is string => !!line)
+
+      if (causalLines.length > 0) {
+        systemPrompt += `\n\n# CAUSAL CONTEXT\n${causalLines.join("\n")}\n`
+        log.info(`[context-compiler] [STEP-9d] ✅ Injected ${causalLines.length} causal context item(s)`)
+      }
+    } catch (err) {
+      log.warn(`[context-compiler] [STEP-9d] ⚠️ Causal context build failed: ${(err as Error).message}`)
+    }
   }
 
   // Dynamic tool discovery instruction (coordinator only)

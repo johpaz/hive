@@ -264,6 +264,7 @@ export async function* runAgent(
     isolated: opts.isolated,
     taskContext: opts.taskContext,
     userId: opts.userId,
+    causalStreamId,
   })
 
   // Force extra tools into the loadout (tests/evals)
