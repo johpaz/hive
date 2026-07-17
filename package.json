@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-agents",
-  "version": "0.0.42",
+  "version": "0.0.43",
   "description": "Tu colmena de agentes IA. Local-first. Multi-canal. Open source. Construido desde Colombia para el mundo.",
   "private": false,
   "bin": {
@@ -106,13 +106,13 @@
     "doctor:dev": "HIVE_HOME=$HOME/.hive-dev HIVE_DEV=true bun run packages/cli/src/index.ts doctor",
     "dev:keep": "HIVE_HOME=$HOME/.hive-dev HIVE_DEV=true HIVE_DEV_CLEAN=false bun run packages/cli/src/index.ts dev",
     "start": "bun run packages/cli/src/index.ts start",
-    "build": "bun packages/skills/scripts/generate-bundle.ts && bun build packages/cli/src/index.ts --bundle --outfile dist/hive.js --target bun && bun build packages/core/src/tool-runtime/tool-worker.ts --outfile dist/tool-worker.js --target bun && cd packages/hive-ui && bun run build && cd ../.. && cp -r packages/hive-ui/dist dist/ui && bun packages/cli/scripts/postbuild.ts",
-    "build:binary": "cd packages/hive-ui && bun run build && cd ../cli && bun scripts/generate-ui-bundle.ts && bun build src/index.ts --compile --outfile ../../dist/hive-binary",
-    "prepublishOnly": "bun run build",
+    "build": "bun scripts/build-npm-package.ts",
+    "build:binary": "bun --cwd packages/hive-ui run build && bun packages/cli/scripts/generate-ui-bundle.ts && bun scripts/build-gateway.ts --target bun-linux-x64 --outfile dist/hive-binary",
+    "prepublishOnly": "bun scripts/verify-package.ts",
     "test": "bun test",
     "test:ci": "bun test --coverage",
     "lint": "bunx tsc --noEmit",
-    "build:binaries": "bun run scripts/build-binaries.ts",
+    "build:binaries": "bun run build:binary",
     "bench": "bun run scripts/bench.ts",
     "publish:sdk": "bun run scripts/publish-sdk.ts"
   },
@@ -121,6 +121,7 @@
     "@anthropic-ai/sdk": "^0.74.0",
     "@clack/prompts": "^0.5.0",
     "@google/genai": "^1.43.0",
+    "@johpaz/hive-db": "0.3.1",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@sapphire/snowflake": "latest",
     "@slack/bolt": "latest",

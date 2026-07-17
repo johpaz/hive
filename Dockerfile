@@ -19,10 +19,11 @@ RUN mkdir -p packages/core packages/cli packages/mcp packages/skills && \
 RUN bun install
 RUN cd packages/hive-ui && bun run build
 
-# ─── Stage 2: Compile binary (targeting musl for Alpine) ──────────────────────
+# ─── Stage 2: Compile gateway for the image architecture ─────────────────────
 FROM docker.io/oven/bun:1 AS binary-builder
 
 WORKDIR /app
+ARG TARGETARCH
 
 # Copy manifests first so `bun install` is cached independently of source changes
 COPY package.json bun.lock bunfig.toml tsconfig.base.json tsconfig.json ./
@@ -37,15 +38,20 @@ COPY packages/core ./packages/core
 COPY packages/cli ./packages/cli
 COPY packages/mcp ./packages/mcp
 COPY packages/skills ./packages/skills
+COPY scripts/build-gateway.ts ./scripts/build-gateway.ts
 
 # Set NODE_ENV=production so Bun inlines it correctly in the compiled binary
 ENV NODE_ENV=production
 
-# Compile standalone binary linked against musl (Alpine compatible)
-RUN bun build --compile \
-      --target=bun-linux-x64-musl \
-      --outfile=/app/hive-server \
-      ./packages/cli/src/index.ts
+# Compile a GNU/Linux binary matching BuildKit's target architecture. Running
+# the builder on the target platform ensures bun installs the matching HiveDB
+# optional native package before it is embedded into the executable.
+RUN case "$TARGETARCH" in \
+      amd64) BUN_TARGET=bun-linux-x64 ;; \
+      arm64) BUN_TARGET=bun-linux-arm64 ;; \
+      *) echo "Unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+    esac && \
+    bun scripts/build-gateway.ts --target "$BUN_TARGET" --outfile /app/hive-server
 
 # Bundle the tool worker as a standalone script. The binary spawns it via
 # `new Worker(path)` at runtime, so it must exist on disk next to the binary
@@ -55,13 +61,13 @@ RUN bun build \
       --outfile=/app/tool-worker.js \
       ./packages/core/src/tool-runtime/tool-worker.ts
 
-# ─── Stage 3: Minimal Alpine runtime ──────────────────────────────────────────
-FROM docker.io/alpine:3.21
+# ─── Stage 3: Minimal glibc runtime ───────────────────────────────────────────
+FROM docker.io/debian:bookworm-slim
 
-# ca-certificates for HTTPS, chromium for browser tools
-RUN apk add --no-cache \
-      ca-certificates tzdata libgcc libstdc++ \
-      chromium nss freetype harfbuzz ttf-freefont
+# ca-certificates for HTTPS, Chromium for browser tools, wget for healthchecks.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates tzdata libgcc-s1 libstdc++6 chromium wget && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

@@ -126,6 +126,7 @@ describe("tool runtime worker pool", () => {
       "save_note",
       "memory_write",
       "meeting_start",
+      "project_create",
     ].map((name) => ({
       name,
       execute: async () => {
@@ -140,6 +141,7 @@ describe("tool runtime worker pool", () => {
         toolCall("2", "save_note", { key: "k", value: "v" }),
         toolCall("3", "memory_write", { key: "m", value: "v" }),
         toolCall("4", "meeting_start", { title: "sync" }),
+        toolCall("5", "project_create", { name: "release" }),
       ],
       allTools: tools,
       toolConfig: {},
@@ -148,8 +150,8 @@ describe("tool runtime worker pool", () => {
     })
 
     expect(results.every((result) => result.ok)).toBe(true)
-    expect(executed).toEqual(new Set(["search_knowledge", "save_note", "memory_write", "meeting_start"]))
-    expect(results.map((result) => (result.result as any).mainThread)).toEqual([true, true, true, true])
+    expect(executed).toEqual(new Set(["search_knowledge", "save_note", "memory_write", "meeting_start", "project_create"]))
+    expect(results.map((result) => (result.result as any).mainThread)).toEqual([true, true, true, true, true])
   })
 
   it("marks timed out tools and keeps completed tools", async () => {

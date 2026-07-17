@@ -1,4 +1,4 @@
-import { createAllTools } from "../tools/index.ts"
+import { createWorkerTools } from "./worker-tools.ts"
 import type { Config } from "../config/loader.ts"
 
 type WorkerRunMessage = {
@@ -75,7 +75,7 @@ async function runTool(message: WorkerRunMessage): Promise<void> {
   try {
     const parsedArgs = parseArgs(message.args)
     const forceMainThread = message.mainThreadToolNames.includes(message.toolName)
-    const allTools = forceMainThread ? [] : createAllTools(message.hiveConfig)
+    const allTools = forceMainThread ? [] : createWorkerTools(message.hiveConfig)
     const tool = allTools.find((candidate) => candidate.name === message.toolName)
 
     const result = tool?.execute

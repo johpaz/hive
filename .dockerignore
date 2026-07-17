@@ -6,4 +6,5 @@ binaries
 .git
 *.md
 tests
-scripts
+scripts/*
+!scripts/build-gateway.ts

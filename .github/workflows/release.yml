@@ -5,298 +5,278 @@ on:
     tags:
       - "v*.*.*"
 
+permissions:
+  contents: read
+
 jobs:
-  # ─── Build UI (shared artifact) ───────────────────────────────────────────
-  build-ui:
-    name: Build UI
-    runs-on: ubuntu-latest
+  validate-version:
+    name: Validate release version
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Match tag and package version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          test "$VERSION" = "$PACKAGE_VERSION"
 
+  build-ui:
+    name: Build UI
+    runs-on: ubuntu-24.04
+    needs: validate-version
+    steps:
+      - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
-
-      - name: Install UI dependencies
-        run: cd packages/hive-ui && bun install
-
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
       - name: Build UI
-        run: cd packages/hive-ui && bun run build
-
-      - name: Upload UI artifact
-        uses: actions/upload-artifact@v4
+        run: bun --cwd packages/hive-ui run build
+      - name: Verify UI entrypoint
+        run: test -f packages/hive-ui/dist/index.html
+      - uses: actions/upload-artifact@v4
         with:
           name: hive-ui-dist
           path: packages/hive-ui/dist/
           retention-days: 1
 
-  # ─── Build binaries ────────────────────────────────────────────────────────
+  build-worker:
+    name: Build platform-neutral tool worker
+    runs-on: ubuntu-24.04
+    needs: validate-version
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - run: bun install --frozen-lockfile
+      - name: Build worker
+        run: bun build packages/core/src/tool-runtime/tool-worker.ts --target=bun --outfile=tool-worker.js
+      - name: Reject native dependencies in worker
+        shell: bash
+        run: |
+          ! grep -Fq '../native.cjs' tool-worker.js
+          ! grep -Fq '@johpaz/hive-db' tool-worker.js
+          ! grep -Fq 'JsHiveDb' tool-worker.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tool-worker
+          path: tool-worker.js
+          retention-days: 1
+
   build-binaries:
-    name: Build binary (${{ matrix.platform.name }})
+    name: Build gateway (${{ matrix.platform.name }})
+    needs: [validate-version, build-ui]
     runs-on: ${{ matrix.platform.runner }}
-    needs: build-ui
     strategy:
       fail-fast: false
       matrix:
         platform:
           - name: linux-x64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             target: bun-linux-x64
+            extension: ""
           - name: linux-arm64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04-arm
             target: bun-linux-arm64
+            extension: ""
           - name: macos-x64
-            runner: ubuntu-latest
+            runner: macos-15-intel
             target: bun-darwin-x64
+            extension: ""
           - name: macos-arm64
-            runner: ubuntu-latest
+            runner: macos-15
             target: bun-darwin-arm64
+            extension: ""
           - name: windows-x64
-            runner: ubuntu-latest
+            runner: windows-2025
             target: bun-windows-x64
-
+            extension: ".exe"
     steps:
       - uses: actions/checkout@v4
-
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
-
-      - name: Install dependencies
-        run: bun install
-
-      - name: Link workspace packages
-        run: |
-          mkdir -p node_modules/@johpaz
-          ln -sf ../../packages/core        node_modules/@johpaz/hive-agents-core
-          ln -sf ../../packages/mcp         node_modules/@johpaz/hive-agents-mcp
-          ln -sf ../../packages/skills      node_modules/@johpaz/hive-agents-skills
-          ln -sf ../../packages/cli         node_modules/@johpaz/hive-cli
-          echo "Workspace symlinks created:"
-          ls -la node_modules/@johpaz/
-
-      - name: Download UI artifact
-        uses: actions/download-artifact@v4
+      - name: Install dependencies for native platform
+        run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
         with:
           name: hive-ui-dist
           path: packages/hive-ui/dist/
-
-      - name: Verify UI dist
+      - name: Generate embedded UI
+        run: bun packages/cli/scripts/generate-ui-bundle.ts
+      - name: Compile gateway
+        shell: bash
         run: |
-          echo "=== Verifying UI Dist ==="
-          echo "UI dist contents:"
-          ls -la packages/hive-ui/dist/
-          echo "File count: $(find packages/hive-ui/dist -type f | wc -l)"
-          echo "=== UI Dist verification complete ==="
-
-      - name: Get version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-
-      - name: Generate UI bundle
+          VERSION="${GITHUB_REF_NAME#v}"
+          OUTFILE="hive-v${VERSION}-${{ matrix.platform.name }}${{ matrix.platform.extension }}"
+          bun scripts/build-gateway.ts --target "${{ matrix.platform.target }}" --outfile "$OUTFILE"
+          if [[ "${{ matrix.platform.name }}" != "windows-x64" ]]; then chmod +x "$OUTFILE"; fi
+      - name: Smoke gateway, HiveDB, and embedded UI
+        shell: bash
         run: |
-          echo "=== Generating UI Bundle ==="
-          echo "Current directory: $(pwd)"
-          echo "Script location:"
-          ls -la packages/cli/scripts/generate-ui-bundle.ts
-          echo ""
-          echo "Running generate-ui-bundle.ts..."
-          bun packages/cli/scripts/generate-ui-bundle.ts
-          echo ""
-          echo "Generated bundle:"
-          ls -la packages/cli/src/ui-bundle.generated.ts
-          echo "Bundle content preview:"
-          head -5 packages/cli/src/ui-bundle.generated.ts
-          echo "=== UI Bundle generation complete ==="
-
-      - name: Compile binary
-        run: |
-          EXT=""
-          [[ "${{ matrix.platform.name }}" == "windows-x64" ]] && EXT=".exe"
-          bun build --compile \
-            --target=${{ matrix.platform.target }} \
-            --tsconfig-override=tsconfig.json \
-            --outfile=hive-v${{ steps.version.outputs.VERSION }}-${{ matrix.platform.name }}${EXT} \
-            ./packages/cli/src/index.ts
-
-      - name: Bundle tool worker
-        run: |
-          bun build \
-            --target=bun \
-            --outfile=tool-worker.js \
-            ./packages/core/src/tool-runtime/tool-worker.ts
-
-      - name: Make executable (Unix)
-        if: matrix.platform.name != 'windows-x64'
-        run: chmod +x hive-v${{ steps.version.outputs.VERSION }}-${{ matrix.platform.name }}
-
-      - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+          VERSION="${GITHUB_REF_NAME#v}"
+          OUTFILE="hive-v${VERSION}-${{ matrix.platform.name }}${{ matrix.platform.extension }}"
+          bun scripts/smoke-release.ts --executable "$OUTFILE" --version "$VERSION"
+      - uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.platform.name }}
-          path: |
-            hive-v${{ steps.version.outputs.VERSION }}-${{ matrix.platform.name }}*
-            tool-worker.js
+          path: hive-v*-${{ matrix.platform.name }}*
           retention-days: 1
 
-  # ─── GitHub Release ────────────────────────────────────────────────────────
+  build-npm-package:
+    name: Build and smoke npm tarball
+    runs-on: ubuntu-24.04
+    needs: [validate-version, build-ui, build-worker]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: hive-ui-dist
+          path: packages/hive-ui/dist/
+      - name: Build package once
+        run: bun scripts/build-npm-package.ts --prebuilt-ui
+      - name: Verify package layout
+        run: bun scripts/verify-package.ts
+      - name: Pack exact publish artifact
+        id: pack
+        shell: bash
+        run: |
+          TARBALL="$(npm pack --ignore-scripts --silent)"
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+          tar -tf "$TARBALL" | grep -q '^package/dist/ui/index.html$'
+          ! tar -tf "$TARBALL" | grep -q '^package/dist/ui/dist/'
+      - name: Install and smoke packed artifact
+        shell: bash
+        run: |
+          PREFIX="$RUNNER_TEMP/hive-global"
+          npm install --global --prefix "$PREFIX" "./${{ steps.pack.outputs.tarball }}"
+          bun scripts/smoke-release.ts \
+            --executable "$PREFIX/bin/hive" \
+            --version "${GITHUB_REF_NAME#v}" \
+            --ui-dir "$PREFIX/lib/node_modules/@johpaz/hive-agents/dist/ui"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: ${{ steps.pack.outputs.tarball }}
+          retention-days: 1
+
+  validate-docker:
+    name: Validate Docker (${{ matrix.platform.name }})
+    needs: [validate-version, build-ui]
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: linux-amd64
+            runner: ubuntu-24.04
+            docker: linux/amd64
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+            docker: linux/arm64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image for native architecture
+        run: docker build --platform "${{ matrix.platform.docker }}" -t hive-release-smoke .
+      - name: Smoke container gateway and UI
+        shell: bash
+        run: |
+          docker run -d --name hive-release-smoke -p 18790:18790 hive-release-smoke
+          trap 'docker logs hive-release-smoke; docker rm -f hive-release-smoke' EXIT
+          for attempt in {1..90}; do
+            if curl -fsS http://127.0.0.1:18790/health >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:18790/health | grep -q '"status":"ok"'
+          curl -fsSL http://127.0.0.1:18790/ | grep -q '<div id="root">'
+
+  release-gate:
+    name: Release gate
+    runs-on: ubuntu-24.04
+    needs: [build-ui, build-worker, build-binaries, build-npm-package, validate-docker]
+    steps:
+      - run: echo "All release artifacts passed their runtime smoke tests."
+
   github-release:
-    name: GitHub Release
-    runs-on: ubuntu-latest
-    needs: [build-ui, build-binaries]
+    name: Publish GitHub Release
+    runs-on: ubuntu-24.04
+    needs: release-gate
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Get version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts/
-
-      - name: Package UI dist
+      - name: Assemble release files
+        shell: bash
         run: |
-          cd artifacts/hive-ui-dist
-          tar -czf ../../ui-dist.tar.gz .
-          cd ../..
-
-      - name: Generate checksums
-        run: |
-          cd artifacts
-          find . -name "hive-v*" -type f | while read f; do
-            cp "$f" "../$(basename $f)"
-          done
-          # Ship a single tool-worker.js next to the binaries so standalone
-          # users get the worker file the runtime spawns via `new Worker()`.
-          cp "$(find . -name tool-worker.js -type f | head -n 1)" ../tool-worker.js
-          cd ..
+          tar -czf ui-dist.tar.gz -C artifacts/hive-ui-dist .
+          find artifacts -type f -name 'hive-v*' -exec cp {} . \;
+          cp artifacts/tool-worker/tool-worker.js .
           sha256sum hive-v* tool-worker.js ui-dist.tar.gz > checksums.txt
-          cat checksums.txt
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
-          name: "Hive v${{ steps.version.outputs.VERSION }}"
-          body: |
-            ## Instalación rápida
-
-            **Docker (recomendado):**
-            ```bash
-            docker run -d -p 18790:18790 -v ~/.hive:/root/.hive --name hive johpaz/hive-agents:${{ steps.version.outputs.VERSION }}
-            ```
-
-            **npm:**
-            ```bash
-            npm install -g @johpaz/hive-agents@${{ steps.version.outputs.VERSION }}
-            ```
-
-            **Binario (Linux x64):**
-            ```bash
-            curl -L -o hive https://github.com/johpaz/hive/releases/download/${{ github.ref_name }}/hive-v${{ steps.version.outputs.VERSION }}-linux-x64
-            chmod +x hive && ./hive start
-            ```
-
-            Ver el [README](https://github.com/johpaz/hive#instalaci%C3%B3n) para todas las opciones de instalación.
+          name: Hive ${{ github.ref_name }}
+          generate_release_notes: true
           files: |
             hive-v*
             tool-worker.js
             ui-dist.tar.gz
             checksums.txt
-          generate_release_notes: true
 
-  # ─── Docker Hub ────────────────────────────────────────────────────────────
-  docker:
-    name: Docker Hub
-    runs-on: ubuntu-latest
-    needs: github-release
+  npm-publish:
+    name: Publish npm tarball
+    runs-on: ubuntu-24.04
+    needs: release-gate
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-package
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+      - run: npm publish ./*.tgz --access public --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  docker-publish:
+    name: Publish Docker manifest
+    runs-on: ubuntu-24.04
+    needs: release-gate
     steps:
       - uses: actions/checkout@v4
-
-      - name: Get version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: johpaz/hive-agents
+          tags: |
+            type=raw,value=latest
+            type=semver,pattern={{version}}
+      - uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: |
-            johpaz/hive-agents:latest
-            johpaz/hive-agents:${{ steps.version.outputs.VERSION }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-  # ─── npm ──────────────────────────────────────────────────────────────────
-  npm:
-    name: npm publish
-    runs-on: ubuntu-latest
-    needs: [build-ui, github-release]
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.14"
-
-      - name: Install dependencies
-        run: bun install
-
-      - name: Link workspace packages
-        run: |
-          mkdir -p node_modules/@johpaz
-          ln -sf ../../packages/core        node_modules/@johpaz/hive-agents-core
-          ln -sf ../../packages/mcp         node_modules/@johpaz/hive-agents-mcp
-          ln -sf ../../packages/skills      node_modules/@johpaz/hive-agents-skills
-          ln -sf ../../packages/cli         node_modules/@johpaz/hive-cli
-
-      - name: Download UI artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: hive-ui-dist
-          path: packages/hive-ui/dist/
-
-      - name: Build package (includes Windows shims)
-        run: |
-          bun build packages/cli/src/index.ts --bundle --tsconfig-override=tsconfig.json --outfile dist/hive.js --target bun
-          bun build packages/core/src/tool-runtime/tool-worker.ts --outfile dist/tool-worker.js --target bun
-          cp -r packages/hive-ui/dist dist/ui
-          bun packages/cli/scripts/postbuild.ts
-
-      - name: Verify build artifacts
-        run: |
-          echo "=== Verifying build artifacts ==="
-          echo "dist/ contents:"
-          ls -la dist/
-          echo ""
-          echo "Checking required files:"
-          test -f dist/hive.js && echo "✓ dist/hive.js exists" || (echo "✗ dist/hive.js missing" && exit 1)
-          test -f dist/tool-worker.js && echo "✓ dist/tool-worker.js exists" || (echo "✗ dist/tool-worker.js missing" && exit 1)
-          test -f dist/hive.cmd && echo "✓ dist/hive.cmd exists (Windows)" || (echo "✗ dist/hive.cmd missing" && exit 1)
-          test -f dist/hive.ps1 && echo "✓ dist/hive.ps1 exists (PowerShell)" || (echo "✗ dist/hive.ps1 missing" && exit 1)
-          test -d dist/ui && echo "✓ dist/ui/ exists" || (echo "✗ dist/ui/ missing" && exit 1)
-          echo "=== All artifacts verified ==="
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          registry-url: "https://registry.npmjs.org"
-
-      - name: Publish to npm
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

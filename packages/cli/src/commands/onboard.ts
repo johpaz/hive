@@ -50,8 +50,6 @@ function reloadEnvToProcess(hiveDir: string): void {
   }
 }
 
-const VERSION = "0.0.42";
-
 const DEFAULT_MODELS: Record<string, string> = {
   anthropic: "claude-sonnet-4-6",
   openai: "gpt-5.2",

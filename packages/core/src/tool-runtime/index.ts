@@ -212,6 +212,10 @@ const DEFAULT_MAIN_THREAD_TOOL_NAMES = new Set([
   "report_progress",
   "task_delegate",
   "task_delegate_code",
+  "project_create",
+  "task_create",
+  "task_complete",
+  "project_status",
   "voice_transcribe",
   "voice_speak",
 ])

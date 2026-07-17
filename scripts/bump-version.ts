@@ -11,11 +11,6 @@ if (!bumpType || (!["patch", "minor", "major"].includes(bumpType) && !explicitVe
   process.exit(1);
 }
 
-interface PackageInfo {
-  name: string;
-  version: string;
-}
-
 function bumpVersion(current: string, type: "patch" | "minor" | "major"): string {
   const [major, minor, patch] = current.split(".").map(Number);
   return type === "major"
@@ -27,7 +22,7 @@ function bumpVersion(current: string, type: "patch" | "minor" | "major"): string
 
 async function getPackageVersions(): Promise<Map<string, string>> {
   const versions = new Map<string, string>();
-  const packages = ["cli", "core", "sdk", "mcp", "skills", "hive-ui"];
+  const packages = ["cli", "core", "mcp", "skills", "hive-ui"];
 
   for (const pkg of packages) {
     try {
@@ -51,7 +46,6 @@ async function main() {
     "package.json",
     "packages/cli/package.json",
     "packages/core/package.json",
-    "packages/sdk/package.json",
     "packages/mcp/package.json",
     "packages/skills/package.json",
     "packages/hive-ui/package.json",
@@ -91,22 +85,9 @@ async function main() {
     }
   }
 
+  // packages/cli/src/index.ts, commands/onboard.ts and commands/gateway.ts all
+  // read the version from ../package.json at runtime — no patching needed.
   const tsFiles = [
-    {
-      path: "packages/cli/src/index.ts",
-      pattern: /const VERSION = "[\d.]+"/g,
-      replacement: `const VERSION = "${newVersion}"`,
-    },
-    {
-      path: "packages/cli/src/commands/onboard.ts",
-      pattern: /const VERSION = "[\d.]+"/g,
-      replacement: `const VERSION = "${newVersion}"`,
-    },
-    {
-      path: "packages/cli/src/commands/gateway.ts",
-      pattern: /Personal Swarm AI Gateway — v[\d.]+/g,
-      replacement: `Personal Swarm AI Gateway — v${newVersion}`,
-    },
     {
       path: "README.md",
       pattern: /hive-v[\d.]+/g,

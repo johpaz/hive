@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, openSyn
 import * as path from "node:path";
 import { spawn, ChildProcess } from "child_process";
 import { embeddedUI } from "../ui-bundle.generated";
+import pkg from "../../../../package.json";
 
 // Import adapter system
 import {
@@ -365,7 +366,7 @@ export async function start(flags: string[]): Promise<void> {
  ║   ██║  ██║██║ ╚████╔╝ ███████╗             ║
  ║   ╚═╝  ╚═╝╚═╝  ╚═══╝  ╚══════╝             ║
  ║                                            ║
- ║   Personal Swarm AI Gateway — v0.0.42       ║
+ ║   Personal Swarm AI Gateway — v${pkg.version}       ║
  ╚════════════════════════════════════════════╝
 
 📦 Installation: ${adapter.name}
@@ -617,7 +618,7 @@ async function handleProductionMode(
 ): Promise<void> {
   if (isChildProcess()) {
     const coreConfig = await loadConfig();
-    await startGateway(coreConfig);
+    await startGateway(coreConfig, embeddedUI);
     return;
   }
 

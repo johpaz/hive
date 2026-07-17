@@ -15,16 +15,11 @@ import { AgentRunner } from "../agent/providers/index";
 import type { IncomingMessage } from "../channels/base";
 import { mkdirSync, rmSync, unlinkSync, watch, existsSync, writeFileSync, readFileSync } from "node:fs";
 import * as path from "node:path";
+import rootPackage from "../../../../package.json";
 
-// Read version from package.json at module load time
-const _pkgVersion = (() => {
-  try {
-    const pkgPath = path.join(import.meta.dir, "../../../package.json");
-    return JSON.parse(readFileSync(pkgPath, "utf-8")).version as string;
-  } catch {
-    return "0.0.27";
-  }
-})();
+// Static JSON import lets Bun inline the release version into npm bundles and
+// standalone executables instead of depending on a package.json at runtime.
+const _pkgVersion = rootPackage.version;
 import { cpus as osCpus } from "node:os";
 import { ensureHiveDb } from "../storage/bootstrap";
 import { col, fromIndexable, nextId } from "../storage/hive";
@@ -108,7 +103,15 @@ interface WebSocketData {
   meetingSessionId?: string;
 }
 
-export async function startGateway(config: Config): Promise<void> {
+export type EmbeddedUIAsset = {
+  data: Uint8Array;
+  mime: string;
+};
+
+export async function startGateway(
+  config: Config,
+  embeddedUI?: ReadonlyMap<string, EmbeddedUIAsset>,
+): Promise<void> {
   const host = config.gateway?.host ?? "127.0.0.1";
   const port = config.gateway?.port ?? 18790;
   const pidFile = expandPath(config.gateway?.pidFile ?? "~/.hive/gateway.pid");
@@ -901,6 +904,24 @@ export async function startGateway(config: Config): Promise<void> {
           } else if (subPath.startsWith("/setup/")) {
             subPath = subPath.replace(/^\/setup/, "");
             if (!subPath) subPath = "/index.html";
+          }
+
+          // Standalone executables carry the UI inside the Bun binary. The CLI
+          // passes that bundle into the child gateway process so both API and
+          // UI continue to share a single port without extracting files.
+          if (embeddedUI?.size) {
+            const entry = embeddedUI.get(subPath)
+              ?? (!path.extname(subPath) ? embeddedUI.get("/index.html") : undefined);
+            if (entry) {
+              const bytes = entry.data;
+              const body = bytes.buffer.slice(
+                bytes.byteOffset,
+                bytes.byteOffset + bytes.byteLength,
+              ) as ArrayBuffer;
+              return new Response(body, {
+                headers: { "Content-Type": entry.mime },
+              });
+            }
           }
 
           const filePath = path.join(uiDir, subPath);
