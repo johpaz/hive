@@ -1,4 +1,4 @@
-# CHANGELOG v0.0.42 — Hive
+# CHANGELOG v0.0.43 — Hive
 
 ## ⚠️ Breaking: SQLite queda completamente reemplazado por HiveDB — sin migración de datos
 
