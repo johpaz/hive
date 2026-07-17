@@ -154,8 +154,13 @@ jobs:
         run: |
           TARBALL="$(npm pack --ignore-scripts --silent)"
           echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
-          tar -tf "$TARBALL" | grep -q '^package/dist/ui/index.html$'
-          ! tar -tf "$TARBALL" | grep -q '^package/dist/ui/dist/'
+          # Capture the full listing before grepping it — piping tar straight into
+          # `grep -q` lets grep close the pipe as soon as it matches, and tar (still
+          # writing the remaining entries) dies with "stdout: write error" (SIGPIPE)
+          # under bash's default -o pipefail, failing the step even on a real match.
+          ENTRIES="$(tar -tf "$TARBALL")"
+          grep -qF 'package/dist/ui/index.html' <<< "$ENTRIES"
+          ! grep -qF 'package/dist/ui/dist/' <<< "$ENTRIES"
       - name: Install and smoke packed artifact
         shell: bash
         run: |

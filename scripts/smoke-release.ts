@@ -45,17 +45,24 @@ const child = Bun.spawn([command, "start", "--skip-check"], {
 
 try {
   const deadline = Date.now() + 45_000
-  let health: Response | undefined
+  let ready = false
   while (Date.now() < deadline) {
     if (child.exitCode !== null) break
     try {
-      health = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(1_000) })
-      if (health.ok) break
+      const health = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(1_000) })
+      // The gateway binds the port and answers /health with 200 {"status":"starting"}
+      // before the real router is installed via server.reload() — every other route
+      // 503s during that window. Wait for the real handler's {"status":"ok"} body,
+      // not just an HTTP-level 200, or the next fetch below can hit the placeholder.
+      if (health.ok && (await health.json())?.status === "ok") {
+        ready = true
+        break
+      }
     } catch {}
     await Bun.sleep(300)
   }
 
-  if (!health?.ok) {
+  if (!ready) {
     child.kill()
     throw new Error(`Gateway health smoke failed\nstdout: ${await new Response(child.stdout).text()}\nstderr: ${await new Response(child.stderr).text()}`)
   }
