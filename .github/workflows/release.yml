@@ -199,8 +199,12 @@ jobs:
         run: |
           docker run -d --name hive-release-smoke -p 18790:18790 hive-release-smoke
           trap 'docker logs hive-release-smoke; docker rm -f hive-release-smoke' EXIT
+          # The gateway binds the port and answers /health with 200 {"status":"starting"}
+          # before the real router is installed — every other route 503s during that
+          # window. `curl -f` only checks the HTTP status, which is 200 in both the
+          # placeholder and ready states, so wait for the body to actually say "ok".
           for attempt in {1..90}; do
-            if curl -fsS http://127.0.0.1:18790/health >/dev/null; then break; fi
+            if curl -fsS http://127.0.0.1:18790/health 2>/dev/null | grep -q '"status":"ok"'; then break; fi
             sleep 1
           done
           curl -fsS http://127.0.0.1:18790/health | grep -q '"status":"ok"'
