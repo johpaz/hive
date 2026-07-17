@@ -33,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Build UI
-        run: bun --cwd packages/hive-ui run build
+        run: bun --cwd=packages/hive-ui run build
       - name: Verify UI entrypoint
         run: test -f packages/hive-ui/dist/index.html
       - uses: actions/upload-artifact@v4
