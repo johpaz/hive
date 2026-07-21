@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-cli",
-  "version": "0.0.43",
+  "version": "0.0.44",
   "description": "Hive CLI — Command line interface for the Hive AI Gateway",
   "bin": {
     "hive": "./dist/hive.js"
@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "@clack/prompts": "1.1.0",
-    "@johpaz/hive-agents-core": "^0.0.43",
+    "@johpaz/hive-agents-core": "^0.0.44",
     "toon-format-parser": "1.1.3"
   },
   "devDependencies": {

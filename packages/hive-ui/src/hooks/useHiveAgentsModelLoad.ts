@@ -17,6 +17,11 @@ export function useHiveAgentsModelLoad() {
   const abortRef = useRef<{ abort: boolean } | null>(null);
 
   const load = useCallback(async (modelId: string, contextWindow: number): Promise<boolean> => {
+    // A previous load may still be polling in the background (e.g. the user picked
+    // another model before the first one confirmed). Abort it so only the most
+    // recent selection can ever resolve `true` and reach onModelChange.
+    if (abortRef.current) abortRef.current.abort = true;
+
     const myAbortRef = { abort: false };
     abortRef.current = myAbortRef;
     const start = Date.now();

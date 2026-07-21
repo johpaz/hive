@@ -8,12 +8,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose, DialogDescription } from "@/components/ui/dialog";
 import { Toast } from "@/lib/swal";
 import { loader } from "@/stores/useLoaderStore";
 import type { Agent } from "@/types";
 import { cn } from "@/lib/utils";
+import { ModelSelector } from "@/modules/agents/ModelSelector";
 
 // Wrapper to fix React 19 + Lucide type compatibility
 function Icon({ icon: IconComponent, ...props }: { icon: React.ComponentType<LucideProps> } & LucideProps) {
@@ -26,8 +26,8 @@ interface AgentDetailsEditorProps {
 
 export function AgentDetailsEditor({ agentId }: AgentDetailsEditorProps) {
     const { agents, updateAgent, fetchAgents } = useAgents();
-    const { providers, fetchProviders } = useProviders();
-    const { models, fetchModels } = useModels();
+    const { fetchProviders } = useProviders();
+    const { fetchModels } = useModels();
 
     useEffect(() => {
         fetchAgents();
@@ -169,43 +169,6 @@ export function AgentDetailsEditor({ agentId }: AgentDetailsEditorProps) {
             </div>
         );
     }
-
-    const hasApiKey = (p: typeof providers[number]) => {
-        if (p.id === "ollama" || p.id === "hiveagents") return true;
-        const baseUrl = p.base_url || p.baseUrl || "";
-        if (baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1")) return true;
-        return !!p.has_api_key;
-    };
-
-    const isLocalProvider = (p: typeof providers[number]) => {
-        if (p.id === "ollama") return true;
-        const baseUrl = p.base_url || p.baseUrl || "";
-        return baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1");
-    };
-
-    // Dropdown options: only LLM providers that are both enabled AND active, with an API key.
-    // Requiring both (not enabled||active) means a stale/desynced flag can never leak a
-    // provider into this list on its own. category gates out providers activated purely
-    // for voice/OCR (e.g. elevenlabs, piper) from ever appearing as a chat provider option.
-    const providerOptions = providers.filter(p => p.enabled && p.active && hasApiKey(p) && (p.category ?? "llm") === "llm");
-
-    // Dropdown options: only active models for selected provider
-    const modelOptions = models.filter(m => {
-        const pid = m.provider_id || m.providerId;
-        return pid === formData.provider_id && (m.enabled || m.active);
-    });
-
-    // Configured provider (even if inactive) for display in trigger
-    const configuredProvider = providers.find(p => p.id === formData.provider_id);
-    const isProviderInactive = !!configuredProvider && !providerOptions.some(p => p.id === configuredProvider.id);
-
-    // Configured model (even if inactive) for display in trigger
-    const allModelsForProvider = models.filter(m => {
-        const pid = m.provider_id || m.providerId;
-        return pid === formData.provider_id;
-    });
-    const configuredModel = allModelsForProvider.find(m => m.id === formData.model_id);
-    const isModelInactive = !!configuredModel && !modelOptions.some(m => m.id === configuredModel.id);
 
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -455,115 +418,13 @@ export function AgentDetailsEditor({ agentId }: AgentDetailsEditorProps) {
                                 )}
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {/* Provider selector */}
-                                <div className="space-y-2">
-                                    <div className="flex items-center justify-between pl-1">
-                                        <Label className="text-xs text-white/40 uppercase tracking-widest">Proveedor</Label>
-                                        {providerOptions.length === 0 && (
-                                            <span className="text-[10px] text-amber-400/80">Sin providers activos</span>
-                                        )}
-                                    </div>
-                                    <Select
-                                        value={formData.provider_id}
-                                        onValueChange={(val) => setFormData(prev => ({ ...prev, provider_id: val, model_id: "" }))}
-                                    >
-                                        <SelectTrigger className="bg-white/5 border-white/10 rounded-xl h-11">
-                                            <SelectValue placeholder="Seleccionar proveedor">
-                                                {formData.provider_id && configuredProvider ? (
-                                                    <div className="flex items-center gap-2">
-                                                        <span>{configuredProvider.name}</span>
-                                                        {isProviderInactive && (
-                                                            <span className="text-[10px] text-amber-400/80">(inactivo)</span>
-                                                        )}
-                                                        {isLocalProvider(configuredProvider) ? (
-                                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400">LOCAL</span>
-                                                        ) : (
-                                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">API</span>
-                                                        )}
-                                                    </div>
-                                                ) : (
-                                                    "Seleccionar proveedor"
-                                                )}
-                                            </SelectValue>
-                                        </SelectTrigger>
-                                        <SelectContent className="bg-zinc-900 border-white/10 text-white">
-                                            {providerOptions.length === 0 && (
-                                                <div className="px-3 py-4 text-center text-xs text-white/30">
-                                                    Activa al menos un provider con API key en la sección de Providers
-                                                </div>
-                                            )}
-                                            {providerOptions.map(p => {
-                                                const isLocal = isLocalProvider(p);
-                                                return (
-                                                    <SelectItem key={p.id} value={p.id}>
-                                                        <div className="flex items-center gap-2">
-                                                            <span>{p.name}</span>
-                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isLocal
-                                                                    ? "bg-amber-500/20 text-amber-400"
-                                                                    : "bg-emerald-500/20 text-emerald-400"
-                                                                }`}>
-                                                                {isLocal ? "LOCAL" : "API"}
-                                                            </span>
-                                                        </div>
-                                                    </SelectItem>
-                                                );
-                                            })}
-                                        </SelectContent>
-                                    </Select>
-                                    {isProviderInactive && configuredProvider && (
-                                        <p className="text-[10px] text-amber-400/80 pl-1">
-                                            El proveedor "{configuredProvider.name}" está inactivo. Selecciona uno activo para cambiar.
-                                        </p>
-                                    )}
-                                </div>
-
-                                {/* Model selector */}
-                                <div className="space-y-2">
-                                    <div className="flex items-center justify-between pl-1">
-                                        <Label className="text-xs text-white/40 uppercase tracking-widest">Modelo</Label>
-                                        {formData.provider_id && modelOptions.length === 0 && (
-                                            <span className="text-[10px] text-amber-400/80">Sin modelos activos</span>
-                                        )}
-                                    </div>
-                                    <Select
-                                        value={formData.model_id}
-                                        onValueChange={(val) => setFormData(prev => ({ ...prev, model_id: val }))}
-                                        disabled={!formData.provider_id || modelOptions.length === 0}
-                                    >
-                                        <SelectTrigger className="bg-white/5 border-white/10 rounded-xl h-11 disabled:opacity-50">
-                                            <SelectValue placeholder={
-                                                !formData.provider_id
-                                                    ? "Primero selecciona un proveedor"
-                                                    : modelOptions.length === 0
-                                                        ? "Activa modelos en el provider"
-                                                        : "Seleccionar modelo"
-                                            }>
-                                                {formData.model_id && configuredModel ? (
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="font-mono text-sm">{configuredModel.name}</span>
-                                                        {isModelInactive && (
-                                                            <span className="text-[10px] text-amber-400/80">(inactivo)</span>
-                                                        )}
-                                                    </div>
-                                                ) : undefined}
-                                            </SelectValue>
-                                        </SelectTrigger>
-                                        <SelectContent className="bg-zinc-900 border-white/10 text-white">
-                                            {modelOptions.map(m => (
-                                                <SelectItem key={m.id} value={m.id}>
-                                                    <span className="font-mono text-sm">{m.name}</span>
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    {isModelInactive && configuredModel && (
-                                        <p className="text-[10px] text-amber-400/80 pl-1">
-                                            El modelo "{configuredModel.name}" está inactivo. Selecciona uno activo para cambiar.
-                                        </p>
-                                    )}
-                                </div>
-                            </div>
+                            <ModelSelector
+                                selectedProviderId={formData.provider_id || undefined}
+                                selectedModelId={formData.model_id || undefined}
+                                onProviderChange={(providerId) => setFormData(prev => ({ ...prev, provider_id: providerId, model_id: "" }))}
+                                onModelChange={(modelId) => setFormData(prev => ({ ...prev, model_id: modelId }))}
+                                typeFilter="llm"
+                            />
                         </div>
 
                         {/* Security Notice */}

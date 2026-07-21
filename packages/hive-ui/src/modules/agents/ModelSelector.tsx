@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -28,6 +28,7 @@ export function ModelSelector({
 }: ModelSelectorProps) {
   const { providers, models } = useProviders();
   const { load: loadHiveAgentsModel, cancel: cancelHiveAgentsLoad } = useHiveAgentsModelLoad();
+  const [isMountingModel, setIsMountingModel] = useState(false);
 
   const hasApiKey = (p: typeof providers[number]) => {
     if (p.id === "ollama" || p.id === "hiveagents") return true;
@@ -97,7 +98,9 @@ export function ModelSelector({
         return;
       }
       loader.show("Cargando modelo en HiveAgents…");
+      setIsMountingModel(true);
       const loaded = await loadHiveAgentsModel(modelId, contextWindow);
+      setIsMountingModel(false);
       loader.hide();
       if (!loaded) {
         toast.error("No se pudo confirmar la carga del modelo", {
@@ -126,7 +129,7 @@ export function ModelSelector({
         <Select
           value={selectedProviderId || ""}
           onValueChange={onProviderChange}
-          disabled={disabled || providerOptions.length === 0}
+          disabled={disabled || isMountingModel || providerOptions.length === 0}
         >
           <SelectTrigger id="provider" className="w-full">
             <SelectValue placeholder="Selecciona un proveedor">
@@ -190,7 +193,7 @@ export function ModelSelector({
           <Select
             value={selectedModelId || ""}
             onValueChange={handleModelChange}
-            disabled={disabled || modelOptions.length === 0}
+            disabled={disabled || isMountingModel || modelOptions.length === 0}
           >
             <SelectTrigger id="model" className="w-full">
               <SelectValue placeholder="Selecciona un modelo">

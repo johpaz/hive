@@ -29,7 +29,9 @@ const createProvidersSlice = (set: any, get: any) => ({
         models: p.models?.map(m => ({
           ...m,
           providerId: m.providerId || m.provider_id || p.id,
-          provider_id: m.provider_id || m.providerId || p.id
+          provider_id: m.provider_id || m.providerId || p.id,
+          contextWindow: m.contextWindow ?? m.context_window,
+          context_window: m.context_window ?? m.contextWindow
         }))
       }));
       
@@ -149,7 +151,9 @@ const createModelsSlice = (set: any, get: any) => ({
       const models = response.models.map(m => ({
         ...m,
         providerId: m.providerId || m.provider_id,
-        provider_id: m.provider_id || m.providerId
+        provider_id: m.provider_id || m.providerId,
+        contextWindow: m.contextWindow ?? m.context_window,
+        context_window: m.context_window ?? m.contextWindow
       }));
       const availableModels = get().filterModelsByProviderStatus(models, get().providers);
       return {
@@ -202,7 +206,9 @@ const createModelsSlice = (set: any, get: any) => ({
       const normalizedNewModels = (response.models || []).map((m: any) => ({
         ...m,
         providerId: m.providerId || m.provider_id,
-        provider_id: m.provider_id || m.providerId
+        provider_id: m.provider_id || m.providerId,
+        contextWindow: m.contextWindow ?? m.context_window,
+        context_window: m.context_window ?? m.contextWindow
       }));
       const updatedModels = [...otherModels, ...normalizedNewModels];
       const availableModels = get().filterModelsByProviderStatus(updatedModels, get().providers);
@@ -231,7 +237,9 @@ const createModelsSlice = (set: any, get: any) => ({
         const updatedModels = [...state.models, response.model].map(m => ({
           ...m,
           providerId: m.providerId || m.provider_id,
-          provider_id: m.provider_id || m.providerId
+          provider_id: m.provider_id || m.providerId,
+          contextWindow: m.contextWindow ?? m.context_window,
+          context_window: m.context_window ?? m.contextWindow
         }));
         const availableModels = get().filterModelsByProviderStatus(updatedModels, state.providers);
         set({

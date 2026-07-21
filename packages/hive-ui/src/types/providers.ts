@@ -151,6 +151,7 @@ export interface Model {
   provider_id?: string;
   model_type?: string;
   contextWindow?: number | null;
+  context_window?: number | null;
   capabilities?: string | null;
   enabled: boolean;
   active?: boolean;
