@@ -624,6 +624,7 @@ cp ~/.hive/data/hive.db ~/backup-hive-$(date +%Y%m%d).db
 | **Reuniones** | Inicio, segmentación, cierre y reporte de reuniones/transcripciones. |
 | **Voz** | Entrada por transcripción y salida TTS. |
 | **Tool Runtime** | Scheduler con Bun Workers para ejecutar tool calls independientes en paralelo y RPC al proceso principal cuando la tool depende de estado vivo. |
+| **Harness de tareas largas** | Cola durable con leases y prioridad, checkpoint/resume a prueba de crashes, retry con backoff, idempotencia, metas verificables con criterios de aceptación y proof packets. Ver FASE 7 más abajo. |
 
 **Distribución actual de tools nativas:** filesystem 7, web 2, browser 7, cron 8, CLI 1, memoria 5, agentes/workers/bus/modelos 9, Canvas 7, A2UI 4, voz 2, core 4, Office 8, reuniones 4.
 
@@ -756,6 +757,55 @@ Mantiene el contexto dentro del presupuesto de tokens del modelo.
 **Tool result clearing**
 - Resultados de tools con más de N turnos de antigüedad → reemplazados por un resumen corto
 - Reduce tokens sin perder el registro de que la tool se ejecutó
+
+---
+
+### FASE 7 — Harness de tareas de larga duración
+
+Hive no solo responde un turno de chat: puede ejecutar tareas que corren minutos u horas, sobreviven a un crash o reinicio del proceso, y verifican que el resultado realmente cumplió el objetivo antes de darlas por terminadas. Todo persiste en HiveDB (colecciones `agentRuns` y `jobQueue`), no en memoria.
+
+**7.1 — Cola durable (`DurableLaneQueue`)**
+- Cada trabajo pertenece a una *lane* (sesión, tarea, hilo) — como máximo 1 trabajo corriendo por lane a la vez, en orden FIFO + prioridad
+- `maxGlobalConcurrency` limita cuántos trabajos corren en simultáneo en todo el proceso (default 4, configurable)
+- Los `chat_turn` (turnos interactivos) saltean ese límite global para que un lote de trabajos en background nunca deje sin respuesta al chat
+- Cada transición de estado (`pending → running → completed/failed`) se persiste — nada vive solo en memoria
+
+**7.2 — Checkpoints y resume**
+- El loop del agente guarda su estado (mensajes, iteración, tokens, tool calls pendientes) después de cada ronda con el modelo
+- Si el proceso muere a mitad de una tool call, al reiniciar **no se re-ejecuta la tool** — se inyecta un mensaje sintético de interrupción y el agente continúa desde ahí (evita ejecutar dos veces una tool con efectos secundarios, como enviar un mensaje o cobrar una API)
+- Chats livianos se promueven automáticamente a durables después de 6 iteraciones
+
+**7.3 — Retry y backoff**
+- Dos mecanismos independientes: reintentos por **crash** (`attempts`/`max_attempts`, cuando el proceso muere y el lease expira) y reintentos por **fallo lógico** (`retry_count`, cuando el executor devuelve `{ok:false, retryable:true}`)
+- Los fallos lógicos reintentan con backoff exponencial + jitter: `delay = min(maxDelay, initialDelay × multiplier^retryCount) × (1 + jitter × random())`
+- Los `chat_turn` nunca reintentan solos — un fallo ahí se muestra al usuario, no se reintenta en silencio
+
+**7.4 — Idempotencia**
+- Creación de trabajos con `idempotency_key` opcional: una key repetida devuelve el trabajo existente (sea cual sea su estado) en vez de crear un duplicado — protege contra reintentos de red del lado del caller
+
+**7.5 — Metas verificables (`goal_run`) y criterios de aceptación**
+- `verifyGoal()` confirma si una meta se cumplió, con una tool de verificación determinística o un verificador LLM
+- Se pueden definir múltiples criterios de aceptación por tarea; el veredicto final es la conjunción de todos ellos
+
+**7.6 — Proof packets**
+- Al terminar una tarea verificable se guarda un "paquete de prueba" (`proofPackets`): resultado esperado, criterios evaluados, evidencia y límites conocidos — para auditar el resultado sin tener que re-ejecutar toda la tarea
+
+**7.7 — Epochs de fixed-worker**
+- Cada run guarda el epoch bajo el que corrió (provider, modelo, versión de la app, hash del catálogo de tools) — un cambio de modelo o de catálogo es una señal de que hay que re-calificar los resultados anteriores, no asumir que siguen siendo válidos
+
+**Configuración (`config.harness`, todo sobreescribible por variable de entorno):**
+
+| Variable | Default | Controla |
+|----------|---------|----------|
+| `HIVE_HARNESS_MAX_CONCURRENCY` | `4` | Trabajos corriendo en simultáneo en todo el proceso |
+| `HIVE_HARNESS_TASK_TIMEOUT_MS` | `1800000` (30 min) | Tiempo máximo por trabajo antes de abortarlo |
+| `HIVE_HARNESS_JOB_LEASE_MS` | `1800000` (30 min) | Duración del lease de un trabajo reclamado |
+| `HIVE_HARNESS_RUN_LEASE_MS` | `120000` (2 min) | Duración del lease de un run del agente |
+| `HIVE_HARNESS_LEASE_RENEW_MS` | `30000` | Frecuencia de renovación del lease mientras el run está activo |
+| `HIVE_HARNESS_JOB_MAX_RETRIES` | `3` | Reintentos por fallo lógico antes de fallar terminal |
+| `HIVE_HARNESS_JOB_RETRY_INITIAL_MS` / `_MULTIPLIER` / `_MAX_MS` / `_JITTER` | `1000` / `2` / `300000` / `0.2` | Forma del backoff exponencial |
+
+**`GET /health`** expone el estado de la cola en vivo: `queue.running`, `queue.pending`, `queue.expiredLeases`, `runs.active`, además de los circuit breakers por provider.
 
 ---
 
