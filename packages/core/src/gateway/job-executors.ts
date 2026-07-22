@@ -14,12 +14,14 @@
 import { registerExecutor, type JobExecutor } from "./durable-queue";
 import { logger } from "../utils/logger";
 import { col, updateDoc } from "../storage/hive";
+import { isRetryableError } from "../resilience/retry";
 import type { JobDoc, TaskDoc, AgentRunDoc } from "../storage/collections";
 import { runAgent, runAgentIsolated } from "../agent/agent-loop";
-import { createRun, completeRun, failRun, interruptRun, getRun, reclaimRun, bumpTurn, startLeaseRenewal, stopLeaseRenewal } from "../agent/run-store";
+import { createRun, completeRun, failRun, interruptRun, getRun, reclaimRun, bumpTurn, startLeaseRenewal, stopLeaseRenewal, deserializeAcceptance, deserializeEpoch } from "../agent/run-store";
 import { getDurableQueue } from "./durable-queue";
 import { sendToUserChannel } from "./channel-notify";
 import { verifyGoal } from "../agent/goal-runner";
+import { buildProofPacket } from "../agent/proof-packet";
 import { runWebchatTurn, type WebchatTurnPayload } from "./webchat-turn";
 import { agentBus } from "../events/agent-bus";
 import { resolveContext } from "./resolver";
@@ -69,8 +71,8 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
 
   const agentsCol = await col<{ id: string; name: string; enabled: boolean }>("agents");
   const workerEntry = await agentsCol.get(workerId);
-  if (!workerEntry) return { ok: false, error: `Worker not found: ${workerId}` };
-  if (!workerEntry.doc.enabled) return { ok: false, error: `Worker disabled: ${workerEntry.doc.name}` };
+  if (!workerEntry) return { ok: false, error: `Worker not found: ${workerId}`, retryable: false };
+  if (!workerEntry.doc.enabled) return { ok: false, error: `Worker disabled: ${workerEntry.doc.name}`, retryable: false };
 
   const workerName = workerEntry.doc.name;
   agentBus.notifyTaskStarted(workerId, workerName, 0, taskName, "");
@@ -111,7 +113,7 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
           updated_at: Date.now(),
         } as Partial<TaskDoc>).catch(() => {});
       }
-      return { ok: false, error: "Aborted" };
+      return { ok: false, error: "Aborted", retryable: false };
     }
 
     agentBus.notifyTaskCompleted(workerId, workerName, 0, taskName, "", result);
@@ -141,7 +143,7 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
       } as Partial<TaskDoc>).catch(() => {});
     }
 
-    return { ok: false, error: errorMsg };
+    return { ok: false, error: errorMsg, retryable: isRetryableError(err) };
   }
 };
 
@@ -187,7 +189,7 @@ const projectTaskExecutor: JobExecutor = async (job, signal) => {
         status: "pending",
         updated_at: Date.now(),
       } as Partial<TaskDoc>).catch(() => {});
-      return { ok: false, error: "Aborted" };
+      return { ok: false, error: "Aborted", retryable: false };
     }
 
     // Update TaskDoc → completed
@@ -198,6 +200,19 @@ const projectTaskExecutor: JobExecutor = async (job, signal) => {
       completed_at: Date.now(),
       updated_at: Date.now(),
     } as Partial<TaskDoc>).catch(() => {});
+
+    if (runId) {
+      const finishedRun = await getRun(runId);
+      await buildProofPacket({
+        runId,
+        agentId: workerId,
+        intendedOutcome: taskDescription,
+        met: true,
+        checksRun: [],
+        evidence: [typeof result === "string" ? result : JSON.stringify(result)].filter(Boolean),
+        epoch: finishedRun ? deserializeEpoch(finishedRun) : null,
+      }).catch(() => {});
+    }
 
     // Kick the TaskDriver to check for newly-ready tasks
     try {
@@ -220,7 +235,7 @@ const projectTaskExecutor: JobExecutor = async (job, signal) => {
       await getTaskDriver().kick("project_task:failed");
     } catch { /* non-critical */ }
 
-    return { ok: false, error: errorMsg };
+    return { ok: false, error: errorMsg, retryable: isRetryableError(err) };
   }
 };
 
@@ -258,6 +273,9 @@ const goalRunExecutor: JobExecutor = async (job, signal) => {
     }
   };
 
+  const acceptance = deserializeAcceptance(goalRun);
+  const epoch = deserializeEpoch(goalRun);
+
   await reclaimRun(goalRunId).catch(() => {});
   startLeaseRenewal(goalRunId);
 
@@ -269,7 +287,7 @@ const goalRunExecutor: JobExecutor = async (job, signal) => {
     for (;;) {
       if (signal.aborted) {
         await interruptRun(goalRunId, "Goal run aborted").catch(() => {});
-        return { ok: false, error: "Aborted" };
+        return { ok: false, error: "Aborted", retryable: false };
       }
 
       // HARD budget check against the accumulated goal run row
@@ -280,7 +298,17 @@ const goalRunExecutor: JobExecutor = async (job, signal) => {
         const summary = `intentos ${attempts}/${maxAttempts}, turnos ${turnsUsed}/${maxTurns}, tokens ${tokensUsed}/${maxTokens}`;
         await failRun(goalRunId, `Goal not met — budget exhausted (${summary}). ${lastReason}`.trim());
         await notify(`❌ Meta no cumplida: "${goal}". Presupuesto agotado (${summary}).${lastReason ? ` Última razón: ${lastReason}` : ""}`);
-        return { ok: false, error: `Goal budget exhausted (${summary})` };
+        await buildProofPacket({
+          runId: goalRunId,
+          agentId,
+          intendedOutcome: goal,
+          met: false,
+          checksRun: acceptance ? acceptance.map((a) => a.checkTool ?? "llm_verifier") : [checkTool ?? "llm_verifier"],
+          evidence: [lastReason || "budget exhausted before verification succeeded"],
+          knownLimits: `Budget exhausted: ${summary}`,
+          epoch,
+        }).catch(() => {});
+        return { ok: false, error: `Goal budget exhausted (${summary})`, retryable: false };
       }
 
       const turnMessage = attempts === 0
@@ -313,16 +341,27 @@ const goalRunExecutor: JobExecutor = async (job, signal) => {
       } as Partial<AgentRunDoc>).catch(() => {});
 
       // Verify: deterministic tool when configured, LLM verifier otherwise
+      // (or one check per acceptance criterion when the run has them)
       const providerCfg = await resolveGoalProviderCfg(agentId);
       const verdict = await verifyGoal(goal, checkTool, [
         { role: "user", content: `Meta: ${goal}` },
         { role: "assistant", content: turnContent || "(sin respuesta)" },
-      ], providerCfg);
+      ], providerCfg, acceptance);
 
       if (verdict.met) {
         await completeRun(goalRunId, lastContent);
         await notify(`✅ Meta cumplida: "${goal}". ${verdict.reason}`);
         log.info(`[goal_run] Goal met after ${attempts} attempt(s): ${verdict.reason}`);
+        await buildProofPacket({
+          runId: goalRunId,
+          agentId,
+          intendedOutcome: goal,
+          met: true,
+          acceptanceResults: verdict.acceptanceResults,
+          checksRun: acceptance ? acceptance.map((a) => a.checkTool ?? "llm_verifier") : [checkTool ?? "llm_verifier"],
+          evidence: [verdict.reason, lastContent].filter(Boolean),
+          epoch,
+        }).catch(() => {});
         return { ok: true, result: { met: true, attempts, reason: verdict.reason, content: lastContent } };
       }
 
@@ -331,7 +370,7 @@ const goalRunExecutor: JobExecutor = async (job, signal) => {
     }
   } catch (err) {
     await failRun(goalRunId, (err as Error).message).catch(() => {});
-    return { ok: false, error: (err as Error).message };
+    return { ok: false, error: (err as Error).message, retryable: isRetryableError(err) };
   } finally {
     stopLeaseRenewal(goalRunId);
   }

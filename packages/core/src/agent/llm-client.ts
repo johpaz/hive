@@ -12,6 +12,8 @@
  */
 
 import { logger } from "../utils/logger"
+import { loadConfig } from "../config/loader"
+import { withRetry, isRetryableError, type RetryPolicy } from "../resilience/retry"
 import { GeminiProvider } from "./llm-providers/gemini"
 import { AnthropicProvider } from "./llm-providers/anthropic"
 import { OllamaProvider } from "./llm-providers/ollama"
@@ -137,10 +139,29 @@ function getProvider(provider: string): LLMProvider {
 
 /**
  * Call any LLM provider. Returns a canonical LLMResponse regardless of provider.
+ *
+ * Retries transient failures (429/5xx/timeout/network) with exponential
+ * backoff + jitter per `config.retry`, honoring `Retry-After` when the
+ * provider sends one. An aborted signal never retries. Note: this retries
+ * the whole call, so a failure that happens mid-stream (after onToken has
+ * already fired) can produce a duplicated partial response — acceptable
+ * because provider failures overwhelmingly happen before the stream starts
+ * (auth/rate-limit/connection errors).
  */
 export async function callLLM(options: LLMCallOptions): Promise<LLMResponse> {
+  const retryCfg = loadConfig().retry
+  const policy: RetryPolicy = {
+    maxAttempts: retryCfg?.maxAttempts ?? 3,
+    initialDelayMs: retryCfg?.initialDelayMs ?? 1000,
+    backoffMultiplier: retryCfg?.backoffMultiplier ?? 2,
+    maxDelayMs: retryCfg?.maxDelayMs ?? 30000,
+  }
   try {
-    return await getProvider(options.provider).call(options)
+    return await withRetry(
+      () => getProvider(options.provider).call(options),
+      policy,
+      (err) => !options.signal?.aborted && isRetryableError(err)
+    )
   } catch (err) {
     const msg = (err as Error).message
     const cleanModel = options.model.replace(new RegExp(`^${options.provider}\\/`), "")

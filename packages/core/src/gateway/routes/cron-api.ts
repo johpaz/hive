@@ -485,6 +485,7 @@ export async function handleGetCronChannels(
     const usersCol = await col<UserDoc>("users");
     const userEntry = (await usersCol.scan({ limit: 1 }))[0];
     const userId = userEntry?.id || "";
+    const preference = userEntry?.doc.preferred_cron_channel || "auto";
 
     const identitiesCol = await col<UserIdentityDoc>("userIdentities");
     const identityEntries = await identitiesCol.scan({ prefix: `${userId}:` });
@@ -511,9 +512,9 @@ export async function handleGetCronChannels(
       formatted.push({ id: "webchat", type: "webchat", active: true, recommended: true });
     }
 
-    return addCorsHeaders(Response.json({ channels: formatted }), req);
+    return addCorsHeaders(Response.json({ channels: formatted, preference }), req);
   } catch (err) {
     // Non-critical — return empty channels
-    return addCorsHeaders(Response.json({ channels: [{ id: "webchat", type: "webchat", active: true, recommended: true }] }), req);
+    return addCorsHeaders(Response.json({ channels: [{ id: "webchat", type: "webchat", active: true, recommended: true }], preference: "auto" }), req);
   }
 }

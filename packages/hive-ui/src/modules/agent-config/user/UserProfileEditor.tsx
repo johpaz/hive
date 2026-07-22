@@ -4,7 +4,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useUserStore } from "@/stores/userStore";
-import { useChannelStore } from "@/stores/channelStore";
+import { useNotesAndCronsStore } from "@/stores/useNotesAndCronsStore";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -129,7 +129,7 @@ function getInitials(name: string) {
 ════════════════════════════════════════════════════════════════════════ */
 export function UserProfileEditor() {
   const { fetchUser, saveUser, isLoading } = useUserStore();
-  const { channels } = useChannelStore();
+  const { cronChannels, fetchCronChannels } = useNotesAndCronsStore();
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     name: "", occupation: "", language: "",
@@ -150,7 +150,8 @@ export function UserProfileEditor() {
       };
       setFormData(data); setSaved(data);
     }).catch(console.error);
-  }, [fetchUser]);
+    fetchCronChannels();
+  }, [fetchUser, fetchCronChannels]);
 
   const update = (f: keyof FormData, v: string) =>
     setFormData(p => ({ ...p, [f]: v }));
@@ -169,10 +170,10 @@ export function UserProfileEditor() {
     } finally { loader.hide(); }
   };
 
-  const activeChannels = channels.filter(c => c.active);
+  const activeChannels = cronChannels.filter(c => c.active);
   const channelLabel = formData.preferred_cron_channel === "auto"
     ? "Auto — detectar mejor canal"
-    : activeChannels.find(o => o.type === formData.preferred_cron_channel)?.type ?? formData.preferred_cron_channel;
+    : activeChannels.find(o => o.id === formData.preferred_cron_channel)?.type ?? formData.preferred_cron_channel;
   const initials = getInitials(formData.name);
 
   return (
@@ -399,13 +400,13 @@ export function UserProfileEditor() {
                     Auto — detectar mejor canal
                   </SelectItem>
                   {activeChannels.map(ch => (
-                    <SelectItem key={ch.id} value={ch.type} className="hive-select-item text-sm">
-                      {ch.type === 'webchat' ? 'Web Chat'
-                        : ch.type === 'telegram' ? 'Telegram'
-                        : ch.type === 'discord' ? 'Discord'
-                        : ch.type === 'slack' ? 'Slack'
-                        : ch.type === 'whatsapp' ? 'WhatsApp'
-                        : ch.type}
+                    <SelectItem key={ch.id} value={ch.id} className="hive-select-item text-sm">
+                      {ch.id === 'webchat' ? 'Web Chat'
+                        : ch.id === 'telegram' ? 'Telegram'
+                        : ch.id === 'discord' ? 'Discord'
+                        : ch.id === 'slack' ? 'Slack'
+                        : ch.id === 'whatsapp' ? 'WhatsApp'
+                        : ch.id}
                     </SelectItem>
                   ))}
                 </SelectContent>

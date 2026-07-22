@@ -168,6 +168,8 @@ export const SEED_DATA: SeedData = {
     { id: "es_MX-claude-14947-epoch-high", providerId: "piper", name: "Piper Spanish (Claude)", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "local"]) },
 
     // ── Google Gemini (fuente: openrouter.ai/google + ai.google.dev) ──
+    { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", providerId: "gemini", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]) },
+    { id: "gemini-3.5-pro", providerId: "gemini", name: "Gemini 3.5 Pro", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]) },
     { id: "gemini-3.5-flash", providerId: "gemini", name: "Gemini 3.5 Flash", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]) },
     { id: "gemini-3.1-pro-preview", providerId: "gemini", name: "Gemini 3.1 Pro Preview", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]) },
     { id: "gemini-3.1-flash-lite-preview", providerId: "gemini", name: "Gemini 3.1 Flash Lite Preview", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
@@ -288,20 +290,20 @@ export const SEED_DATA: SeedData = {
     { id: "MiniMax-M2.5-highspeed", providerId: "minimax", name: "MiniMax M2.5 Highspeed", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
 
     // ── OpenCode Go (fuente: opencode.ai) — OpenAI-compatible endpoint ──
-    { id: "opencode-go/minimax-m3",         providerId: "opencode-go", name: "MiniMax M3",          modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "vision", "function_calling", "streaming", "reasoning"]) },
-    { id: "opencode-go/minimax-m2.7",       providerId: "opencode-go", name: "MiniMax M2.7",        modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "opencode-go/minimax-m2.5",       providerId: "opencode-go", name: "MiniMax M2.5",        modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "opencode-go/kimi-k2.6",          providerId: "opencode-go", name: "Kimi K2.6",           modelType: "llm", contextWindow: 262144,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "opencode-go/kimi-k2.5",          providerId: "opencode-go", name: "Kimi K2.5",           modelType: "llm", contextWindow: 262144,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "opencode-go/glm-5.1",            providerId: "opencode-go", name: "GLM-5.1",             modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "opencode-go/glm-5",              providerId: "opencode-go", name: "GLM-5",               modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "opencode-go/deepseek-v4-pro",    providerId: "opencode-go", name: "DeepSeek V4 Pro",     modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming", "reasoning"]) },
-    { id: "opencode-go/deepseek-v4-flash",  providerId: "opencode-go", name: "DeepSeek V4 Flash",   modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "opencode-go/mimo-v2-pro",        providerId: "opencode-go", name: "MiMo-V2 Pro",         modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming", "reasoning"]) },
-    { id: "opencode-go/mimo-v2-omni",       providerId: "opencode-go", name: "MiMo-V2 Omni",        modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "opencode-go/mimo-v2.5-pro",      providerId: "opencode-go", name: "MiMo-V2.5 Pro",       modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming", "reasoning"]) },
-    { id: "opencode-go/mimo-v2.5",          providerId: "opencode-go", name: "MiMo-V2.5",           modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "opencode-go/hy3-preview",        providerId: "opencode-go", name: "Hunyuan 3 Preview",   modelType: "llm", contextWindow: 128000,  capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/minimax-m3", providerId: "opencode-go", name: "MiniMax M3", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "vision", "function_calling", "streaming", "reasoning"]) },
+    { id: "opencode-go/minimax-m2.7", providerId: "opencode-go", name: "MiniMax M2.7", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/minimax-m2.5", providerId: "opencode-go", name: "MiniMax M2.5", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/kimi-k2.6", providerId: "opencode-go", name: "Kimi K2.6", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/kimi-k2.5", providerId: "opencode-go", name: "Kimi K2.5", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/glm-5.1", providerId: "opencode-go", name: "GLM-5.1", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/glm-5", providerId: "opencode-go", name: "GLM-5", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/deepseek-v4-pro", providerId: "opencode-go", name: "DeepSeek V4 Pro", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming", "reasoning"]) },
+    { id: "opencode-go/deepseek-v4-flash", providerId: "opencode-go", name: "DeepSeek V4 Flash", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/mimo-v2-pro", providerId: "opencode-go", name: "MiMo-V2 Pro", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming", "reasoning"]) },
+    { id: "opencode-go/mimo-v2-omni", providerId: "opencode-go", name: "MiMo-V2 Omni", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/mimo-v2.5-pro", providerId: "opencode-go", name: "MiMo-V2.5 Pro", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming", "reasoning"]) },
+    { id: "opencode-go/mimo-v2.5", providerId: "opencode-go", name: "MiMo-V2.5", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "opencode-go/hy3-preview", providerId: "opencode-go", name: "Hunyuan 3 Preview", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
 
     // ── HiveAgents (llama.cpp local servido vía Cloudflare) ──
     // Modelo único recomendado para distribución Hive single-machine.

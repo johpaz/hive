@@ -25,10 +25,11 @@ import { ensureHiveDb } from "../storage/bootstrap";
 import { col, fromIndexable, nextId } from "../storage/hive";
 import { reconcileOnBoot } from "../storage/reconcile";
 import { getBootId } from "../storage/boot-id";
-import { stopAllLeaseRenewals, interruptRun } from "../agent/run-store";
+import { stopAllLeaseRenewals, interruptRun, findRunsByStatus } from "../agent/run-store";
 import { shutdownToolRuntime } from "../tool-runtime";
 import { initDurableQueue, getDurableQueue } from "./durable-queue";
 import { initJobExecutors, setJobExecutorMCPManager } from "./job-executors";
+import { findAllPendingJobs, findExpiredLeases, loadJobRetryPolicy } from "./job-store";
 import { initTaskDriver } from "../scheduler/task-driver";
 import type { UserDoc, AgentDoc } from "../storage/collections";
 import { canvasManager } from "../canvas/canvas-manager.ts";
@@ -227,7 +228,12 @@ export async function startGateway(
 
         // Initialize durable queue + executors
         initJobExecutors();
-        const durableQueue = initDurableQueue({ maxGlobalConcurrency: 4 });
+        const harnessCfg = config.harness;
+        const durableQueue = initDurableQueue({
+          maxGlobalConcurrency: harnessCfg?.maxGlobalConcurrency ?? 4,
+          taskTimeoutMs: harnessCfg?.taskTimeoutMs ?? 30 * 60 * 1000,
+          jobRetryPolicy: loadJobRetryPolicy(),
+        });
         setJobExecutorMCPManager(agent?.getMCPManager() ?? null);
         // chat_turn jobs re-execute through this runner (live or post-crash)
         initWebchatTurnRunner({
@@ -793,11 +799,27 @@ export async function startGateway(
         // ── Health (must be before UI routing so it works in dev mode too) ───
         if (url.pathname === "/health" || url.pathname === "/health/") {
           const uptime = Math.floor((Date.now() - startTime) / 1000);
+          const dq = getDurableQueue();
+          const [pending, expiredLeases, activeRuns] = await Promise.all([
+            findAllPendingJobs().catch(() => []),
+            findExpiredLeases().catch(() => []),
+            findRunsByStatus("running").catch(() => []),
+          ]);
           return addCorsHeaders(Response.json({
             status: "ok",
             version: _pkgVersion,
             uptime,
+            bootId: getBootId(),
             circuitBreakers: circuitBreakerRegistry.getAllStats(),
+            queue: {
+              running: dq.getRunningCount(),
+              maxGlobalConcurrency: dq.getMaxGlobalConcurrency(),
+              pending: pending.length,
+              expiredLeases: expiredLeases.length,
+            },
+            runs: {
+              active: activeRuns.length,
+            },
           }), req);
         }
 

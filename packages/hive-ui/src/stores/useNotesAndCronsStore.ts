@@ -134,7 +134,7 @@ export const useNotesAndCronsStore = create<NotesAndCronsState>((set, get) => ({
 
     fetchCronChannels: async () => {
         try {
-            const data = await apiClient<{ channels: string[] | CronChannel[] }>('/api/cron/channels');
+            const data = await apiClient<{ channels: string[] | CronChannel[]; preference?: string }>('/api/cron/channels');
             let channels: CronChannel[] = [];
             if (Array.isArray(data.channels)) {
                 channels = data.channels.map((ch) => {
@@ -144,7 +144,7 @@ export const useNotesAndCronsStore = create<NotesAndCronsState>((set, get) => ({
                     return ch as CronChannel;
                 });
             }
-            set({ cronChannels: channels, cronRecommended: 'webchat', cronUserPreference: 'auto' });
+            set({ cronChannels: channels, cronRecommended: 'webchat', cronUserPreference: data.preference ?? 'auto' });
         } catch {
             // Non-critical — ignore if endpoint is unavailable
         }

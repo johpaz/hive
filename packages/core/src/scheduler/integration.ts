@@ -10,6 +10,7 @@ import { logger } from "../utils/logger";
 import { buildAgentLoop } from "../agent/agent-loop";
 import { resolveAgentId } from "../storage/onboarding";
 import { sendToUserChannel } from "../gateway/channel-notify";
+import { getNarration } from "../gateway/helpers";
 import { addMessage } from "../agent/conversation-store";
 import { resolveBestChannel } from "../tools/cron/index";
 import { col } from "../storage/hive";
@@ -128,6 +129,23 @@ ${prompt || `Execute tool: ${job.tool_name}`}`;
         ? job.channel
         : await resolveBestChannel(user?.id || "");
 
+      // Narrate progress to the user's channel as the task runs, same as a
+      // live chat turn (server.ts onStep) — without this, scheduled tasks
+      // execute silently and only the final completion message is sent.
+      const onStep = async (step: { type: string; message?: string; toolName?: string }) => {
+        if (!agentChannel) return;
+        try {
+          if (step.type === "tool_call" && step.toolName) {
+            await sendToUserChannel(agentChannel, user?.id || "", getNarration(step.toolName));
+          } else if (step.type === "text" && step.message) {
+            const trimmed = step.message.trim();
+            if (trimmed) await sendToUserChannel(agentChannel, user?.id || "", trimmed);
+          }
+        } catch (err) {
+          log.warn(`[execute] Narration send failed: ${(err as Error).message}`);
+        }
+      };
+
       const messages = [{ role: "user", content: contextPrompt }];
       const stream = agentLoop.stream({ messages }, {
         configurable: {
@@ -138,6 +156,7 @@ ${prompt || `Execute tool: ${job.tool_name}`}`;
           system_prompt: undefined,
           raw_user_message: contextPrompt,
         },
+        onStep,
       });
 
       let response = "";

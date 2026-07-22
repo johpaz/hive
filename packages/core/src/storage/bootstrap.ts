@@ -68,6 +68,9 @@ const INDEXES: IndexSpec[] = [
   { collection: "jobQueue", field: "lane" },
   { collection: "jobQueue", field: "type" },
   { collection: "jobQueue", field: "run_id" },
+  { collection: "jobQueue", field: "idempotency_key" },
+  { collection: "proofPackets", field: "run_id" },
+  { collection: "proofPackets", field: "agent_id" },
   // Stage 6 — orchestration
   { collection: "projects", field: "user_id" },
   { collection: "projects", field: "agent_id" },

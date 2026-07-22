@@ -264,6 +264,25 @@ const RetryConfigSchema = z.object({
   maxDelayMs: z.number().optional(),
 });
 
+const JobRetryConfigSchema = z.object({
+  // Logical-failure retries (executor returned {ok:false}). Separate from
+  // JobDoc.attempts, which only counts crash/lease-expiry reclaims.
+  maxRetries: z.number().optional(),
+  initialDelayMs: z.number().optional(),
+  backoffMultiplier: z.number().optional(),
+  maxDelayMs: z.number().optional(),
+  jitter: z.number().optional(),
+});
+
+const HarnessConfigSchema = z.object({
+  maxGlobalConcurrency: z.number().optional(),
+  taskTimeoutMs: z.number().optional(),
+  jobLeaseMs: z.number().optional(),
+  runLeaseMs: z.number().optional(),
+  leaseRenewMs: z.number().optional(),
+  jobRetry: JobRetryConfigSchema.optional(),
+});
+
 const HooksConfigSchema = z.object({
   scripts: z.object({
     before_model_resolve: z.string().optional(),
@@ -367,6 +386,7 @@ const ConfigSchema = z.object({
   cron: CronConfigSchema.optional(),
   causalLog: CausalLogConfigSchema.optional(),
   retry: RetryConfigSchema.optional(),
+  harness: HarnessConfigSchema.optional(),
   security: SecurityConfigSchema.optional(),
   hooks: HooksConfigSchema.optional(),
   captcha: CaptchaConfigSchema.optional(),
@@ -515,6 +535,20 @@ function buildDefaultConfig(): Config {
       initialDelayMs: 1000,
       backoffMultiplier: 2,
       maxDelayMs: 30000,
+    },
+    harness: {
+      maxGlobalConcurrency: parseInt(process.env.HIVE_HARNESS_MAX_CONCURRENCY || "4", 10),
+      taskTimeoutMs: parseInt(process.env.HIVE_HARNESS_TASK_TIMEOUT_MS || String(30 * 60 * 1000), 10),
+      jobLeaseMs: parseInt(process.env.HIVE_HARNESS_JOB_LEASE_MS || String(30 * 60 * 1000), 10),
+      runLeaseMs: parseInt(process.env.HIVE_HARNESS_RUN_LEASE_MS || String(2 * 60 * 1000), 10),
+      leaseRenewMs: parseInt(process.env.HIVE_HARNESS_LEASE_RENEW_MS || "30000", 10),
+      jobRetry: {
+        maxRetries: parseInt(process.env.HIVE_HARNESS_JOB_MAX_RETRIES || "3", 10),
+        initialDelayMs: parseInt(process.env.HIVE_HARNESS_JOB_RETRY_INITIAL_MS || "1000", 10),
+        backoffMultiplier: parseFloat(process.env.HIVE_HARNESS_JOB_RETRY_MULTIPLIER || "2"),
+        maxDelayMs: parseInt(process.env.HIVE_HARNESS_JOB_RETRY_MAX_MS || String(5 * 60 * 1000), 10),
+        jitter: parseFloat(process.env.HIVE_HARNESS_JOB_RETRY_JITTER || "0.2"),
+      },
     },
     security: {
       maxMessageLength: {

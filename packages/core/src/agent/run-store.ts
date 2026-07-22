@@ -14,14 +14,22 @@ import { col, updateDoc, nextId } from "../storage/hive";
 import type { AgentRunDoc } from "../storage/collections";
 import { getBootId } from "../storage/boot-id";
 import { logger } from "../utils/logger";
+import { loadConfig } from "../config/loader";
 import type { LLMMessage } from "./llm-client";
+import type { RunEpoch } from "./run-epoch";
 
 const log = logger.child("run-store");
 
-const LEASE_RENEW_INTERVAL_MS = 30_000;
-const LEASE_DURATION_MS = 2 * 60 * 1000;
 const MAX_STATE_BYTES = 1_500_000;
 const MAX_RETRIES = 5;
+
+function runLeaseDurationMs(): number {
+  return loadConfig().harness?.runLeaseMs ?? 2 * 60 * 1000;
+}
+
+function leaseRenewIntervalMs(): number {
+  return loadConfig().harness?.leaseRenewMs ?? 30_000;
+}
 
 export interface RunCheckpointState {
   version: 1
@@ -36,6 +44,14 @@ export interface RunCheckpointState {
   systemPromptSkillSections: string[]
 }
 
+/** Whole-job acceptance criterion (harness-engineering "proof" concept). */
+export interface AcceptanceCriterion {
+  id: string
+  description: string
+  /** Deterministic tool to check this specific criterion; falls back to LLM judgment when absent. */
+  checkTool?: string | null
+}
+
 export interface CreateRunInput {
   thread_id: string
   agent_id: string
@@ -48,6 +64,8 @@ export interface CreateRunInput {
   goal?: string | null
   goal_check_tool?: string | null
   resume_policy?: AgentRunDoc["resume_policy"]
+  acceptance?: AcceptanceCriterion[]
+  epoch?: RunEpoch
 }
 
 export async function createRun(input: CreateRunInput): Promise<AgentRunDoc> {
@@ -76,8 +94,10 @@ export async function createRun(input: CreateRunInput): Promise<AgentRunDoc> {
     pending_tool_calls_json: null,
     checkpointed_at: now,
     boot_id: bootId,
-    lease_expires_at: now + LEASE_DURATION_MS,
+    lease_expires_at: now + runLeaseDurationMs(),
     resume_policy: input.resume_policy ?? "resume",
+    acceptance_json: input.acceptance ? JSON.stringify(input.acceptance) : null,
+    epoch_json: input.epoch ? JSON.stringify(input.epoch) : null,
     error: null,
     created_at: now,
     updated_at: now,
@@ -114,7 +134,7 @@ export async function checkpoint(
     checkpointed_at: Date.now(),
     iterations_used: state.iterations,
     tokens_used: state.totalInputTokens + state.totalOutputTokens,
-    lease_expires_at: Date.now() + LEASE_DURATION_MS,
+    lease_expires_at: Date.now() + runLeaseDurationMs(),
     boot_id: getBootId(),
     updated_at: Date.now(),
   };
@@ -131,7 +151,7 @@ export async function bumpTurn(runId: string, tokensDelta: number): Promise<Agen
   return updateDoc<AgentRunDoc>("agentRuns", runId, {
     turns_used: existing.turns_used + 1,
     tokens_used: existing.tokens_used + tokensDelta,
-    lease_expires_at: Date.now() + LEASE_DURATION_MS,
+    lease_expires_at: Date.now() + runLeaseDurationMs(),
     updated_at: Date.now(),
   });
 }
@@ -187,7 +207,7 @@ export async function reclaimRun(runId: string): Promise<void> {
   await updateDoc<AgentRunDoc>("agentRuns", runId, {
     status: "running",
     boot_id: getBootId(),
-    lease_expires_at: now + LEASE_DURATION_MS,
+    lease_expires_at: now + runLeaseDurationMs(),
     error: null,
     finished_at: null,
     updated_at: now,
@@ -219,6 +239,28 @@ export async function findExpiredRuns(): Promise<AgentRunDoc[]> {
   const running = await findRunsByStatus("running");
   const now = Date.now();
   return running.filter((r) => r.lease_expires_at < now);
+}
+
+/** Deserialize acceptance criteria back from AgentRunDoc.acceptance_json, or null if none were set. */
+export function deserializeAcceptance(run: AgentRunDoc): AcceptanceCriterion[] | null {
+  if (!run.acceptance_json) return null;
+  try {
+    return JSON.parse(run.acceptance_json) as AcceptanceCriterion[];
+  } catch {
+    log.warn(`[deserializeAcceptance] Failed to parse acceptance_json for run ${run.id}`);
+    return null;
+  }
+}
+
+/** Deserialize the fixed-worker epoch back from AgentRunDoc.epoch_json, or null if unset. */
+export function deserializeEpoch(run: AgentRunDoc): RunEpoch | null {
+  if (!run.epoch_json) return null;
+  try {
+    return JSON.parse(run.epoch_json) as RunEpoch;
+  } catch {
+    log.warn(`[deserializeEpoch] Failed to parse epoch_json for run ${run.id}`);
+    return null;
+  }
 }
 
 /**
@@ -308,13 +350,13 @@ export function startLeaseRenewal(runId: string): void {
         return;
       }
       await updateDoc<AgentRunDoc>("agentRuns", runId, {
-        lease_expires_at: Date.now() + LEASE_DURATION_MS,
+        lease_expires_at: Date.now() + runLeaseDurationMs(),
         updated_at: Date.now(),
       } as Partial<AgentRunDoc>);
     } catch (err) {
       log.warn(`[startLeaseRenewal] Failed to renew lease for ${runId}: ${(err as Error).message}`);
     }
-  }, LEASE_RENEW_INTERVAL_MS);
+  }, leaseRenewIntervalMs());
   leaseTimers.set(runId, timer);
 }
 

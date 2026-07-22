@@ -296,6 +296,11 @@ export interface AgentRunDoc {
   lease_expires_at: number
   resume_policy: "resume" | "mark_interrupted" | "discard"
 
+  /** Whole-job acceptance criteria (harness-engineering "proof" concept): JSON array of {id, description, checkTool?}. */
+  acceptance_json: string | null
+  /** Fixed-worker epoch recorded at run creation: {provider, model, app_version, tool_catalog_hash}. */
+  epoch_json: string | null
+
   error: string | null
   created_at: number
   updated_at: number
@@ -320,6 +325,12 @@ export interface JobDoc {
   created_at: number
   started_at: number | null
   finished_at: number | null
+  /** Logical-failure retries (executor returned {ok:false, retryable:true}). Separate from `attempts` (crash/lease-expiry only). */
+  retry_count: number
+  /** Error from the most recent logical-failure retry; `error` stays null until the job is terminal. */
+  last_error: string | null
+  /** `toIndexable`-encoded — `NO_PARENT` when unset. Client-supplied dedup key for job creation. */
+  idempotency_key: string
 }
 
 export interface CronJobDoc {
@@ -352,6 +363,31 @@ export interface CronJobDoc {
   last_run_at: string | null
   next_run_at: string | null
   completed_at: string | null
+}
+
+/**
+ * Compressed evidence artifact for a completed goal/project run — the
+ * "proof packet" concept from harness-engineering's proof/verification
+ * practice: what was intended, what was checked, what evidence backs the
+ * verdict, and known limits. Written once per run by the goal_run /
+ * project_task executors after verification.
+ */
+export interface ProofPacketDoc {
+  id: string
+  run_id: string
+  agent_id: string
+  intended_outcome: string
+  /** Per-acceptance-criterion verdicts: [{id, description, met, evidence}]. */
+  acceptance_results_json: string
+  /** Names of checks executed (tool ids, LLM verifier, etc). */
+  checks_run_json: string
+  /** Free-form evidence snippets backing the verdict (tool outputs, verifier reasons). */
+  evidence_json: string
+  known_limits: string | null
+  /** Fixed-worker epoch this run executed under — copied from AgentRunDoc.epoch_json. */
+  epoch_json: string | null
+  met: boolean
+  created_at: number
 }
 
 export interface TaskRunDoc {

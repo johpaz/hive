@@ -5,15 +5,65 @@
  * path guarantees only one process wins the race for the same job.
  */
 
-import { col, nextId, updateDoc } from "../storage/hive";
+import { col, nextId, updateDoc, toIndexable } from "../storage/hive";
 import type { JobDoc } from "../storage/collections";
 import { getBootId } from "../storage/boot-id";
 import { logger } from "../utils/logger";
+import { loadConfig } from "../config/loader";
 
 const log = logger.child("job-store");
 
-const LEASE_DURATION_MS = 30 * 60 * 1000;
 const MAX_RETRIES = 5;
+
+function jobLeaseDurationMs(): number {
+  return loadConfig().harness?.jobLeaseMs ?? 30 * 60 * 1000;
+}
+
+export interface JobRetryPolicy {
+  maxRetries: number;
+  initialDelayMs: number;
+  backoffMultiplier: number;
+  maxDelayMs: number;
+  jitter: number;
+}
+
+export const DEFAULT_JOB_RETRY_POLICY: JobRetryPolicy = {
+  maxRetries: 3,
+  initialDelayMs: 1000,
+  backoffMultiplier: 2,
+  maxDelayMs: 5 * 60 * 1000,
+  jitter: 0.2,
+};
+
+export function loadJobRetryPolicy(): JobRetryPolicy {
+  const cfg = loadConfig().harness?.jobRetry;
+  return {
+    maxRetries: cfg?.maxRetries ?? DEFAULT_JOB_RETRY_POLICY.maxRetries,
+    initialDelayMs: cfg?.initialDelayMs ?? DEFAULT_JOB_RETRY_POLICY.initialDelayMs,
+    backoffMultiplier: cfg?.backoffMultiplier ?? DEFAULT_JOB_RETRY_POLICY.backoffMultiplier,
+    maxDelayMs: cfg?.maxDelayMs ?? DEFAULT_JOB_RETRY_POLICY.maxDelayMs,
+    jitter: cfg?.jitter ?? DEFAULT_JOB_RETRY_POLICY.jitter,
+  };
+}
+
+/** Exponential backoff with full jitter, capped at policy.maxDelayMs. */
+export function computeBackoffDelay(retryCount: number, policy: JobRetryPolicy): number {
+  const base = Math.min(policy.maxDelayMs, policy.initialDelayMs * Math.pow(policy.backoffMultiplier, retryCount));
+  const jitterAmount = base * policy.jitter * Math.random();
+  return Math.round(base + jitterAmount);
+}
+
+/** Small randomized delay between OCC-conflict retries to reduce thundering-herd contention. */
+function occRetryDelay(attempt: number): Promise<void> {
+  const ms = 5 * (attempt + 1) + Math.random() * 10;
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function findByIdempotencyKey(key: string): Promise<JobDoc | null> {
+  const c = await col<JobDoc>("jobQueue");
+  const entries = await c.findBy("idempotency_key", key);
+  return entries.length > 0 ? entries[0].doc : null;
+}
 
 export async function createJob(input: {
   lane: string;
@@ -23,7 +73,17 @@ export async function createJob(input: {
   priority?: number;
   max_attempts?: number;
   not_before?: number;
+  /** Client-supplied dedup key: a repeated key returns the existing job instead of creating a new one. */
+  idempotency_key?: string | null;
 }): Promise<JobDoc> {
+  if (input.idempotency_key) {
+    const existing = await findByIdempotencyKey(input.idempotency_key);
+    if (existing) {
+      log.info(`[createJob] Idempotent hit for key=${input.idempotency_key} → job ${existing.id}`);
+      return existing;
+    }
+  }
+
   const id = await nextId("jobQueue");
   const now = Date.now();
   const doc: JobDoc = {
@@ -44,6 +104,9 @@ export async function createJob(input: {
     created_at: now,
     started_at: null,
     finished_at: null,
+    retry_count: 0,
+    last_error: null,
+    idempotency_key: toIndexable(input.idempotency_key ?? null),
   };
   const c = await col<JobDoc>("jobQueue");
   await c.put(id, doc, { expectedVersion: 0 });
@@ -71,7 +134,7 @@ export async function claimJob(jobId: string, bootId: string = getBootId()): Pro
       status: "running",
       attempts: doc.attempts + 1,
       boot_id: bootId,
-      lease_expires_at: now + LEASE_DURATION_MS,
+      lease_expires_at: now + jobLeaseDurationMs(),
       started_at: doc.started_at ?? now,
     };
     try {
@@ -80,6 +143,7 @@ export async function claimJob(jobId: string, bootId: string = getBootId()): Pro
       return updated;
     } catch {
       // OCC conflict — retry
+      await occRetryDelay(attempt);
     }
   }
   log.warn(`[claimJob] Too much contention on job ${jobId}`);
@@ -101,13 +165,14 @@ export async function renewLease(jobId: string, bootId: string = getBootId()): P
 
     const updated: JobDoc = {
       ...doc,
-      lease_expires_at: Date.now() + LEASE_DURATION_MS,
+      lease_expires_at: Date.now() + jobLeaseDurationMs(),
     };
     try {
       await c.put(jobId, updated, { expectedVersion: entry.version });
       return true;
     } catch {
       // OCC conflict — retry
+      await occRetryDelay(attempt);
     }
   }
   log.warn(`[renewLease] Too much contention on job ${jobId}`);
@@ -138,6 +203,7 @@ export async function completeJob(jobId: string, result: unknown, bootId: string
       return;
     } catch {
       // OCC conflict — retry
+      await occRetryDelay(attempt);
     }
   }
   log.warn(`[completeJob] Too much contention on job ${jobId}`);
@@ -156,6 +222,7 @@ export async function failJob(jobId: string, error: string, bootId: string = get
       ...doc,
       status: "failed",
       error,
+      last_error: error,
       finished_at: Date.now(),
       boot_id: null,
       lease_expires_at: null,
@@ -166,9 +233,77 @@ export async function failJob(jobId: string, error: string, bootId: string = get
       return;
     } catch {
       // OCC conflict — retry
+      await occRetryDelay(attempt);
     }
   }
   log.warn(`[failJob] Too much contention on job ${jobId}`);
+}
+
+/**
+ * Fail a job that returned a LOGICAL failure ({ok:false}), retrying with
+ * exponential backoff + jitter up to `policy.maxRetries` before giving up.
+ * Distinct from `attempts`/`reclaimOrInterrupt`, which only handle crash /
+ * lease-expiry recovery. `chat_turn` jobs must never be routed here (caller's
+ * responsibility) — a user-facing turn should not silently retry later.
+ */
+export async function failJobOrRetry(
+  jobId: string,
+  error: string,
+  bootId: string = getBootId(),
+  policy: JobRetryPolicy = DEFAULT_JOB_RETRY_POLICY
+): Promise<JobDoc | null> {
+  const c = await col<JobDoc>("jobQueue");
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const entry = await c.get(jobId);
+    if (!entry) return null;
+    const doc = entry.doc;
+    if (doc.status !== "running") return null;
+    if (doc.boot_id !== bootId) return null;
+
+    const now = Date.now();
+    const retryCount = doc.retry_count ?? 0;
+
+    if (retryCount >= policy.maxRetries) {
+      const updated: JobDoc = {
+        ...doc,
+        status: "failed",
+        error,
+        last_error: error,
+        finished_at: now,
+        boot_id: null,
+        lease_expires_at: null,
+      };
+      try {
+        await c.put(jobId, updated, { expectedVersion: entry.version });
+        log.info(`[failJobOrRetry] Job ${jobId} failed terminally after ${retryCount} retr${retryCount === 1 ? "y" : "ies"}: ${error}`);
+        return updated;
+      } catch {
+        await occRetryDelay(attempt);
+        continue;
+      }
+    }
+
+    const delay = computeBackoffDelay(retryCount, policy);
+    const updated: JobDoc = {
+      ...doc,
+      status: "pending",
+      retry_count: retryCount + 1,
+      last_error: error,
+      not_before: now + delay,
+      boot_id: null,
+      lease_expires_at: null,
+    };
+    try {
+      await c.put(jobId, updated, { expectedVersion: entry.version });
+      log.info(`[failJobOrRetry] Job ${jobId} scheduled for retry ${retryCount + 1}/${policy.maxRetries} in ${delay}ms: ${error}`);
+      return updated;
+    } catch {
+      // OCC conflict — retry
+      await occRetryDelay(attempt);
+    }
+  }
+  log.warn(`[failJobOrRetry] Too much contention on job ${jobId}`);
+  return null;
 }
 
 /**
@@ -204,6 +339,7 @@ export async function reclaimOrInterrupt(jobId: string, opts?: { force?: boolean
         log.warn(`[reclaimOrInterrupt] Job ${jobId} interrupted (attempts exhausted)`);
         return updated;
       } catch {
+        await occRetryDelay(attempt);
         continue;
       }
     }
@@ -220,6 +356,7 @@ export async function reclaimOrInterrupt(jobId: string, opts?: { force?: boolean
       return updated;
     } catch {
       // OCC conflict — retry
+      await occRetryDelay(attempt);
     }
   }
   log.warn(`[reclaimOrInterrupt] Too much contention on job ${jobId}`);
@@ -247,6 +384,7 @@ export async function cancelJob(jobId: string): Promise<boolean> {
       return true;
     } catch {
       // OCC conflict — retry
+      await occRetryDelay(attempt);
     }
   }
   return false;

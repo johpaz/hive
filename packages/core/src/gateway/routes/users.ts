@@ -22,6 +22,7 @@ export async function handleGetUsers(req: Request, addCorsHeaders: (r: Response,
       timezone: u.doc.timezone,
       occupation: u.doc.occupation,
       notes: u.doc.notes,
+      preferred_cron_channel: u.doc.preferred_cron_channel,
       createdAt: new Date(u.doc.created_at * 1000).toISOString(),
       agentCount: agentCountByUser.get(u.doc.id) || 0,
     }))

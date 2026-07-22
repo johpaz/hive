@@ -16,10 +16,19 @@
 
 import { logger } from "../utils/logger";
 import { callLLM, type LLMMessage } from "./llm-client";
-import { createRun } from "./run-store";
+import { createRun, type AcceptanceCriterion } from "./run-store";
 import { clearOldToolResults } from "./compaction";
 import { loadConfig } from "../config/loader";
 import { getDurableQueue } from "../gateway/durable-queue";
+
+export type { AcceptanceCriterion } from "./run-store";
+
+export interface AcceptanceResult {
+  id: string;
+  description: string;
+  met: boolean;
+  evidence: string;
+}
 
 const log = logger.child("goal-runner");
 
@@ -36,6 +45,8 @@ export interface GoalRunOptions {
   maxTurns?: number;
   maxTokens?: number;
   maxAttempts?: number;
+  /** Whole-job acceptance criteria — when set, the goal is only "met" once every criterion is. */
+  acceptance?: AcceptanceCriterion[];
 }
 
 export interface GoalRunResult {
@@ -72,6 +83,7 @@ export async function runGoal(opts: GoalRunOptions): Promise<GoalRunResult> {
     goal: opts.goal,
     goal_check_tool: opts.goalCheckTool ?? null,
     resume_policy: "resume",
+    acceptance: opts.acceptance,
   });
 
   // Enqueue a goal_run job in the durable queue
@@ -114,13 +126,30 @@ export async function runGoal(opts: GoalRunOptions): Promise<GoalRunResult> {
  * Verify whether a goal has been met using either:
  * - A deterministic tool (goal_check_tool) — executes the tool and checks the result
  * - An LLM verifier — asks the model to return JSON {met, reason}
+ *
+ * When `acceptance` criteria are supplied, each is verified independently
+ * (its own checkTool, or an LLM judgment against its own description) and
+ * the overall verdict is the conjunction of all of them — the top-level
+ * `goal`/`checkTool` are ignored in that case.
  */
 export async function verifyGoal(
   goal: string,
   checkTool: string | null | undefined,
   messages: LLMMessage[],
   providerCfg: any,
-): Promise<{ met: boolean; reason: string }> {
+  acceptance?: AcceptanceCriterion[] | null,
+): Promise<{ met: boolean; reason: string; acceptanceResults?: AcceptanceResult[] }> {
+  if (acceptance && acceptance.length > 0) {
+    const results: AcceptanceResult[] = [];
+    for (const criterion of acceptance) {
+      const verdict = await verifyGoal(criterion.description, criterion.checkTool, messages, providerCfg);
+      results.push({ id: criterion.id, description: criterion.description, met: verdict.met, evidence: verdict.reason });
+    }
+    const met = results.every((r) => r.met);
+    const reason = results.map((r) => `${r.met ? "✅" : "❌"} ${r.description}: ${r.evidence}`).join("\n");
+    return { met, reason, acceptanceResults: results };
+  }
+
   // If we have a deterministic check tool, execute it
   if (checkTool) {
     try {

@@ -20,12 +20,16 @@ import {
   claimJob,
   completeJob,
   failJob,
+  failJobOrRetry,
   cancelJob,
   reclaimOrInterrupt,
   findPendingJobsByLane,
   findAllPendingJobs,
   findExpiredLeases,
   getJob,
+  loadJobRetryPolicy,
+  DEFAULT_JOB_RETRY_POLICY,
+  type JobRetryPolicy,
 } from "./job-store";
 import type { JobDoc } from "../storage/collections";
 import { getBootId } from "../storage/boot-id";
@@ -46,6 +50,10 @@ export interface JobExecutorResult {
   ok: boolean;
   result?: unknown;
   error?: string;
+  /** Logical failures default to retryable; set false for terminal errors (validation, not-found) that a retry can't fix. Ignored when ok=true. */
+  retryable?: boolean;
+  /** Stable failure code for observability/tooling, e.g. {code:"PROVIDER_TIMEOUT"}. */
+  failureSignature?: string;
 }
 
 export interface JobLiveCallbacks {
@@ -71,6 +79,7 @@ export function registerExecutor(type: JobType, executor: JobExecutor): void {
 export class DurableLaneQueue {
   private maxGlobalConcurrency: number;
   private taskTimeoutMs: number;
+  private jobRetryPolicy: JobRetryPolicy;
   private runningCount = 0;
   private runningAborts = new Map<string, { lane: string; controller: AbortController }>();
   private dispatchTimers = new Map<string, ReturnType<typeof setInterval>>();
@@ -80,9 +89,11 @@ export class DurableLaneQueue {
   constructor(options: {
     maxGlobalConcurrency?: number;
     taskTimeoutMs?: number;
+    jobRetryPolicy?: JobRetryPolicy;
   } = {}) {
     this.maxGlobalConcurrency = options.maxGlobalConcurrency ?? DEFAULT_MAX_GLOBAL_CONCURRENCY;
     this.taskTimeoutMs = options.taskTimeoutMs ?? DEFAULT_TASK_TIMEOUT_MS;
+    this.jobRetryPolicy = options.jobRetryPolicy ?? DEFAULT_JOB_RETRY_POLICY;
     this.bootId = getBootId();
   }
 
@@ -99,6 +110,8 @@ export class DurableLaneQueue {
     priority?: number;
     max_attempts?: number;
     not_before?: number;
+    /** Client-supplied dedup key: a repeated key returns the existing job instead of creating a new one. */
+    idempotency_key?: string | null;
     callbacks?: JobLiveCallbacks;
   }): Promise<JobDoc> {
     const job = await createJob({
@@ -109,6 +122,7 @@ export class DurableLaneQueue {
       priority: input.priority,
       max_attempts: input.max_attempts,
       not_before: input.not_before,
+      idempotency_key: input.idempotency_key,
     });
 
     // Stash live callbacks in memory (not serializable)
@@ -154,12 +168,26 @@ export class DurableLaneQueue {
    */
   start(): void {
     if (this.leaseCheckTimer) return;
-    this.leaseCheckTimer = setInterval(() => this.checkExpiredLeases(), LEASE_CHECK_INTERVAL_MS);
-    log.info(`[start] Lease checker running every ${LEASE_CHECK_INTERVAL_MS}ms`);
+    this.leaseCheckTimer = setInterval(() => this.runMaintenanceTick(), LEASE_CHECK_INTERVAL_MS);
+    log.info(`[start] Maintenance tick running every ${LEASE_CHECK_INTERVAL_MS}ms`);
     // Without this, jobs reclaimed to "pending" by reconcileOnBoot (or enqueued
     // right before a crash) would sit until a new enqueue touched their lane.
     this.dispatchPendingLanes().catch((err) => {
       log.error(`[start] Failed to dispatch pending lanes: ${(err as Error).message}`);
+    });
+  }
+
+  /**
+   * Periodic tick: reclaim crashed jobs (expired leases) AND re-dispatch
+   * lanes with jobs whose `not_before` (e.g. a backoff delay from
+   * `failJobOrRetry`) has now elapsed. `dispatchPendingLanes` is safe to call
+   * repeatedly — `scheduleDispatch` debounces per lane and a lane with
+   * nothing due is a cheap no-op.
+   */
+  private async runMaintenanceTick(): Promise<void> {
+    await this.checkExpiredLeases();
+    await this.dispatchPendingLanes().catch((err) => {
+      log.error(`[runMaintenanceTick] Failed to dispatch pending lanes: ${(err as Error).message}`);
     });
   }
 
@@ -253,13 +281,25 @@ export class DurableLaneQueue {
       if (result.ok) {
         await completeJob(job.id, result.result ?? null, this.bootId);
       } else {
-        await failJob(job.id, result.error ?? "Unknown error", this.bootId);
+        const error = result.error ?? "Unknown error";
+        // chat_turn is user-facing — never auto-retry a logical failure, the
+        // user just sees the error and can re-ask.
+        if (job.type !== "chat_turn" && result.retryable !== false) {
+          await failJobOrRetry(job.id, error, this.bootId, this.jobRetryPolicy);
+        } else {
+          await failJob(job.id, error, this.bootId);
+        }
       }
     } catch (err) {
       if ((err as Error).name === "AbortError") {
         await cancelJob(job.id);
       } else {
-        await failJob(job.id, (err as Error).message, this.bootId);
+        const error = (err as Error).message;
+        if (job.type !== "chat_turn") {
+          await failJobOrRetry(job.id, error, this.bootId, this.jobRetryPolicy);
+        } else {
+          await failJob(job.id, error, this.bootId);
+        }
       }
     } finally {
       clearTimeout(timeoutId);
@@ -296,6 +336,10 @@ export class DurableLaneQueue {
   getMaxGlobalConcurrency(): number {
     return this.maxGlobalConcurrency;
   }
+
+  getJobRetryPolicy(): JobRetryPolicy {
+    return this.jobRetryPolicy;
+  }
 }
 
 // Live callback stash — not serializable, kept in memory only
@@ -314,6 +358,7 @@ export function getDurableQueue(): DurableLaneQueue {
 export function initDurableQueue(options?: {
   maxGlobalConcurrency?: number;
   taskTimeoutMs?: number;
+  jobRetryPolicy?: JobRetryPolicy;
 }): DurableLaneQueue {
   _durableQueue = new DurableLaneQueue(options);
   _durableQueue.start();
