@@ -88,7 +88,7 @@ async function syncMCPServers(mcpManager: MCPClientManager): Promise<void> {
             mcpServerConfig.headers = mcpHeaders;
           }
 
-          // Update MCP Manager config (auto-connects new servers)
+          // Register (or refresh) the server's config in the manager.
           const currentConfig = (mcpManager as any).config || { servers: {} };
           await mcpManager.updateConfig({
             ...currentConfig,
@@ -98,12 +98,19 @@ async function syncMCPServers(mcpManager: MCPClientManager): Promise<void> {
             },
           });
 
-          // Wait a bit for connection to establish
-          await new Promise(resolve => setTimeout(resolve, 500));
+          // updateConfig() only reconnects a server whose config changed AND was
+          // already connected — it never connects a server that's merely registered
+          // (true for both a brand-new server and one restored from DB on boot).
+          // Connect explicitly so "new to this process" always means "usable now".
+          await mcpManager.connectServer(serverName).catch((err) => {
+            log.error(`Failed to connect MCP server ${serverName}: ${err.message}`);
+          });
 
-          // Get tools count and update status
+          // Get tools count and update status from the manager's real state —
+          // never assume success.
           const tools = mcpManager.getServerTools(serverName) || [];
-          await updateDoc<McpServerDoc>("mcpServers", server.id, { status: "connected", tools_count: tools.length }).catch(() => { /* not found */ });
+          const connected = mcpManager.getServerStatus(serverName) === "connected";
+          await updateDoc<McpServerDoc>("mcpServers", server.id, { status: connected ? "connected" : "error", tools_count: tools.length }).catch(() => { /* not found */ });
 
           // Persist MCP tool definitions to DB and the HiveDB index
           // Use server.name (human-readable) for mcpToolId consistency with context-compiler

@@ -63,6 +63,8 @@ export interface AgentDoc {
   model_id: string
   tools_json: string | null
   skills_json: string | null
+  /** Task-scoped MCP server ids currently leased by this agent. */
+  active_mcp_json?: string | null
   /** `toIndexable`-encoded — `NO_PARENT` for the coordinator. */
   parent_id: string
   max_iterations: number
@@ -71,6 +73,24 @@ export interface AgentDoc {
   lastTraceAt: number | null
   created_at: number
   updated_at: number
+
+  // ─── Catalog fields (only populated for source:"catalog" seeded agents) ────
+  /** "catalog" = seeded persona from specialist-catalog.ts (insert-only, survives reseed). Absent/"user" for everything else (coordinator, agent_create workers). */
+  source?: "user" | "catalog"
+  /** BM25 routing metadata (capability-search.ts) — `description` itself is already routing-friendly (one line, suitable for small local models) and doubles as the catalog line shown to the coordinator. */
+  routing_examples_json?: string | null
+  routing_exclusions_json?: string | null
+  /** Glob patterns. When present, task_delegate re-expands against the live tool registry at delegation time instead of trusting a possibly-stale tools_json. */
+  tool_allowlist_json?: string | null
+  /** Fixed MCP defaults this agent may lease. Dynamic task-scoped MCP requests are restricted to the MCP operator (see specialist-catalog.ts). */
+  mcp_server_ids_json?: string | null
+  workspace_scope_json?: string | null
+  model_override_json?: string | null
+  default_acceptance_json?: string | null
+  /** ACE learning counters — updated by independent verifier verdicts (acceptance-verifier.ts), not by loop completion. */
+  helpful_count?: number
+  harmful_count?: number
+  seed_version?: number
 }
 
 // ─── Stage 2: catalog ─────────────────────────────────────────────────────────
@@ -141,6 +161,27 @@ export interface ToolDoc {
   active: boolean
   created_at: number
   updated_at: number
+}
+
+// Sub-types for AgentDoc's catalog fields (workspace_scope_json, model_override_json,
+// default_acceptance_json) — kept as named types for readability even though they're
+// stored as JSON strings on the shared agents table, not a separate collection.
+export type SpecialistWorkspaceScope =
+  | { kind: "none" }
+  | { kind: "workspace"; read_globs: string[]; write_globs: string[] }
+  | { kind: "resource"; resource_types: string[] }
+
+export interface SpecialistModelOverride {
+  required_capabilities: string[]
+  preferred_model_ids: string[]
+  fallback: "general"
+  prefer_different_family?: boolean
+}
+
+export interface SpecialistAcceptanceCriterion {
+  id: string
+  description: string
+  check_tool?: string | null
 }
 
 export interface EthicsDoc {
@@ -234,6 +275,8 @@ export interface TraceDoc {
   created_at: number
   /** G9 causal stream id for this run (agent-loop.ts's causalStreamId), when the causal log is enabled. */
   causal_stream_id?: string | null
+  /** Stable dormant-template id when this trace belongs to a materialized specialist. */
+  specialist_id?: string
 }
 
 export interface ReflectionDoc {
@@ -300,6 +343,8 @@ export interface AgentRunDoc {
   acceptance_json: string | null
   /** Fixed-worker epoch recorded at run creation: {provider, model, app_version, tool_catalog_hash}. */
   epoch_json: string | null
+  /** `toIndexable`-encoded specialist template id, or `NO_PARENT` for ordinary agents. */
+  specialist_id?: string
 
   error: string | null
   created_at: number
@@ -386,8 +431,58 @@ export interface ProofPacketDoc {
   known_limits: string | null
   /** Fixed-worker epoch this run executed under — copied from AgentRunDoc.epoch_json. */
   epoch_json: string | null
+  /** Required when met=true. Points at an independent verified verdict. */
+  verification_id: string
+  /** `toIndexable`-encoded specialist template id, or `NO_PARENT`. */
+  specialist_id: string
   met: boolean
   created_at: number
+}
+
+export interface VerificationCriterionResult {
+  criterion_id: string
+  met: boolean
+  evidence: string[]
+  check_used: string
+  confidence: number
+}
+
+export interface VerificationVerdict {
+  status: "verified" | "rejected" | "needs_evidence"
+  criterion_results: VerificationCriterionResult[]
+  summary: string
+  retry_guidance: string | null
+  risks: string[]
+}
+
+/** Independent acceptance-gate record. Executors cannot write a verified proof packet without one. */
+export interface VerificationDoc {
+  id: string
+  run_id: string
+  task_id: string
+  /** Any AgentDoc id (catalog-seeded or not) — the field name predates the agents/specialists merge. */
+  executor_specialist_id: string
+  verifier_specialist_id: "acceptance_verifier"
+  objective: string
+  acceptance_json: string
+  verdict_json: string
+  status: VerificationVerdict["status"]
+  attempt: number
+  executor_epoch_json: string
+  verifier_epoch_json: string
+  created_at: number
+}
+
+export interface SpecialistProposalDoc {
+  id: string
+  type: "move_tool" | "create_specialist" | "disable_specialist"
+  specialist_id: string
+  proposed_change_json: string
+  evidence_trace_ids_json: string
+  confidence: number
+  status: "proposed" | "approved" | "rejected" | "applied"
+  created_at: number
+  updated_at: number
 }
 
 export interface TaskRunDoc {
@@ -452,6 +547,8 @@ export interface TaskDoc {
   job_id: string | null
   run_id: string | null
   thread_id: string | null
+  /** `toIndexable`-encoded specialist template id, or `NO_PARENT`. */
+  specialist_id?: string
   started_at: number | null
   attempts: number
   created_at: number

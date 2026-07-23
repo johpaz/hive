@@ -6,7 +6,7 @@
 
 import type { Tool } from "../types.ts";
 import { col } from "../../storage/hive.ts";
-import type { ToolDoc, SkillDoc, PlaybookDoc, McpToolDoc, TaskDoc } from "../../storage/collections.ts";
+import type { ToolDoc, SkillDoc, PlaybookDoc, McpToolDoc, TaskDoc, SpecialistDoc } from "../../storage/collections.ts";
 import { logger } from "../../utils/logger.ts";
 import {
   searchCapabilities,
@@ -138,7 +138,7 @@ function translateQueryToEnglish(query: string): string {
 
 export const searchKnowledgeTool: Tool = {
   name: "search_knowledge",
-  description: "Busca en TODO el conocimiento de Hive con una sola palabra clave. Encuentra tools nativas, MCP, skills y playbook en una sola query. Ejemplo: search_knowledge(query='email') devuelve todo lo relacionado con email. Sin especificar type busca en todo. Fallback bilingüe automático.",
+  description: "Busca en TODO el conocimiento de Hive: tools nativas, MCP, skills, especialistas y playbook.",
   parameters: {
     type: "object",
     properties: {
@@ -148,7 +148,7 @@ export const searchKnowledgeTool: Tool = {
       },
       type: {
         type: "string",
-        enum: ["all", "tools", "skills", "playbook", "mcp"],
+        enum: ["all", "tools", "skills", "playbook", "mcp", "specialists"],
         description: "Opcional. Por defecto 'all' (busca en todo). Usa 'mcp' para filtrar solo herramientas externas, 'tools' para solo nativas.",
       },
       limit: {
@@ -171,20 +171,21 @@ export const searchKnowledgeTool: Tool = {
       skills: ["skill"],
       playbook: ["playbook"],
       mcp: ["mcp"],
+      specialists: ["specialist"],
     };
     const types = typeMap[type] ?? undefined;
 
     try {
       if (!query) {
         log.info(`[search_knowledge] Empty query — returning empty results`)
-        return { query, type, tools: [], skills: [], playbook: [], toolsmcp: [] }
+        return { query, type, tools: [], skills: [], playbook: [], toolsmcp: [], specialists: [] }
       }
       // HiveDB parses raw text leniently (accents, quotes, operators are all
       // safe), so the query goes in as-is — only underscores become spaces so
       // tool ids like "send_email" match their tokens.
       const normalizedQuery = query.replace(/_/g, " ").trim();
 
-      const result: any = { query, type, tools: [], skills: [], playbook: [], toolsmcp: [] };
+      const result: any = { query, type, tools: [], skills: [], playbook: [], toolsmcp: [], specialists: [] };
 
       // ─── Hydration from HiveDB collections (index stores only ids + search text) ──
 
@@ -194,6 +195,7 @@ export const searchKnowledgeTool: Tool = {
       const skillsCol = await col<SkillDoc>("skills");
       const playbookCol = await col<PlaybookDoc>("playbook");
       const mcpToolsCol = await col<McpToolDoc>("mcpTools");
+      const specialistsCol = await col<SpecialistDoc>("specialists");
 
       async function hydrateTool(hit: CapabilityHit): Promise<any | null> {
         const entry = await toolsCol.get(hit.rawId);
@@ -249,6 +251,20 @@ export const searchKnowledgeTool: Tool = {
         };
       }
 
+      async function hydrateSpecialist(hit: CapabilityHit): Promise<any | null> {
+        const entry = await specialistsCol.get(hit.rawId);
+        const specialist = entry?.doc;
+        if (!specialist?.active) return null;
+        return {
+          id: specialist.id,
+          name: specialist.name,
+          description: specialist.description,
+          default_acceptance: specialist.default_acceptance,
+          active: specialist.active,
+          rank: hit.score,
+        };
+      }
+
       const seenIds = new Set<string>();
 
       async function mergeHits(hits: CapabilityHit[]): Promise<number> {
@@ -269,6 +285,9 @@ export const searchKnowledgeTool: Tool = {
               break;
             case "mcp":
               if (result.toolsmcp.length < limit) { entry = await hydrateMcp(hit); bucket = result.toolsmcp; }
+              break;
+            case "specialist":
+              if (result.specialists.length < limit) { entry = await hydrateSpecialist(hit); bucket = result.specialists; }
               break;
           }
           if (entry && bucket) {
@@ -300,7 +319,7 @@ export const searchKnowledgeTool: Tool = {
         }
       }
 
-      result.totalResults = result.tools.length + result.skills.length + result.playbook.length + result.toolsmcp.length;
+      result.totalResults = result.tools.length + result.skills.length + result.playbook.length + result.toolsmcp.length + result.specialists.length;
 
       return { ok: true, ...result };
     } catch (error) {

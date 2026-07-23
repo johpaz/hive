@@ -11,6 +11,9 @@ export * from "./agent/conversation-store.ts";
 export * from "./agent/tool-selector.ts";
 export * from "./agent/skill-selector.ts";
 export * from "./agent/playbook-selector.ts";
+export * from "./agent/specialist-selector.ts";
+export * from "./agent/specialist-runtime.ts";
+export * from "./agent/acceptance-verifier.ts";
 export * from "./agent/llm-client.ts";
 
 // Channels

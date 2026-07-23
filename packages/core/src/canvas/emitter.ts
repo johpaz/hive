@@ -30,6 +30,10 @@ export function subscribeCanvas(ws: { send: (data: string) => void }) {
   subscribers.add(ws)
 }
 
+export function getAgentLiveState(id: string): AgentLiveState | undefined {
+  return agentLiveState.get(id)
+}
+
 export function unsubscribeCanvas(ws: { send: (data: string) => void }) {
   subscribers.delete(ws)
 }
@@ -79,7 +83,7 @@ export async function getCanvasSnapshot() {
         description: a.description,
         status: live?.status ?? a.status,
         type: "agent",
-        data: { role: a.role, currentTool: live?.currentTool ?? null },
+        data: { role: a.role, currentTool: live?.currentTool ?? null, specialistId: a.specialist_id ?? null },
       }
     })
 

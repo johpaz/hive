@@ -29,6 +29,7 @@ import { stopAllLeaseRenewals, interruptRun, findRunsByStatus } from "../agent/r
 import { shutdownToolRuntime } from "../tool-runtime";
 import { initDurableQueue, getDurableQueue } from "./durable-queue";
 import { initJobExecutors, setJobExecutorMCPManager } from "./job-executors";
+import { initDelegationNotify } from "./delegation-notify";
 import { findAllPendingJobs, findExpiredLeases, loadJobRetryPolicy } from "./job-store";
 import { initTaskDriver } from "../scheduler/task-driver";
 import type { UserDoc, AgentDoc } from "../storage/collections";
@@ -46,6 +47,7 @@ import { handleSetupStatus, handleVerifyProvider, handleCompleteSetup, handleSet
 import { handleAuthStatus, handleLogin, handleSetupCredentials, handleChangePassword, handleRecover, handleDisableAuth, handleRecoveryKey } from "./routes/auth";
 import { resolveUserId } from "../storage/onboarding";
 import { handleGetAgents, handleCreateAgent, handleUpdateAgent, handleDeleteAgent } from "./routes/agents";
+import { handleGetSpecialists, handlePatchSpecialist } from "./routes/specialists";
 import { handleGetProviders, handleCreateProvider, handleToggleProvider, handleUpdateProvider, handleSyncProviderModels, handleLoadHiveAgentsModel, handleGetHiveAgentsModelStatus } from "./routes/providers";
 import { handleGetUsers, handleCreateUser, handleUpdateUserSettings, handleGetUserChannels, handleLinkUserChannel } from "./routes/users";
 import { handleGetSkills, handleActivateSkill, handleUpdateSkill, handleDeleteSkill, handleCreateSkill } from "./routes/skills";
@@ -241,6 +243,9 @@ export async function startGateway(
           getProvider: () => dbProvider,
           getModel: () => dbModel,
         });
+        // Closes the async task_delegate loop: relays worker_task outcomes
+        // back into the delegating conversation (see delegation-notify.ts).
+        initDelegationNotify();
         log.info(`🔀 DurableQueue initialized (maxConcurrency=${durableQueue.getMaxGlobalConcurrency()})`);
 
         // Initialize TaskDriver (project/task engine)
@@ -1284,6 +1289,15 @@ export async function startGateway(
           return await handleDeleteAgent(req, addCorsHeaders)
         }
 
+        // ── Specialists API ─────────────────────────────────────────────────
+        if (url.pathname === "/api/specialists" && req.method === "GET") {
+          return await handleGetSpecialists(req, addCorsHeaders)
+        }
+
+        if (url.pathname.match(/^\/api\/specialists\/[^/]+$/) && req.method === "PATCH") {
+          return await handlePatchSpecialist(req, addCorsHeaders)
+        }
+
         // ── Providers API ───────────────────────────────────────────────────
         if (url.pathname === "/api/providers" && req.method === "GET") {
           return await handleGetProviders(req, addCorsHeaders)
@@ -1506,13 +1520,22 @@ export async function startGateway(
                     const newServersConfig = { ...currentConfig.servers }
                     newServersConfig[mcpName] = mcpServerConfig
 
-                    // Update MCP Manager config (this will register and auto-connect the server)
+                    // Register the server (or refresh its config) — this alone does not
+                    // connect: updateConfig() only (re)connects a server whose config
+                    // actually changed, so an already-registered dormant server needs an
+                    // explicit connect below.
                     await mcp.updateConfig({
                       ...currentConfig,
                       servers: newServersConfig,
                     });
 
                     log.info(`[MCP] Server registered in MCP Manager`)
+
+                    // Explicitly wake the server — connectServer() is a no-op if it's
+                    // already connected, so this is safe to call unconditionally.
+                    await mcp.connectServer(mcpName).catch((err: Error) => {
+                      log.error(`[MCP] Connect attempt failed for ${mcpName}: ${err.message}`);
+                    });
 
                     // Get tools after connection
                     const tools = mcp.getServerTools(mcpName) || [];
@@ -1608,13 +1631,22 @@ export async function startGateway(
                     const newServersConfig = { ...currentConfig.servers }
                     newServersConfig[mcpName] = mcpServerConfig
 
-                    // Update MCP Manager config (this will register and auto-connect the server)
+                    // Register the server (or refresh its config) — this alone does not
+                    // connect: updateConfig() only (re)connects a server whose config
+                    // actually changed, so an already-registered dormant server needs an
+                    // explicit connect below.
                     await mcp.updateConfig({
                       ...currentConfig,
                       servers: newServersConfig,
                     });
 
                     log.info(`[MCP] Server registered in MCP Manager`)
+
+                    // Explicitly wake the server — connectServer() is a no-op if it's
+                    // already connected, so this is safe to call unconditionally.
+                    await mcp.connectServer(mcpName).catch((err: Error) => {
+                      log.error(`[MCP] Connect attempt failed for ${mcpName}: ${err.message}`);
+                    });
 
                     // Get tools after connection
                     const tools = mcp.getServerTools(mcpName) || [];

@@ -13,6 +13,7 @@ const AgentDetailPage = lazy(() => import("@/pages/AgentDetailPage").then(m => (
 const SettingsPage = lazy(() => import("@/pages/SettingsPage").then(m => ({ default: m.SettingsPage })));
 const AgentNewPage = lazy(() => import("@/pages/AgentNewPage").then(m => ({ default: m.AgentNewPage })));
 const CanvasPage = lazy(() => import("@/pages/CanvasPage").then(m => ({ default: m.CanvasPage })));
+const A2UIPage = lazy(() => import("@/pages/A2UIPage").then(m => ({ default: m.A2UIPage })));
 const LogsPage = lazy(() => import("@/pages/LogsPage").then(m => ({ default: m.LogsPage })));
 const ChannelsPage = lazy(() => import("@/pages/ChannelsPage").then(m => ({ default: m.ChannelsPage })));
 const ProvidersPage = lazy(() => import("@/pages/ProvidersPage").then(m => ({ default: m.ProvidersPage })));
@@ -160,6 +161,8 @@ const AppContent = () => {
           <Route path="/settings/:panel" element={<SettingsPage />} />
           <Route path="/canvas" element={<CanvasPage />} />
           <Route path="/canvas/:sessionId" element={<CanvasPage />} />
+          <Route path="/a2ui" element={<A2UIPage />} />
+          <Route path="/a2ui/:sessionId" element={<A2UIPage />} />
           <Route path="/meeting" element={<MeetingPage />} />
           <Route path="/channels" element={<ChannelsPage />} />
           <Route path="/providers" element={<ProvidersPage />} />

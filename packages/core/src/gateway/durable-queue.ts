@@ -76,6 +76,32 @@ export function registerExecutor(type: JobType, executor: JobExecutor): void {
   log.info(`[registerExecutor] Registered executor for type=${type}`);
 }
 
+export interface JobTerminalOutcome {
+  ok: boolean;
+  result?: unknown;
+  error?: string;
+}
+
+/** Fires exactly once when a job of `type` reaches a terminal state (completed, or failed with no retries left) — never on a retryable failure that gets requeued. */
+export type JobTerminalHook = (job: JobDoc, outcome: JobTerminalOutcome) => void | Promise<void>;
+
+const terminalHooks = new Map<JobType, JobTerminalHook>();
+
+/** Register a side-effect to run once a job type finishes for good. Kept decoupled from executors so this module doesn't need to import webchat-turn.ts (circular: webchat-turn.ts already imports durable-queue.ts for enqueueChatTurn). */
+export function registerTerminalHook(type: JobType, hook: JobTerminalHook): void {
+  terminalHooks.set(type, hook);
+}
+
+async function runTerminalHook(job: JobDoc, outcome: JobTerminalOutcome): Promise<void> {
+  const hook = terminalHooks.get(job.type);
+  if (!hook) return;
+  try {
+    await hook(job, outcome);
+  } catch (err) {
+    log.warn(`[runTerminalHook] Hook for type=${job.type} failed: ${(err as Error).message}`);
+  }
+}
+
 export class DurableLaneQueue {
   private maxGlobalConcurrency: number;
   private taskTimeoutMs: number;
@@ -280,14 +306,17 @@ export class DurableLaneQueue {
 
       if (result.ok) {
         await completeJob(job.id, result.result ?? null, this.bootId);
+        await runTerminalHook(job, { ok: true, result: result.result });
       } else {
         const error = result.error ?? "Unknown error";
         // chat_turn is user-facing — never auto-retry a logical failure, the
         // user just sees the error and can re-ask.
         if (job.type !== "chat_turn" && result.retryable !== false) {
-          await failJobOrRetry(job.id, error, this.bootId, this.jobRetryPolicy);
+          const updated = await failJobOrRetry(job.id, error, this.bootId, this.jobRetryPolicy);
+          if (updated?.status === "failed") await runTerminalHook(job, { ok: false, error });
         } else {
           await failJob(job.id, error, this.bootId);
+          await runTerminalHook(job, { ok: false, error });
         }
       }
     } catch (err) {
@@ -296,9 +325,11 @@ export class DurableLaneQueue {
       } else {
         const error = (err as Error).message;
         if (job.type !== "chat_turn") {
-          await failJobOrRetry(job.id, error, this.bootId, this.jobRetryPolicy);
+          const updated = await failJobOrRetry(job.id, error, this.bootId, this.jobRetryPolicy);
+          if (updated?.status === "failed") await runTerminalHook(job, { ok: false, error });
         } else {
           await failJob(job.id, error, this.bootId);
+          await runTerminalHook(job, { ok: false, error });
         }
       }
     } finally {

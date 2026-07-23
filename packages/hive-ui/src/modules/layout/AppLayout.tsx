@@ -2,8 +2,10 @@ import { Outlet } from "react-router-dom";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Header } from "./Header";
 import { AppSidebar } from "./HiveSidebar";
+import { A2UINotifier } from "./A2UINotifier";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useUserStore } from "@/stores/userStore";
+import { useCanvasStore } from "@/stores/canvasStore";
 import { useEffect } from "react";
 
 // Workaround for React Router v7 + React 18 type incompatibility
@@ -14,6 +16,7 @@ const OutletComponent = Outlet as any;
 export function AppLayout() {
   const { connect } = useWebSocket();
   const { currentUser, fetchUser } = useUserStore();
+  const initCanvas = useCanvasStore((s) => s.init);
 
   useEffect(() => {
     fetchUser();
@@ -25,9 +28,14 @@ export function AppLayout() {
     }
   }, [connect, currentUser?.id]);
 
+  // Registered once for the whole session so agent-graph and A2UI events keep
+  // accumulating in the store no matter which page is currently mounted.
+  useEffect(() => initCanvas(), [initCanvas]);
+
   return (
     <SidebarProvider>
       <AppSidebar />
+      <A2UINotifier />
       <SidebarInset className="bg-background relative overflow-hidden">
         {/* Ambient Glows Globales */}
         <div className="hive-glow-blob hive-glow-blob--blue -top-20 -left-20 h-[500px] w-[500px] opacity-20" />

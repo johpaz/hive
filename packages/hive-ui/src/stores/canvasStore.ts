@@ -89,6 +89,7 @@ interface CanvasState {
 
   // A2UI v0.9 surfaces
   a2uiSurfaces: Map<string, A2UISurface>;
+  unseenA2UICount: number;
 
   // Actions
   setComponents: (components: CanvasComponent[]) => void;
@@ -114,6 +115,7 @@ interface CanvasState {
   updateA2UIDataModel: (surfaceId: string, path: string | undefined, value: unknown) => void;
   deleteA2UISurface: (surfaceId: string) => void;
   getA2UISurfaces: () => A2UISurface[];
+  markA2UISeen: () => void;
 
   // Init: subscribes to main WS events, returns cleanup fn
   init: () => () => void;
@@ -132,6 +134,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   panX: 0,
   panY: 0,
   a2uiSurfaces: new Map(),
+  unseenA2UICount: 0,
 
   setSessionId: (sessionId) => set({ sessionId }),
   setComponents: (components) => set({ components }),
@@ -233,6 +236,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     }),
 
   getA2UISurfaces: () => Array.from(get().a2uiSurfaces.values()),
+
+  markA2UISeen: () => set({ unseenA2UICount: 0 }),
 
   init: () => {
     const ws = useWebSocketStore.getState();
@@ -356,8 +361,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
       ws.subscribe("a2ui:createSurface", (msg) => {
         const d = (msg.data as Record<string, unknown>) ?? {};
+        const surfaceId = d.surfaceId as string;
         const surface: A2UISurface = {
-          surfaceId: d.surfaceId as string,
+          surfaceId,
           catalogId: d.catalogId as string ?? "basic",
           theme: d.theme as A2UISurface["theme"],
           sendDataModel: d.sendDataModel as boolean ?? false,
@@ -366,7 +372,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           dataModel: {},
           componentOrder: [],
         };
+        // Replay (reconnect) re-sends createSurface for surfaces the client already
+        // has — only count it as "unseen" the first time it shows up.
+        const isNew = !get().a2uiSurfaces.has(surfaceId);
         get().createA2UISurface(surface);
+        if (isNew) set((s) => ({ unseenA2UICount: s.unseenA2UICount + 1 }));
       }),
 
       ws.subscribe("a2ui:updateComponents", (msg) => {

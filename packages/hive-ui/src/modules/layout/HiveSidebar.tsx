@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
+import { useCanvasStore } from "@/stores/canvasStore";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import {
   Sidebar,
@@ -44,7 +45,8 @@ const navItems = [
   { title: "Agentes", url: "/agents", icon: Bot },
   { title: "Canales", url: "/channels", icon: MessageSquare },
   { title: "Providers", url: "/providers", icon: Brain },
-  { title: "Canvas", url: "/canvas", icon: Layers },
+  { title: "Oficina", url: "/canvas", icon: Layers },
+  { title: "A2UI", url: "/a2ui", icon: Layers },
   { title: "Reuniones", url: "/meeting", icon: Video },
   { title: "API Client", url: "/api-client", icon: Globe },
 
@@ -79,6 +81,7 @@ const cognitiveItems = [
 export function AppSidebar() {
   const location = useLocation();
   const isConfigActive = location.pathname.startsWith("/settings");
+  const unseenA2UICount = useCanvasStore((s) => s.unseenA2UICount);
 
   return (
     <Sidebar collapsible="icon" className="hive-sidebar border-r !top-12 bottom-auto !h-[calc(100svh-3rem)]">
@@ -97,7 +100,12 @@ export function AppSidebar() {
                       activeClassName="hive-sidebar-item--active text-blue-400 font-bold"
                     >
                       <Icon icon={item.icon as any} className="h-4 w-4 transition-transform group-hover/item:scale-110" />
-                      <span>{item.title}</span>
+                      <span className="flex-1">{item.title}</span>
+                      {item.url === "/a2ui" && unseenA2UICount > 0 && (
+                        <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[9px] font-bold text-white">
+                          {unseenA2UICount}
+                        </span>
+                      )}
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

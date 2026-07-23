@@ -36,6 +36,9 @@ export interface Agent {
   parentId?: string;
   maxIterations?: number;
 
+  // Set when this worker was materialized from a dormant specialist template
+  specialistId?: string | null;
+
   // Workspace
   workspace?: string;
 

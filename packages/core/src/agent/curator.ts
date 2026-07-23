@@ -18,7 +18,15 @@
 
 import { logger } from "../utils/logger"
 import { col, nextId, toIndexable, fromIndexable } from "../storage/hive"
-import type { ReflectionDoc, PlaybookDoc, AgentDoc, CursorDoc } from "../storage/collections"
+import type {
+  ReflectionDoc,
+  PlaybookDoc,
+  AgentDoc,
+  CursorDoc,
+  SpecialistDoc,
+  SpecialistProposalDoc,
+  TraceDoc,
+} from "../storage/collections"
 
 const log = logger.child("curator")
 
@@ -89,10 +97,116 @@ export async function runCurator(): Promise<void> {
       log.info(`[curator] Archived inactive worker: ${worker.doc.name} (${worker.id})`)
     }
 
+    await curateSpecialistStructure()
+
     log.info("[curator] Playbook updated")
   } catch (err) {
     log.warn("[curator] Error:", err)
   }
+}
+
+async function curateSpecialistStructure(): Promise<void> {
+  const specialistsCol = await col<SpecialistDoc>("specialists")
+  const proposalsCol = await col<SpecialistProposalDoc>("specialistProposals")
+  const tracesCol = await col<TraceDoc>("traces")
+  const agentsCol = await col<AgentDoc>("agents")
+  const now = Date.now()
+
+  // Harmful specialists fail closed after the same minimum evidence threshold
+  // already used for playbook pruning.
+  for (const entry of await specialistsCol.findBy("active", true)) {
+    if (entry.doc.harmful_count > entry.doc.helpful_count && entry.doc.harmful_count >= MAX_HARMFUL_BEFORE_PRUNE) {
+      await specialistsCol.put(entry.id, { ...entry.doc, active: false, updated_at: now }, { expectedVersion: entry.version })
+      await ensureSpecialistProposal(proposalsCol, {
+        type: "disable_specialist",
+        specialistId: entry.id,
+        change: { active: false, reason: "harmful_count exceeded helpful_count" },
+        evidence: [],
+        confidence: 1,
+      })
+    }
+  }
+
+  const traces = (await tracesCol.scan({})).map((entry) => entry.doc)
+  const agents = new Map((await agentsCol.scan({})).map((entry) => [entry.id, entry.doc]))
+
+  // Recurrent successful free workers are candidates for a learned template.
+  const freeSuccess = new Map<string, TraceDoc[]>()
+  for (const trace of traces) {
+    const agent = agents.get(trace.agent_id)
+    if (!trace.success || trace.tool_used || trace.specialist_id || agent?.role !== "worker" || agent.specialist_id) continue
+    const bucket = freeSuccess.get(trace.agent_id) ?? []
+    bucket.push(trace)
+    freeSuccess.set(trace.agent_id, bucket)
+  }
+  for (const [agentId, evidence] of freeSuccess) {
+    if (evidence.length < 5) continue
+    const agent = agents.get(agentId)!
+    await ensureSpecialistProposal(proposalsCol, {
+      type: "create_specialist",
+      specialistId: `candidate:${agentId}`,
+      change: {
+        suggested_name: agent.name,
+        suggested_description: agent.description,
+        observed_tasks: evidence.slice(-5).map((trace) => trace.input_summary),
+      },
+      evidence: evidence.slice(-5).map((trace) => trace.id),
+      confidence: Math.min(0.95, 0.5 + evidence.length * 0.05),
+    })
+  }
+
+  // Repeated failures identify a loadout mismatch. This remains a proposal;
+  // permissions are never changed automatically.
+  const failures = new Map<string, TraceDoc[]>()
+  for (const trace of traces) {
+    if (trace.success || !trace.specialist_id || !trace.tool_used) continue
+    const key = `${trace.specialist_id}\0${trace.tool_used}`
+    const bucket = failures.get(key) ?? []
+    bucket.push(trace)
+    failures.set(key, bucket)
+  }
+  for (const [key, evidence] of failures) {
+    if (evidence.length < 3) continue
+    const [specialistId, tool] = key.split("\0")
+    await ensureSpecialistProposal(proposalsCol, {
+      type: "move_tool",
+      specialistId,
+      change: { tool, reason: "repeated failures; review ownership or remove from loadout" },
+      evidence: evidence.slice(-10).map((trace) => trace.id),
+      confidence: Math.min(0.95, 0.55 + evidence.length * 0.05),
+    })
+  }
+
+  const { syncSpecialistsToIndex } = await import("./specialist-selector")
+  await syncSpecialistsToIndex()
+}
+
+async function ensureSpecialistProposal(
+  proposalsCol: Awaited<ReturnType<typeof col<SpecialistProposalDoc>>>,
+  input: {
+    type: SpecialistProposalDoc["type"]
+    specialistId: string
+    change: unknown
+    evidence: string[]
+    confidence: number
+  },
+): Promise<void> {
+  const existing = (await proposalsCol.findBy("specialist_id", input.specialistId))
+    .find((entry) => entry.doc.type === input.type && entry.doc.status === "proposed")
+  if (existing) return
+  const id = await nextId("specialistProposals")
+  const now = Date.now()
+  await proposalsCol.put(id, {
+    id,
+    type: input.type,
+    specialist_id: input.specialistId,
+    proposed_change_json: JSON.stringify(input.change),
+    evidence_trace_ids_json: JSON.stringify(input.evidence),
+    confidence: input.confidence,
+    status: "proposed",
+    created_at: now,
+    updated_at: now,
+  }, { expectedVersion: 0 })
 }
 
 // ─── Process a single reflection ─────────────────────────────────────────────
@@ -103,6 +217,15 @@ async function processReflection(
   reflection: ReflectionDoc
 ): Promise<void> {
   const category = mapInsightTypeToCategory(reflection.insight_type)
+  const applicable: string[] = reflection.affected_tools ? JSON.parse(reflection.affected_tools) : []
+  if (reflection.affected_agents) {
+    const agentsCol = await col<AgentDoc>("agents")
+    for (const agentId of JSON.parse(reflection.affected_agents) as string[]) {
+      const agent = await agentsCol.get(agentId)
+      if (agent?.doc.specialist_id) applicable.push(`specialist:${agent.doc.specialist_id}`)
+    }
+  }
+  const applicableTo = applicable.length ? JSON.stringify([...new Set(applicable)]) : null
 
   // Check if a similar rule already exists (fuzzy check by first 60 chars)
   const prefix = reflection.description.substring(0, 60)
@@ -121,7 +244,7 @@ async function processReflection(
     id,
     rule: reflection.description,
     category,
-    applicable_to: reflection.affected_tools ? JSON.stringify(JSON.parse(reflection.affected_tools)) : null,
+    applicable_to: applicableTo,
     helpful_count: 1,
     harmful_count: 0,
     active: true,
@@ -129,7 +252,7 @@ async function processReflection(
     created_at: now,
     updated_at: now,
   }, { expectedVersion: 0 })
-  allPlaybook.push({ id, version: 1, doc: { id, rule: reflection.description, category, applicable_to: null, helpful_count: 1, harmful_count: 0, active: true, source_reflection_id: toIndexable(reflection.id), created_at: now, updated_at: now } })
+  allPlaybook.push({ id, version: 1, doc: { id, rule: reflection.description, category, applicable_to: applicableTo, helpful_count: 1, harmful_count: 0, active: true, source_reflection_id: toIndexable(reflection.id), created_at: now, updated_at: now } })
 }
 
 function mapInsightTypeToCategory(

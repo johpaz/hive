@@ -22,13 +22,13 @@
  */
 
 import { col, fromIndexable } from "../storage/hive"
-import type { AgentDoc, ModelDoc } from "../storage/collections"
+import type { AgentDoc, ModelDoc, SpecialistDoc } from "../storage/collections"
 import { logger } from "../utils/logger"
 import type { LLMMessage, LLMToolDef, ContentPart } from "./llm-client"
 import type { MCPClientManager } from "@johpaz/hive-agents-mcp"
 import { syncToolCatalogToFTS, mcpToolFullName } from "./tool-selector"
-import { syncSkillsToFTS, getMinimalSkills, selectSkills, type SkillDescriptor } from "./skill-selector"
-import { syncPlaybookToFTS } from "./playbook-selector"
+import { syncSkillsToFTS, getMinimalSkills, selectSkills, getSkillByName, type SkillDescriptor } from "./skill-selector"
+import { syncPlaybookToFTS, selectPlaybookRules } from "./playbook-selector"
 import { getRecentMessages, getSummary, getScratchpad, toAPIMessages } from "./conversation-store"
 import { formatContext, estimateTokens } from "../utils/toon"
 import { buildSystemPromptWithProjects } from "./prompt-builder"
@@ -39,6 +39,7 @@ import { syncMCPToolsToDB, syncMCPToolsToFTS } from "../mcp/tool-sync"
 import { getUserDate, getUserTime } from "../utils/date"
 import { loadConfig } from "../config/loader"
 import { getHiveDb } from "../storage/hivedb"
+import { listActiveSpecialists, renderSpecialistRoutingCatalog } from "./specialist-selector"
 
 const log = logger.child("context-compiler")
 
@@ -47,6 +48,7 @@ const KEEP_LAST_N_MESSAGES = 30      // Always keep last N messages (Strategy: S
 const DEFAULT_CONTEXT_WINDOW = 250000 // Default context window when model is unknown
 const COMPACT_RATIO = 0.80           // Compact when estimated input exceeds 70% of context window
 const MAX_SYSTEM_PROMPT_CHARS_CAP = 128000 // Hard cap for pathological prompts; normal budget is model-aware
+const MCP_LAZY_CONNECT_TIMEOUT_MS = 8000 // Bound for on-demand connect of a dormant MCP server
 
 // MINIMAL TOOL SET — fixed always-available tools
 // The agent discovers the rest via search_knowledge
@@ -65,6 +67,19 @@ const MINIMAL_SKILL_NAMES = [
   "canvas_report",    // Display results to users with charts, tables, cards
   "task_orchestrator", // Agent coordination via notify
 ]
+
+/** Bounds a dormant MCP server's on-demand wake so one dead server can't stall a whole turn. */
+async function withMcpConnectTimeout(op: () => Promise<void>, timeoutMs: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`MCP connect timed out after ${timeoutMs}ms`)), timeoutMs)
+  })
+  try {
+    await Promise.race([op(), timeout])
+  } finally {
+    clearTimeout(timer!)
+  }
+}
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -132,6 +147,8 @@ function fromAgentDoc(doc: AgentDoc) {
     model_id: fromIndexable(doc.model_id),
     tools_json: doc.tools_json,
     skills_json: doc.skills_json,
+    active_mcp_json: doc.active_mcp_json,
+    specialist_id: doc.specialist_id,
     max_iterations: doc.max_iterations,
     workspace: doc.workspace,
   }
@@ -194,6 +211,9 @@ export async function compileContext(opts: {
   }
 
   const isWorker = agent.role === 'worker' || !!isolated
+  const specialist: SpecialistDoc | null = agent.specialist_id
+    ? (await (await col<SpecialistDoc>("specialists")).get(agent.specialist_id))?.doc ?? null
+    : null
   log.info(`[context-compiler] [STEP-1] ✅ Compiling for ${isWorker ? 'worker' : 'coordinator'} agent=${agent.name}`)
 
   // Load model's context window for compaction decisions
@@ -224,13 +244,41 @@ export async function compileContext(opts: {
   if (effectiveMcpManager) {
     try {
       const mcpServersCol = await col<import("../storage/collections").McpServerDoc>("mcpServers")
-      const dbServers = (await mcpServersCol.scan({})).map(e => e.doc).filter(s => s.enabled)
+      const activeMcpIds = new Set<string>(
+        agent.active_mcp_json
+          ? JSON.parse(agent.active_mcp_json)
+          : specialist?.mcp_server_ids ?? [],
+      )
+      const dbServers = (await mcpServersCol.scan({}))
+        .map(e => e.doc)
+        .filter(s => s.enabled && (!specialist || activeMcpIds.has(s.id)))
 
       for (const server of dbServers) {
         // Try ID first (normalized), then name
+        let resolvedServerKey = server.id
         let serverTools = effectiveMcpManager.getServerTools(server.id)
         if (!serverTools || serverTools.length === 0) {
+          resolvedServerKey = server.name
           serverTools = effectiveMcpManager.getServerTools(server.name)
+        }
+
+        // Lazy wake: the server is registered but dormant (no specialist has leased
+        // it yet). Connect on demand so the coordinator isn't permanently cut off
+        // from tools nothing else ever wakes.
+        if (!serverTools || serverTools.length === 0) {
+          for (const key of [server.id, server.name]) {
+            try {
+              await withMcpConnectTimeout(() => effectiveMcpManager!.connectServer(key), MCP_LAZY_CONNECT_TIMEOUT_MS)
+              const woken = effectiveMcpManager.getServerTools(key)
+              if (woken && woken.length > 0) {
+                resolvedServerKey = key
+                serverTools = woken
+                break
+              }
+            } catch (err) {
+              log.warn(`[context-compiler] [STEP-3c] Lazy connect failed for ${server.name} (${key}): ${(err as Error).message}`)
+            }
+          }
         }
 
         if (serverTools && serverTools.length > 0) {
@@ -254,7 +302,7 @@ export async function compileContext(opts: {
               execute: async (params: Record<string, unknown>) => {
                 // Return raw JS value — agent-loop will TOON-encode via formatToolResult.
                 // Never pre-stringify here: formatToolResult(string) double-encodes.
-                return await effectiveMcpManager.callTool(server.id, mcpTool.name, params)
+                return await effectiveMcpManager.callTool(resolvedServerKey, mcpTool.name, params)
               },
             })
 
@@ -305,11 +353,18 @@ export async function compileContext(opts: {
     timeoutMs: t.timeoutMs,
   }))
 
-  const allTools = [...nativeTools, ...mcpToolExecutors]
+  let allTools = [...nativeTools, ...mcpToolExecutors]
 
   // Only native minimal tools in LLM context
   // MCP tools are discovered dynamically via search_knowledge(type="mcp")
-  const filteredNativeTools: ContextTool[] = nativeTools.filter(t => MINIMAL_TOOLS.has(t.name))
+  let filteredNativeTools: ContextTool[] = nativeTools.filter(t => MINIMAL_TOOLS.has(t.name))
+  if (specialist) {
+    const allowedNames = new Set<string>(
+      agent.tools_json ? JSON.parse(agent.tools_json) : [],
+    )
+    filteredNativeTools = nativeTools.filter((tool) => allowedNames.has(tool.name))
+    allTools = [...filteredNativeTools, ...mcpToolExecutors]
+  }
 
   const nativeToolsForLLM: LLMToolDef[] = filteredNativeTools.map(t => ({
     type: "function" as const,
@@ -320,7 +375,20 @@ export async function compileContext(opts: {
     },
   }))
 
-  const toolsForLLM: LLMToolDef[] = nativeToolsForLLM
+  let toolsForLLM: LLMToolDef[] = nativeToolsForLLM
+  if (specialist && mcpToolExecutors.length > 0) {
+    toolsForLLM = [
+      ...toolsForLLM,
+      ...mcpToolExecutors.map((tool) => ({
+        type: "function" as const,
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+        },
+      })),
+    ]
+  }
 
   log.info(`[context-compiler] [STEP-4] Minimal native tool set: ${filteredNativeTools.length} tools`)
   log.info(`[context-compiler] [STEP-4b] MCP tools available via search_knowledge: ${mcpToolExecutors.length} (not injected)`)
@@ -346,6 +414,13 @@ export async function compileContext(opts: {
           : String(inputForSkills)
       discoveredSkills = await selectSkills(textMessage)
       log.info(`[context-compiler] [STEP-8b] ✅ Discovered ${discoveredSkills.length} additional skills via HiveDB`)
+    }
+    if (specialist && agent.skills_json) {
+      for (const skillId of JSON.parse(agent.skills_json) as string[]) {
+        const forced = await getSkillByName(skillId)
+        if (forced) discoveredSkills.push(forced)
+      }
+      log.info(`[context-compiler] [STEP-8b] ✅ Loaded ${discoveredSkills.length} specialist skills`)
     }
   } catch (err) {
     log.warn(`[context-compiler] [STEP-8b] ⚠️ Skill loadout failed: ${(err as Error).message}`)
@@ -422,6 +497,33 @@ export async function compileContext(opts: {
   const workspaceLine = agent.workspace ? `\n**Workspace**: ${agent.workspace} (usa SIEMPRE este path como basePath en herramientas de filesystem)` : ""
   systemPrompt += `\n\n# ENTORNO ACTUAL\n**Fecha**: ${fecha}\n**Hora**: ${hora}\n**Zona horaria**: ${userTimezone}${workspaceLine}\n`
   log.info(`[context-compiler] [STEP-10b] ✅ Injected current date/time: ${fecha} ${hora} (${userTimezone})`)
+
+  if (!isWorker) {
+    const routingCatalog = renderSpecialistRoutingCatalog(await listActiveSpecialists())
+    systemPrompt += `\n\n# COLMENA DE ESPECIALISTAS
+Sos el único agente que conversa con el usuario. Resolvé directamente tareas simples. Descomponé solo cuando haya trabajo especializado, efectos, artefactos o dependencias.
+
+Especialistas activos:
+${routingCatalog}
+
+Para delegar, usá task_delegate con specialist_id, una subtarea acotada, contexto mínimo y acceptance verificable. Usá el worker libre existente si ningún especialista encaja claramente. Nunca delegues saludos, preguntas simples ni la conversación. Toda tarea delegada o con efectos debe pasar por acceptance_verifier antes de prometer éxito. Si un especialista devuelve needs_input, vos formulás la pregunta al usuario con contexto.
+
+Elegí mode="async" salvo que esperes una respuesta en segundos (lookup puntual y corto): async libera la conversación de inmediato y el usuario será notificado automáticamente en este mismo chat cuando el especialista termine — no hace falta que preguntes vos por el resultado ni que uses task_status salvo que el usuario pida el estado antes de tiempo. Reservá mode="sync" (default) solo para delegaciones muy breves donde tiene sentido esperar la respuesta en el momento.\n`
+  }
+
+  const playbookInput = taskContext || userMessage
+  const playbookText = typeof playbookInput === "string"
+    ? playbookInput
+    : Array.isArray(playbookInput)
+      ? playbookInput.filter((part) => part.type === "text").map((part) => (part as any).text).join("\n")
+      : String(playbookInput)
+  const playbookRules = (await selectPlaybookRules(playbookText)).filter((rule) => {
+    if (!rule.applicable_to || !rule.applicable_to.includes("specialist:")) return true
+    return specialist ? rule.applicable_to.includes(`specialist:${specialist.id}`) : false
+  })
+  if (playbookRules.length > 0) {
+    systemPrompt += `\n\n# PLAYBOOK APRENDIDO\n${playbookRules.map((rule) => `- ${rule.rule}`).join("\n")}\n`
+  }
 
   // Inject scratchpad (Strategy: WRITE) — usando TOON para ahorro de tokens
   if (scratchpadNotes.length > 0) {
@@ -515,13 +617,15 @@ export async function compileContext(opts: {
   }
 
   // For isolated workers, add task context + tool discovery instruction
-  if (isWorker && opts.taskContext) {
+  if (isWorker && opts.taskContext && !specialist) {
     systemPrompt += `\n\n# HERRAMIENTAS DISPONIBLES\n` +
       `Arrancas con herramientas básicas. Si tu tarea requiere herramientas adicionales (web_search, fs_read, browser_navigate, etc.):\n` +
       `1. Usá \`search_knowledge(type="tools", query="<herramienta o tarea>")\` para encontrarlas.\n` +
       `2. Las herramientas que encuentres estarán disponibles para usar inmediatamente.\n` +
       `Si el coordinador te indicó herramientas específicas, buscalas primero con search_knowledge antes de ejecutar tu tarea.\n` +
       `\n# CURRENT TASK\n${opts.taskContext}\n\nFocus ONLY on this task. Do not deviate.`
+  } else if (isWorker && opts.taskContext) {
+    systemPrompt += `\n\n# CURRENT TASK\n${opts.taskContext}\n\nFocus ONLY on this task and return the required structured delivery.`
   }
 
   // Truncate system prompt only when it exceeds a model-aware budget.

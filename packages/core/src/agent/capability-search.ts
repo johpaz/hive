@@ -6,7 +6,7 @@
  * (tools_fts, skills_fts, playbook_fts, mcp_tools_fts) with one HiveDB index.
  *
  * Document convention (one index, type discrimination via filters):
- * - id:   `tool:${name}` | `skill:${id}` | `playbook:${rowid}` | `mcp:${id}`
+ * - id:   `tool:${name}` | `skill:${id}` | `playbook:${rowid}` | `mcp:${id}` | `specialist:${id}`
  * - name: tool/skill name or rule head        (BM25 boost 4.0)
  * - tags: category + triggers + keywords      (BM25 boost 3.0)
  * - body: description / rule text / content   (BM25 boost 2.0)
@@ -24,7 +24,7 @@ import { logger } from "../utils/logger";
 
 const log = logger.child("capability-search");
 
-export type CapabilityType = "tool" | "skill" | "playbook" | "mcp";
+export type CapabilityType = "tool" | "skill" | "playbook" | "mcp" | "specialist";
 
 export interface CapabilityHit {
   /** Namespaced id, e.g. "tool:web_search" */
@@ -47,7 +47,7 @@ export interface CapabilityDoc {
   extraFilters?: Array<{ field: string; value: string }>;
 }
 
-const TYPE_PREFIXES: CapabilityType[] = ["tool", "skill", "playbook", "mcp"];
+const TYPE_PREFIXES: CapabilityType[] = ["tool", "skill", "playbook", "mcp", "specialist"];
 
 function splitId(id: string): { type: CapabilityType; rawId: string } | null {
   const sep = id.indexOf(":");

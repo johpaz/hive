@@ -604,8 +604,8 @@ cp -r ~/.hive/data/hivedb ~/backup-hive-$(date +%Y%m%d)
 
 | Pilar | Descripción |
 |-------|-------------|
-| **Tools** | 68 herramientas nativas: filesystem, web, browser automation, cron, agentes/workers, Canvas, A2UI, voz, reuniones y Office. |
-| **Skills** | 28 habilidades incluidas: agentes, A2UI/Canvas, CLI, cron, filesystem, reuniones, Office, voz, web y descubrimiento de capacidades. |
+| **Tools** | 73 herramientas nativas: filesystem, web, browser automation, cron, agentes/workers, Canvas, A2UI, voz, reuniones, Office, API y proyectos. |
+| **Skills** | 33 habilidades incluidas: especialistas, agentes, A2UI/Canvas, CLI, cron, filesystem, MCP, reuniones, Office, voz, web y descubrimiento. |
 | **MCP** | Compatible con Model Context Protocol para extender funcionalidades con tools externas descubiertas en runtime. |
 | **Ética** | Límites claros definidos en ETHICS.md — tu agente siempre sabe qué puede y qué no puede hacer. |
 
@@ -626,9 +626,9 @@ cp -r ~/.hive/data/hivedb ~/backup-hive-$(date +%Y%m%d)
 | **Tool Runtime** | Scheduler con Bun Workers para ejecutar tool calls independientes en paralelo y RPC al proceso principal cuando la tool depende de estado vivo. |
 | **Harness de tareas largas** | Cola durable con leases y prioridad, checkpoint/resume a prueba de crashes, retry con backoff, idempotencia, metas verificables con criterios de aceptación y proof packets. Ver FASE 7 más abajo. |
 
-**Distribución actual de tools nativas:** filesystem 7, web 2, browser 7, cron 8, CLI 1, memoria 5, agentes/workers/bus/modelos 9, Canvas 7, A2UI 4, voz 2, core 4, Office 8, reuniones 4.
+**Distribución actual de tools nativas:** filesystem 7, web 2, browser 7, cron 8, CLI 1, memoria 5, agentes/workers/bus/modelos 9, Canvas 7, A2UI 4, voz 2, core 4, Office 8, reuniones 4, API 1 y proyectos 4.
 
-**Distribución actual de skills incluidas:** agentes 5, Canvas/A2UI 6, CLI 2, cron 2, filesystem 3, reuniones 1, Office 1, descubrimiento de capacidades 1, voz 3, web 4.
+**Distribución actual de skills incluidas:** agentes 6, Canvas/A2UI 6, CLI 3, cron 2, filesystem 4, MCP 1, reuniones 1, Office 1, API 1, descubrimiento de capacidades 1, voz 3 y web 4.
 
 ## Arquitectura técnica
 
@@ -676,7 +676,7 @@ El Context Compiler es el componente central del motor. Se ejecuta antes de cada
 | 3 — Descubrimiento | El agente usa `search_knowledge(type="tools"|"mcp"|"skills")` para encontrar capacidades relevantes |
 | 4 — Inyección dinámica | `agent-loop` agrega tools nativas/MCP descubiertas al loadout y adjunta skills asociadas |
 
-El turno arranca pequeño para reducir ruido en modelos locales: 4 tools en contexto, 68 executors nativos disponibles para inyección y tools MCP disponibles vía descubrimiento. Las skills mínimas (`capability_discovery`, `memory_manager`, `canvas_report`, `task_orchestrator`) enseñan al agente cómo buscar capacidades antes de usarlas. Las skills descubiertas se listan inicialmente y sus cuerpos se inyectan cuando sus tools entran al loadout.
+El turno arranca pequeño para reducir ruido en modelos locales: 4 tools en contexto, 73 executors nativos disponibles para inyección y tools MCP disponibles vía descubrimiento. Las skills mínimas (`capability_discovery`, `memory_manager`, `canvas_report`, `task_orchestrator`) enseñan al agente cómo buscar capacidades antes de usarlas. Las skills descubiertas se listan inicialmente y sus cuerpos se inyectan cuando sus tools entran al loadout.
 
 **3.5 — Ética (capa constitucional)**
 - Carga todas las reglas de la colección `ethics` — sin filtrar, sin comprimir

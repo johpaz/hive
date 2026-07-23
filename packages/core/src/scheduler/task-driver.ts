@@ -111,6 +111,9 @@ export class TaskDriver {
           const run = await createRun({
             thread_id: `project-${task.project_id}-${task.id}`,
             agent_id: workerId,
+            specialist_id: task.specialist_id && task.specialist_id !== "__none__"
+              ? task.specialist_id
+              : null,
             user_id: "",
             channel: null,
             kind: "project",

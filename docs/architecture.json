@@ -4,9 +4,9 @@
     "package": "@johpaz/hive-agents",
     "tagline": "Tu colmena de agentes IA. Local-first. Multi-canal. Open source. Construido desde Colombia para el mundo.",
     "product_type": "Agent Harness — per README's own positioning: pre-built operational infrastructure around an LLM (tools, memory, error handling, deployment, observability), explicitly NOT an agent framework (contrasted against LangChain/CrewAI/AutoGen in docs/HIVE-HARNESS.md). 'Runtime' in this document refers to packages/core specifically (the engine inside the harness), not a claim that Hive is 'just a runtime'.",
-    "version": "0.0.45",
-    "last_release_commit": "4191985",
-    "generated": "2026-07-22",
+    "version": "0.0.47",
+    "last_release_commit": "3d767f3",
+    "generated": "2026-07-23",
     "repo_type": "bun workspace monorepo",
     "license": "MIT"
   },
@@ -49,7 +49,7 @@
       "id": "skills",
       "name": "@johpaz/hive-agents-skills",
       "path": "packages/skills",
-      "role": "Bundled skill definitions & loader (28 packaged skills, per README)",
+      "role": "Bundled skill definitions & loader (33 packaged skills across 13 domains)",
       "runtime": "bun",
       "depends_on": []
     }
@@ -71,7 +71,7 @@
     {
       "id": "agent",
       "path": "packages/core/src/agent",
-      "summary": "LLM orchestration core: the agent loop, multi-provider dispatch, run lifecycle, context assembly, tool/skill retrieval, self-supervision.",
+      "summary": "LLM orchestration core: one user-facing coordinator, dormant specialist templates, independent acceptance verification, multi-provider dispatch, run lifecycle, context assembly and capability retrieval.",
       "files": [
         { "name": "agent-loop.ts", "note": "runAgent/AgentLoop — the streaming tool-call cycle, timeouts, step events" },
         { "name": "service.ts", "note": "AgentService — agent lifecycle (hibernate/wake/terminate)" },
@@ -82,6 +82,10 @@
         { "name": "run-store.ts", "note": "CRUD + lease/checkpoint management for AgentRunDoc; lease renewal loop" },
         { "name": "run-epoch.ts", "note": "NEW (v0.0.45) — fingerprints provider+model+app_version+tool-catalog-hash so a proof packet can detect a different worker picked up the run" },
         { "name": "proof-packet.ts", "note": "NEW (v0.0.45) — buildProofPacket/findProofPacketsByRun; writes one compressed evidence record per completed run (intended outcome, acceptance verdicts, checks run, evidence, known limits, epoch)" },
+        { "name": "specialist-catalog.ts", "note": "Canonical seed catalog for 13 dormant specialist templates, including one independent acceptance verifier" },
+        { "name": "specialist-selector.ts", "note": "BM25/hybrid retrieval of active specialists by an end-user task description; renders a compact routing catalog suitable for a 7B coordinator" },
+        { "name": "specialist-runtime.ts", "note": "Materializes a specialist with its exact prompt, tool allowlist, skills, model override and lazy MCP connections; reuses a stable warm worker and releases MCP resources with TTL" },
+        { "name": "acceptance-verifier.ts", "note": "Independent fail-closed gate: checks every delegated/effectful delivery against explicit criteria and evidence, persists VerificationDoc, and only then allows success to be reported" },
         { "name": "conversation-store.ts, context-compiler.ts, context-guard.ts, compaction.ts, prompt-builder.ts", "note": "message history, context window assembly/guarding/compaction, prompt construction" },
         { "name": "tool-selector.ts, skill-selector.ts, playbook-selector.ts, capability-search.ts", "note": "retrieval/ranking of which tools, skills and playbooks to expose per turn, backed by HiveDB's BM25 index" },
         { "name": "native-tools.ts, hooks.ts, curator.ts, reflector.ts, stuck-loop.ts, tracer.ts", "note": "native tool defs, lifecycle hooks, self-curation, reflection/self-critique, stuck-loop detection, execution tracing" }
@@ -95,7 +99,7 @@
         { "name": "server.ts", "note": "startGateway — wires config, storage, channels, agent service, durable queue, job executors, task driver, cron/DAG scheduler, canvas, voice, multimodal and ~20 route modules; serves /health (now reports queue/run/circuit-breaker stats) and the built UI" },
         { "name": "durable-queue.ts", "note": "DurableLaneQueue — per-lane concurrency-limited job runner with lease-based crash recovery; now also does logical-failure retry via failJobOrRetry and periodic re-dispatch of delayed (not_before) jobs" },
         { "name": "job-store.ts", "note": "persistence for JobDoc; NEW: idempotency_key dedup (findByIdempotencyKey), failJobOrRetry with exponential backoff+jitter, configurable JobRetryPolicy" },
-        { "name": "job-executors.ts", "note": "registers executors per JobType (worker_task, project_task, goal_run, chat_turn, …); project_task/goal_run now emit proof packets and classify errors via isRetryableError" },
+        { "name": "job-executors.ts", "note": "registers executors per JobType; specialist work is materialized from its loadout, executed, sent through the independent acceptance gate, and only verified success produces a proof packet" },
         { "name": "session.ts, resolver.ts, router.ts, slash-commands.ts, webchat-turn.ts, channel-notify.ts, initializer.ts, lane-queue.ts", "note": "session management, context resolution, slash commands, webchat turn execution, outbound channel notification, gateway bootstrap sequencing" },
         { "name": "routes/*.ts", "note": "19 REST handlers: agents, auth, channels, chat, config, cron-api, ethics, mcp, meeting, models, multimodal, providers, setup, skills, system, tasks, tools, tts-local, users, voice, workspace, http-client" },
         { "name": "helpers/", "note": "cors, narration (per-tool progress messages), path, redact" },
@@ -120,9 +124,9 @@
       "files": [
         { "name": "hivedb.ts", "note": "wraps @johpaz/hive-db as a singleton (redb + tantivy BM25 + hnsw_rs)" },
         { "name": "hive.ts", "note": "collection/index helpers (col, nextId, updateDoc, toIndexable/fromIndexable)" },
-        { "name": "collections.ts", "note": "all document types: UserDoc, AgentDoc, AgentRunDoc, JobDoc, CronJobDoc, TaskRunDoc, and the NEW ProofPacketDoc; AgentRunDoc gained acceptance_json/epoch_json, JobDoc gained retry_count/last_error/idempotency_key" },
-        { "name": "bootstrap.ts", "note": "builds indexes; NEW indexes for idempotency_key and proofPackets.run_id/.agent_id" },
-        { "name": "seed.ts", "note": "seeds defaults" },
+        { "name": "collections.ts", "note": "typed documents including SpecialistDoc, VerificationDoc, SpecialistProposalDoc and ProofPacketDoc; runs, tasks, traces and proof packets carry specialist_id for end-to-end attribution" },
+        { "name": "bootstrap.ts", "note": "builds indexes for specialist active/source retrieval, verification lookup, ACE proposals, specialist-attributed runs/traces/proofs, jobs and existing entities" },
+        { "name": "seed.ts", "note": "idempotently seeds the 13 dormant specialist templates with putIfAbsent, preserving user and ACE customizations" },
         { "name": "reconcile.ts", "note": "boot-time recovery" },
         { "name": "boot-id.ts, causal-events.ts, crypto.ts, onboarding.ts, usage.ts", "note": "boot identity, causal event log, encryption, onboarding wizard persistence, usage accounting" }
       ]
@@ -234,53 +238,76 @@
     "path": "packages/skills/src",
     "files": [
       { "name": "loader.ts", "note": "loads bundled skills" },
-      { "name": "bundled/", "note": "28 skills (per README) across 12 top-level folders: agents, api, canvas (a2ui_dashboard/form/interactive), cli, cron_manager, cron_reminder, filesystem, meeting, office, search_knowledge (capability discovery), voice, web" },
+      { "name": "bundled/", "note": "33 skills across 13 top-level folders: agents, api, canvas (a2ui_dashboard/form/interactive), cli, cron_manager, cron_reminder, filesystem, mcp, meeting, office, search_knowledge (capability discovery), voice, web" },
       { "name": "bundled-data.generated.ts", "note": "build artifact embedding bundled skills for distribution" }
     ]
+  },
+  "specialist_hive": {
+    "summary": "One coordinator remains the only user-facing agent. Specialists are dormant, typed templates in HiveDB and consume no model or MCP resources until a routed task wakes them. The free worker remains the fallback for rare tasks.",
+    "routing": "The coordinator resolves simple requests itself. For complex work it emits bounded subtasks with minimal context, explicit acceptance criteria and a suggested loadout. Active specialists are retrieved by BM25/hybrid search over their routing descriptions.",
+    "verification_gate": "Every delegated or effectful delivery is evaluated by acceptance_verifier, which is independent from the executing specialist. Missing evidence, unmet criteria or malformed output fail closed; the coordinator cannot report success until a passing VerificationDoc exists.",
+    "lifecycle": "select → materialize prompt/tools/skills/model → connect allowlisted MCP lazily → execute → independently verify → persist proof and ACE trace → hibernate → disconnect MCP after TTL",
+    "catalog": [
+      { "id": "web_researcher", "description": "Investiga preguntas actuales en fuentes web y entrega conclusiones verificables con referencias." },
+      { "id": "browser_operator", "description": "Navega sitios, completa formularios y verifica visualmente el estado final de una operación web." },
+      { "id": "workspace_file_operator", "description": "Crea, lee, edita, organiza y elimina archivos o carpetas dentro del workspace autorizado." },
+      { "id": "software_engineer", "description": "Implementa, depura y prueba software dentro de un repositorio o workspace existente." },
+      { "id": "office_document_specialist", "description": "Lee y genera documentos PDF, Word, Excel y PowerPoint dentro del workspace." },
+      { "id": "canvas_presenter", "description": "Presenta resultados, listas, tarjetas y progreso mediante el Canvas clásico." },
+      { "id": "a2ui_builder", "description": "Construye formularios, dashboards y flujos interactivos compatibles con A2UI v0.9." },
+      { "id": "schedule_automation_specialist", "description": "Crea y administra recordatorios y automatizaciones temporales con zona horaria correcta." },
+      { "id": "meeting_scribe", "description": "Registra reuniones y genera informes con decisiones, responsables y próximos pasos." },
+      { "id": "voice_audio_specialist", "description": "Transcribe audio y genera respuestas habladas mediante proveedores STT y TTS." },
+      { "id": "api_operator", "description": "Ejecuta y verifica operaciones contra APIs REST expresamente autorizadas." },
+      { "id": "mcp_integration_operator", "description": "Opera herramientas de servicios externos descubiertas mediante MCP y verifica sus efectos." },
+      { "id": "acceptance_verifier", "description": "Verifica de forma independiente que una tarea cumplió todos sus criterios antes de autorizar que el principal reporte éxito." }
+    ],
+    "persistence": {
+      "specialists": "Typed specialist templates, routing text, loadouts, workspace/model policy, acceptance defaults, active flag and ACE counters.",
+      "verifications": "Per-run verdict, criterion-level evidence, risks and verifier identity.",
+      "specialistProposals": "Curator proposals to move tools, create recurring specialities or disable harmful specialists.",
+      "attribution": "specialist_id on agents, runs, tasks, traces and proof packets feeds per-speciality playbooks and health metrics."
+    },
+    "parallelism": "Different specialists may run in parallel on independent durable-queue lanes. Repeated tasks for the same specialist reuse its stable warm context when scope and loadout match."
   },
   "runtime_flow": [
     { "step": 1, "description": "CLI (`hive start` / `hive dev`) launches the gateway: gateway/server.ts's startGateway()." },
     { "step": 2, "description": "Gateway boots HiveDB storage, ChannelManager, AgentService+AgentRunner, the durable queue + job executors, CronScheduler + DAGScheduler + task-driver, canvasManager, and the voice/multimodal services." },
     { "step": 3, "description": "Gateway registers ~20 REST route modules and serves the pre-built hive-ui SPA." },
     { "step": 4, "description": "Inbound channel messages, webchat turns, and cron/DAG triggers become jobs (chat_turn, goal_run, project_task, worker_task) on the durable queue." },
-    { "step": 5, "description": "job-executors run each job through agent-loop.ts's runAgent, which calls out to llm-client (now retried via resilience/retry.ts) → llm-providers/*, and to tools/* via tool-runtime." },
-    { "step": 6, "description": "run-store checkpoints/leases each run in HiveDB; job-store/durable-queue do the same for jobs, now with idempotency keys and logical-failure retry with backoff (separate from crash/lease-expiry recovery)." },
-    { "step": 7, "description": "goal-runner + proof-packet + run-epoch verify acceptance criteria and record a ProofPacketDoc once per completed run, fixing the provider/model/tool-catalog epoch it was checked under." },
-    { "step": 8, "description": "Results are pushed back to the originating channel and/or streamed live to the hive-ui SPA over WebSocket." }
+    { "step": 5, "description": "The coordinator resolves simple work itself; otherwise it retrieves an active specialist by task description and delegates a bounded subtask with minimal context and explicit acceptance criteria. The free worker remains the fallback when no specialist fits." },
+    { "step": 6, "description": "specialist-runtime materializes the selected dormant template with its exact system prompt, tool allowlist, skills and model policy, then lazily connects only its authorized MCP servers. agent-loop executes it through the normal Native Agent Loop." },
+    { "step": 7, "description": "run-store checkpoints/leases each run in HiveDB; job-store/durable-queue do the same for jobs with idempotency keys and logical-failure retry with backoff, separate from crash recovery." },
+    { "step": 8, "description": "acceptance_verifier independently evaluates every criterion against evidence and persists a VerificationDoc. Failure or insufficient evidence returns to execution; only a passing verification authorizes success." },
+    { "step": 9, "description": "proof-packet + run-epoch record the verified outcome and its provider/model/tool-catalog epoch. Traces attributed by specialist_id update its ACE playbook and health counters." },
+    { "step": 10, "description": "The coordinator—not the specialist—reports the verified result to the originating channel. The specialist hibernates and lazy MCP connections are released after TTL." }
   ],
   "current_release": {
-    "version": "0.0.45",
-    "feature_commit": "fc469c5",
-    "release_commit": "4191985",
-    "name": "Durable execution harness: retry, idempotency, epoch-fingerprinted proof packets",
-    "summary": "Adds a generic retry-with-backoff utility and enhances run orchestration with acceptance criteria, epoch tracking, and configurable lease durations, following the 'tool legibility' harness-engineering practice (discover → select → invoke → interpret → verify) documented in docs/TOOL-CONVENTIONS.md.",
+    "version": "0.0.47",
+    "release_commit": "3d767f3",
+    "architecture_status": "working tree implementation",
+    "name": "Dormant specialist hive with an independent acceptance gate",
+    "summary": "Adds 13 typed specialist templates, BM25/hybrid routing for a 7B coordinator, scoped materialization with lazy MCP, verified proof packets, specialist-attributed ACE learning and a fail-closed acceptance_verifier before user-visible success.",
     "new_files": [
-      "packages/core/src/resilience/retry.ts",
-      "packages/core/src/agent/run-epoch.ts",
-      "packages/core/src/agent/proof-packet.ts",
-      "docs/TOOL-CONVENTIONS.md",
-      "tests/job-idempotency.test.ts",
-      "tests/job-retry-backoff.test.ts",
-      "tests/llm-retry.test.ts",
-      "tests/proof-packet.test.ts"
+      "packages/core/src/agent/specialist-catalog.ts",
+      "packages/core/src/agent/specialist-selector.ts",
+      "packages/core/src/agent/specialist-runtime.ts",
+      "packages/core/src/agent/acceptance-verifier.ts",
+      "packages/skills/src/bundled/agents/acceptance_verification/SKILL.md",
+      "packages/skills/src/bundled/cli/software_engineering/SKILL.md",
+      "packages/skills/src/bundled/filesystem/workspace_file_operator/SKILL.md",
+      "packages/skills/src/bundled/mcp/mcp_lazy_operator/SKILL.md",
+      "docs/SPECIALISTS-ARCHITECTURE.md",
+      "tests/specialists.test.ts"
     ],
     "changed_files": [
-      { "file": "packages/core/src/agent/llm-client.ts", "change": "wraps callLLM in withRetry using config-driven policy, respects abort signal" },
-      { "file": "packages/core/src/agent/goal-runner.ts", "change": "adds acceptance criteria array to GoalRunOptions; verifyGoal verifies each criterion independently and conjuncts verdicts" },
-      { "file": "packages/core/src/agent/run-store.ts", "change": "acceptance_json/epoch_json fields on runs; lease durations now config-driven instead of hardcoded" },
-      { "file": "packages/core/src/gateway/durable-queue.ts", "change": "adds failJobOrRetry path for logical-failure retry, periodic re-dispatch of delayed jobs, idempotency_key passthrough" },
-      { "file": "packages/core/src/gateway/job-store.ts", "change": "largest diff: idempotency_key dedup, JobRetryPolicy/computeBackoffDelay, failJobOrRetry, retry_count/last_error fields" },
-      { "file": "packages/core/src/gateway/job-executors.ts", "change": "tags failures with retryable/isRetryableError; project_task/goal_run now call buildProofPacket on completion" },
-      { "file": "packages/core/src/gateway/server.ts", "change": "passes harness config into initDurableQueue; /health reports queue depth, expired leases, active run count, boot id" },
-      { "file": "packages/core/src/gateway/routes/cron-api.ts", "change": "exposes preferred_cron_channel in the cron-channels API" },
-      { "file": "packages/core/src/gateway/routes/users.ts", "change": "exposes preference field in the users API" },
-      { "file": "packages/core/src/storage/collections.ts", "change": "new ProofPacketDoc; acceptance_json/epoch_json on AgentRunDoc; retry_count/last_error/idempotency_key on JobDoc" },
-      { "file": "packages/core/src/config/loader.ts", "change": "new HarnessConfigSchema, env-var overridable" },
-      { "file": "packages/core/src/storage/bootstrap.ts", "change": "new indexes for idempotency_key and proofPackets lookups" },
-      { "file": "packages/core/src/scheduler/integration.ts", "change": "scheduled/cron task runs now stream live tool/text narration to the user's channel" },
-      { "file": "packages/core/src/channels/telegram.ts", "change": "unrelated bundled fix: auto-links a Telegram chat to the single-user account on first contact" },
-      { "file": "packages/hive-ui/src/modules/agent-config/user/UserProfileEditor.tsx", "change": "UI side of cron-channel-preference fix: reads useNotesAndCronsStore/cronChannels, keys options by channel id, reads server preference instead of hardcoding 'auto'" },
-      { "file": "packages/hive-ui/src/stores/useNotesAndCronsStore.ts", "change": "same cron-channel-preference fix, store side" }
+      { "file": "packages/core/src/storage/collections.ts", "change": "typed SpecialistDoc, VerificationDoc and SpecialistProposalDoc plus specialist attribution fields" },
+      { "file": "packages/core/src/storage/bootstrap.ts", "change": "indexes for specialist routing, verification, proposals and attributed traces/proofs" },
+      { "file": "packages/core/src/storage/seed.ts", "change": "idempotent putIfAbsent seed for dormant specialist templates" },
+      { "file": "packages/core/src/agent/context-compiler.ts", "change": "compact coordinator routing protocol and specialist-scoped prompt/skills/MCP context" },
+      { "file": "packages/core/src/gateway/job-executors.ts", "change": "materializes specialists and enforces acceptance verification before proof or completion" },
+      { "file": "packages/core/src/agent/curator.ts", "change": "learns per specialist and proposes tool moves, new specialties or harmful-specialist deactivation" },
+      { "file": "packages/mcp/src/manager.ts", "change": "lazy specialist MCP leases with TTL-based disconnect" }
     ]
   },
   "docs": {
@@ -293,8 +320,8 @@
   },
   "tests": {
     "path": "tests/",
-    "count_approx": 48,
-    "coverage_areas": ["agent-loop (integration/failure/resume/form-fill-eval)", "browser tools (bun/cdp/detect/tools)", "causal-events", "cli", "context-compiler", "core", "cron-misfire", "curator", "durable-queue", "goal-runner", "hivedb-search", "job-store", "memory-perf", "network-stability", "reflector", "retention-cap", "run-store", "scratchpad", "sdk", "seed variants", "skill-selector (×2)/skill-tool-integration", "task-driver", "tool-runtime", "tool-schema-array-items", "tool-selector", "toon"],
-    "new_in_current_release": ["job-idempotency.test.ts", "job-retry-backoff.test.ts", "llm-retry.test.ts", "proof-packet.test.ts"]
+    "count_approx": 42,
+    "coverage_areas": ["agent-loop (integration/failure/resume/form-fill-eval)", "browser tools (bun/cdp/detect/tools)", "causal-events", "cli", "context-compiler", "core", "cron-misfire", "curator", "durable-queue", "goal-runner", "hivedb-search", "job-store", "memory-perf", "network-stability", "proof packets", "reflector", "retention-cap", "run-store", "scratchpad", "sdk", "seed variants", "skill-selector/tool integration", "specialist catalog/routing/runtime/verification/ACE", "task-driver", "tool-runtime", "tool-schema-array-items", "tool-selector", "toon"],
+    "new_in_current_release": ["specialists.test.ts", "updated goal-runner.test.ts", "updated proof-packet.test.ts"]
   }
 }

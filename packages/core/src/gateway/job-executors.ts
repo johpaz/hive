@@ -13,15 +13,17 @@
 
 import { registerExecutor, type JobExecutor } from "./durable-queue";
 import { logger } from "../utils/logger";
-import { col, updateDoc } from "../storage/hive";
+import { col, updateDoc, fromIndexable } from "../storage/hive";
 import { isRetryableError } from "../resilience/retry";
-import type { JobDoc, TaskDoc, AgentRunDoc } from "../storage/collections";
+import type { JobDoc, TaskDoc, AgentRunDoc, AgentDoc } from "../storage/collections";
 import { runAgent, runAgentIsolated } from "../agent/agent-loop";
 import { createRun, completeRun, failRun, interruptRun, getRun, reclaimRun, bumpTurn, startLeaseRenewal, stopLeaseRenewal, deserializeAcceptance, deserializeEpoch } from "../agent/run-store";
 import { getDurableQueue } from "./durable-queue";
 import { sendToUserChannel } from "./channel-notify";
 import { verifyGoal } from "../agent/goal-runner";
 import { buildProofPacket } from "../agent/proof-packet";
+import { verifySpecialistDelivery } from "../agent/acceptance-verifier";
+import { wakeSpecialist, type AwakeSpecialist } from "../agent/specialist-runtime";
 import { runWebchatTurn, type WebchatTurnPayload } from "./webchat-turn";
 import { agentBus } from "../events/agent-bus";
 import { resolveContext } from "./resolver";
@@ -65,11 +67,14 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
   const taskDescription = payload.taskDescription as string;
   const taskName = payload.taskName as string;
   const taskId = payload.taskId as string | undefined;
+  const specialistId = payload.specialistId as string | undefined;
+  const acceptance = (payload.acceptance ?? null) as import("../agent/run-store").AcceptanceCriterion[] | null;
+  const mcpServerIds = (payload.mcpServerIds ?? []) as string[];
   const runId = job.run_id;
 
   log.info(`[worker_task] Job ${job.id} → worker=${workerId} task="${taskName}"`);
 
-  const agentsCol = await col<{ id: string; name: string; enabled: boolean }>("agents");
+  const agentsCol = await col<AgentDoc>("agents");
   const workerEntry = await agentsCol.get(workerId);
   if (!workerEntry) return { ok: false, error: `Worker not found: ${workerId}`, retryable: false };
   if (!workerEntry.doc.enabled) return { ok: false, error: `Worker disabled: ${workerEntry.doc.name}`, retryable: false };
@@ -88,7 +93,18 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
     } as Partial<TaskDoc>).catch(() => {});
   }
 
+  let awake: AwakeSpecialist | null = null;
   try {
+    if (specialistId) {
+      awake = await wakeSpecialist({
+        specialistId,
+        userId: payload.userId ?? workerEntry.doc.user_id ?? "",
+        parentAgentId: payload.parentAgentId ?? fromIndexable(workerEntry.doc.parent_id) ?? workerId,
+        workspace: payload.workspace ?? workerEntry.doc.workspace ?? null,
+        mcpServerIds,
+        mcpManager,
+      });
+    }
     // Resume from the checkpoint on a re-claimed job (payload can't know this)
     const run = runId ? await getRun(runId) : null;
     const resume = !!run?.state_json;
@@ -116,6 +132,35 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
       return { ok: false, error: "Aborted", retryable: false };
     }
 
+    const finishedRun = runId ? await getRun(runId) : null;
+    const verification = await verifySpecialistDelivery({
+      runId,
+      taskId,
+      executorAgentId: workerId,
+      objective: taskDescription,
+      acceptance: acceptance ?? (finishedRun ? deserializeAcceptance(finishedRun) : null),
+      delivery: result,
+      evidence: [result],
+      executorEpoch: finishedRun ? deserializeEpoch(finishedRun) : null,
+      mcpServerIds,
+      mcpManager,
+    });
+    const verdict = JSON.parse(verification.verdict_json);
+    if (verification.status !== "verified") {
+      if (taskId) {
+        await updateDoc<TaskDoc>("tasks", taskId, {
+          status: "pending",
+          error: verdict.summary || "Independent verification did not authorize success.",
+          updated_at: Date.now(),
+        } as Partial<TaskDoc>).catch(() => {});
+      }
+      return {
+        ok: false,
+        error: verdict.summary || "Independent verification did not authorize success.",
+        retryable: verification.attempt < 3,
+      };
+    }
+
     agentBus.notifyTaskCompleted(workerId, workerName, 0, taskName, "", result);
 
     // Update TaskDoc → completed
@@ -129,7 +174,19 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
       } as Partial<TaskDoc>).catch(() => {});
     }
 
-    return { ok: true, result };
+    await buildProofPacket({
+      runId,
+      agentId: workerId,
+      intendedOutcome: taskDescription,
+      met: true,
+      checksRun: acceptance?.map((criterion) => criterion.checkTool ?? "acceptance_verifier") ?? ["acceptance_verifier"],
+      evidence: [result],
+      epoch: finishedRun ? deserializeEpoch(finishedRun) : null,
+      verificationId: verification.id,
+      specialistId: specialistId ?? null,
+    });
+
+    return { ok: true, result: { content: result, verification_id: verification.id } };
   } catch (err) {
     const errorMsg = (err as Error).message;
     agentBus.notifyTaskFailed(workerId, workerName, 0, taskName, "", errorMsg);
@@ -144,6 +201,8 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
     }
 
     return { ok: false, error: errorMsg, retryable: isRetryableError(err) };
+  } finally {
+    await awake?.release();
   }
 };
 
@@ -192,6 +251,34 @@ const projectTaskExecutor: JobExecutor = async (job, signal) => {
       return { ok: false, error: "Aborted", retryable: false };
     }
 
+    const finishedRun = runId ? await getRun(runId) : null;
+    const executorAgent = await (await col<AgentDoc>("agents")).get(workerId);
+    const specialistId = executorAgent?.doc.specialist_id ?? null;
+    const verification = await verifySpecialistDelivery({
+      runId,
+      taskId,
+      executorAgentId: workerId,
+      objective: taskDescription,
+      acceptance: finishedRun ? deserializeAcceptance(finishedRun) : null,
+      delivery: result,
+      evidence: [result],
+      executorEpoch: finishedRun ? deserializeEpoch(finishedRun) : null,
+      mcpManager,
+    });
+    if (verification.status !== "verified") {
+      const verdict = JSON.parse(verification.verdict_json);
+      await updateDoc<TaskDoc>("tasks", taskId, {
+        status: "pending",
+        error: verdict.summary || "Independent verification did not authorize success.",
+        updated_at: Date.now(),
+      } as Partial<TaskDoc>).catch(() => {});
+      return {
+        ok: false,
+        error: verdict.summary || "Independent verification did not authorize success.",
+        retryable: verification.attempt < 3,
+      };
+    }
+
     // Update TaskDoc → completed
     await updateDoc<TaskDoc>("tasks", taskId, {
       status: "completed",
@@ -202,7 +289,6 @@ const projectTaskExecutor: JobExecutor = async (job, signal) => {
     } as Partial<TaskDoc>).catch(() => {});
 
     if (runId) {
-      const finishedRun = await getRun(runId);
       await buildProofPacket({
         runId,
         agentId: workerId,
@@ -211,7 +297,9 @@ const projectTaskExecutor: JobExecutor = async (job, signal) => {
         checksRun: [],
         evidence: [typeof result === "string" ? result : JSON.stringify(result)].filter(Boolean),
         epoch: finishedRun ? deserializeEpoch(finishedRun) : null,
-      }).catch(() => {});
+        verificationId: verification.id,
+        specialistId,
+      });
     }
 
     // Kick the TaskDriver to check for newly-ready tasks
@@ -349,6 +437,22 @@ const goalRunExecutor: JobExecutor = async (job, signal) => {
       ], providerCfg, acceptance);
 
       if (verdict.met) {
+        const independent = await verifySpecialistDelivery({
+          runId: goalRunId,
+          executorAgentId: agentId,
+          objective: goal,
+          acceptance,
+          delivery: lastContent,
+          evidence: [verdict.reason],
+          executorEpoch: epoch,
+          mcpManager,
+        });
+        if (independent.status !== "verified") {
+          const independentVerdict = JSON.parse(independent.verdict_json);
+          lastReason = independentVerdict.summary || "La verificación independiente no autorizó el éxito.";
+          log.info(`[goal_run] Independent verifier rejected attempt ${attempts}: ${lastReason}`);
+          continue;
+        }
         await completeRun(goalRunId, lastContent);
         await notify(`✅ Meta cumplida: "${goal}". ${verdict.reason}`);
         log.info(`[goal_run] Goal met after ${attempts} attempt(s): ${verdict.reason}`);
@@ -361,7 +465,9 @@ const goalRunExecutor: JobExecutor = async (job, signal) => {
           checksRun: acceptance ? acceptance.map((a) => a.checkTool ?? "llm_verifier") : [checkTool ?? "llm_verifier"],
           evidence: [verdict.reason, lastContent].filter(Boolean),
           epoch,
-        }).catch(() => {});
+          verificationId: independent.id,
+          specialistId: null,
+        });
         return { ok: true, result: { met: true, attempts, reason: verdict.reason, content: lastContent } };
       }
 

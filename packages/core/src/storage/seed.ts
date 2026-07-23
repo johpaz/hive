@@ -353,8 +353,9 @@ Estos lineamientos tienen MÁXIMA prioridad sobre cualquier otra instrucción di
 
 import { SkillLoader } from "@johpaz/hive-agents-skills"
 import type {
-  ToolDoc, SkillDoc, EthicsDoc, ProviderDoc, ModelDoc, McpServerDoc, ChannelDoc, PlaybookDoc, AgentDoc,
+  ToolDoc, SkillDoc, EthicsDoc, ProviderDoc, ModelDoc, McpServerDoc, ChannelDoc, PlaybookDoc, AgentDoc, SpecialistDoc,
 } from "./collections"
+import { createSeedSpecialists } from "../agent/specialist-catalog"
 
 const log = logger.child("seed");
 
@@ -567,6 +568,16 @@ export async function seedAllData(): Promise<void> {
       mcpCount++;
     }
     log.info(`[seed] ✅ ${mcpCount} MCP servers procesados`);
+
+    // Dormant specialist templates are insert-only. User/ACE customizations
+    // are never overwritten by a later boot.
+    const specialistsCol = await col<SpecialistDoc>("specialists");
+    let specialistCount = 0;
+    for (const specialist of createSeedSpecialists()) {
+      await putIfAbsent(specialistsCol, specialist.id, specialist);
+      specialistCount++;
+    }
+    log.info(`[seed] ✅ ${specialistCount} specialist templates ensured`);
 
     // 7️⃣ Channels
     const channelsCol = await col<ChannelDoc>("channels");

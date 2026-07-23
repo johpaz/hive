@@ -23,6 +23,8 @@ export const TOOL_NARRATIONS: Record<string, string> = {
   create_agent: "Creando agente worker...",
   find_agent: "Buscando agente disponible...",
   archive_agent: "Archivando agente...",
+  task_delegate: "Delegando tarea a un especialista...",
+  task_status: "Consultando estado de la tarea...",
   // Memory
   save_note: "Guardando nota...",
   memory_write: "Guardando en memoria...",

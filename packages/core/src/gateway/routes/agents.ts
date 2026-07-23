@@ -44,6 +44,7 @@ export async function handleGetAgents(req: Request, addCorsHeaders: (r: Response
       // Hierarchy
       parentId: fromIndexable(row.doc.parent_id),
       maxIterations: row.doc.max_iterations,
+      specialistId: row.doc.specialist_id ?? null,
 
       // Workspace
       workspace: row.doc.workspace,

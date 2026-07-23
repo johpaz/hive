@@ -6,7 +6,7 @@
  * reviewer doesn't have to replay the whole run to trust its outcome.
  */
 
-import { col, nextId } from "../storage/hive";
+import { col, nextId, toIndexable } from "../storage/hive";
 import type { ProofPacketDoc } from "../storage/collections";
 import type { AcceptanceResult } from "./goal-runner";
 import type { RunEpoch } from "./run-epoch";
@@ -25,9 +25,21 @@ export interface BuildProofPacketInput {
   evidence: string[];
   knownLimits?: string | null;
   epoch?: RunEpoch | null;
+  /** Mandatory for met=true: independent acceptance_verifier verdict id. */
+  verificationId?: string | null;
+  specialistId?: string | null;
 }
 
 export async function buildProofPacket(input: BuildProofPacketInput): Promise<ProofPacketDoc> {
+  if (input.met) {
+    if (!input.verificationId) {
+      throw new Error("A successful proof packet requires an independent verification_id");
+    }
+    const { getVerifiedVerification } = await import("./acceptance-verifier");
+    if (!(await getVerifiedVerification(input.verificationId, input.runId))) {
+      throw new Error(`Verification ${input.verificationId} is missing, rejected, or belongs to another run`);
+    }
+  }
   const id = await nextId("proofPackets");
   const acceptanceResults: AcceptanceResult[] =
     input.acceptanceResults ?? [{ id: "goal", description: input.intendedOutcome, met: input.met, evidence: input.evidence.join("; ") || "n/a" }];
@@ -42,6 +54,8 @@ export async function buildProofPacket(input: BuildProofPacketInput): Promise<Pr
     evidence_json: JSON.stringify(input.evidence),
     known_limits: input.knownLimits ?? null,
     epoch_json: input.epoch ? JSON.stringify(input.epoch) : null,
+    verification_id: toIndexable(input.verificationId),
+    specialist_id: toIndexable(input.specialistId),
     met: input.met,
     created_at: Date.now(),
   };

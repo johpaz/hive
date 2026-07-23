@@ -12,6 +12,7 @@ import { resetBootId } from "../packages/core/src/storage/boot-id";
 import { createRun, deserializeAcceptance, deserializeEpoch } from "../packages/core/src/agent/run-store";
 import { buildProofPacket, findProofPacketsByRun } from "../packages/core/src/agent/proof-packet";
 import { buildRunEpoch } from "../packages/core/src/agent/run-epoch";
+import { persistVerification } from "../packages/core/src/agent/acceptance-verifier";
 
 beforeEach(async () => {
   closeHiveDb();
@@ -66,6 +67,25 @@ describe("run-store: acceptance + epoch round-trip", () => {
 
 describe("proof-packet: buildProofPacket", () => {
   test("persists a packet with default single-entry acceptance when none is given", async () => {
+    const verification = await persistVerification({
+      runId: "run-1",
+      executorSpecialistId: "api_operator",
+      objective: "send the weekly report",
+      acceptance: [{ id: "goal", description: "send the weekly report" }],
+      verdict: {
+        status: "verified",
+        criterion_results: [{
+          criterion_id: "goal",
+          met: true,
+          evidence: ["readback confirms delivery"],
+          check_used: "readback",
+          confidence: 1,
+        }],
+        summary: "Delivery independently confirmed.",
+        retry_guidance: null,
+        risks: [],
+      },
+    });
     const packet = await buildProofPacket({
       runId: "run-1",
       agentId: "a1",
@@ -73,6 +93,8 @@ describe("proof-packet: buildProofPacket", () => {
       met: true,
       checksRun: ["llm_verifier"],
       evidence: ["report sent to #ops"],
+      verificationId: verification.id,
+      specialistId: "api_operator",
     });
 
     expect(packet.run_id).toBe("run-1");
@@ -84,6 +106,18 @@ describe("proof-packet: buildProofPacket", () => {
     const found = await findProofPacketsByRun("run-1");
     expect(found.length).toBe(1);
     expect(found[0].id).toBe(packet.id);
+    expect(packet.verification_id).toBe(verification.id);
+  });
+
+  test("fails closed when success has no independent verification", async () => {
+    await expect(buildProofPacket({
+      runId: "run-unverified",
+      agentId: "a1",
+      intendedOutcome: "effect happened",
+      met: true,
+      checksRun: [],
+      evidence: ["executor says it happened"],
+    })).rejects.toThrow("requires an independent verification_id");
   });
 
   test("persists per-criterion acceptance results when provided", async () => {

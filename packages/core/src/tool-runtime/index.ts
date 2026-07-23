@@ -224,6 +224,7 @@ async function executeInMainThread(job: {
   toolCall: ToolCallLike
   allTools: RuntimeTool[]
   toolConfig: ExecuteToolBatchOptions["toolConfig"]
+  signal?: AbortSignal
 }): Promise<unknown> {
   const toolName = job.toolCall.function.name
   const tool = job.allTools.find((candidate) => candidate.name === toolName)
@@ -235,7 +236,7 @@ async function executeInMainThread(job: {
     const args = typeof job.toolCall.function.arguments === "string"
       ? JSON.parse(job.toolCall.function.arguments)
       : job.toolCall.function.arguments
-    return await tool.execute((args ?? {}) as Record<string, unknown>, { configurable: job.toolConfig })
+    return await tool.execute((args ?? {}) as Record<string, unknown>, { configurable: job.toolConfig, signal: job.signal })
   } catch (error) {
     return toolErrorResult(toolName, (error as Error).message)
   }
@@ -248,7 +249,7 @@ async function executeInMainThread(job: {
  * tools have no cross-realm handle to kill), but the caller is freed to move on.
  */
 export function executeInMainThreadWithTimeout(
-  job: { toolCall: ToolCallLike; allTools: RuntimeTool[]; toolConfig: ExecuteToolBatchOptions["toolConfig"] },
+  job: { toolCall: ToolCallLike; allTools: RuntimeTool[]; toolConfig: ExecuteToolBatchOptions["toolConfig"]; signal?: AbortSignal },
   timeoutMs: number,
 ): Promise<unknown> {
   const toolName = job.toolCall.function.name
@@ -547,6 +548,7 @@ export async function executeToolBatch(options: ExecuteToolBatchOptions): Promis
         toolCall,
         allTools: options.allTools,
         toolConfig: options.toolConfig,
+        signal: options.signal,
       }, effectiveTimeout)
       results.push({
         toolCall,

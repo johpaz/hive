@@ -26,7 +26,8 @@ import type { JobDoc } from "../storage/collections";
 const log = logger.child("webchat-turn");
 
 export interface WebchatTurnPayload {
-  source: "message" | "audio" | "a2ui" | "canvas" | "api";
+  /** "task_complete": synthetic system-authored turn delivering an async-delegated task's outcome (see delegation-notify.ts). Not literal user speech. */
+  source: "message" | "audio" | "a2ui" | "canvas" | "api" | "task_complete";
   /** webchat channelUserId for WS sources; canonical threadId for "api". */
   sessionId: string;
   /** User text / audio transcript / interaction description. */

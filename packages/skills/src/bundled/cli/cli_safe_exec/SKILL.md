@@ -8,7 +8,7 @@ category: cli
 permissions:
   - shell_exec
 dependencies: []
-tools: [exec, terminal]
+tools: [cli_exec]
 
 # Structured skill fields
 triggers:

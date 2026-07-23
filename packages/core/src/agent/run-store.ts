@@ -10,7 +10,7 @@
  * should write to a run; single-writer pattern keeps contention minimal.
  */
 
-import { col, updateDoc, nextId } from "../storage/hive";
+import { col, updateDoc, nextId, toIndexable } from "../storage/hive";
 import type { AgentRunDoc } from "../storage/collections";
 import { getBootId } from "../storage/boot-id";
 import { logger } from "../utils/logger";
@@ -66,6 +66,7 @@ export interface CreateRunInput {
   resume_policy?: AgentRunDoc["resume_policy"]
   acceptance?: AcceptanceCriterion[]
   epoch?: RunEpoch
+  specialist_id?: string | null
 }
 
 export async function createRun(input: CreateRunInput): Promise<AgentRunDoc> {
@@ -98,6 +99,7 @@ export async function createRun(input: CreateRunInput): Promise<AgentRunDoc> {
     resume_policy: input.resume_policy ?? "resume",
     acceptance_json: input.acceptance ? JSON.stringify(input.acceptance) : null,
     epoch_json: input.epoch ? JSON.stringify(input.epoch) : null,
+    specialist_id: toIndexable(input.specialist_id),
     error: null,
     created_at: now,
     updated_at: now,

@@ -6,7 +6,9 @@
 
 import type { Tool } from "../types.ts";
 import { col, toIndexable, fromIndexable, BROADCAST } from "../../storage/hive.ts";
-import type { MemoryDoc, AgentDoc, ProviderDoc, ModelDoc, TaskDoc, AgentBusMessageDoc } from "../../storage/collections.ts";
+import type { MemoryDoc, AgentDoc, ProviderDoc, ModelDoc, TaskDoc, AgentBusMessageDoc, SpecialistDoc } from "../../storage/collections.ts";
+import type { AcceptanceCriterion } from "../../agent/run-store.ts";
+import type { AwakeSpecialist } from "../../agent/specialist-runtime.ts";
 import { logger } from "../../utils/logger.ts";
 import { agentBus } from "../../events/agent-bus.ts";
 
@@ -394,33 +396,77 @@ export const agentArchiveTool: Tool = {
 
 export const taskDelegateTool: Tool = {
   name: "task_delegate",
-  description: "Delegate a task to a worker agent. mode=sync (default) blocks until done; mode=async enqueues and returns immediately. Spanish: delegar tarea, asignar worker, ejecutar por agente, delegate_task",
+  description: "Delegate a bounded task to either a dormant specialist_id or an existing worker_id. Specialist work is independently verified before success is returned. mode=sync blocks the conversation until done; mode=async enqueues and frees the conversation immediately — the user is notified automatically in this same chat when the specialist finishes. Prefer async unless you expect the result in a few seconds.",
   parameters: {
     type: "object",
     properties: {
-      worker_id: { type: "string", description: "ID of the worker agent" },
+      worker_id: { type: "string", description: "Existing free-worker ID. Omit when specialist_id is provided." },
+      specialist_id: { type: "string", description: "Dormant specialist template ID. Preferred for common domains." },
       task_description: { type: "string", description: "Clear, detailed instructions for the worker" },
-      mode: { type: "string", enum: ["sync", "async"], description: "sync (default, blocking 2min timeout) or async (enqueued, non-blocking)" },
+      acceptance: {
+        type: "array",
+        description: "Verifiable acceptance criteria. Specialist defaults are used when omitted.",
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            description: { type: "string" },
+            checkTool: { type: "string" },
+          },
+          required: ["id", "description"],
+        },
+      },
+      mcp_server_ids: { type: "array", items: { type: "string" }, description: "Task-scoped MCP servers selected by capability search." },
+      mode: { type: "string", enum: ["sync", "async"], description: "sync (default, blocking, 2min timeout — only for very short delegations) or async (enqueued, frees the conversation instantly; outcome is relayed back to the user automatically). Prefer async for anything non-trivial." },
     },
-    required: ["worker_id", "task_description"],
+    required: ["task_description"],
   },
   execute: async (params: Record<string, unknown>, config?: any) => {
-    const workerId = params.worker_id as string;
+    let workerId = params.worker_id as string | undefined;
+    const specialistId = params.specialist_id as string | undefined;
     const taskDescription = params.task_description as string;
+    const mcpServerIds = (params.mcp_server_ids as string[] | undefined) ?? [];
     const mode = (params.mode as string) ?? "sync";
 
     const agentsCol = await col<AgentDoc>("agents");
+    let awake: AwakeSpecialist | null = null;
+    if (specialistId) {
+      const { wakeSpecialist } = await import("../../agent/specialist-runtime.ts");
+      const { getMCPManager } = await import("../../mcp/singleton.ts");
+      awake = await wakeSpecialist({
+        specialistId,
+        userId: config?.configurable?.user_id ?? "",
+        parentAgentId: config?.configurable?.agent_id ?? "",
+        workspace: config?.configurable?.workspace ?? null,
+        mcpServerIds,
+        mcpManager: getMCPManager(),
+      });
+      workerId = awake.workerId;
+    }
+    if (!workerId) return { ok: false, error: "Provide specialist_id or worker_id." };
     const workerEntry = await agentsCol.get(workerId);
 
     if (!workerEntry) {
+      await awake?.release();
       return { ok: false, error: `Worker not found: ${workerId}` };
     }
     const worker = workerEntry.doc;
     if (!worker.enabled) {
+      await awake?.release();
       return { ok: false, error: `Worker is disabled: ${worker.name}` };
     }
 
     const taskName = taskDescription.slice(0, 60);
+    const specialistEntry = specialistId
+      ? await (await col<SpecialistDoc>("specialists")).get(specialistId)
+      : null;
+    const acceptance = ((params.acceptance as AcceptanceCriterion[] | undefined)
+      ?? specialistEntry?.doc.default_acceptance.map((criterion) => ({
+        id: criterion.id,
+        description: criterion.description,
+        checkTool: criterion.check_tool,
+      }))
+      ?? [{ id: "objective", description: taskDescription }]);
 
     // ── Async mode: create TaskDoc + enqueue worker_task in durable queue ──
     if (mode === "async") {
@@ -449,6 +495,7 @@ export const taskDelegateTool: Tool = {
           job_id: null,
           run_id: null,
           thread_id: null,
+          specialist_id: toIndexable(specialistId),
           started_at: null,
           attempts: 0,
           created_at: now,
@@ -464,6 +511,8 @@ export const taskDelegateTool: Tool = {
           kind: "worker",
           max_iterations: worker.max_iterations || 10,
           resume_policy: "resume",
+          acceptance,
+          specialist_id: specialistId,
         });
 
         const queue = getDurableQueue();
@@ -476,6 +525,15 @@ export const taskDelegateTool: Tool = {
             taskDescription,
             taskName,
             taskId,
+            specialistId,
+            acceptance,
+            mcpServerIds,
+            parentAgentId: config?.configurable?.agent_id ?? "",
+            userId: config?.configurable?.user_id ?? "",
+            workspace: config?.configurable?.workspace ?? null,
+            // Delegating conversation's thread — lets delegation-notify.ts relay
+            // the outcome back to the user once this job reaches a terminal state.
+            originThreadId: config?.configurable?.thread_id ?? null,
           },
         });
 
@@ -502,6 +560,8 @@ export const taskDelegateTool: Tool = {
         };
       } catch (err) {
         return { ok: false, error: `Async delegation failed: ${(err as Error).message}` };
+      } finally {
+        await awake?.release();
       }
     }
 
@@ -517,16 +577,55 @@ export const taskDelegateTool: Tool = {
       const SYNC_TIMEOUT_MS = 2 * 60 * 1000;
 
       const { withTimeout } = await import("../../agent/agent-loop.ts");
+      const { getMCPManager } = await import("../../mcp/singleton.ts");
+      // Real cancellation (e.g. the user's "stop" button): the job's AbortSignal
+      // reaches us via config.signal (tool-runtime/index.ts's executeToolBatch),
+      // and runAgentIsolated/runAgent already honor it mid-run. withTimeout stays
+      // as a hard ceiling in case the signal path doesn't stop things in time.
+      const signal = config?.signal as AbortSignal | undefined;
       const result = await withTimeout(
         () => runAgentIsolated({
           agentId: workerId,
           taskDescription,
           threadId,
+          mcpManager: getMCPManager(),
+          signal,
         }),
         SYNC_TIMEOUT_MS,
       );
 
       agentBus.notifyTaskCompleted(workerId, worker.name, 0, taskName, "", result);
+
+      if (specialistId) {
+        const { verifySpecialistDelivery } = await import("../../agent/acceptance-verifier.ts");
+        const verification = await verifySpecialistDelivery({
+          runId: `sync-${crypto.randomUUID()}`,
+          executorAgentId: workerId,
+          objective: taskDescription,
+          acceptance,
+          delivery: result,
+          mcpServerIds,
+          mcpManager: getMCPManager(),
+        });
+        const verdict = JSON.parse(verification.verdict_json);
+        if (verification.status !== "verified") {
+          return {
+            ok: false,
+            status: verification.status,
+            verification_id: verification.id,
+            error: verdict.summary || "Independent verification did not authorize success.",
+            retry_guidance: verdict.retry_guidance,
+          };
+        }
+        return {
+          ok: true,
+          worker_id: workerId,
+          worker_name: worker.name,
+          specialist_id: specialistId,
+          verification_id: verification.id,
+          result,
+        };
+      }
 
       return {
         ok: true,
@@ -542,6 +641,8 @@ export const taskDelegateTool: Tool = {
         worker_id: workerId,
         error: (err as Error).message,
       };
+    } finally {
+      await awake?.release();
     }
   },
 };

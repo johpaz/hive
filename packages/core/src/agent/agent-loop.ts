@@ -574,6 +574,7 @@ export async function* runAgent(
         errorMessage: toolResultLLM.startsWith("[Tool Error]") ? toolResultLLM : null,
         durationMs: toolMs,
         causalStreamId,
+        specialistId: agent.specialist_id,
       })
 
       // G9: record the tool call, caused by the decision that requested it.
@@ -979,6 +980,7 @@ export async function* runAgent(
     durationMs,
     tokensUsed: totalInputTokens + totalOutputTokens,
     causalStreamId,
+    specialistId: agent.specialist_id,
   })
 
   log.info(

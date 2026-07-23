@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AgentList } from "@/modules/agents/AgentList";
 import { AgentCreateForm } from "@/modules/agents/AgentCreateForm";
+import { SpecialistHivePanel } from "@/modules/agents/SpecialistHivePanel";
 import { Plus, RefreshCw, type LucideProps, X, Bot } from "lucide-react";
 import { useAgents, useProviders, useModels } from "@/stores/useGlobalConfigStore";
+import { useSpecialists } from "@/hooks/useSpecialists";
 import type { Agent } from "@/types";
 
 // Wrapper to fix React 19 + Lucide type compatibility
@@ -14,6 +16,7 @@ export function AgentsPage() {
   const { agents, isLoading, error, fetchAgents } = useAgents();
   const { fetchProviders } = useProviders();
   const { fetchModels } = useModels();
+  const { specialists, fetchSpecialists, toggleSpecialist } = useSpecialists();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | undefined>(undefined);
 
@@ -21,7 +24,23 @@ export function AgentsPage() {
     fetchAgents();
     fetchProviders();
     fetchModels();
-  }, [fetchAgents, fetchProviders, fetchModels]);
+    fetchSpecialists();
+  }, [fetchAgents, fetchProviders, fetchModels, fetchSpecialists]);
+
+  // Specialist workers (sp_*) live inside their SpecialistCard, not the plain agent list.
+  const configurableAgents = useMemo(
+    () => agents.filter((a) => !a.specialistId),
+    [agents],
+  );
+  const coordinator = useMemo(
+    () => agents.find((a) => a.role === "coordinator"),
+    [agents],
+  );
+
+  const handleSync = () => {
+    fetchAgents();
+    fetchSpecialists();
+  };
 
   const handleEdit = (agent: Agent) => {
     setEditingAgent(agent);
@@ -59,7 +78,7 @@ export function AgentsPage() {
           <div className="flex items-center gap-3 relative z-10 animate-in slide-in-from-right-8 duration-700">
             <button
               className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white rounded-lg border border-white/10 hover:border-white/20 transition-all duration-300 flex items-center gap-2 font-medium text-sm backdrop-blur-sm group"
-              onClick={() => fetchAgents()}
+              onClick={handleSync}
               disabled={isLoading}
             >
               <RefreshCw className={`h-4 w-4 transition-transform duration-500 group-hover:rotate-180 text-blue-400 ${isLoading ? "animate-spin" : ""}`} />
@@ -97,13 +116,13 @@ export function AgentsPage() {
             </div>
           ) : (
             <div className="relative z-10">
-              {isLoading && agents.length === 0 ? (
+              {isLoading && configurableAgents.length === 0 ? (
                 <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="h-64 rounded-2xl border border-white/5 bg-white/[0.02] animate-pulse" />
                   ))}
                 </div>
-              ) : agents.length === 0 ? (
+              ) : configurableAgents.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 px-4 text-center border border-white/5 rounded-3xl bg-black/20 backdrop-blur-sm animate-in fade-in duration-1000">
                   <div className="h-20 w-20 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(59,130,246,0.15)]">
                     <Bot className="h-10 w-10 text-blue-400" />
@@ -122,9 +141,15 @@ export function AgentsPage() {
                 </div>
               ) : (
                 <div className="animate-in slide-in-from-bottom-8 duration-1000 fade-in fill-mode-both">
-                  <AgentList agents={agents} onEdit={handleEdit} />
+                  <AgentList agents={configurableAgents} onEdit={handleEdit} />
                 </div>
               )}
+
+              <SpecialistHivePanel
+                specialists={specialists}
+                coordinator={coordinator}
+                onToggle={toggleSpecialist}
+              />
             </div>
           )}
         </div>

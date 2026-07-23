@@ -9,7 +9,7 @@ permissions:
   - filesystem_read
   - filesystem_write
 dependencies: []
-tools: [project_read, project_write, project_edit, project_exists]
+tools: [fs_read, fs_write, fs_edit, fs_exists]
 
 # Structured skill fields
 triggers:

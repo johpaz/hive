@@ -58,7 +58,7 @@ export class MCPClientManager {
     logger.setHandler(handler);
   }
 
-  async initialize(): Promise<void> {
+  async initialize(options: { connect?: boolean } = {}): Promise<void> {
     const servers = this.config.servers ?? {};
 
     for (const [name, serverConfig] of Object.entries(servers)) {
@@ -79,10 +79,9 @@ export class MCPClientManager {
 
     this.log.info(`MCP Client initialized with ${this.servers.size} servers`);
 
-    // CORRECCIÓN 1 — conectar todos los servers al inicializar
-    // initialize() solo registraba los servers pero nunca llamaba connectAll()
-    // por eso el log mostraba "initialized with 2 servers" pero nunca conectaba
-    await this.connectAll();
+    // Local-first lazy default: registering a server must not spawn a process
+    // or open a network session. Admin/manual callers may explicitly opt in.
+    if (options.connect === true) await this.connectAll();
   }
 
   async updateConfig(config: MCPConfig): Promise<void> {
@@ -129,7 +128,9 @@ export class MCPClientManager {
             prompts: [],
             reconnectAttempts: 0,
           });
-          // CORRECCIÓN 2 — conectar el server nuevo inmediatamente
+          // A server the user just added should be usable right away — only
+          // servers that were already dormant (e.g. from a previous boot)
+          // wait for an explicit connect or a specialist lease.
           await this.connectServer(name).catch((err) => {
             this.log.error(`Failed to connect new server ${name}: ${err.message}`);
           });

@@ -58,6 +58,7 @@ body{
   margin:0; background:var(--bg); color:var(--ink);
   font-family:'Red Hat Text', system-ui, sans-serif;
   font-size:16px; line-height:1.6;
+  overflow-x:hidden;
   -webkit-font-smoothing:antialiased;
 }
 
@@ -81,7 +82,7 @@ a{ color:inherit; }
 .brand{ display:flex; align-items:center; gap:10px; font-family:'Red Hat Display'; font-weight:800; font-size:1.05rem; white-space:nowrap; }
 .brand .hex{ width:22px; height:22px; }
 .brand .ver{ font-family:'Source Code Pro'; font-weight:500; font-size:.72rem; color:var(--ink-faint); border:1px solid var(--line); border-radius:100px; padding:2px 8px; }
-.topnav{ display:flex; gap:2px; overflow-x:auto; scrollbar-width:none; }
+.topnav{ display:flex; flex:1; min-width:0; gap:2px; overflow-x:auto; scrollbar-width:none; }
 .topnav::-webkit-scrollbar{ display:none; }
 .topnav a{
   font-size:.82rem; font-weight:500; color:var(--ink-dim); text-decoration:none;
@@ -151,6 +152,7 @@ section:last-of-type{ border-bottom:none; }
 .hex-agent{ width:158px; height:92px; background:var(--bg-inset); border:2px solid var(--accent); color:var(--ink); font-size:.82rem; flex-direction:column; gap:3px; }
 .hex-agent small{ font-family:'Source Code Pro'; font-weight:500; font-size:.6rem; color:var(--ink-faint); text-transform:none; letter-spacing:0; }
 .hex-worker{ border-style:dashed; border-color:var(--ink-faint); }
+.hex-verifier{ border-color:var(--accent-2); color:var(--accent-2); }
 .bus-link{ display:flex; flex-direction:column; align-items:center; gap:3px; font-family:'Source Code Pro'; font-size:.62rem; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.06em; }
 .bus-link .arrows{ font-size:1.1rem; color:var(--accent); }
 .loop-pill{
@@ -262,17 +264,18 @@ details.acc[open] > summary::before{ content:"–"; }
   <div class="wrap topbar-inner">
     <div class="brand">
       <svg class="hex" viewBox="0 0 24 24"><polygon points="6,2 18,2 24,12 18,22 6,22 0,12" fill="var(--accent)"/></svg>
-      HIVE <span class="ver">v0.0.45</span>
+      HIVE <span class="ver">v0.0.47</span>
     </div>
     <nav class="topnav" id="topnav">
       <a href="#overview">Overview</a>
       <a href="#packages">Packages</a>
       <a href="#flow">Runtime flow</a>
+      <a href="#specialists">Specialist hive</a>
       <a href="#core">Core engine</a>
       <a href="#tools">Tools</a>
       <a href="#surfaces">CLI &amp; UI</a>
       <a href="#integrations">Integrations</a>
-      <a href="#release">Current release</a>
+      <a href="#release">Current architecture</a>
     </nav>
   </div>
 </div>
@@ -288,10 +291,10 @@ details.acc[open] > summary::before{ content:"–"; }
       </div>
       <div class="stat-strip">
         <div class="stat"><b>5</b><span>packages</span></div>
-        <div class="stat"><b>14</b><span>core subsystems</span></div>
+        <div class="stat"><b>13</b><span>specialists</span></div>
         <div class="stat"><b>73</b><span>tools</span></div>
+        <div class="stat"><b>33</b><span>skills</span></div>
         <div class="stat"><b>13</b><span>llm providers</span></div>
-        <div class="stat"><b>48</b><span>tests</span></div>
       </div>
     </div>
 
@@ -308,15 +311,17 @@ details.acc[open] > summary::before{ content:"–"; }
         <div class="harness-label">Hive Harness</div>
 
         <div class="agent-row">
-          <div class="hex hex-agent">Coordinator agent<small>role: "coordinator" · one per user</small></div>
-          <div class="bus-link"><span class="arrows">⇄</span>agent bus</div>
-          <div class="hex hex-agent hex-worker">Worker agent(s)<small>spawned on demand · agent_create</small></div>
+          <div class="hex hex-agent">Coordinator<small>only user-facing agent · always awake</small></div>
+          <div class="bus-link"><span class="arrows">→</span>route</div>
+          <div class="hex hex-agent hex-worker">Specialist pool<small>13 dormant templates · free-worker fallback</small></div>
+          <div class="bus-link"><span class="arrows">→</span>evidence</div>
+          <div class="hex hex-agent hex-verifier">Acceptance gate<small>independent · fail closed</small></div>
         </div>
 
         <div class="loop-pill">
-          <span>Context Compiler</span><span class="arrow">→</span><span class="loopy">callLLM()</span><span class="arrow">⇄</span><span class="loopy">executeTool()</span><span class="arrow">→</span><span>response</span>
+          <span>Context Compiler</span><span class="arrow">→</span><span class="loopy">route + materialize</span><span class="arrow">→</span><span class="loopy">callLLM() ⇄ executeTool()</span><span class="arrow">→</span><span>verify → response</span>
         </div>
-        <div class="loop-caption">the same loop runs for both agent roles — it repeats the callLLM ⇄ executeTool cycle until the model stops requesting tools</div>
+        <div class="loop-caption">specialists wake with an exact prompt, tool allowlist, skills and lazy MCP; only a passing VerificationDoc lets the coordinator promise success</div>
 
         <div class="d-satellites" style="margin-top:0;">
           <div class="d-sat-col">
@@ -397,7 +402,7 @@ details.acc[open] > summary::before{ content:"–"; }
       <div class="pkg-card">
         <div class="id">skills</div>
         <h3>@johpaz/hive-agents-skills</h3>
-        <p>Loader and 28 bundled skills, per README (browser automation, meeting transcription, office documents, cron reminders, A2UI dashboards…).</p>
+        <p>Loader and 33 bundled skills across 13 domains (browser automation, meeting transcription, office documents, cron reminders, A2UI, specialist verification…).</p>
         <div class="path">packages/skills</div>
         <div class="dep-row"><span class="chip">used by core</span></div>
       </div>
@@ -411,17 +416,55 @@ details.acc[open] > summary::before{ content:"–"; }
     <div class="section-head">
       <p class="kicker">02 · Request lifecycle</p>
       <h2>What happens on one run</h2>
-      <p>From a message landing in a channel to a verified, provable result — the same eight steps whether the trigger is a chat message, a cron job, or a task-graph node.</p>
+      <p>From a message landing in a channel to an independently verified result — the same ten steps whether the trigger is chat, cron, or a task-graph node.</p>
     </div>
     <div class="flow">
       <div class="flow-step"><div class="flow-num">1</div><div class="flow-body"><p><b>hive start / hive dev</b> launches the gateway — <code>gateway/server.ts</code>'s <code>startGateway()</code>.</p></div></div>
       <div class="flow-step"><div class="flow-num">2</div><div class="flow-body"><p>Gateway boots HiveDB, the <code>ChannelManager</code>, <code>AgentService</code>, the durable job queue + executors, the cron/DAG scheduler, canvas, and voice/multimodal services.</p></div></div>
       <div class="flow-step"><div class="flow-num">3</div><div class="flow-body"><p>~20 REST route modules are registered and the pre-built hive-ui SPA is served from the same process.</p></div></div>
       <div class="flow-step"><div class="flow-num">4</div><div class="flow-body"><p>Inbound channel messages, webchat turns, and cron/DAG triggers become jobs — <code>chat_turn</code>, <code>goal_run</code>, <code>project_task</code>, <code>worker_task</code> — on the durable queue.</p></div></div>
-      <div class="flow-step"><div class="flow-num">5</div><div class="flow-body"><p>A job executor runs it through <code>agent-loop.ts</code>'s <code>runAgent</code>, which calls <code>llm-client</code> (now retried) → a provider adapter, and <code>tools/*</code> via the tool runtime.</p></div></div>
-      <div class="flow-step"><div class="flow-num">6</div><div class="flow-body"><p><code>run-store</code> checkpoints and leases the run in HiveDB; <code>job-store</code>/<code>durable-queue</code> do the same for the job — now with idempotency keys and backoff retry on logical failure, separate from crash recovery.</p></div></div>
-      <div class="flow-step"><div class="flow-num">7</div><div class="flow-body"><p><code>goal-runner</code> verifies each acceptance criterion; <code>proof-packet</code> + <code>run-epoch</code> record a <code>ProofPacketDoc</code> pinned to the exact provider/model/tool-catalog it was checked under.</p></div></div>
-      <div class="flow-step"><div class="flow-num">8</div><div class="flow-body"><p>The result is pushed back to the originating channel and/or streamed live to hive-ui over WebSocket.</p></div></div>
+      <div class="flow-step"><div class="flow-num">5</div><div class="flow-body"><p>The coordinator handles simple work itself. Otherwise it retrieves a specialist by task description and delegates a bounded subtask with context and explicit acceptance criteria; the free worker covers unmatched work.</p></div></div>
+      <div class="flow-step"><div class="flow-num">6</div><div class="flow-body"><p><code>specialist-runtime</code> wakes the dormant template with its exact prompt, tool allowlist, skills and model policy, then connects only authorized MCP servers lazily.</p></div></div>
+      <div class="flow-step"><div class="flow-num">7</div><div class="flow-body"><p>The Native Agent Loop executes it while <code>run-store</code> and the durable queue checkpoint leases, idempotency and retries in HiveDB.</p></div></div>
+      <div class="flow-step"><div class="flow-num">8</div><div class="flow-body"><p><code>acceptance_verifier</code> independently checks every criterion against evidence and persists a <code>VerificationDoc</code>. Missing evidence fails closed and returns to execution.</p></div></div>
+      <div class="flow-step"><div class="flow-num">9</div><div class="flow-body"><p>Only verified work produces a <code>ProofPacketDoc</code>. Traces attributed by <code>specialist_id</code> feed the specialty's ACE playbook and health counters.</p></div></div>
+      <div class="flow-step"><div class="flow-num">10</div><div class="flow-body"><p>The coordinator reports the result. The specialist hibernates and its lazy MCP connections are released after TTL.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="specialists">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="kicker">03 · Dormant capability pool</p>
+      <h2>Specialists wake only when the task needs them</h2>
+      <p>Routing descriptions are intentionally short and concrete for local 7B models. Templates live in HiveDB; sleeping specialists consume no model or MCP resources.</p>
+    </div>
+    <div class="integ-grid">
+      <div class="integ-card">
+        <h4>Research &amp; operations</h4>
+        <div class="chip-cloud"><span class="chip">web researcher</span><span class="chip">browser operator</span><span class="chip">API operator</span><span class="chip">MCP operator</span></div>
+      </div>
+      <div class="integ-card">
+        <h4>Build &amp; artifacts</h4>
+        <div class="chip-cloud"><span class="chip">software engineer</span><span class="chip">file operator</span><span class="chip">Office specialist</span><span class="chip">A2UI builder</span><span class="chip">Canvas presenter</span></div>
+      </div>
+      <div class="integ-card">
+        <h4>Time &amp; media</h4>
+        <div class="chip-cloud"><span class="chip">schedule automation</span><span class="chip">meeting scribe</span><span class="chip">voice &amp; audio</span></div>
+      </div>
+      <div class="integ-card" style="border-color:var(--accent-2);">
+        <h4 style="color:var(--accent-2);">Independent acceptance verifier</h4>
+        <p style="color:var(--ink-dim);font-size:.88rem;">Never performs the original task. It inspects the requested outcome, criterion-level evidence and risks, then emits pass, fail or needs-input. The coordinator cannot report success without its persisted approval.</p>
+      </div>
+      <div class="integ-card">
+        <h4>Lifecycle &amp; isolation</h4>
+        <p style="color:var(--ink-dim);font-size:.88rem;"><code>select → wake → execute → verify → prove → hibernate</code>. Repeated compatible tasks reuse a warm specialist; distinct specialists may run in parallel on independent queue lanes.</p>
+      </div>
+      <div class="integ-card">
+        <h4>ACE learns the structure</h4>
+        <p style="color:var(--ink-dim);font-size:.88rem;">Per-specialist traces update playbooks. The Curator proposes tool moves, new specialties for recurring free-worker patterns, and deactivation when harmful evidence outweighs helpful evidence.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -429,9 +472,9 @@ details.acc[open] > summary::before{ content:"–"; }
 <section id="core">
   <div class="wrap">
     <div class="section-head">
-      <p class="kicker">03 · packages/core/src</p>
+      <p class="kicker">04 · packages/core/src</p>
       <h2>The runtime engine, subsystem by subsystem</h2>
-      <p>Fourteen subdirectories. The three marked <span class="tag-new">NEW</span> landed in v0.0.45's durable-execution harness.</p>
+      <p>Fourteen subdirectories. The agent subsystem now includes specialist routing, scoped wake/sleep and an independent acceptance gate.</p>
     </div>
 
     <div class="acc-list">
@@ -450,6 +493,9 @@ details.acc[open] > summary::before{ content:"–"; }
             <tr><td>run-store.ts</td><td>CRUD + lease/checkpoint management for AgentRunDoc; lease renewal loop.</td></tr>
             <tr><td>run-epoch.ts <span class="tag-new">NEW</span></td><td>Fingerprints provider + model + app version + tool-catalog hash, so a proof packet can detect a different worker picked up the run.</td></tr>
             <tr><td>proof-packet.ts <span class="tag-new">NEW</span></td><td>buildProofPacket — one compressed evidence record per completed run: intended outcome, acceptance verdicts, checks run, evidence, known limits, epoch.</td></tr>
+            <tr><td>specialist-catalog.ts / specialist-selector.ts <span class="tag-new">NEW</span></td><td>13 typed dormant templates plus BM25/hybrid retrieval and a compact 7B-friendly routing catalog.</td></tr>
+            <tr><td>specialist-runtime.ts <span class="tag-new">NEW</span></td><td>Materializes exact prompt/tools/skills/model scope, connects MCP lazily, reuses a compatible warm worker and releases resources by TTL.</td></tr>
+            <tr><td>acceptance-verifier.ts <span class="tag-new">NEW</span></td><td>Independent fail-closed criterion/evidence gate; persists <code>VerificationDoc</code> before success or proof is authorized.</td></tr>
             <tr><td>conversation-store, context-compiler, context-guard, compaction, prompt-builder</td><td>message history, context window assembly/guarding/compaction, prompt construction.</td></tr>
             <tr><td>tool-selector, skill-selector, playbook-selector, capability-search</td><td>retrieval/ranking of which tools, skills and playbooks to expose per turn, backed by HiveDB's BM25 index.</td></tr>
             <tr><td>native-tools, hooks, curator, reflector, stuck-loop, tracer</td><td>native tool defs, lifecycle hooks, self-curation, reflection/self-critique, stuck-loop detection, execution tracing.</td></tr>
@@ -465,7 +511,7 @@ details.acc[open] > summary::before{ content:"–"; }
             <tr><td>server.ts</td><td>startGateway — wires config, storage, channels, agent service, durable queue, scheduler, canvas, voice, ~20 routes into one process; serves /health and the built UI.</td></tr>
             <tr><td>durable-queue.ts</td><td>DurableLaneQueue — lease-based crash recovery, now also <code>failJobOrRetry</code> for logical failures and periodic re-dispatch of delayed jobs.</td></tr>
             <tr><td>job-store.ts</td><td>JobDoc persistence — <code>idempotency_key</code> dedup, exponential backoff+jitter, configurable <code>JobRetryPolicy</code>.</td></tr>
-            <tr><td>job-executors.ts</td><td>Registers executors per job type; <code>project_task</code>/<code>goal_run</code> now emit proof packets and classify errors via <code>isRetryableError</code>.</td></tr>
+            <tr><td>job-executors.ts</td><td>Materializes specialist jobs, executes them, enforces independent acceptance verification and only then emits proof/completion.</td></tr>
             <tr><td>session, resolver, router, slash-commands, webchat-turn, channel-notify, initializer, lane-queue</td><td>session management, context resolution, slash commands, webchat turn execution, outbound notification, bootstrap sequencing.</td></tr>
             <tr><td>routes/*.ts</td><td>19 REST handlers — agents, auth, channels, chat, config, cron-api, ethics, mcp, meeting, models, multimodal, providers, setup, skills, system, tasks, tools, tts-local, users, voice, workspace, http-client.</td></tr>
             <tr><td>helpers/</td><td>cors, narration (per-tool progress messages), path, redact.</td></tr>
@@ -494,9 +540,9 @@ details.acc[open] > summary::before{ content:"–"; }
           <div class="table-scroll"><table class="file-table">
             <tr><td>hivedb.ts</td><td>wraps @johpaz/hive-db as a singleton — redb (KV) + tantivy (BM25) + hnsw_rs (vectors).</td></tr>
             <tr><td>hive.ts</td><td>collection/index helpers — col, nextId, updateDoc, toIndexable/fromIndexable.</td></tr>
-            <tr><td>collections.ts</td><td>all document types; new <code>ProofPacketDoc</code>, plus <code>acceptance_json</code>/<code>epoch_json</code> on runs and <code>retry_count</code>/<code>last_error</code>/<code>idempotency_key</code> on jobs. <span class="tag-new">NEW fields</span></td></tr>
-            <tr><td>bootstrap.ts</td><td>builds indexes; new indexes for <code>idempotency_key</code> and proof-packet lookups.</td></tr>
-            <tr><td>seed.ts / reconcile.ts</td><td>default seeding / boot-time recovery.</td></tr>
+            <tr><td>collections.ts</td><td>Typed <code>SpecialistDoc</code>, <code>VerificationDoc</code>, <code>SpecialistProposalDoc</code> and <code>ProofPacketDoc</code>; runs, tasks, traces and proofs carry <code>specialist_id</code>.</td></tr>
+            <tr><td>bootstrap.ts</td><td>Indexes specialist routing/state, verifications, ACE proposals and specialist-attributed runs/traces/proofs.</td></tr>
+            <tr><td>seed.ts / reconcile.ts</td><td>Idempotent <code>putIfAbsent</code> seeding for 13 templates, preserving user/ACE edits; boot-time recovery.</td></tr>
             <tr><td>boot-id, causal-events, crypto, onboarding, usage</td><td>boot identity, causal event log, encryption, onboarding wizard persistence, usage accounting.</td></tr>
           </table></div>
         </div>
@@ -557,7 +603,7 @@ details.acc[open] > summary::before{ content:"–"; }
 <section id="tools">
   <div class="wrap">
     <div class="section-head">
-      <p class="kicker">04 · packages/core/src/tools</p>
+      <p class="kicker">05 · packages/core/src/tools</p>
       <h2>73 tools across 12 source folders</h2>
       <p>Aggregated by <code>tools/index.ts</code>'s <code>createAllTools()</code> and dispatched through <code>tool-runtime</code> — batch execution, timeouts, and worker-thread isolation. Shown here split into the 15 categories the project's own README uses.</p>
     </div>
@@ -584,7 +630,7 @@ details.acc[open] > summary::before{ content:"–"; }
 <section id="surfaces">
   <div class="wrap">
     <div class="section-head">
-      <p class="kicker">05 · The other four packages</p>
+      <p class="kicker">06 · The other four packages</p>
       <h2>CLI, control panel, MCP &amp; skills</h2>
     </div>
     <div class="acc-list">
@@ -617,7 +663,7 @@ details.acc[open] > summary::before{ content:"–"; }
         <summary>mcp <span class="acc-path">packages/mcp/src</span></summary>
         <div class="acc-body">
           <div class="table-scroll"><table class="file-table">
-            <tr><td>manager.ts</td><td>MCP client connection manager.</td></tr>
+            <tr><td>manager.ts</td><td>MCP client connection manager with lazy specialist leases and TTL-based disconnect.</td></tr>
             <tr><td>config.ts / logger.ts</td><td>configuration and logging.</td></tr>
             <tr><td>transports/</td><td>sse.ts, websocket.ts.</td></tr>
           </table></div>
@@ -629,7 +675,7 @@ details.acc[open] > summary::before{ content:"–"; }
         <div class="acc-body">
           <div class="table-scroll"><table class="file-table">
             <tr><td>loader.ts</td><td>loads bundled skills.</td></tr>
-            <tr><td>bundled/</td><td>28 skills (per README) across 12 folders — agents, api, canvas (a2ui dashboard/form/interactive), cli, cron manager/reminder, filesystem, meeting, office, capability discovery, voice, web.</td></tr>
+            <tr><td>bundled/</td><td>33 skills across 13 folders — agents, api, canvas (a2ui dashboard/form/interactive), cli, cron manager/reminder, filesystem, MCP, meeting, office, capability discovery, voice, web.</td></tr>
             <tr><td>bundled-data.generated.ts</td><td>build artifact embedding bundled skills for distribution.</td></tr>
           </table></div>
         </div>
@@ -642,7 +688,7 @@ details.acc[open] > summary::before{ content:"–"; }
 <section id="integrations">
   <div class="wrap">
     <div class="section-head">
-      <p class="kicker">06 · External surface</p>
+      <p class="kicker">07 · External surface</p>
       <h2>Providers, channels &amp; storage</h2>
     </div>
     <div class="integ-grid">
@@ -676,29 +722,27 @@ details.acc[open] > summary::before{ content:"–"; }
 <section id="release">
   <div class="wrap">
     <div class="section-head">
-      <p class="kicker">07 · In this version</p>
-      <h2>v0.0.45 — the durable execution harness</h2>
+      <p class="kicker">08 · Current architecture</p>
+      <h2>v0.0.47 — the specialist hive</h2>
     </div>
     <div class="release-panel">
       <div class="release-head">
-        <h3>Retry, idempotency &amp; epoch-fingerprinted proof packets</h3>
+        <h3>Dormant specialists &amp; an independent acceptance gate</h3>
         <div class="release-meta">
-          <span class="chip">feature <code>fc469c5</code></span>
-          <span class="chip">release <code>4191985</code></span>
+          <span class="chip">package <code>0.0.47</code></span>
+          <span class="chip">working-tree architecture</span>
         </div>
       </div>
-      <p>Adds a generic retry-with-backoff utility and enhances run orchestration with acceptance criteria, epoch tracking, and configurable lease durations — following the "tool legibility" harness-engineering practice (discover → select → invoke → interpret → verify) now written up in <code>docs/TOOL-CONVENTIONS.md</code>.</p>
+      <p>The Native Agent Loop now supports a learnable local-first hive: one user-facing coordinator, 13 dormant specialist templates, scoped tools/skills/MCP, durable execution and independent criterion-level verification before any promise of success.</p>
       <div class="table-scroll"><table class="change-table">
-        <tr><td>llm-client.ts</td><td>wraps callLLM in withRetry using a config-driven policy, respects the abort signal.</td></tr>
-        <tr><td>goal-runner.ts</td><td>adds an acceptance criteria array; verifyGoal checks each criterion independently and conjuncts the verdicts.</td></tr>
-        <tr><td>run-store.ts</td><td>acceptance_json/epoch_json fields on runs; lease durations now config-driven instead of hardcoded.</td></tr>
-        <tr><td>durable-queue.ts</td><td>failJobOrRetry path for logical-failure retry, periodic re-dispatch of delayed jobs.</td></tr>
-        <tr><td>job-store.ts</td><td>largest diff — idempotency_key dedup, JobRetryPolicy, backoff computation, retry_count/last_error fields.</td></tr>
-        <tr><td>job-executors.ts</td><td>tags failures as retryable or not; project_task/goal_run call buildProofPacket on completion.</td></tr>
-        <tr><td>server.ts</td><td>/health now reports queue depth, expired leases, active run count, boot id.</td></tr>
-        <tr><td>scheduler/integration.ts</td><td>scheduled/cron runs now stream live narration to the user's channel instead of staying silent until done.</td></tr>
-        <tr><td>channels/telegram.ts</td><td>bundled fix — auto-links a Telegram chat to the single-user account on first contact.</td></tr>
-        <tr><td>hive-ui (UserProfileEditor, useNotesAndCronsStore)</td><td>UI side of the cron-channel-preference fix — reads the server's real preference instead of hardcoding "auto".</td></tr>
+        <tr><td>specialist-catalog / selector</td><td>13 typed templates and BM25/hybrid routing from plain-language task descriptions.</td></tr>
+        <tr><td>specialist-runtime</td><td>exact loadout materialization, stable warm-context reuse and lazy MCP lifecycle.</td></tr>
+        <tr><td>acceptance-verifier</td><td>independent fail-closed verdict with criterion-level evidence persisted as <code>VerificationDoc</code>.</td></tr>
+        <tr><td>context-compiler</td><td>7B-friendly routing/decomposition protocol; only the coordinator may ask or answer the user.</td></tr>
+        <tr><td>job-executors</td><td>verification is a hard gate before completion and proof-packet generation.</td></tr>
+        <tr><td>HiveDB collections / indexes / seed</td><td>specialists, verifications and proposals are typed, searchable and seeded idempotently.</td></tr>
+        <tr><td>Curator / ACE</td><td>per-specialty learning can move tools, propose recurring specialties or deactivate harmful ones.</td></tr>
+        <tr><td>free worker</td><td>preserved as the fallback for rare tasks that do not justify a forced taxonomy.</td></tr>
       </table></div>
     </div>
   </div>
@@ -707,7 +751,7 @@ details.acc[open] > summary::before{ content:"–"; }
 <section id="tests">
   <div class="wrap">
     <div class="section-head">
-      <p class="kicker">08 · Verification</p>
+      <p class="kicker">09 · Verification</p>
       <h2>Scripts &amp; tests</h2>
     </div>
     <div class="integ-grid">
@@ -718,10 +762,10 @@ details.acc[open] > summary::before{ content:"–"; }
         </div>
       </div>
       <div class="integ-card">
-        <h4>tests/ — ~48 files</h4>
-        <p style="color:var(--ink-dim);font-size:.88rem;">agent-loop · browser tools · causal-events · context-compiler · cron-misfire · curator · durable-queue · goal-runner · hivedb-search · job-store · reflector · run-store · skill/tool-selector · task-driver · tool-runtime · toon — plus four new in v0.0.45:</p>
+        <h4>tests/ — 42 files</h4>
+        <p style="color:var(--ink-dim);font-size:.88rem;">agent-loop · browser tools · context-compiler · curator · durable queue · goal runner · HiveDB · proof packets · selectors · task driver · tool runtime — including specialist catalog, routing, scoped runtime, verification and ACE behavior:</p>
         <div class="chip-cloud">
-          <span class="chip">job-idempotency <span class="tag-new">NEW</span></span><span class="chip">job-retry-backoff <span class="tag-new">NEW</span></span><span class="chip">llm-retry <span class="tag-new">NEW</span></span><span class="chip">proof-packet <span class="tag-new">NEW</span></span>
+          <span class="chip">specialists.test <span class="tag-new">NEW</span></span><span class="chip">goal-runner updated</span><span class="chip">proof-packet updated</span>
         </div>
       </div>
     </div>
@@ -733,7 +777,7 @@ details.acc[open] > summary::before{ content:"–"; }
 <footer>
   <div class="wrap foot-strip">
     <div class="json-note"><span class="dot"></span><span class="mono">docs/architecture.json</span> — same map, machine-readable</div>
-    <div>Generated 2026-07-22 · Hive v0.0.45 · MIT</div>
+    <div>Generated 2026-07-23 · Hive v0.0.47 · MIT</div>
   </div>
 </footer>
 

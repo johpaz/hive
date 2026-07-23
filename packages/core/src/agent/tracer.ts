@@ -25,6 +25,7 @@ export interface TraceInput {
   tokensUsed?: number
   /** G9 causal stream id for this run, when the causal log is enabled. */
   causalStreamId?: string | null
+  specialistId?: string | null
 }
 
 /**
@@ -38,6 +39,9 @@ export function saveTrace(trace: TraceInput): void {
       const tracesCol = await col<TraceDoc>("traces")
       const id = await nextId("traces")
       const now = Date.now()
+      const agentsCol = await col<AgentDoc>("agents")
+      const agentEntry = await agentsCol.get(trace.agentId)
+      const specialistId = trace.specialistId ?? agentEntry?.doc.specialist_id ?? null
       await tracesCol.put(id, {
         id,
         thread_id: trace.threadId,
@@ -52,12 +56,12 @@ export function saveTrace(trace: TraceInput): void {
         tokens_used: trace.tokensUsed ?? null,
         created_at: now,
         causal_stream_id: trace.causalStreamId ?? null,
+        specialist_id: specialistId ?? undefined,
       })
 
       // Denormalized field the Curator scans for stale-worker detection,
       // avoiding a correlated MAX(created_at) query HiveDB has no primitive for.
       await updateDoc<AgentDoc>("agents", trace.agentId, { lastTraceAt: now }).catch(() => { /* agent may not exist */ })
-
       // Trigger reflector check in background
       checkReflectorTrigger().catch(() => { /* ignore */ })
     } catch (err) {

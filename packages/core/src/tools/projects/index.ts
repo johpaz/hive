@@ -174,6 +174,7 @@ export const taskCreateTool: Tool = {
         job_id: null,
         run_id: null,
         thread_id: null,
+        specialist_id: toIndexable(null),
         started_at: null,
         attempts: 0,
         created_at: now,
