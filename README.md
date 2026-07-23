@@ -851,14 +851,6 @@ Usa **agent-browser** — un CLI de Rust que gestiona Chrome internamente vía C
 
 Todas las tools de browser están **activadas por defecto**. Si el browser no está disponible, las tools fallan gracefully sin afectar el resto de Hive.
 
-### Sin configuración
-
-Al primer uso, Puppeteer descarga automáticamente Chromium en el directorio de caché del sistema. No requiere instalar Chrome, Chromium ni ningún browser externo.
-
-- ✅ **Primera ejecución**: Puppeteer descarga Chromium (~170 MB) automáticamente
-- ✅ **Siguientes ejecuciones**: reutiliza el Chromium ya descargado (instantáneo)
-- ⚠️ **Sin internet al primer uso**: las browser tools fallan gracefully hasta que el browser esté disponible
-
 ### Ejemplo de uso
 
 ```typescript
