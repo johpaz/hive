@@ -3,6 +3,15 @@
 **Fecha**: 2026-05-18  
 **Propósito**: Documentar todos los componentes del sistema Hive — desde el core de agentes hasta infraestructura de comunicaciones, seguridad, UI y más.
 
+> ⚠️ **Nota de vigencia (todo el documento)**: escrito en la era SQLite. Hive migró su storage
+> a HiveDB (`@johpaz/hive-db`: redb + tantivy + hnsw) — `storage/schema.ts` y `storage/sqlite.ts`
+> ya no existen (ver `storage/hivedb.ts`, `storage/hive.ts`, `storage/collections.ts`). Las
+> "tablas" citadas abajo son hoy colecciones de documentos HiveDB; FTS5 (extensión de SQLite)
+> fue reemplazado por tantivy con ranking BM25 — no es "FTS5 dentro de HiveDB", es un motor de
+> búsqueda distinto. Nombres y propósito de cada componente siguen siendo una referencia
+> razonable; SQL literal, nombres de archivo y líneas citadas no están verificados contra el
+> código actual — confirmar contra `storage/collections.ts` antes de confiar en un detalle puntual.
+
 ---
 
 ## Índice
@@ -98,7 +107,7 @@ Mensaje del usuario
 | **Herramientas mínimas** | 4 siempre disponibles: `save_note`, `notify`, `report_progress`, `search_knowledge` |
 | **Herramientas totales** | 70+ nativas + MCP tools (descubrimiento dinámico) |
 | **Streaming** | Emite chunks en tiempo real vía `emitCanvas()` |
-| **Persistencia** | Guarda trazas y mensajes en SQLite |
+| **Persistencia** | Guarda trazas y mensajes en HiveDB |
 
 ### Tipos de agente
 
@@ -280,7 +289,7 @@ Durante la ejecución, si el agente usa `search_knowledge`, el Agent Loop:
 
 ### ¿Qué es?
 
-**FTS5** es el módulo de búsqueda de texto completo de SQLite. Hive lo utiliza para búsqueda semántica con ranking **BM25**, permitiendo seleccionar dinámicamente herramientas, skills y reglas del playbook relevantes al contexto del usuario.
+**BM25** es el algoritmo de ranking del índice de búsqueda de texto completo que HiveDB implementa vía **tantivy** (reemplaza a FTS5 de SQLite, que ya no se usa). Hive lo utiliza para búsqueda semántica, permitiendo seleccionar dinámicamente herramientas, skills y reglas del playbook relevantes al contexto del usuario.
 
 ### Tablas FTS5 en Hive
 
@@ -341,7 +350,7 @@ FTS5 soporta búsqueda por prefijo con `*`:
 
 ### ¿Qué es?
 
-El **ACE** es el sistema de **auto-aprendizaje** de Hive. Observa la ejecución del agente, detecta patrones y genera reglas de comportamiento automáticamente. No requiere llamadas al LLM — todo es procesamiento local en SQLite.
+El **ACE** es el sistema de **auto-aprendizaje** de Hive. Observa la ejecución del agente, detecta patrones y genera reglas de comportamiento automáticamente. No requiere llamadas al LLM — todo es procesamiento local en HiveDB.
 
 ### Las 3 etapas del ACE
 
@@ -441,7 +450,7 @@ const map = {
 
 ### ¿Qué es?
 
-El **Playbook** es una tabla SQLite (`playbook`) que contiene **reglas de comportamiento** aprendidas automáticamente por el ACE. Es el producto final del ciclo de auto-aprendizaje.
+El **Playbook** es una colección HiveDB (`playbook`) que contiene **reglas de comportamiento** aprendidas automáticamente por el ACE. Es el producto final del ciclo de auto-aprendizaje.
 
 ### ¿Por qué se usa?
 
@@ -752,7 +761,7 @@ El **Gateway** es el servidor HTTP/WebSocket principal de Hive. Es el punto de e
 ```
 1. verifyDatabaseUsers()     → Validar que existe usuario
 2. writePidFile()            → Escribir PID del proceso
-3. loadAgentConfigFromDB()   → Cargar config desde SQLite
+3. loadAgentConfigFromDB()   → Cargar config desde HiveDB
 4. syncTools/Skills/PlaybookToFTS() → Sincronizar índices FTS5
 5. createAgentService()      → Crear servicio de agentes
 6. initializeAgentLoop()     → Inicializar agent loop
@@ -889,7 +898,7 @@ Pub/sub para **comunicación worker-to-worker** con persistencia en DB:
 
 ### Características
 
-- **Persistencia**: AgentBus guarda eventos en SQLite
+- **Persistencia**: AgentBus guarda eventos en HiveDB
 - **Tipado fuerte**: Cada evento tiene payload definido
 - **Subscribers**: Múltiples listeners por evento
 - **Fan-out**: Un evento puede disparar múltiples handlers
@@ -1189,13 +1198,13 @@ interface VisionConfig {
 
 ### ¿Qué es?
 
-La capa de **Storage** es la base de persistencia de Hive, usando **SQLite como única fuente de verdad**. Incluye encriptación, migraciones y schema completo.
+La capa de **Storage** es la base de persistencia de Hive, usando **HiveDB como única fuente de verdad**. Incluye encriptación y tipos de documentos completos (`storage/collections.ts`).
 
 ### Componentes
 
 | Archivo | Función |
 |---------|---------|
-| `sqlite.ts` | Inicialización de DB, schema, migraciones incrementales |
+| `hivedb.ts` | Inicialización de HiveDB (accesor singleton) |
 | `schema.ts` | Schema completo (30+ tablas) |
 | `crypto.ts` | Encriptación AES-256-CBC para datos sensibles |
 | `seed.ts` | Seed de datos iniciales |
@@ -1260,7 +1269,7 @@ El **State Management** es un store en memoria con historial de snapshots para s
 - **Snapshots**: Historial de estados para debugging
 - **Correlation IDs**: Trazabilidad de requests
 - **Subscriber pattern**: Notificaciones de cambios de estado
-- **In-memory**: Alta velocidad, complementa SQLite
+- **In-memory**: Alta velocidad, complementa HiveDB
 
 ---
 
@@ -1584,7 +1593,7 @@ La **CLI** es la interfaz de línea de comandos para gestionar Hive. Se encuentr
 │  │                      DATA LAYER                                       │   │
 │  │                                                                       │   │
 │  │  ┌──────────────────────┐  ┌──────────────────┐  ┌────────────────┐  │   │
-│  │  │   SQLite (30+ tabs)  │  │  State Store     │  │  FTS5 Indexes  │  │   │
+│  │  │  HiveDB (30+ colls)  │  │  State Store     │  │  BM25 Indexes  │  │   │
 │  │  │   + Crypto (AES)     │  │  (in-memory)     │  │  (4 tables)    │  │   │
 │  │  └──────────────────────┘  └──────────────────┘  └────────────────┘  │   │
 │  └──────────────────────────────────────────────────────────────────────┘   │
@@ -1604,7 +1613,7 @@ La **CLI** es la interfaz de línea de comandos para gestionar Hive. Se encuentr
 4. EVENT BUS emite message:received
        ↓
 5. AGENT LOOP inicia compileContext():
-   ├─ Carga agente desde SQLite
+   ├─ Carga agente desde HiveDB
    ├─ Carga scratchpad (notas persistentes)
    ├─ Carga MCP tools habilitados
    ├─ FTS5 selecciona skills relevantes (máx 4)
@@ -1623,7 +1632,7 @@ La **CLI** es la interfaz de línea de comandos para gestionar Hive. Se encuentr
    ├─ Resultados se ordenan por response.tool_calls
    └─ search_knowledge puede inyectar nuevas tools/skills para la siguiente vuelta
        ↓
-8. TRACER registra cada tool call en SQLite
+8. TRACER registra cada tool call en HiveDB
        ↓
 9. ACE CYCLE (cada 20 trazas):
    ├─ Reflector analiza patrones (fallos, éxitos, optimizaciones)
@@ -1659,7 +1668,7 @@ La **CLI** es la interfaz de línea de comandos para gestionar Hive. Se encuentr
 | 15 | **Voice** | STT/TTS multi-provider (5 proveedores) | `core/voice/` |
 | 16 | **Canvas/A2UI** | UI interactiva en tiempo real | `core/canvas/` + `hive-ui/` |
 | 17 | **Multimodal** | Vision/OCR (3 proveedores) | `core/multimodal/` |
-| 18 | **Storage** | SQLite + crypto + migraciones | `core/storage/` |
+| 18 | **Storage** | HiveDB + crypto | `core/storage/` |
 | 19 | **State** | In-memory store con snapshots | `core/state/` |
 | 20 | **Heartbeat** | Health checks y monitoreo | `core/heartbeat/` |
 | 21 | **Plugins** | Plugin loader and API | `core/plugins/` |
@@ -1679,7 +1688,7 @@ La **CLI** es la interfaz de línea de comandos para gestionar Hive. Se encuentr
 | **Worker Pool** | Conjunto persistente de Workers reutilizables para evitar overhead por llamada |
 | **RPC main-thread** | Mecanismo interno para ejecutar en el proceso principal tools que dependen de estado vivo |
 | **Context Compiler** | Ensamblador del system prompt del agente |
-| **FTS5** | SQLite Full-Text Search 5 — motor de búsqueda de texto completo |
+| **BM25** | Algoritmo de ranking del índice de búsqueda de texto completo (tantivy, vía HiveDB) — reemplaza a FTS5 de SQLite |
 | **BM25** | Algoritmo de ranking para búsqueda de texto completo |
 | **ACE** | Adaptive Context Engine — sistema de auto-aprendizaje |
 | **Tracer** | Componente que registra trazas de ejecución |

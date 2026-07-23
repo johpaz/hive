@@ -512,27 +512,29 @@ export async function seedAllData(): Promise<void> {
     }
     log.info(`[seed] ✅ ${providerCount} providers procesados`);
 
-    // 5️⃣ Models (re-seed: overwrite in place, remove entries no longer in the catalog)
+    // 5️⃣ Models (re-seed: overwrite catalog fields in place, preserve the user's own
+    // enabled/active activation state, remove entries no longer in the catalog)
     log.info("[seed] 🔄 Re-seeding models...");
     const modelsCol = await col<ModelDoc>("models");
-    const existingModelIds = new Set((await modelsCol.scan({})).map((e) => e.id));
+    const existingModels = new Map((await modelsCol.scan({})).map((e) => [e.id, e]));
 
     let modelCount = 0;
     for (const model of SEED_DATA.models) {
+      const existing = existingModels.get(model.id);
       await modelsCol.put(model.id, {
         id: model.id, provider_id: model.providerId, name: model.name,
         model_type: model.modelType as ModelDoc["model_type"],
         context_window: model.contextWindow || 0, capabilities: model.capabilities || null,
-        enabled: true, active: false,
+        enabled: existing?.doc.enabled ?? true, active: existing?.doc.active ?? false,
       });
-      existingModelIds.delete(model.id);
+      existingModels.delete(model.id);
       modelCount++;
     }
-    // Whatever remains in existingModelIds was dropped from the catalog (e.g. a
+    // Whatever remains in existingModels was dropped from the catalog (e.g. a
     // consolidated HiveAgents GGUF variant) — remove it.
-    for (const staleId of existingModelIds) await modelsCol.delete(staleId);
-    if (existingModelIds.size > 0) {
-      log.info(`[seed] 🗑️  Removed ${existingModelIds.size} model(s) no longer in the catalog.`);
+    for (const [staleId] of existingModels) await modelsCol.delete(staleId);
+    if (existingModels.size > 0) {
+      log.info(`[seed] 🗑️  Removed ${existingModels.size} model(s) no longer in the catalog.`);
     }
 
     // An agent pointing at a model that just got removed would otherwise keep

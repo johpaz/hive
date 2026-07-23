@@ -1,6 +1,8 @@
 # Referencia Completa de Herramientas (Tools) en Hive
 
-Documentación completa de **TODAS** las herramientas disponibles en el ecosistema Hive, incluyendo herramientas nativas del core, herramientas de HiveLearn, y herramientas MCP externas.
+Documentación completa de **TODAS** las herramientas disponibles en el ecosistema Hive, incluyendo herramientas nativas del core y herramientas MCP externas.
+
+> **Nota**: HiveLearn (herramientas educativas: canvas de lecciones, generación de contenido, evaluaciones) se separó a su propio proyecto y ya no forma parte de este repo. Esta referencia documenta solo las herramientas de `@johpaz/hive-agents-core`.
 
 ---
 
@@ -20,16 +22,9 @@ Documentación completa de **TODAS** las herramientas disponibles en el ecosiste
    - [CodeBridge Tools (4)](#codebridge-tools-4)
    - [Voice Tools (2)](#voice-tools-2)
    - [Office Tools (8)](#office-tools-8)
-3. [Herramientas de HiveLearn (24)](#herramientas-de-hivelearn-24)
-   - [Canvas Tools (6)](#hivelearn-canvas-tools-6)
-   - [Content Generation Tools (10)](#hivelearn-content-generation-tools-10)
-   - [Evaluation Tools (3)](#hivelearn-evaluation-tools-3)
-   - [Coordinator Tools (2)](#hivelearn-coordinator-tools-2)
-   - [Profile/Intent Tools (2)](#hivelearn-profileintent-tools-2)
-   - [Search Tools (2)](#hivelearn-search-tools-2)
-4. [Herramientas MCP (Dinámicas)](#herramientas-mcp-dinámicas)
-5. [Relación Skills-Tools](#relación-skills-tools)
-6. [Índice Alfabético de Todas las Herramientas](#índice-alfabético-de-todas-las-herramientas)
+3. [Herramientas MCP (Dinámicas)](#herramientas-mcp-dinámicas)
+4. [Relación Skills-Tools](#relación-skills-tools)
+5. [Índice Alfabético de Todas las Herramientas](#índice-alfabético-de-todas-las-herramientas)
 
 ---
 
@@ -48,15 +43,11 @@ Documentación completa de **TODAS** las herramientas disponibles en el ecosiste
 | **CodeBridge** | 4 | `@johpaz/hive-agents-core` | Sub-agentes de código externos |
 | **Voice** | 2 | `@johpaz/hive-agents-core` | Transcripción y síntesis de voz |
 | **Office** | 8 | `@johpaz/hive-agents-core` | Documentos PDF, Word, Excel, PowerPoint |
-| **HiveLearn Canvas** | 6 | `@johpaz/hivelearn` | Gestión de canvas educativo |
-| **HiveLearn Content** | 10 | `@johpaz/hivelearn` | Generación de contenido educativo |
-| **HiveLearn Evaluation** | 3 | `@johpaz/hivelearn` | Evaluación y calificación |
-| **HiveLearn Coordinator** | 2 | `@johpaz/hivelearn` | Coordinación del enjambre |
-| **HiveLearn Profile/Intent** | 2 | `@johpaz/hivelearn` | Perfilado e intención del estudiante |
-| **HiveLearn Search** | 2 | `@johpaz/hivelearn` | Búsqueda de contenido educativo |
 | **MCP** | Variables | `@johpaz/hive-agents-mcp` | Herramientas externas descubiertas en runtime |
 
-**Total de herramientas definidas**: ~105+ (sin contar herramientas MCP dinámicas)
+**Total de herramientas definidas**: ~73 (sin contar herramientas MCP dinámicas)
+
+> ⚠️ Este resumen y las tablas de abajo (Projects, CodeBridge en particular) no están re-verificados contra el código actual tras el refactor "migrate to agent-based orchestration" — algunas de estas tools puntuales pueden haber cambiado de nombre o desaparecido. Ver hallazgo aparte.
 
 ---
 
@@ -68,7 +59,7 @@ Herramientas esenciales para gestión de conocimiento, notificaciones y progreso
 
 | Herramienta | Descripción | Parámetros Requeridos | Archivo |
 |-------------|-------------|----------------------|---------|
-| `search_knowledge` | Buscar herramientas nativas, skills o reglas del playbook en la base de conocimientos usando FTS5. Las herramientas MCP están disponibles directamente - no necesitas buscarlas. | `query` (string), `type` (all/tools/skills/playbook, opcional), `limit` (opcional, default: 10) | `core/index.ts` |
+| `search_knowledge` | Buscar herramientas nativas, skills o reglas del playbook en la base de conocimientos usando BM25 (tantivy, vía HiveDB). Las herramientas MCP están disponibles directamente - no necesitas buscarlas. | `query` (string), `type` (all/tools/skills/playbook, opcional), `limit` (opcional, default: 10) | `core/index.ts` |
 | `notify` | Enviar notificación o actualización de progreso al canal activo del usuario. | `message` (string) | `core/index.ts` |
 | `save_note` | Guardar nota en el scratchpad (sobrevive la compresión de contexto). | `key` (string), `value` (string), `thread_id` (opcional) | `core/index.ts` |
 | `report_progress` | Reportar progreso de tarea en curso al usuario con actualizaciones en tiempo real (0-100%). | `progress` (number), `message` (string), `task_id` (opcional) | `core/index.ts` |
@@ -125,6 +116,8 @@ Gestión de proyectos y tareas en la base de datos.
 | `task_update` | Actualizar estado de tarea (pendiente, en_progreso, done). | `task_id` (number), `status` (string, opcional), `progress` (number, opcional), `result` (string, opcional) | `task-update.ts` |
 | `task_evaluate` | Evaluar resultado de tarea contra criterios de aceptación. | `task_id` (number), `criteria` (array de strings), `auto_update` (boolean, opcional, default: false) | `task-evaluate.ts` |
 
+> ⚠️ Esta tabla no está verificada contra `packages/core/src/tools/projects/index.ts` actual — el commit "refactor: remove project management tools and migrate to agent-based orchestration" reescribió este archivo con un set de tools distinto (`project_create`, `task_create`, `task_complete`, `project_status`). Confirmar antes de usar como referencia.
+
 ---
 
 ### Cron Tools (7)
@@ -135,10 +128,14 @@ Tareas programadas basadas en Croner (≠ tareas de proyecto).
 |-------------|-------------|----------------------|---------|
 | `cron.create` | Crear tarea programada: recurrente (expresión cron) o única (fire_at). | `name` (string), `task_type` (enum: recurring/one_shot), `cron_expression` (string, opcional), `fire_at` (string, opcional), `payload` (object, opcional), `agent_id` (string, opcional), `tool_name` (string, opcional), `max_runs` (number, opcional), `channel` (string, opcional) | `cron/index.ts` |
 | `cron.list` | Listar todas las tareas programadas con próximos horarios de ejecución. | `status` (string, opcional), `task_type` (string, opcional) | `cron/index.ts` |
+| `cron.update` | Actualizar nombre, expresión u otros campos de una tarea programada. | `task_id` (string), campos a actualizar | `cron/index.ts` |
 | `cron.pause` | Pausar temporalmente una tarea programada sin eliminarla. | `task_id` (string) | `cron/index.ts` |
 | `cron.resume` | Reanudar una tarea programada previamente pausada. | `task_id` (string) | `cron/index.ts` |
 | `cron.delete` | Eliminar tarea programada permanentemente. | `task_id` (string) | `cron/index.ts` |
 | `cron.trigger` | Ejecutar manualmente una tarea programada de forma inmediata. | `task_id` (string) | `cron/index.ts` |
+
+> Nota: la tabla original omitía `cron.update`; el conteo correcto verificado contra el código es 8 tools (`cron.create/list/update/pause/resume/delete/trigger/history`), no 7. `cron.history` se agregó de vuelta abajo.
+
 | `cron.history` | Obtener historial de ejecuciones y logs de una tarea programada. | `task_id` (string), `limit` (number, opcional, default: 10) | `cron/index.ts` |
 
 ---
@@ -221,6 +218,8 @@ Lanzar y gestionar sub-agentes CLI de código externos (Claude Code, Qwen CLI, G
 | `codebridge_cancel` | Cancelar y terminar subagente CodeBridge en ejecución. | `taskId` (string) | `codebridge/index.ts` |
 | `codebridge_feedback` | Enviar feedback o instrucciones adicionales a subagente CodeBridge en ejecución. | `taskId` (string), `feedback` (string) | `codebridge/index.ts` |
 
+> ⚠️ No verificado contra el código actual — `task_delegate_code` (visto en Agents Tools arriba) parece ser el reemplazo actual de este mecanismo. Confirmar si `codebridge/index.ts` sigue existiendo antes de usar esta tabla.
+
 ---
 
 ### Voice Tools (2)
@@ -265,105 +264,6 @@ Lectura y generación de documentos de oficina (PDF, Word, Excel, PowerPoint).
 |-------------|-------------|----------------------|---------|
 | `office_leer_pptx` | Leer archivo PowerPoint (.pptx) y retornar texto por diapositiva. | `ruta` (string), `solo_diapositiva` (number, opcional) | `office-leer-pptx.ts` |
 | `office_escribir_pptx` | Generar archivo PowerPoint (.pptx) desde array de diapositivas. | `ruta` (string), `titulo_presentacion` (string, opcional), `diapositivas` (array) | `office-escribir-pptx.ts` |
-
----
-
-## Herramientas de HiveLearn (24)
-
-Herramientas especializadas para generación y gestión de contenido educativo adaptativo. Estas herramientas están definidas en el paquete `@johpaz/hivelearn` y se agrupan por rol de agente en el enjambre.
-
-### HiveLearn Canvas Tools (6)
-
-Gestión de nodos y conexiones en el canvas de lecciones interactivas.
-
-| Herramienta | Descripción | Parámetros Requeridos | Archivo |
-|-------------|-------------|----------------------|---------|
-| `disenar_estructura` | Guardar diseño de currículo de HiveLearn: array de nodos con tipo pedagógico y visual. | `tema` (string), `nivel` (enum: principiante/principiante_base/intermedio), `nodos` (array de objetos nodo) | `disenar-estructura.tool.ts` |
-| `poblar_nodo` | Rellenar un nodo del canvas con contenido generado. | `nodo_id` (string), `contenido_json` (string) | `poblar-nodo.tool.ts` |
-| `crear_nodo_canvas` | Crear nuevo nodo en el canvas de la lección. | `id` (string), `titulo` (string), `tipo_pedagogico` (string), `tipo_visual` (string), `pos_x` (number, opcional), `pos_y` (number, opcional), `xp_recompensa` (number, opcional) | `crear-nodo-canvas.tool.ts` |
-| `conectar_nodos` | Crear arista entre dos nodos del canvas. | `source` (string), `target` (string), `label` (string, opcional) | `conectar-nodos.tool.ts` |
-| `marcar_completado` | Marcar un nodo del canvas como completado. | `nodo_id` (string) | `marcar-completado.tool.ts` |
-| `avanzar_nodo` | Avanzar al siguiente nodo disponible del currículo. | `nodo_actual_id` (string), `siguiente_nodo_id` (string) | `avanzar-nodo.tool.ts` |
-
----
-
-### HiveLearn Content Generation Tools (10)
-
-Generación de contenido educativo para nodos individuales.
-
-| Herramienta | Descripción | Parámetros Requeridos | Archivo |
-|-------------|-------------|----------------------|---------|
-| `generar_explicacion` | Guardar explicación de concepto para un nodo (max 70 palabras). | `titulo` (string), `explicacion` (string), `ejemplo_concreto` (string) | `generar-explicacion.tool.ts` |
-| `generar_ejercicio` | Guardar ejercicio práctico con enunciado y respuesta correcta. | `enunciado` (string), `ejemplo_respuesta` (string), `respuesta_correcta` (string) | `generar-ejercicio.tool.ts` |
-| `generar_quiz` | Guardar pregunta de quiz con 4 opciones y explicaciones de incorrectas. | `pregunta` (string), `opciones` (array), `indice_correcto` (number 0-3), `explicaciones_incorrectas` (array de 3 strings) | `generar-quiz.tool.ts` |
-| `generar_reto` | Guardar desafío práctico con pasos y criterios de éxito. | `titulo` (string), `contexto` (string), `pasos` (array de 4 strings), `criterios_exito` (array) | `generar-reto.tool.ts` |
-| `generar_codigo` | Guardar bloque de código con syntax highlighting (max 15 líneas). | `lenguaje` (enum: javascript/typescript/python/html/css/sql/bash), `codigo` (string), `descripcion_breve` (string) | `generar-codigo.tool.ts` |
-| `generar_svg` | Guardar diagrama SVG educativo (viewBox 400x300, sin scripts). | `svg_string` (string) | `generar-svg.tool.ts` |
-| `generar_frames_gif` | Guardar frames animados simulando GIF educativo (5-8 frames). | `frames` (array de {emoji, texto, duracion_ms}) | `generar-frames-gif.tool.ts` |
-| `generar_infografia` | Guardar infografía con 3-5 secciones de datos clave. | `secciones` (array de 3-5 {emoji, titulo, valor}) | `generar-infografia.tool.ts` |
-| `generar_imagen` | Generar o describir imagen educativa para un nodo (con fallback SVG). | `prompt` (string), `concepto` (string), `estilo` (enum: diagram/illustration/chart), `alt_text` (string), `caption` (string), `svg_fallback` (string) | `generar-imagen.tool.ts` |
-| `generar_audio` | Generar script de narración educativa (reproducción vía Web Speech API). | `narration_text` (string), `voice_tone` (enum: friendly/professional/motivating), `key_pauses` (array), `speed` (enum: slow/normal/fast), `title` (string) | `generar-audio.tool.ts` |
-
----
-
-### HiveLearn Evaluation Tools (3)
-
-Generación y calificación de evaluaciones finales.
-
-| Herramienta | Descripción | Parámetros Requeridos | Archivo |
-|-------------|-------------|----------------------|---------|
-| `generar_evaluacion` | Generar 5 preguntas de evaluación final (3 opción múltiple + 2 respuesta corta). | `preguntas` (array de exactamente 5 objetos de pregunta) | `generar-evaluacion.tool.ts` |
-| `calificar_evaluacion` | Calificar respuestas del estudiante y generar feedback de cierre. | `puntaje` (number 0-100), `preguntas_correctas` (number), `total_preguntas` (number), `mensaje_cierre` (string), `xp_ganado` (number) | `calificar-evaluacion.tool.ts` |
-| `calificar_respuesta` | Evaluar si el estudiante comprende el concepto (juicio semántico, no literal). | `correcto` (boolean), `xp_ganado` (number), `mensaje` (string), `razonamiento` (string) | `calificar-evaluacion.tool.ts` |
-
----
-
-### HiveLearn Coordinator Tools (2)
-
-Coordinación del enjambre y revisión pedagógica.
-
-| Herramienta | Descripción | Parámetros Requeridos | Archivo |
-|-------------|-------------|----------------------|---------|
-| `delegar_a_enjambre` | Delegar al enjambre de workers especializados, ejecutar DAG, retornar LessonProgram ensamblado. | `alumnoId` (string), `meta` (string), `perfil` (object: rangoEdad, nivelPrevio, duracionSesion, estilo, tono), `sessionId` (string) | `delegar-enjambre.tool.ts` |
-| `revisar_programa` | Registrar revisión pedagógica del LessonProgram generado por el enjambre. | `aprobado` (boolean), `calidad` (number 0-100), `mensaje` (string) | `revisar-programa.tool.ts` |
-
----
-
-### HiveLearn Profile/Intent Tools (2)
-
-Perfilado del estudiante y extracción de intención de aprendizaje.
-
-| Herramienta | Descripción | Parámetros Requeridos | Archivo |
-|-------------|-------------|----------------------|---------|
-| `clasificar_intencion` | Extraer tema, nivel y tono de la meta de aprendizaje del estudiante. | `tema` (string), `nivel_detectado` (enum: principiante/principiante_base/intermedio), `tono` (string), `confianza` (number 0-1) | `clasificar-intencion.tool.ts` |
-| `buscar_curriculo_existente` | Buscar currículo cacheado en SQLite por topic_slug y rango_edad. | `topic_slug` (string), `rango_edad` (enum: nino/adolescente/adulto) | `buscar-curriculo-existente.tool.ts` |
-
----
-
-### HiveLearn Search Tools (2)
-
-Búsqueda de contenido educativo existente.
-
-| Herramienta | Descripción | Parámetros Requeridos | Archivo |
-|-------------|-------------|----------------------|---------|
-| `buscar_curriculo_existente` | Buscar currículo cacheado en SQLite por topic_slug y rango_edad. | `topic_slug` (string), `rango_edad` (enum: nino/adolescente/adulto) | `buscar-curriculo-existente.tool.ts` |
-| `buscar_en_hivelearn` | Búsqueda full-text en índice FTS5 de HiveLearn. | `query` (string) | `buscar-en-hivelearn.tool.ts` |
-
----
-
-### Agrupación de Herramientas HiveLearn por Rol de Agente
-
-Las herramientas de HiveLearn se agrupan en arrays `LLMToolDef[]` según el rol del agente en el enjambre:
-
-| Rol del Agente | Herramientas Asignadas |
-|----------------|----------------------|
-| **PROFILE_TOOLS** | `clasificar_intencion`, `buscar_curriculo_existente` |
-| **INTENT_TOOLS** | `clasificar_intencion`, `buscar_en_hivelearn` |
-| **STRUCTURE_TOOLS** | `disenar_estructura`, `buscar_curriculo_existente` |
-| **CONTENT_TOOLS** | `generar_explicacion`, `generar_ejercicio`, `generar_quiz`, `generar_reto`, `poblar_nodo` |
-| **VISUAL_TOOLS** | `generar_codigo`, `generar_svg`, `generar_frames_gif`, `generar_infografia` |
-| **EVALUATION_TOOLS** | `generar_evaluacion`, `calificar_evaluacion` |
-| **GAMIFICATION_TOOLS** | *(vacío - genera JSON libre, sin tool calls)* |
 
 ---
 
@@ -460,14 +360,6 @@ Cada Skill puede asociarse con herramientas específicas. Aquí está la relaci�
 | `voice_output` | `voice_speak` |
 | `voice_input` | `voice_transcribe` |
 
-### Skills de HiveLearn → Tools
-
-| Skill | Herramientas Asociadas |
-|-------|----------------------|
-| `gestionar-contenido-educativo` | `disenar_estructura`, `poblar_nodo`, `crear_nodo_canvas`, `conectar_nodos`, `marcar_completado`, `avanzar_nodo`, `generar_explicacion`, `generar_ejercicio`, `generar_quiz`, `generar_reto`, `generar_codigo`, `generar_svg`, `generar_frames_gif`, `generar_infografia` |
-| `busqueda-hivelearn` | `buscar_curriculo_existente`, `buscar_en_hivelearn` |
-| `seed-inicial` | *(ninguna - se ejecuta directamente)* |
-
 ---
 
 ## Índice Alfabético de Todas las Herramientas
@@ -479,7 +371,6 @@ Cada Skill puede asociarse con herramientas específicas. Aquí está la relaci�
 | `agent_archive` | Agents | Core |
 | `agent_create` | Agents | Core |
 | `agent_find` | Agents | Core |
-| `avanzar_nodo` | HiveLearn Canvas | HiveLearn |
 | `browser_click` | Web | Core |
 | `browser_extract` | Web | Core |
 | `browser_navigate` | Web | Core |
@@ -487,12 +378,8 @@ Cada Skill puede asociarse con herramientas específicas. Aquí está la relaci�
 | `browser_screenshot` | Web | Core |
 | `browser_type` | Web | Core |
 | `browser_wait` | Web | Core |
-| `buscar_curriculo_existente` | HiveLearn Search | HiveLearn |
-| `buscar_en_hivelearn` | HiveLearn Search | HiveLearn |
 | `bus_publish` | Agents | Core |
 | `bus_read` | Agents | Core |
-| `calificar_evaluacion` | HiveLearn Evaluation | HiveLearn |
-| `calificar_respuesta` | HiveLearn Evaluation | HiveLearn |
 | `canvas_ask` | Canvas | Core |
 | `canvas_clear` | Canvas | Core |
 | `canvas_confirm` | Canvas | Core |
@@ -501,13 +388,11 @@ Cada Skill puede asociarse con herramientas específicas. Aquí está la relaci�
 | `canvas_show_list` | Canvas | Core |
 | `canvas_show_progress` | Canvas | Core |
 | `captcha_solve` | Web | Core |
-| `clasificar_intencion` | HiveLearn Profile | HiveLearn |
 | `cli_exec` | CLI | Core |
 | `codebridge_cancel` | CodeBridge | Core |
 | `codebridge_feedback` | CodeBridge | Core |
 | `codebridge_launch` | CodeBridge | Core |
 | `codebridge_status` | CodeBridge | Core |
-| `conectar_nodos` | HiveLearn Canvas | HiveLearn |
 | `cron.create` | Cron | Core |
 | `cron.delete` | Cron | Core |
 | `cron.history` | Cron | Core |
@@ -515,14 +400,12 @@ Cada Skill puede asociarse con herramientas específicas. Aquí está la relaci�
 | `cron.pause` | Cron | Core |
 | `cron.resume` | Cron | Core |
 | `cron.trigger` | Cron | Core |
-| `crear_nodo_canvas` | HiveLearn Canvas | HiveLearn |
+| `cron.update` | Cron | Core |
 
 ### D-G
 
 | Herramienta | Categoría | Paquete |
 |-------------|-----------|---------|
-| `delegar_a_enjambre` | HiveLearn Coordinator | HiveLearn |
-| `disenar_estructura` | HiveLearn Canvas | HiveLearn |
 | `fs_delete` | Filesystem | Core |
 | `fs_edit` | Filesystem | Core |
 | `fs_exists` | Filesystem | Core |
@@ -530,24 +413,12 @@ Cada Skill puede asociarse con herramientas específicas. Aquí está la relaci�
 | `fs_list` | Filesystem | Core |
 | `fs_read` | Filesystem | Core |
 | `fs_write` | Filesystem | Core |
-| `generar_audio` | HiveLearn Content | HiveLearn |
-| `generar_codigo` | HiveLearn Content | HiveLearn |
-| `generar_evaluacion` | HiveLearn Evaluation | HiveLearn |
-| `generar_ejercicio` | HiveLearn Content | HiveLearn |
-| `generar_explicacion` | HiveLearn Content | HiveLearn |
-| `generar_frames_gif` | HiveLearn Content | HiveLearn |
-| `generar_imagen` | HiveLearn Content | HiveLearn |
-| `generar_infografia` | HiveLearn Content | HiveLearn |
-| `generar_quiz` | HiveLearn Content | HiveLearn |
-| `generar_reto` | HiveLearn Content | HiveLearn |
-| `generar_svg` | HiveLearn Content | HiveLearn |
 | `get_available_models` | Agents | Core |
 
 ### M-P
 
 | Herramienta | Categoría | Paquete |
 |-------------|-----------|---------|
-| `marcar_completado` | HiveLearn Canvas | HiveLearn |
 | `memory_delete` | Agents | Core |
 | `memory_list` | Agents | Core |
 | `memory_read` | Agents | Core |
@@ -562,7 +433,6 @@ Cada Skill puede asociarse con herramientas específicas. Aquí está la relaci�
 | `office_leer_pdf` | Office | Core |
 | `office_leer_pptx` | Office | Core |
 | `office_leer_xlsx` | Office | Core |
-| `poblar_nodo` | HiveLearn Canvas | HiveLearn |
 | `project_create` | Projects | Core |
 | `project_done` | Projects | Core |
 | `project_fail` | Projects | Core |
@@ -575,7 +445,6 @@ Cada Skill puede asociarse con herramientas específicas. Aquí está la relaci�
 | Herramienta | Categoría | Paquete |
 |-------------|-----------|---------|
 | `report_progress` | Core | Core |
-| `revisar_programa` | HiveLearn Coordinator | HiveLearn |
 | `save_note` | Core | Core |
 | `search_knowledge` | Core | Core |
 | `task_create` | Projects | Core |
@@ -603,16 +472,8 @@ Cada Skill puede asociarse con herramientas específicas. Aquí está la relaci�
 1. **Definición**: Cada herramienta se define en un archivo TypeScript con interfaz `Tool`
 2. **Agrupación**: Se agrupan por categoría en `createTools()` functions
 3. **Registro principal**: `createAllTools(config)` en `packages/core/src/tools/index.ts` agrega todas
-4. **Seed**: Se insertan en la BD SQLite en `packages/core/src/storage/seed.ts` (~73 herramientas)
-5. **FTS5**: Se indexan para búsqueda semántica en `tools_fts`
-
-### Herramientas HiveLearn
-
-1. **Definición**: Cada herramienta se define en TypeScript en `packages/hivelearn/src/tools/`
-2. **Agrupación por rol**: Se agrupan en arrays `LLMToolDef[]` (`PROFILE_TOOLS`, `CONTENT_TOOLS`, etc.)
-3. **Export**: Se exportan individualmente desde `packages/hivelearn/src/tools/index.ts`
-4. **Uso**: El enjambre de HiveLearn usa estas herramientas según el rol del agente en el DAG
-5. **NO están en el seed**: Se registran directamente en el código de HiveLearn
+4. **Seed**: Se insertan en HiveDB en `packages/core/src/storage/seed.ts` (~73 herramientas)
+5. **BM25**: Se indexan para búsqueda semántica (tantivy, vía HiveDB) — ver `capability-search.ts`
 
 ### Herramientas MCP
 
@@ -624,7 +485,7 @@ Cada Skill puede asociarse con herramientas específicas. Aquí está la relaci�
 
 ---
 
-**Última actualización**: Abril 2026  
-**Versión del Documento**: 1.0  
-**Versión de Hive**: Compatible con Hive v2.x  
-**Total de Herramientas Documentadas**: ~105+ (73 core + 24 HiveLearn + 8 office + MCP dinámicas)
+**Última actualización**: Abril 2026 (contenido de HiveLearn removido — proyecto separado)
+**Versión del Documento**: 1.1
+**Versión de Hive**: Compatible con Hive v2.x
+**Total de Herramientas Documentadas**: ~73 core + MCP dinámicas

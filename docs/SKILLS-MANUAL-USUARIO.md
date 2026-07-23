@@ -254,110 +254,7 @@ Skills que vienen con Hive por defecto, ubicadas en `packages/skills/src/bundled
 | **voice** | Síntesis de voz | Text-to-speech, comandos de voz |
 | **web** | Búsqueda y scraping web | Research, web scraping |
 
-### Skills de HiveLearn (Educación) - Categoría `education`
-
-Además de las skills empaquetadas estándar, Hive incluye **3 skills especializadas de HiveLearn** que proporcionan capacidades de aprendizaje adaptativo. Estas skills están definidas en TypeScript en `packages/hivelearn/src/skills/`:
-
-#### gestionar-contenido-educativo 📚
-
-**Descripción**: Genera y gestiona contenido educativo adaptativo con el enjambre HiveLearn.
-
-**Herramientas asociadas**:
-- `disenar_estructura` - Diseña la estructura curricular
-- `poblar_nodo` - Genera contenido de un nodo
-- `crear_nodo_canvas` - Crea nodos en el canvas
-- `conectar_nodos` - Establece conexiones entre nodos
-- `marcar_completado` - Marca un nodo como completado
-- `avanzar_nodo` - Avanza al siguiente nodo
-- `generar_explicacion` - Genera explicaciones teóricas
-- `generar_ejercicio` - Crea ejercicios prácticos
-- `generar_quiz` - Genera cuestionarios de verificación
-- `generar_reto` - Crea desafíos integradores
-- `generar_codigo` - Genera ejemplos de código
-- `generar_svg` - Crea diagramas SVG
-- `generar_frames_gif` - Genera guías animadas
-- `generar_infografia` - Crea resúmenes visuales
-
-**Triggers**: `quiero aprender`, `enséñame`, `aprende`, `tutorial`, `curso`
-
-**Workflow (5 pasos)**:
-
-| Paso | Nombre | Descripción |
-|------|--------|-------------|
-| 1 | **Perfil** | Recopilar datos del alumno (edad, nivel, estilo) |
-| 2 | **Meta** | Capturar objetivo de aprendizaje |
-| 3 | **Generar** | Ejecutar enjambre HiveLearn (16 agentes) |
-| 4 | **Interactuar** | Sesión interactiva con feedback |
-| 5 | **Evaluar** | Evaluación final y métricas |
-
-**Ejemplo de uso**:
-```
-Usuario: "Quiero aprender Python desde cero"
-        ↓
-Trigger detectado: "quiero aprender"
-        ↓
-Skill activada: gestionar-contenido-educativo
-        ↓
-Flujo: Perfil → Meta → Generar enjambre → Canvas interactivo → Evaluación
-```
-
-#### busqueda-hivelearn 🔍
-
-**Descripción**: Búsqueda full-text en el contenido educativo de HiveLearn.
-
-**Herramientas asociadas**:
-- `buscar_curriculo_existente` - Busca currículos previamente generados
-- `buscar_en_hivelearn` - Búsqueda FTS5 en `hl_search_fts`
-
-**Triggers**: `buscar tema`, `buscar en hivelearn`, `encontrar curso`
-
-**Workflow (3 pasos)**:
-
-| Paso | Nombre | Descripción |
-|------|--------|-------------|
-| 1 | **Buscar** | Búsqueda FTS5 sobre `hl_search_fts` |
-| 2 | **Filtrar** | Filtrar por tipo y nivel |
-| 3 | **Presentar** | Mostrar resultados relevantes |
-
-**Ejemplo de uso**:
-```
-Usuario: "Buscar tema de ecuaciones en hivelearn"
-        ↓
-Trigger detectado: "buscar tema" + "en hivelearn"
-        ↓
-Skill activada: busqueda-hivelearn
-        ↓
-Resultado: Lista de sesiones/currículos relacionados con ecuaciones
-```
-
-#### seed-inicial 🌱
-
-**Descripción**: Inicializa HiveLearn con datos de ejemplo para demostración.
-
-**Herramientas asociadas**: Ninguna (se ejecuta directamente)
-
-**Triggers**: `inicializar hivelearn`, `demo hivelearn`, `seed hivelearn`
-
-**Workflow (3 pasos)**:
-
-| Paso | Nombre | Descripción |
-|------|--------|-------------|
-| 1 | **Schema** | Ejecutar migración `001_hivelearn.sql` |
-| 2 | **Seed** | Insertar 14 temas iniciales de ejemplo |
-| 3 | **Agentes** | Registrar 14 agentes del enjambre |
-
-**Ejemplo de uso**:
-```
-Usuario: "Inicializar hivelearn con datos de demo"
-        ↓
-Trigger detectado: "inicializar hivelearn"
-        ↓
-Skill activada: seed-inicial
-        ↓
-Resultado: Base de datos lista con temas de ejemplo para probar HiveLearn
-```
-
-**Nota importante**: Estas skills de HiveLearn están definidas en **TypeScript** (no en archivos SKILL.md) y se registran directamente en el código del paquete `@johpaz/hivelearn`. Proporcionan la capa de instrucción para que el agente de IA sepa cómo interactuar con el sistema educativo de HiveLearn.
+> **Nota**: HiveLearn (skills educativas: `gestionar-contenido-educativo`, `busqueda-hivelearn`, `seed-inicial`) se separó a su propio proyecto y ya no forma parte de este repo.
 
 ### 2. Skills Gestionadas por Base de Datos - Prioridad Media
 
@@ -1079,7 +976,7 @@ Resultado: Información mostrada al usuario
 |---------|------------|
 | **Skill** | Habilidad: instrucciones en markdown para guiar al agente |
 | **Trigger** | Patrón de texto que activa una skill explícitamente |
-| **FTS5** | Full-Text Search versión 5, sistema de búsqueda semántica de SQLite |
+| **BM25** | Algoritmo de ranking del índice de búsqueda de texto completo (tantivy, vía HiveDB) |
 | **Frontmatter** | Metadata YAML al inicio de un archivo SKILL.md |
 | **Context Compiler** | Componente que construye el prompt del sistema |
 | **Agent Loop** | Ciclo de razonamiento del agente de IA |
@@ -1146,7 +1043,6 @@ CREATE VIRTUAL TABLE skills_fts USING fts5(
 | `cli` | Comandos de línea de comandos |
 | `codebridge` | Ejecución de código aislado |
 | `cron` | Tareas programadas |
-| `education` | **HiveLearn**: Aprendizaje adaptativo |
 | `filesystem` | Operaciones de archivos |
 | `office` | Documentos de oficina |
 | `projects` | Gestión de proyectos |

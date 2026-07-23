@@ -1,8 +1,16 @@
 # Hive Architecture Documentation
 
+> ⚠️ **Nota de vigencia (todo el documento)**: escrito en la era SQLite. Hive migró su storage
+> a HiveDB (`@johpaz/hive-db`: redb + tantivy + hnsw) — `storage/schema.ts` y `storage/sqlite.ts`
+> ya no existen (ver `storage/hivedb.ts`, `storage/hive.ts`, `storage/collections.ts`). Las
+> "tablas" citadas abajo son hoy colecciones de documentos HiveDB; el SQL literal y los
+> nombres de archivo/línea no están verificados contra el código actual salvo donde se indica
+> explícitamente. La sección de generación de `user_id` sí fue corregida (abajo) porque era
+> trivial de verificar; el resto, tratar como guía aproximada.
+
 ## Overview
 
-Hive es un sistema de agente de IA personal que utiliza **SQLite como única fuente de verdad**. El sistema está diseñado alrededor de un **usuario único** cuyo `user_id` es la llave maestra para todas las consultas y configuraciones. El agente coordinador, identificado por `role = 'coordinator'`, es el núcleo que activa el **agent loop**.
+Hive es un sistema de agente de IA personal que utiliza **HiveDB como única fuente de verdad**. El sistema está diseñado alrededor de un **usuario único** cuyo `user_id` es la llave maestra para todas las consultas y configuraciones. El agente coordinador, identificado por `role = 'coordinator'`, es el núcleo que activa el **agent loop**.
 
 ---
 
@@ -18,25 +26,20 @@ Hive opera bajo el modelo de **usuario único**. Esto significa:
 
 ### Generación del User ID
 
-El `user_id` se genera automáticamente usando SQLite:
+*(Verificado contra `packages/core/src/storage/onboarding.ts` — línea 79, función `saveUserProfile`)*
 
-```sql
--- En packages/core/src/storage/schema.ts
-CREATE TABLE IF NOT EXISTS users (
-  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-  name TEXT,
-  language TEXT,
-  timezone TEXT,
-  occupation TEXT,
-  notes TEXT,
-  created_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
+El `user_id` se genera con `crypto.randomUUID()`, sin guiones:
+
+```typescript
+function generateUserId(): string {
+  return crypto.randomUUID().replace(/-/g, "");
+}
 ```
 
 **Características:**
-- **Formato**: UUID de 32 caracteres hexadecimales (16 bytes)
-- **Generación**: `randomblob(16)` de SQLite + conversión a hex
-- **Único**: Garantizado por la función criptográfica de SQLite
+- **Formato**: UUID v4 de 32 caracteres hexadecimales, sin guiones
+- **Generación**: `crypto.randomUUID()` nativo de Bun/Node, no una función de la base de datos
+- **Único**: Garantizado por la generación UUID v4 (no por una constraint SQL)
 
 ---
 
@@ -668,7 +671,7 @@ CREATE TABLE scratchpad (
 
 ```
 ┌─────────┐    ┌──────────────┐    ┌──────────┐    ┌───────────┐
-│  CLI    │    │ Onboarding   │    │  SQLite  │    │  Crypto   │
+│  CLI    │    │ Onboarding   │    │  HiveDB  │    │  Crypto   │
 │ Wizard  │    │  Functions   │    │    DB    │    │  Module   │
 └────┬────┘    └──────┬───────┘    └────┬─────┘    └─────┬─────┘
      │                │                 │                │
@@ -1196,7 +1199,7 @@ export function buildAgentLoop(opts: { mcpManager?: MCPClientManager | null }): 
 │      │           │           │            │                     │
 │      ▼           ▼           ▼            ▼                     │
 │  ┌─────────────────────────────────────────────────────────┐    │
-│  │                    SQLite Database                       │    │
+│  │                    HiveDB Database                        │    │
 │  │  users │ agents │ providers │ models │ channels │ ...   │    │
 │  └─────────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────────┘
@@ -1277,8 +1280,8 @@ export function buildAgentLoop(opts: { mcpManager?: MCPClientManager | null }): 
 
 ### Principios Arquitectónicos
 
-1. **SQLite como única fuente de verdad**
-   - Todos los datos persisten en un solo archivo `.db`
+1. **HiveDB como única fuente de verdad**
+   - Todos los datos persisten en un directorio local (`~/.hive/data/hivedb/`) — motor embebido, no un servicio externo
    - No hay dependencias de bases de datos externas
 
 2. **Usuario único como llave maestra**
@@ -1326,8 +1329,8 @@ export function buildAgentLoop(opts: { mcpManager?: MCPClientManager | null }): 
 |---------|-----------|
 | `packages/cli/src/commands/onboard.ts` | Wizard de onboarding |
 | `packages/core/src/storage/onboarding.ts` | Funciones de persistencia |
-| `packages/core/src/storage/schema.ts` | Esquema de BD |
-| `packages/core/src/storage/sqlite.ts` | Inicialización de BD |
+| `packages/core/src/storage/collections.ts` | Tipos de documentos (esquema) |
+| `packages/core/src/storage/hivedb.ts` | Inicialización de BD (HiveDB) |
 | `packages/core/src/storage/crypto.ts` | Encriptación/desencriptación |
 | `packages/core/src/agent/agent-loop.ts` | Agent loop principal |
 | `packages/core/src/agent/context-compiler.ts` | Compilador de contexto |
@@ -1504,7 +1507,7 @@ El sistema Hive está diseñado alrededor de tres pilares fundamentales:
 
 1. **Usuario único**: El `user_id` es la llave maestra que vincula todas las entidades
 2. **Agente coordinador**: El agente con `role = 'coordinator'` activa el agent loop
-3. **SQLite como fuente de verdad**: Todos los datos persisten en una base de datos local
+3. **HiveDB como fuente de verdad**: Todos los datos persisten en una base de datos local embebida
 
 El onboarding es el proceso que configura progresivamente estos tres pilares, guardando cada paso en la base de datos. Una vez completado, el gateway puede iniciarse y el agent loop se ejecuta continuamente, procesando mensajes de los usuarios, ejecutando herramientas y persistiendo todo el historial y trazas.
 

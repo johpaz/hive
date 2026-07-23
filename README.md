@@ -19,7 +19,7 @@ Hive es un Agent Harness para agentes locales — un Enjambre de Agentes Especia
 
 ## Por dentro
 
-74.917 líneas de TypeScript. Sin frameworks de agentes. Sin LangChain. Sin abstracciones intermedias. Todo construido desde cero sobre Bun + SQLite.
+74.917 líneas de TypeScript. Sin frameworks de agentes. Sin LangChain. Sin abstracciones intermedias. Todo construido desde cero sobre Bun + HiveDB (motor propio en Rust: redb + tantivy + hnsw).
 
 ```
 github.com/AlDanial/cloc v 2.08  T=0.31 s (1932.4 files/s, 319323.0 lines/s)
@@ -170,7 +170,7 @@ La variable `${HOME}` la detecta el shell automáticamente al hacer `docker comp
    - `/host/home/Documentos` — solo carpeta Documentos
    - `/host/home/Proyectos` — solo carpeta Proyectos
 
-El path se guarda en la base de datos SQLite (`agents.workspace`). A partir de ese momento, todas las operaciones de filesystem del agente están restringidas a ese directorio por seguridad.
+El path se guarda en HiveDB (colección `agents`, campo `workspace`). A partir de ese momento, todas las operaciones de filesystem del agente están restringidas a ese directorio por seguridad.
 
 **Ejemplo de uso:**
 
@@ -207,7 +207,7 @@ docker save johpaz/hive:0.0.45 -o /media/usb/hive-image.tar
 ├── hive-image.tar         ← imagen Docker exportada (~120 MB)
 ├── docker-compose.yml     ← archivo de configuración
 └── datos/                 ← directorio de datos de Hive (se crea al primer arranque)
-    └── hive.db
+    └── hivedb/             ← HiveDB (agentes, conversaciones, config)
 ```
 
 Crea el `docker-compose.yml` en la USB con el volumen apuntando a la USB:
@@ -258,11 +258,11 @@ docker compose down
 **Backup de los datos del contenedor:**
 
 ```bash
-# Copiar la BD desde la USB a tu máquina
-cp /media/usb/datos/hive.db ~/backup-hive-$(date +%Y%m%d).db
+# Copiar la BD (directorio HiveDB) desde la USB a tu máquina
+cp -r /media/usb/datos/hivedb ~/backup-hive-$(date +%Y%m%d)
 
 # Restaurar
-cp ~/backup-hive-20260312.db /media/usb/datos/hive.db
+cp -r ~/backup-hive-20260312 /media/usb/datos/hivedb
 ```
 
 **Actualizar la imagen en la USB:**
@@ -449,7 +449,7 @@ Todos los datos (base de datos, configuración, logs) se guardan en `~/.hive/`:
 ```
 ~/.hive/                         # Windows: C:\Users\TU_USUARIO\.hive\
 ├── data/
-│   └── hive.db        ← SQLite (agentes, conversaciones, config)
+│   └── hivedb/         ← HiveDB (agentes, conversaciones, config) — redb + tantivy + hnsw
 ├── ui/                ← archivos de la interfaz web
 ├── logs/
 │   └── gateway.log
@@ -478,7 +478,7 @@ El binario standalone es ideal para llevarlo en una USB. Tu agente viaja contigo
 ├── hive                  ← binario ejecutable
 ├── ui/                   ← archivos de la UI (extraídos de ui-dist.tar.gz)
 └── datos/                ← directorio de datos (se crea automáticamente)
-    ├── data/hive.db
+    ├── data/hivedb/
     └── ...
 ```
 
@@ -506,7 +506,7 @@ HIVE_HOME=/Volumes/USB/datos HIVE_UI_DIR=/Volumes/USB/ui /Volumes/USB/hive start
 **Backup de datos:**
 
 ```bash
-cp ~/.hive/data/hive.db ~/backup-hive-$(date +%Y%m%d).db
+cp -r ~/.hive/data/hivedb ~/backup-hive-$(date +%Y%m%d)
 ```
 
 ---
@@ -590,12 +590,12 @@ tar -xzf /media/usb/hive-datos.tar.gz -C ~
 hive start
 ```
 
-> La carpeta `.hive` contiene la BD SQLite (`data/hive.db`), la UI web (`ui/`) y los logs. No contiene el binario de Hive — ese se reinstala con `bun install -g`.
+> La carpeta `.hive` contiene la BD HiveDB (`data/hivedb/`), la UI web (`ui/`) y los logs. No contiene el binario de Hive — ese se reinstala con `bun install -g`.
 
 **Backup rápido solo de la BD:**
 
 ```bash
-cp ~/.hive/data/hive.db ~/backup-hive-$(date +%Y%m%d).db
+cp -r ~/.hive/data/hivedb ~/backup-hive-$(date +%Y%m%d)
 ```
 
 ---
@@ -632,7 +632,7 @@ cp ~/.hive/data/hive.db ~/backup-hive-$(date +%Y%m%d).db
 
 ## Arquitectura técnica
 
-Hive usa un **Native Agent Loop** propio — sin dependencias de LangGraph ni LangChain. Todo corre sobre Bun + SQLite con cero abstracciones intermedias.
+Hive usa un **Native Agent Loop** propio — sin dependencias de LangGraph ni LangChain. Todo corre sobre Bun + HiveDB con cero abstracciones intermedias.
 
 ![Arquitectura Hive](public/arquitectura.png)
 
@@ -650,15 +650,15 @@ mensaje entrante
 
 ### FASE 3 — Context Compiler
 
-El Context Compiler es el componente central del motor. Se ejecuta antes de cada llamada al modelo y ensambla una "vista mínima" del contexto consultando SQLite directamente. Implementa cuatro estrategias de Context Engineering:
+El Context Compiler es el componente central del motor. Se ejecuta antes de cada llamada al modelo y ensambla una "vista mínima" del contexto consultando HiveDB directamente. Implementa cuatro estrategias de Context Engineering:
 
 **3.1 — Selección de historial (SELECCIONAR)**
 - Conversaciones cortas (< 20 mensajes): pasa todos los mensajes
-- Conversaciones largas: usa el resumen de la tabla `summaries` + los últimos N mensajes recientes
+- Conversaciones largas: usa el resumen de la colección `summaries` + los últimos N mensajes recientes
 - Nunca pasa la conversación cruda completa a modelos con ventana chica
 
 **3.2 — Scratchpad (ESCRIBIR)**
-- Carga las notas persistentes del thread actual desde la tabla `scratchpad`
+- Carga las notas persistentes del thread actual desde la colección `scratchpad`
 - Las inyecta en el system prompt como "Información conocida sobre esta conversación"
 - El agente puede escribir al scratchpad usando la tool `save_note(key, value)`
 
@@ -679,7 +679,7 @@ El Context Compiler es el componente central del motor. Se ejecuta antes de cada
 El turno arranca pequeño para reducir ruido en modelos locales: 4 tools en contexto, 68 executors nativos disponibles para inyección y tools MCP disponibles vía descubrimiento. Las skills mínimas (`capability_discovery`, `memory_manager`, `canvas_report`, `task_orchestrator`) enseñan al agente cómo buscar capacidades antes de usarlas. Las skills descubiertas se listan inicialmente y sus cuerpos se inyectan cuando sus tools entran al loadout.
 
 **3.5 — Ética (capa constitucional)**
-- Carga todas las reglas de la tabla `ethics` — sin filtrar, sin comprimir
+- Carga todas las reglas de la colección `ethics` — sin filtrar, sin comprimir
 - Siempre es el primer bloque del system prompt, en toda llamada al modelo
 
 **Orden de ensamblaje del contexto:**
@@ -687,9 +687,9 @@ El turno arranca pequeño para reducir ruido en modelos locales: 4 tools en cont
 ```
 [system prompt]
   1. Reglas de ética (completas, siempre)
-  2. Identidad del agente (agents.system_prompt + description)
-  3. Hive Capabilities Manifest (hive_capabilities table)
-  4. Perfil del usuario (users table)
+  2. Identidad del agente (colección `agents`: campos system_prompt + description)
+  3. Hive Capabilities Manifest (colección `hive_capabilities`)
+  4. Perfil del usuario (colección `users`)
   5. Reglas del playbook relevantes (índice de capacidades HiveDB, máx. 5)
   6. Notas del scratchpad (filtradas por thread_id)
   7. Entorno (agent_id, thread_id, fecha/hora local)
@@ -710,7 +710,7 @@ El ACE convierte a Hive en un sistema que aprende automáticamente de sus propia
 
 **5.1 — Tracer (Generator)**
 
-Después de cada ejecución se guarda automáticamente en la tabla `traces`:
+Después de cada ejecución se guarda automáticamente en la colección `traces`:
 - Qué agente, qué tool, qué recibió, qué produjo
 - Si fue exitoso, cuánto tardó, cuántos tokens consumió
 
@@ -721,7 +721,7 @@ Pasivo — no agrega latencia al usuario.
 Se ejecuta en segundo plano, nunca en el flujo del usuario:
 - Trigger: cada 20 trazas nuevas, o por cron periódico
 - Le pide al modelo que analice las trazas: patrones de éxito, fallos repetidos, oportunidades de mejora
-- Guarda los insights en la tabla `reflections` (incluyendo `ethics_violation` con prioridad máxima)
+- Guarda los insights en la colección `reflections` (incluyendo `ethics_violation` con prioridad máxima)
 
 **5.3 — Curator (playbook + poda de agentes)**
 
@@ -735,7 +735,7 @@ Transforma insights en reglas operativas:
 
 ```
 Agentes ejecutan tareas
-  → trazas en SQLite
+  → trazas en HiveDB
       → Reflector analiza periódicamente
           → Curator actualiza playbook + poda agentes
               → Context Compiler inyecta reglas

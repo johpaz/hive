@@ -21,8 +21,8 @@ El término **Agent Harness** fue formalizado por Mitchell Hashimoto (2026) y la
 | Capa | Responsabilidad | Ejemplo en Hive |
 |------|-----------------|-----------------|
 | **Tool Execution** | Ejecutar herramientas de forma segura | Tool Runtime con Bun Workers (70+ tools nativas + MCP) |
-| **Memory** | Persistir contexto entre sesiones | SQLite + Conversation Store + Context Compiler |
-| **State Persistence** | Guardar estado del sistema | SQLite como "única fuente de verdad" |
+| **Memory** | Persistir contexto entre sesiones | HiveDB + Conversation Store + Context Compiler |
+| **State Persistence** | Guardar estado del sistema | HiveDB como "única fuente de verdad" |
 | **Error Handling** | Recuperación ante fallos | Retry logic, Circuit Breaker, Stuck-loop detection |
 | **Observability** | Trazar y monitorear ejecuciones | Logger, Tracer, Heartbeat, Canvas events |
 | **Deployment** | Empaquetar y distribuir el runtime | Docker (~120MB), binario (~50MB), npm/bun |
@@ -63,7 +63,7 @@ Agente operativo — sin escribir una línea de código
 │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └─────┬─────┘ │
 │         │                │                │               │       │
 │  ┌──────▼────────────────▼────────────────▼───────────────▼─────┐ │
-│  │                    SQLite (Single Source of Truth)            │ │
+│  │                    HiveDB (Single Source of Truth)            │ │
 │  └───────────────────────────────────────────────────────────────┘ │
 │                                                                     │
 │  Capas transversales: Logger · Tracer · Heartbeat · Auth · Events  │
@@ -86,7 +86,7 @@ Agente operativo — sin escribir una línea de código
 | **Deployment layer** | Docker Compose, binario standalone, `bun install -g` |
 | **Model management** | Swapping de modelos sin tocar lógica de negocio |
 | **Logging & observability** | Logger estructurado, tracer de uso de tokens, heartbeat, system stats |
-| **Context management** | Context Compiler con FTS5, ACE (Adaptive Context Engine), compaction |
+| **Context management** | Context Compiler con búsqueda BM25 (tantivy, vía HiveDB), ACE (Adaptive Context Engine), compaction |
 | **Security** | Auth token, circuit breaker, ethics layer, encrypted headers |
 
 ---
@@ -104,7 +104,7 @@ La siguiente tabla contrasta por qué Hive no encaja en la definición de *frame
 | **Extensibilidad** | Herencia, composición de clases | Skills, Playbooks, MCP servers, Plugins |
 | **Dependencias** | Requiere ecosistema del framework | Zero dependencies de frameworks de agentes |
 
-> Hive fue construido **desde cero** sobre Bun + SQLite. No usa LangChain, CrewAI, AutoGen ni ninguna abstracción intermedia.
+> Hive fue construido **desde cero** sobre Bun + HiveDB (motor propio en Rust: redb + tantivy + hnsw). No usa LangChain, CrewAI, AutoGen ni ninguna abstracción intermedia.
 
 ---
 
@@ -121,7 +121,7 @@ La siguiente tabla contrasta por qué Hive no encaja en la definición de *frame
 | Flue | Harness | General / CLI | Sí | Sí | HTTP/CLI |
 
 **Diferenciadores únicos de Hive:**
-- **Local-first**: Todo corre localmente, datos en SQLite, sin dependencia de cloud
+- **Local-first**: Todo corre localmente, datos en HiveDB, sin dependencia de cloud
 - **Multi-canal nativo**: 5 canales de comunicación integrados, no como add-ons
 - **Swarm architecture**: Múltiples agentes especializados coordinados por un gateway central
 - **Ultra-ligero**: ~120MB Docker, corre en Raspberry Pi Zero 2W (512MB RAM)

@@ -238,7 +238,9 @@ export const agentCreateTool: Tool = {
       };
     }
 
-    // Validar que el modelo existe y está activo
+    // Validar que el modelo existe y pertenece al provider ya validado. `active` en un
+    // ModelDoc solo marca el modelo por defecto del usuario (elegido en onboarding), no
+    // si el modelo es utilizable — cualquier modelo del provider configurado sirve.
     const modelsCol = await col<ModelDoc>("models");
     const modelEntry = await modelsCol.get(modelId);
 
@@ -249,10 +251,17 @@ export const agentCreateTool: Tool = {
       };
     }
 
-    if (!modelEntry.doc.enabled || !modelEntry.doc.active) {
+    if (!modelEntry.doc.enabled) {
       return {
         ok: false,
-        error: `Modelo '${modelId}' no está activo. Usá get_available_models para ver modelos activos.`
+        error: `Modelo '${modelId}' no está habilitado. Usá get_available_models para ver modelos disponibles.`
+      };
+    }
+
+    if (modelEntry.doc.provider_id !== providerId) {
+      return {
+        ok: false,
+        error: `Modelo '${modelId}' pertenece al provider '${modelEntry.doc.provider_id}', no a '${providerId}'.`
       };
     }
 

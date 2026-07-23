@@ -3,6 +3,15 @@
 **Fecha**: 2026-04-29  
 **Propósito**: Documentar qué se carga en el contexto del agent loop y cómo se maneja el compiler, sin modificar código, solo informar.
 
+> ⚠️ **Nota de vigencia (todo el documento)**: escrito en la era SQLite. Hive migró su storage
+> a HiveDB (`@johpaz/hive-db`) — `storage/schema.ts` y `storage/sqlite.ts` ya no existen. Las
+> queries `SELECT ... FROM tabla` de abajo son ilustrativas de qué dato se lee y de dónde,
+> no código real: hoy son lecturas de colecciones de documentos HiveDB (`col<XDoc>("nombre")`
+> en `storage/hive.ts`, tipadas en `storage/collections.ts`). Los nombres de "tabla" y su
+> propósito siguen siendo una referencia razonable; las líneas de archivo citadas y el SQL
+> literal no están verificados contra el código actual — confirmar contra `storage/collections.ts`
+> y el archivo fuente citado antes de confiar en un detalle puntual.
+
 ---
 
 ## 📍 Ubicación de Archivos Principales
@@ -11,7 +20,7 @@
 |------------|---------|--------|
 | **Agent Loop Principal** | `packages/core/src/agent/agent-loop.ts` | 696 |
 | **Context Compiler** | `packages/core/src/agent/context-compiler.ts` | 572 |
-| **Database Schema** | `packages/core/src/storage/schema.ts` | 689 |
+| **Storage (HiveDB)** | `packages/core/src/storage/hivedb.ts` + `collections.ts` | — |
 | **Prompt Builder** | `packages/core/src/agent/prompt-builder.ts` | ~180 |
 | **Skill Selector** | `packages/core/src/agent/skill-selector.ts` | 479 |
 | **Tool Selector** | `packages/core/src/agent/tool-selector.ts` | 578 |
@@ -663,7 +672,7 @@ context-compiler.ts
   ├─ tools/index.ts (createAllTools)
   ├─ mcp/singleton.ts (getMCPManager)
   ├─ mcp/tool-sync.ts (syncMCPToolsToDB, syncMCPToolsToFTS)
-  ├─ storage/sqlite.ts (getDb)
+  ├─ storage/hivedb.ts (getHiveDb)
   ├─ storage/onboarding.ts (resolveUserId)
   ├─ utils/toon.ts (formatContext, estimateTokens)
   ├─ utils/date.ts (getUserDate, getUserTime)
@@ -676,7 +685,7 @@ agent-loop.ts
   ├─ compaction.ts (clearOldToolResults)
   ├─ tracer.ts (saveTrace, recordLLMUsage)
   ├─ canvas/emitter.ts (emitCanvas)
-  ├─ storage/sqlite.ts (getDb)
+  ├─ storage/hivedb.ts (getHiveDb)
   ├─ storage/onboarding.ts (resolveUserId, resolveAgentId)
   ├─ storage/usage.ts (getAverageTokenCost)
   ├─ tools/index.ts (executeTool helper)

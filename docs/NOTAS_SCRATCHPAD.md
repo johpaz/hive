@@ -2,28 +2,29 @@
 
 ## ¿Qué es el Scratchpad?
 
-El **scratchpad** es el sistema de notas persistentes del agente. Es una tabla SQLite (`scratchpad`) que actúa como memoria de trabajo: el agente puede escribir y leer notas que **sobreviven a la compresión del contexto** de conversación.
+El **scratchpad** es el sistema de notas persistentes del agente. Es una colección de documentos HiveDB (`scratchpad`) que actúa como memoria de trabajo: el agente puede escribir y leer notas que **sobreviven a la compresión del contexto** de conversación.
 
 A diferencia del historial de mensajes (que se comprime o trunca cuando crece), las notas del scratchpad se inyectan siempre en el system prompt en cada turno, garantizando que el agente nunca "olvide" información clave que él mismo decidió guardar.
 
 ---
 
-## Schema de la tabla
+## Forma del documento (colección HiveDB `scratchpad`)
 
-```sql
-CREATE TABLE IF NOT EXISTS scratchpad (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  thread_id   TEXT NOT NULL,       -- ID de la conversación/sesión
-  key         TEXT NOT NULL,       -- Nombre único de la nota (dentro del thread)
-  value       TEXT NOT NULL,       -- Contenido de la nota
-  source      TEXT,                -- Quién la escribió ('agent', NULL)
-  created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
-  updated_at  INTEGER NOT NULL DEFAULT (unixepoch()),
-  UNIQUE(thread_id, key)           -- Una clave por thread (upsert automático)
-);
+`packages/core/src/agent/conversation-store.ts`:
+
+```typescript
+interface ScratchpadDoc {
+  threadId: string
+  key: string
+  value: string
+  source: string | null
+  createdAt: number
+  updatedAt: number
+  seq: number   // contador monotónico — desempate entre notas guardadas en el mismo tick de reloj
+}
 ```
 
-Cada nota es identificada por la combinación `(thread_id, key)`. Si el agente guarda una nota con la misma clave dos veces, la segunda sobreescribe la primera (upsert).
+Cada documento se guarda con `id = "<threadId>:<key>"` — así listar las notas de un thread es un prefix scan (`col.scan({ prefix: \`${threadId}:\` })`), sin necesitar un índice secundario. Si el agente guarda una nota con la misma clave dos veces, la segunda sobreescribe la primera (upsert, vía `col.put()`).
 
 ---
 

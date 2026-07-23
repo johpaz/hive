@@ -29,13 +29,13 @@
 
 Este manual cubre el sistema de **Playbook** de Hive, componente central del **ACE (Adaptive Context Engine)** — el mecanismo de auto-aprendizaje que permite a los agentes mejorar su comportamiento con el tiempo sin intervención manual.
 
-El Playbook es un conjunto **evolutivo de reglas de comportamiento** almacenado en SQLite, aprendido automáticamente a partir de las trazas de ejecución del agente, que se inyecta en el system prompt en tiempo de ejecución mediante búsqueda de texto completo (FTS5).
+El Playbook es un conjunto **evolutivo de reglas de comportamiento** almacenado en HiveDB, aprendido automáticamente a partir de las trazas de ejecución del agente, que se inyecta en el system prompt en tiempo de ejecución mediante búsqueda de texto completo BM25 (tantivy).
 
 ---
 
 ## ¿Qué es el Playbook?
 
-El **Playbook** es una tabla SQLite (`playbook`) que contiene **reglas de comportamiento** aprendidas por el propio sistema a partir de la experiencia. Cada regla captura un patrón detectado durante la ejecución del agente:
+El **Playbook** es una colección de documentos HiveDB (`playbook`) que contiene **reglas de comportamiento** aprendidas por el propio sistema a partir de la experiencia. Cada regla captura un patrón detectado durante la ejecución del agente:
 
 - Qué herramientas funcionan mejor para ciertas tareas
 - Qué errores se repiten y cómo evitarlos
@@ -365,27 +365,23 @@ if (foundPlaybook.length > 0) {
 
 El agente puede buscar explícitamente en el Playbook usando la herramienta `search_knowledge` con `type="playbook"`.
 
-### 5. Migraciones de Base de Datos
+### 5. Bootstrap de HiveDB
 
-**Archivo**: `packages/core/src/storage/sqlite.ts`
+**Archivo**: `packages/core/src/storage/bootstrap.ts`
 
-Las migraciones aseguran que las columnas `created_at` y `updated_at` existan:
-
-```typescript
-ensureColumnExists("playbook", "created_at", "INTEGER NOT NULL DEFAULT (unixepoch())")
-ensureColumnExists("playbook", "updated_at", "INTEGER NOT NULL DEFAULT (unixepoch())")
-```
+HiveDB no tiene migraciones de columnas SQL — `ensureHiveDb()` corre en cada boot del gateway, asegura que los índices de cada colección existan y re-siembra los catálogos estáticos (`storage/seed.ts`) de forma idempotente. No hay un paso equivalente a `ALTER TABLE`.
 
 ### 6. Comando CLI migrate
 
 **Archivo**: `packages/cli/src/commands/migrate.ts`
 
-El comando de migración rastrea el conteo de reglas del Playbook antes y después:
+`hive migrate` fuerza un re-seed manual (útil si se actualizó el paquete pero el seed automático no llegó a aplicarse). Rastrea el conteo de reglas del Playbook antes y después vía la colección HiveDB:
 
 ```typescript
-const playbookBefore = db.query("SELECT COUNT(*) as n FROM playbook").get()
-// ... ejecutar migraciones ...
-const playbookAfter = db.query("SELECT COUNT(*) as n FROM playbook").get()
+const col = await import("@johpaz/hive-agents-core/storage/hive").then(m => m.col)
+const playbookBefore = await (await col("playbook")).count()
+// ... ensureHiveDb() re-siembra los catálogos ...
+const playbookAfter = await (await col("playbook")).count()
 // Reportar delta
 ```
 
@@ -575,7 +571,7 @@ search_knowledge(query, type="playbook")
 | Aspecto | Playbook | Skills |
 |---------|----------|--------|
 | **Origen** | Auto-generado por ACE | Creadas manualmente por el usuario |
-| **Formato** | Reglas cortas en tabla SQLite | Instrucciones en Markdown |
+| **Formato** | Reglas cortas en colección HiveDB | Instrucciones en Markdown |
 | **Propósito** | Mejorar comportamiento general | Guiar tareas específicas |
 | **Búsqueda** | FTS5 automática | FTS5 vía `search_knowledge` |
 | **Actualización** | Automática por Curator | Manual por el usuario |
@@ -641,7 +637,7 @@ El Playbook se pierde. Al reiniciar, se ejecutan las migraciones y se siembran l
 
 ### ¿El ciclo ACE consume tokens del LLM?
 
-No. El Reflector usa **análisis heurístico local** — no hace llamadas al LLM. Solo lee la tabla `traces` y escribe en `reflections` y `playbook`. Todo es procesamiento local en SQLite.
+No. El Reflector usa **análisis heurístico local** — no hace llamadas al LLM. Solo lee la colección `traces` y escribe en `reflections` y `playbook`. Todo es procesamiento local en HiveDB.
 
 ---
 
@@ -654,7 +650,7 @@ No. El Reflector usa **análisis heurístico local** — no hace llamadas al LLM
 | **Tracer** | Componente que registra trazas de ejecución del agente |
 | **Reflector** | Componente que analiza trazas y detecta patrones |
 | **Curator** | Componente que convierte reflexiones en reglas del Playbook |
-| **FTS5** | SQLite Full-Text Search 5 — motor de búsqueda de texto completo |
+| **BM25** | Algoritmo de ranking del índice de búsqueda de texto completo (tantivy, vía HiveDB) |
 | **BM25** | Algoritmo de ranking para búsqueda de texto completo |
 | **Traza (Trace)** | Registro de una ejecución individual del agente |
 | **Reflexión (Reflection)** | Insight generado por el Reflector a partir de trazas |

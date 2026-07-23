@@ -1,8 +1,51 @@
-# Benchmark: YAML vs SQLite - Skills Loading
+# Benchmark: Skills Loading — HiveDB (actual) vs SQLite (histórico)
+
+## Medición actual — HiveDB (2026-07-23)
+
+Re-corrida contra el motor actual con `scripts/bench-skills-hivedb.ts` — instancia HiveDB
+`:memory:`, seed real completo (mismo path que un boot real del gateway: `ensureHiveDb()`),
+promedio de 20 corridas en caliente por operación.
+
+**Motor:** `@johpaz/hive-db` — redb (KV) + tantivy (BM25 full-text) + hnsw (vectores)
+**Catálogo seedeado:** 64 tools, 29 skills, 114 modelos, 16 providers, 8 reglas de playbook
+**Boot + seed completo:** 32.46ms
+
+### Tiempos
+
+| Operación | Promedio | Min | Max |
+|-----------|----------|-----|-----|
+| `getSkillByName()` — 1 skill | 0.09ms | 0.06ms | 0.16ms |
+| `getAllSkillsFromDB()` — 29 skills | 0.91ms | 0.71ms | 1.72ms |
+| `getMinimalSkills()` — 4 skills (`canvas_report`, `capability_discovery`, `memory_manager`, `task_orchestrator`) | 0.89ms | 0.71ms | 1.32ms |
+| `searchCapabilities()` BM25 (tantivy), k=10 | 0.13ms | 0.07ms | 0.89ms |
+
+### Tokens
+
+| Métrica | Tokens |
+|---------|--------|
+| 29 skills (catálogo completo, body incluido) | 13,891 |
+| 4 skills mínimas (body completo) | 1,976 |
+| 4 skills mínimas (solo metadata: nombre + descripción) | 104 |
+
+**Notas:**
+- El catálogo real hoy tiene **29 skills** (no 35 como en el benchmark SQLite de 2026-04-22) y **4 skills mínimas siempre cargadas** (no 3) — `capability_discovery` se agregó al set mínimo desde entonces.
+- Todos los tiempos son sub-milisegundo incluso para el catálogo completo; el discovery BM25 vía tantivy (0.13ms avg) es comparable o más rápido que el FTS5 de SQLite medido en el benchmark histórico (~2ms) sobre un catálogo más chico.
+- **Control disco vs memoria**: la misma corrida contra una instancia HiveDB real en disco (no `:memory:`) dio `getAllSkillsFromDB()` = 1.31ms avg (vs 0.96ms en memoria) — la diferencia entre disco y memoria es marginal, así que no explica por sí sola la mejora frente a los ~7ms del benchmark SQLite viejo. El tamaño de catálogo tampoco (29 vs 35 skills es solo ~17% menos ítems). Dicho esto, **no es una comparación controlada uno-a-uno**: se desconoce el hardware/carga del sistema del benchmark de abril 2026, y el código SQLite ya no existe para re-correrlo bajo las mismas condiciones — la dirección (más rápido, no regresión) es clara, la magnitud exacta no tiene ese nivel de rigor.
+- Reproducir: `bun run scripts/bench-skills-hivedb.ts` (agregar `HIVE_DB_PATH=/ruta` para correr contra disco en vez de `:memory:`)
+
+---
+
+## Benchmark histórico — SQLite vs YAML (obsoleto)
+
+> ⚠️ **Documento histórico.** Todo lo que sigue es de 2026-04-22, cuando Hive todavía usaba
+> SQLite (`~/.hive/data/hive.db`) como storage. Hive migró después a HiveDB (arriba). Ni
+> `storage/sqlite.ts` ni los tests referenciados abajo (`tests/yaml-vs-sqlite-benchmark.test.ts`,
+> `tests/context-inference*.test.ts`) existen ya en el repo. Se conserva solo como referencia
+> histórica de metodología y para comparar contra la medición actual de arriba.
 
 **Fecha:** 2026-04-22  
 **Agente:** Bee (coordinator)  
-**BD:** `~/.hive/data/hive.db`
+**BD:** `~/.hive/data/hive.db` (SQLite — motor reemplazado desde entonces por HiveDB)
 
 ---
 
@@ -122,7 +165,7 @@
 
 ---
 
-## Tests Disponibles
+## Tests Disponibles (histórico — ya no existen)
 
 ```bash
 # Benchmark completo
@@ -134,6 +177,8 @@ bun test tests/context-inference-timing.test.ts
 # Test de inferencia
 bun test tests/context-inference.test.ts
 ```
+
+Para la medición actual, usar en cambio: `bun run scripts/bench-skills-hivedb.ts` (ver arriba).
 
 ---
 

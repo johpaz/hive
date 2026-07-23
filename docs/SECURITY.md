@@ -124,7 +124,10 @@ Todos los datos de Hive se almacenan **localmente** en el volumen `hive-data` (D
 
 ```
 hive-data (volumen Docker) → montado en /root/.hive dentro del contenedor
-  ├── data/hive.db     ← SQLite: agentes, conversaciones, config, API keys cifradas
+  ├── data/hivedb/     ← HiveDB (@johpaz/hive-db): agentes, conversaciones, config, API keys cifradas
+  │     ├── shards/_global.redb   ← almacén clave-valor (redb)
+  │     ├── fts/                  ← índice de búsqueda BM25 (tantivy)
+  │     └── vec/                  ← índice vectorial (hnsw_rs)
   ├── logs/
   └── ...
 ```
@@ -153,12 +156,12 @@ docker run --rm \
   alpine tar xzf /backup/hive-backup-20260318.tar.gz -C /data
 ```
 
-O simplemente copia el archivo de base de datos:
+O simplemente copia el directorio de la base de datos (HiveDB no es un archivo único, es un directorio):
 
 ```bash
-docker cp hive:/root/.hive/data/hive.db ./hive-backup-$(date +%Y%m%d).db
+docker cp hive:/root/.hive/data/hivedb ./hive-backup-$(date +%Y%m%d)
 ```
 
 ### API keys
 
-Las API keys de los proveedores LLM se almacenan **cifradas** en la base de datos SQLite usando AES-256. La clave de cifrado se deriva del entorno local. Las keys nunca se loggean en texto claro.
+Las API keys de los proveedores LLM se almacenan **cifradas** en HiveDB usando AES-256. La clave de cifrado se deriva del entorno local. Las keys nunca se loggean en texto claro.
