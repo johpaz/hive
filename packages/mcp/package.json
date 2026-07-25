@@ -16,7 +16,7 @@
     "zod": "latest"
   },
   "devDependencies": {
-    "typescript": "6.0.2",
+    "typescript": "7.0.2",
     "@types/bun": "^1.3.13"
   },
   "exports": {
