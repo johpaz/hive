@@ -20,7 +20,6 @@ import rootPackage from "../../../../package.json";
 // Static JSON import lets Bun inline the release version into npm bundles and
 // standalone executables instead of depending on a package.json at runtime.
 const _pkgVersion = rootPackage.version;
-import { cpus as osCpus } from "node:os";
 import { ensureHiveDb } from "../storage/bootstrap";
 import { col, fromIndexable, nextId } from "../storage/hive";
 import { reconcileOnBoot } from "../storage/reconcile";
@@ -31,11 +30,9 @@ import { initDurableQueue, getDurableQueue } from "./durable-queue";
 import { initJobExecutors, setJobExecutorMCPManager } from "./job-executors";
 import { initDelegationNotify } from "./delegation-notify";
 import { findAllPendingJobs, findExpiredLeases, loadJobRetryPolicy } from "./job-store";
-import { initTaskDriver } from "../scheduler/task-driver";
 import type { UserDoc, AgentDoc } from "../storage/collections";
 import { canvasManager } from "../canvas/canvas-manager.ts";
-import { subscribeCanvas, unsubscribeCanvas, emitCanvas, getCanvasSnapshot, removeCanvasComponent } from "../canvas/emitter";
-import { resolveCanvasInteraction } from "../tools/canvas/index";
+import { subscribeCanvas, unsubscribeCanvas, emitCanvas, getCanvasSnapshot } from "../canvas/emitter";
 import { randomUUID } from "crypto";
 import { circuitBreakerRegistry } from "../resilience/circuit-breaker.ts";
 import { loadMcpHeaders } from "../storage/crypto.ts";
@@ -46,8 +43,7 @@ import { initializeGateway, type GatewayInitializationResult } from "./initializ
 import { handleSetupStatus, handleVerifyProvider, handleCompleteSetup, handleSetupProviders, handleSetupEthics, handleSetupOllamaModels } from "./routes/setup";
 import { handleAuthStatus, handleLogin, handleSetupCredentials, handleChangePassword, handleRecover, handleDisableAuth, handleRecoveryKey } from "./routes/auth";
 import { resolveUserId } from "../storage/onboarding";
-import { handleGetAgents, handleCreateAgent, handleUpdateAgent, handleDeleteAgent } from "./routes/agents";
-import { handleGetSpecialists, handlePatchSpecialist } from "./routes/specialists";
+import { handleGetAgents, handleCreateAgent, handleUpdateAgent, handleDeleteAgent, handleGetAgentProposals } from "./routes/agents";
 import { handleGetProviders, handleCreateProvider, handleToggleProvider, handleUpdateProvider, handleSyncProviderModels, handleLoadHiveAgentsModel, handleGetHiveAgentsModelStatus } from "./routes/providers";
 import { handleGetUsers, handleCreateUser, handleUpdateUserSettings, handleGetUserChannels, handleLinkUserChannel } from "./routes/users";
 import { handleGetSkills, handleActivateSkill, handleUpdateSkill, handleDeleteSkill, handleCreateSkill } from "./routes/skills";
@@ -55,8 +51,8 @@ import { handleGetEthics, handleActivateEthics, handleDeleteEthics } from "./rou
 import { handleGetTools, handleActivateTool, handleUpdateTool } from "./routes/tools";
 import { handleGetTasks, handleUpdateTask } from "./routes/tasks";
 import { setChannelSendFn } from "./channel-notify";
+import { setNarrationDelivery } from "../events/narration";
 import { CronScheduler } from "../scheduler/CronScheduler";
-import { DAGScheduler, ParallelStrategy } from "../scheduler/dag/index";
 import { createTaskHandler, setSchedulerForCleanup } from "../scheduler/integration";
 
 import { setSchedulerInstance as setScheduleToolsInstance } from "../tools/cron/index.ts";
@@ -80,9 +76,9 @@ import { handleGetModels, handleCreateModel, handleToggleModel, handleGetModelsC
 import { handleGetVoiceProviders, handleGetConfiguredVoiceProviders, handleSaveVoiceProviderKey, handleTestVoice, handleGetChannelVoice, handleUpdateChannelVoice, handleGetVoiceProviderVoices } from "./routes/voice";
 import { handleGetVisionProviders, handleGetChannelVision, handleUpdateChannelVision, handleOcrImage } from "./routes/multimodal";
 import { handleGetLocalTTSStatus, handleGetLocalTTSLogs, handleInstallLocalTTS, handleStartLocalTTS, handleStopLocalTTS, handleSpeakLocalTTS, handleGetAvailableModels, handleGetInstalledVoices, handleDownloadModel, handleGetDownloadLogs, initializeLocalTTS } from "./routes/tts-local";
-import { handleCreateMeeting, handleListMeetings, handleGetMeeting, handleAddMeetingSegment, handleStopMeeting } from "./routes/meeting";
+import { handleCreateMeeting, handleListMeetings, handleGetMeeting, handleAddMeetingSegment, handleStopMeeting, handleGenerateMeetingReport, handleDownloadMeetingReport } from "./routes/meeting";
 import { handleGetActivityStats, handleGetSystemStats, handleGetUsageStats, handleSystemReload, handleApiReload, handleGetVersion, handleTriggerUpdate } from "./routes/system";
-import { handleGetChatHistory, handleGetCanvas, handleGetNotes, handleUpdateNote } from "./routes/chat";
+import { handleGetChatHistory, handleGetNotes, handleUpdateNote } from "./routes/chat";
 import { handleChat as handlePostChat } from "./routes/chat";
 import { handleGetConfig } from "./routes/config";
 import { handleHttpRequest } from "./routes/http-client";
@@ -122,10 +118,6 @@ export async function startGateway(
   // FIX 2 — startTime para calcular uptime en /status y /api/agents
   const startTime = Date.now();
 
-  // CPU delta sampling — process.cpuUsage() is cumulative; we diff between calls
-  const numCores = osCpus().length || 1;
-  let lastCpuSample = process.cpuUsage();
-  let lastCpuSampleTime = Date.now();
   const log = logger.child("gateway");
 
   log.info(`Starting gateway on ${host}:${port}`);
@@ -214,6 +206,31 @@ export async function startGateway(
     setChannelSendFn(async (channel, sessionId, content) => {
       await channelManager.send(channel, sessionId, { content, type: "progress" });
     });
+    setNarrationDelivery(async (event) => {
+      if (event.channel === "webchat" && event.session_id) {
+        const session = sessionManager.get(event.session_id);
+        if (session?.ws && session.ws.readyState === 1) {
+          session.ws.send(JSON.stringify({
+            type: "process",
+            sessionId: event.session_id,
+            id: event.id,
+            messageId: event.turn_id,
+            processKind: event.kind === "tool_call" ? "tool" : "observation",
+            processStatus: event.status === "error" ? "error" : event.status === "done" ? "done" : "thinking",
+            label: event.label,
+            detail: event.detail,
+            timestamp: new Date(event.created_at).toISOString(),
+          }));
+          return;
+        }
+      }
+      if (event.channel && event.session_id) {
+        await channelManager.send(event.channel, event.session_id, {
+          content: event.detail ? `${event.label}: ${event.detail}` : event.label,
+          type: "progress",
+        });
+      }
+    });
 
     if (gatewaySetupMode) {
       log.info("🎉 Setup mode: gateway running — open http://localhost:" + port + "/setup to configure");
@@ -248,10 +265,6 @@ export async function startGateway(
         initDelegationNotify();
         log.info(`🔀 DurableQueue initialized (maxConcurrency=${durableQueue.getMaxGlobalConcurrency()})`);
 
-        // Initialize TaskDriver (project/task engine)
-        initTaskDriver();
-        log.info("📋 TaskDriver initialized");
-
         // Create and boot scheduler
         const handler = createTaskHandler();
         const scheduler = new CronScheduler(handler);
@@ -263,11 +276,6 @@ export async function startGateway(
         setSchedulerForCleanup(scheduler);
 
         log.info(`📅 CronScheduler initialized with ${(await scheduler.getStatus()).length} task(s)`);
-
-        // Register DAGScheduler as a global service (opt-in by swarms)
-        const dagScheduler = new DAGScheduler({ strategy: new ParallelStrategy(), maxConcurrentWorkers: 2 });
-        (globalThis as any).__dagScheduler = dagScheduler;
-        log.info("🔀 DAGScheduler ready");
       } catch (err) {
         log.error(`❌ CronScheduler initialization failed: ${(err as Error).message}`);
       }
@@ -530,6 +538,7 @@ export async function startGateway(
     try {
       log.info(`🤖 Routing to agent loop...`);
 
+      const turnId = randomUUID();
       const response = await runner.generate({
         provider: dbProvider as any,
         messages,
@@ -540,41 +549,11 @@ export async function startGateway(
         threadId: unifiedSessionId,
         userId,
         channel: message.channel,
+        turnId,
+        sessionId: routingSessionId,
         onStep: async (step) => {
-          // "text" = el agente narra lo que está pensando/haciendo antes de un tool_call
-          if (step.type === "text" && step.message) {
-            const trimmedMessage = (typeof step.message === "string" ? step.message : "").trim();
-            if (trimmedMessage) {
-              log.debug(`[NARRATION] ${trimmedMessage.substring(0, 100)}`);
-              try {
-                await channelManager.send(message.channel, routingSessionId, {
-                  content: trimmedMessage,
-                  type: "progress",
-                });
-              } catch (err) {
-                log.warn(`[onStep] Narration send failed: ${(err as Error).message}`);
-              }
-            }
-            return;
-          }
-
-          // "tool_call" = el agente va a ejecutar una herramienta → narrar al usuario
-          if (step.type === "tool_call" && step.toolName) {
-            const narration = getNarration(step.toolName);
-            log.debug(`[TOOL] ${step.toolName} → "${narration}"`);
-            try {
-              await channelManager.send(message.channel, routingSessionId, {
-                content: narration,
-                type: "progress",
-              });
-            } catch (err) {
-              log.warn(`[onStep] Tool narration send failed: ${(err as Error).message}`);
-            }
-            return;
-          }
-
-          // "tool_result" = resultado de la herramienta
-          // Solo enviamos al usuario si el resultado lo pide explícitamente
+          // Explicit tool-authored progress remains supported. Ordinary agent
+          // and tool lifecycle narration is emitted by the domain service.
           if (step.type === "tool_result" && step.message) {
             try {
               const result = JSON.parse(step.message);
@@ -597,7 +576,9 @@ export async function startGateway(
         },
       });
 
-      const responseContent = response.content?.trim() || "";
+      const { sealDelegationGroup } = await import("./delegation-groups");
+      const delegationGroup = await sealDelegationGroup(turnId);
+      const responseContent = delegationGroup ? "" : response.content?.trim() || "";
       if (!responseContent) {
         log.warn(`📤 LLM response: empty — skipping send`);
         return;
@@ -1277,6 +1258,10 @@ export async function startGateway(
           return await handleGetAgents(req, addCorsHeaders)
         }
 
+        if (url.pathname === "/api/agents/proposals" && req.method === "GET") {
+          return await handleGetAgentProposals(req, addCorsHeaders)
+        }
+
         if (url.pathname === "/api/agents" && req.method === "POST") {
           return await handleCreateAgent(req, addCorsHeaders)
         }
@@ -1287,15 +1272,6 @@ export async function startGateway(
 
         if (url.pathname.match(/^\/api\/agents\/[^/]+$/) && req.method === "DELETE") {
           return await handleDeleteAgent(req, addCorsHeaders)
-        }
-
-        // ── Specialists API ─────────────────────────────────────────────────
-        if (url.pathname === "/api/specialists" && req.method === "GET") {
-          return await handleGetSpecialists(req, addCorsHeaders)
-        }
-
-        if (url.pathname.match(/^\/api\/specialists\/[^/]+$/) && req.method === "PATCH") {
-          return await handlePatchSpecialist(req, addCorsHeaders)
         }
 
         // ── Providers API ───────────────────────────────────────────────────
@@ -1846,17 +1822,23 @@ export async function startGateway(
           return await handleStopMeeting(req, addCorsHeaders, meetingStopMatch[1]);
         }
 
-        // ── Chat / Canvas / Notes API ───────────────────────────────────────
+        const meetingReportMatch = url.pathname.match(/^\/api\/meetings\/([^/]+)\/report$/);
+        if (meetingReportMatch && req.method === "POST") {
+          return await handleGenerateMeetingReport(req, addCorsHeaders, meetingReportMatch[1]);
+        }
+
+        const meetingReportDownloadMatch = url.pathname.match(/^\/api\/meetings\/([^/]+)\/report\/download$/);
+        if (meetingReportDownloadMatch && req.method === "GET") {
+          return await handleDownloadMeetingReport(req, addCorsHeaders, meetingReportDownloadMatch[1]);
+        }
+
+        // ── Chat / Notes API ────────────────────────────────────────────────
         if (url.pathname === "/api/chat/history" && req.method === "GET") {
           return await handleGetChatHistory(req, addCorsHeaders)
         }
 
         if (url.pathname === "/api/chat" && req.method === "POST") {
           return await handlePostChat(req, addCorsHeaders)
-        }
-
-        if (url.pathname === "/api/canvas" && req.method === "GET") {
-          return await handleGetCanvas(req, addCorsHeaders)
         }
 
         if (url.pathname === "/api/notes" && req.method === "GET") {
@@ -1936,6 +1918,26 @@ export async function startGateway(
     websocket: {
       async open(ws) {
         const data = ws.data;
+
+        // ── Heartbeat a nivel de protocolo (todos los sockets) ──────────────
+        // ws.ping() usa frames ping/pong WebSocket: el navegador responde pong
+        // automáticamente incluso con la pestaña en segundo plano (los timers
+        // JS se throttle-an, los frames de protocolo no). Si no hay señal de
+        // vida en 90s (pong, mensaje o ping), cerramos para que el cliente
+        // reconecte en lugar de quedar zombi.
+        (data as any)._lastSeen = Date.now();
+        const hbInterval = setInterval(() => {
+          try {
+            if (ws.readyState !== 1) return;
+            ws.ping();
+            const lastSeen = (data as any)._lastSeen ?? 0;
+            if (Date.now() - lastSeen > 90_000) {
+              try { ws.close(4000, "heartbeat timeout"); } catch { /* ignore */ }
+            }
+          } catch { /* ignore */ }
+        }, 25_000);
+        (data as any)._hbInterval = hbInterval;
+
         // ── Meeting Stream ─────────────────────────────────────────────────────
         if (data.sessionId.startsWith("meeting:")) {
           log.info(`Meeting stream client connected: ${data.sessionId}`);
@@ -1996,6 +1998,7 @@ export async function startGateway(
 
       async message(ws, message) {
         const data = ws.data;
+        (data as any)._lastSeen = Date.now();
 
         // Bridge events clients are read-only; only respond to ping keepalive
         if (data.sessionId.startsWith("bridge:")) {
@@ -2141,50 +2144,6 @@ export async function startGateway(
           return;
         }
 
-        // Canvas interactions from the main session — route to canvasManager and local resolver
-        if (msg.type === "canvas:interact") {
-          const { componentId } = msg;
-          let resolvedByPending = false;
-          if (componentId) {
-            removeCanvasComponent(componentId);
-            // Resolve local pending interactions (canvas_confirm tool)
-            resolvedByPending = resolveCanvasInteraction(componentId, msg.data);
-          }
-          const canvasSessionId = `canvas:${data.sessionId}`;
-          canvasManager.handleMessage(canvasSessionId, JSON.stringify(msg));
-
-          // If no tool was waiting for this interaction, forward it to the agent as a new turn
-          if (!resolvedByPending) {
-            const interactionData = msg.data as Record<string, unknown> | undefined;
-            const action = (msg as any).action as string | undefined;
-
-            // Build a human-readable message describing what the user clicked
-            let interactionMsg = `[canvas:interact] componentId=${componentId ?? "unknown"}, action=${action ?? "click"}`;
-            if (interactionData && Object.keys(interactionData).length > 0) {
-              interactionMsg += `, data=${JSON.stringify(interactionData)}`;
-            }
-
-            log.info(`Canvas interaction forwarded to agent: ${interactionMsg}`);
-
-            const sessionId = data.sessionId;
-
-            ws.send(JSON.stringify({ type: "typing", isTyping: true, sessionId } as OutboundMessage));
-
-            enqueueChatTurn({
-              lane: sessionId,
-              payload: { source: "canvas", sessionId, content: interactionMsg },
-              live: { sendRaw: (payload) => ws.send(payload) },
-            }).catch((error) => {
-              ws.send(JSON.stringify({ type: "typing", isTyping: false, sessionId } as OutboundMessage));
-              ws.send(JSON.stringify({ type: "error", sessionId, error: (error as Error).message } as OutboundMessage));
-              log.error(`Canvas interact enqueue error: ${(error as Error).message}`);
-            });
-          }
-
-          return;
-        }
-
-        // Canvas session - handle interactions
         if (msg.type === "command" || (msg.content && isSlashCommand(msg.content))) {
           const result = await executeSlashCommand(msg.sessionId, msg.content ?? `/${msg.command}`, ws);
           if (result) {
@@ -2348,8 +2307,22 @@ export async function startGateway(
         } as OutboundMessage));
       },
 
+      // Frames de protocolo: cualquier señal de vida resetea el watchdog
+      ping(ws) {
+        (ws.data as any)._lastSeen = Date.now();
+        try { ws.pong(); } catch { /* ignore */ }
+      },
+
+      pong(ws) {
+        (ws.data as any)._lastSeen = Date.now();
+      },
+
       close(ws) {
         const data = ws.data;
+        if ((data as any)._hbInterval) {
+          clearInterval((data as any)._hbInterval);
+          (data as any)._hbInterval = null;
+        }
         if (data.sessionId.startsWith("meeting:")) {
           log.info(`Meeting stream client disconnected: ${data.sessionId}`);
           return;
@@ -2409,7 +2382,7 @@ export async function startGateway(
     log.info(`[gateway] UI:        ${devUrl}`);
     log.info(`[gateway] API:       http://${host}:${port}`);
     log.info(`[gateway] WebSocket: ws://${host}:${port}/ws`);
-    log.info(`[gateway] Canvas:    ws://${host}:${port}/canvas`);
+    log.info(`[gateway] Actividad: ws://${host}:${port}/canvas`);
     log.info(`[gateway] Modo:     desarrollo`);
     if (!isGatewayChild) {
       log.info(gatewaySetupMode ? `🎉 Primer arranque — abriendo setup...` : `🐝 Administra tu Hive aquí: ${devUrl}`);
@@ -2423,7 +2396,7 @@ export async function startGateway(
     log.info(`[gateway] UI:        ${uiUrl}`);
     log.info(`[gateway] API:       http://${host}:${port}`);
     log.info(`[gateway] WebSocket: ws://${host}:${port}/ws`);
-    log.info(`[gateway] Canvas:    ws://${host}:${port}/canvas`);
+    log.info(`[gateway] Actividad: ws://${host}:${port}/canvas`);
 
     // Always open browser on startup (setup and normal mode).
     // Set NO_BROWSER=1 to skip in headless/server environments (e.g. CLI parent manages the browser).

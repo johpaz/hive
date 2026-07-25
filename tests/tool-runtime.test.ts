@@ -119,13 +119,43 @@ describe("tool runtime worker pool", () => {
     expect(results[0].result).toEqual({ echoed: "ok" })
   })
 
+  it("settles in-flight RPC work when the runtime shuts down", async () => {
+    const tools: RuntimeTool[] = [
+      {
+        name: "ExampleServer__slow_live_tool",
+        execute: async () => {
+          await delay(100)
+          return { late: true }
+        },
+      },
+      { name: "other_rpc_tool", execute: async () => ({ ok: true }) },
+    ]
+
+    const pending = executeToolBatch({
+      toolCalls: [
+        toolCall("1", "ExampleServer__slow_live_tool"),
+        toolCall("2", "other_rpc_tool"),
+      ],
+      allTools: tools,
+      toolConfig: {},
+      hiveConfig: loadConfig(),
+      workerPool: { enabled: true, maxWorkers: 1, toolTimeoutMs: 1000, parallelToolCalls: true },
+    })
+
+    await delay(20)
+    shutdownToolRuntime()
+
+    const results = await pending
+    expect(results.every((result) => result.aborted)).toBe(true)
+  })
+
   it("routes singleton-backed native tools through main-thread RPC", async () => {
     const executed = new Set<string>()
     const tools: RuntimeTool[] = [
       "search_knowledge",
       "save_note",
       "memory_write",
-      "meeting_start",
+      "task_status",
       "project_create",
     ].map((name) => ({
       name,
@@ -137,10 +167,10 @@ describe("tool runtime worker pool", () => {
 
     const results = await executeToolBatch({
       toolCalls: [
-        toolCall("1", "search_knowledge", { query: "canvas" }),
+        toolCall("1", "search_knowledge", { query: "A2UI" }),
         toolCall("2", "save_note", { key: "k", value: "v" }),
         toolCall("3", "memory_write", { key: "m", value: "v" }),
-        toolCall("4", "meeting_start", { title: "sync" }),
+        toolCall("4", "task_status", { task_id: "t1" }),
         toolCall("5", "project_create", { name: "release" }),
       ],
       allTools: tools,
@@ -150,7 +180,7 @@ describe("tool runtime worker pool", () => {
     })
 
     expect(results.every((result) => result.ok)).toBe(true)
-    expect(executed).toEqual(new Set(["search_knowledge", "save_note", "memory_write", "meeting_start", "project_create"]))
+    expect(executed).toEqual(new Set(["search_knowledge", "save_note", "memory_write", "task_status", "project_create"]))
     expect(results.map((result) => (result.result as any).mainThread)).toEqual([true, true, true, true, true])
   })
 
@@ -194,5 +224,35 @@ describe("tool runtime worker pool", () => {
 
     expect(results.every((result) => result.aborted)).toBe(true)
     expect(results.map((result) => result.toolName)).toEqual(["slow_one", "slow_two"])
+  })
+
+  it("passes toolConfig (including agent_id) through to a single tool call's config.configurable", async () => {
+    // Single tool call → always the serial/main-thread path (executeToolBatch's
+    // `toolCalls.length <= 1` branch) — exactly what task_delegate/agent_create/
+    // bus_publish go through. Regression test for a real bug: toolConfig never
+    // included agent_id, so config.configurable.agent_id was always undefined
+    // inside every tool's execute() (task_delegate's parent-agent lookup always
+    // failed as a result — see agent-loop.ts's toolConfig construction).
+    let seenConfigurable: Record<string, unknown> | undefined;
+    const tools: RuntimeTool[] = [
+      {
+        name: "whoami",
+        execute: async (_params, config) => {
+          seenConfigurable = config?.configurable;
+          return { ok: true };
+        },
+      },
+    ];
+
+    await executeToolBatch({
+      toolCalls: [toolCall("1", "whoami")],
+      allTools: tools,
+      toolConfig: { agent_id: "bee-coordinator", user_id: "u1", thread_id: "t1", channel: "webchat", workspace: "/tmp/ws" },
+      hiveConfig: loadConfig(),
+    });
+
+    expect(seenConfigurable?.agent_id).toBe("bee-coordinator");
+    expect(seenConfigurable?.user_id).toBe("u1");
+    expect(seenConfigurable?.workspace).toBe("/tmp/ws");
   })
 })

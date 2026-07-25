@@ -6,7 +6,7 @@ import { useAgents } from "@/stores/useGlobalConfigStore";
 import { swal } from "@/lib/swal";
 
 const sqrt3 = Math.sqrt(3);
-const GRID_R = 92;
+const GRID_R = 82;
 
 function axialToPixel(q: number, r: number) {
   return {
@@ -27,6 +27,16 @@ const RING2_AXIAL = [
   { q: -1, r: 2 }, { q: 0, r: 2 }, { q: 1, r: 1 },
 ];
 
+function spreadAroundRing<T>(positions: T[], count: number): T[] {
+  if (count <= 0) return [];
+  if (count >= positions.length) return positions;
+
+  return Array.from({ length: count }, (_, index) => {
+    const positionIndex = Math.floor((index * positions.length) / count);
+    return positions[positionIndex];
+  });
+}
+
 const HEX_CLIP = "polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)";
 
 const STATUS_COLORS: Record<string, { bg: string; dot: string; glow: string }> = {
@@ -40,9 +50,21 @@ const STATUS_COLORS: Record<string, { bg: string; dot: string; glow: string }> =
 interface HoneycombGridProps {
   agents: Agent[];
   onEdit?: (agent: Agent) => void;
+  selectedId?: string;
+  onSelect?: (id: string) => void;
 }
 
-export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
+function jsonArrayLength(value?: string) {
+  if (!value) return 0;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function HoneycombGrid({ agents, onEdit, selectedId, onSelect }: HoneycombGridProps) {
   const navigate = useNavigate();
   const { deleteAgent } = useAgents();
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -53,22 +75,30 @@ export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
     return { coordinator: coord, workers: wrks };
   }, [agents]);
 
-  const allPositions = useMemo(() => [
-    ...RING1_AXIAL.map(({ q, r }) => axialToPixel(q, r)),
-    ...RING2_AXIAL.map(({ q, r }) => axialToPixel(q, r)),
-  ], []);
+  const allPositions = useMemo(() => {
+    const innerCount = Math.min(workers.length, RING1_AXIAL.length);
+    const outerCount = Math.min(
+      Math.max(workers.length - RING1_AXIAL.length, 0),
+      RING2_AXIAL.length,
+    );
+
+    return [
+      ...spreadAroundRing(RING1_AXIAL, innerCount),
+      ...spreadAroundRing(RING2_AXIAL, outerCount),
+    ].map(({ q, r }) => axialToPixel(q, r));
+  }, [workers.length]);
 
   const visibleWorkers = workers.slice(0, allPositions.length);
   const maxRing = workers.length > 6 ? 2 : 1;
 
-  const containerW = maxRing === 2 ? 740 : 540;
-  const containerH = maxRing === 2 ? 800 : 540;
+  const containerW = maxRing === 2 ? 700 : 520;
+  const containerH = maxRing === 2 ? 680 : 500;
   const cx = containerW / 2;
   const cy = containerH / 2;
 
   // Hex visual sizes (flat-top: W = 2R, H = sqrt3 * R)
-  const CX_W = 172; const CX_H = Math.round(172 * sqrt3 / 2);
-  const WX_W = 130; const WX_H = Math.round(130 * sqrt3 / 2);
+  const CX_W = 164; const CX_H = Math.round(164 * sqrt3 / 2);
+  const WX_W = 124; const WX_H = Math.round(124 * sqrt3 / 2);
 
   const handleDelete = async (agent: Agent, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -83,7 +113,11 @@ export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
       color: "#fff",
     });
     if (result.isConfirmed) {
-      try { await deleteAgent(agent.id); } catch {}
+      try {
+        await deleteAgent(agent.id);
+      } catch (error) {
+        console.error("No se pudo eliminar el agente:", error);
+      }
     }
   };
 
@@ -92,7 +126,7 @@ export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
     : STATUS_COLORS.hibernated;
 
   return (
-    <div className="w-full overflow-x-auto overflow-y-visible pb-4">
+    <div className="w-full overflow-x-auto overflow-y-visible py-3">
       <div
         className="relative mx-auto select-none"
         style={{ width: containerW, height: containerH }}
@@ -140,7 +174,7 @@ export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
           {/* Connection lines: center → each worker */}
           {visibleWorkers.map((agent, i) => {
             const pos = allPositions[i];
-            const isHovered = hoveredId === agent.id;
+            const isHovered = hoveredId === agent.id || selectedId === agent.id;
             return (
               <g key={`line-${agent.id}`}>
                 <line
@@ -149,7 +183,7 @@ export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
                   stroke={isHovered ? "rgba(245,158,11,0.5)" : "rgba(245,158,11,0.12)"}
                   strokeWidth={isHovered ? 2 : 1}
                   strokeDasharray="5 5"
-                  style={{ transition: "all 0.3s ease" }}
+                  style={{ transition: "stroke 0.3s ease, stroke-width 0.3s ease" }}
                 />
                 {/* Traveling pulse dot */}
                 {agent.enabled && (
@@ -169,14 +203,24 @@ export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
         {/* ── COORDINATOR (center) ── */}
         {coordinator && (
           <div
-            className="absolute cursor-pointer group z-20"
+            className="absolute z-20 cursor-pointer group outline-none"
             style={{ left: cx - CX_W / 2, top: cy - CX_H / 2, width: CX_W, height: CX_H }}
             onMouseEnter={() => setHoveredId(coordinator.id)}
             onMouseLeave={() => setHoveredId(null)}
           >
+            <button
+              type="button"
+              className="absolute inset-0 z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/70"
+              style={{ clipPath: HEX_CLIP }}
+              onClick={() => onSelect?.(coordinator.id)}
+              aria-label={`Seleccionar ${coordinator.name}`}
+              aria-pressed={selectedId === coordinator.id}
+            />
             {/* Outer glow ring */}
             <div
-              className="absolute inset-[-6px] opacity-40 group-hover:opacity-80 transition-opacity duration-500 blur-[10px]"
+              className={`absolute inset-[-6px] blur-[10px] transition-opacity duration-500 ${
+                selectedId === coordinator.id ? "opacity-90" : "opacity-40 group-hover:opacity-80"
+              }`}
               style={{
                 clipPath: HEX_CLIP,
                 background: "rgba(245,158,11,0.5)",
@@ -184,7 +228,9 @@ export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
             />
             {/* Border shell */}
             <div
-              className="absolute inset-0 transition-transform duration-300 group-hover:scale-105"
+              className={`absolute inset-0 transition-transform duration-300 ${
+                selectedId === coordinator.id ? "scale-105" : "group-hover:scale-105"
+              }`}
               style={{ clipPath: HEX_CLIP, background: "rgba(245,158,11,0.55)" }}
             >
               {/* Inner fill */}
@@ -218,8 +264,9 @@ export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
             </div>
 
             {/* Context actions on hover */}
-            <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 hidden group-hover:flex gap-1 z-30 animate-in fade-in duration-200">
+            <div className="pointer-events-none absolute -bottom-8 left-1/2 z-30 flex -translate-x-1/2 gap-1 opacity-0 transition-opacity duration-200 group-hover:pointer-events-auto group-hover:opacity-100">
               <button
+                type="button"
                 className="p-1.5 rounded bg-black/80 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 transition-colors"
                 onClick={(e) => { e.stopPropagation(); onEdit?.(coordinator); }}
                 title="Editar"
@@ -227,6 +274,7 @@ export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
                 <Edit2 className="h-3 w-3" />
               </button>
               <button
+                type="button"
                 className="p-1.5 rounded bg-black/80 border border-white/10 text-white/50 hover:text-white hover:border-white/20 transition-colors"
                 onClick={(e) => { e.stopPropagation(); navigate(`/agents/${coordinator.id}`); }}
                 title="Ver detalle"
@@ -244,12 +292,17 @@ export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
           const top = cy + pos.y - WX_H / 2;
           const displayStatus = agent.enabled ? agent.status : "hibernated";
           const sc = STATUS_COLORS[displayStatus] ?? STATUS_COLORS.hibernated;
-          const tools = agent.toolsJson ? (JSON.parse(agent.toolsJson) as unknown[]).length : 0;
-          const skills = agent.skillsJson ? (JSON.parse(agent.skillsJson) as unknown[]).length : 0;
+          const tools = jsonArrayLength(agent.toolsJson);
+          const skills = jsonArrayLength(agent.skillsJson);
           const isHov = hoveredId === agent.id;
+          const isSelected = selectedId === agent.id;
 
           const borderColor = agent.enabled
-            ? isHov ? "rgba(96,165,250,0.9)" : "rgba(59,130,246,0.45)"
+            ? isSelected
+              ? "rgba(245,158,11,0.95)"
+              : isHov
+                ? "rgba(96,165,250,0.9)"
+                : "rgba(59,130,246,0.45)"
             : "rgba(255,255,255,0.08)";
 
           const innerBg = agent.enabled
@@ -259,19 +312,27 @@ export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
           return (
             <div
               key={agent.id}
-              className="absolute cursor-pointer group z-10"
+              className="absolute z-10 cursor-pointer group outline-none"
               style={{ left, top, width: WX_W, height: WX_H }}
               onMouseEnter={() => setHoveredId(agent.id)}
               onMouseLeave={() => setHoveredId(null)}
             >
+              <button
+                type="button"
+                className="absolute inset-0 z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300/70"
+                style={{ clipPath: HEX_CLIP }}
+                onClick={() => onSelect?.(agent.id)}
+                aria-label={`Seleccionar ${agent.name}`}
+                aria-pressed={isSelected}
+              />
               {/* Outer glow */}
               {agent.enabled && (
                 <div
                   className="absolute inset-[-5px] transition-opacity duration-300 blur-[8px]"
                   style={{
                     clipPath: HEX_CLIP,
-                    background: "rgba(59,130,246,0.35)",
-                    opacity: isHov ? 0.8 : 0.2,
+                    background: isSelected ? "rgba(245,158,11,0.45)" : "rgba(59,130,246,0.35)",
+                    opacity: isSelected ? 0.9 : isHov ? 0.8 : 0.2,
                   }}
                 />
               )}
@@ -282,7 +343,7 @@ export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
                 style={{
                   clipPath: HEX_CLIP,
                   background: borderColor,
-                  transform: isHov ? "scale(1.08)" : "scale(1)",
+                  transform: isSelected ? "scale(1.08)" : isHov ? "scale(1.06)" : "scale(1)",
                 }}
               >
                 {/* Inner fill */}
@@ -294,7 +355,7 @@ export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
                     <div className="relative">
                       <Cpu
                         className="h-5 w-5 transition-colors duration-300"
-                        style={{ color: agent.enabled ? "#60a5fa" : "#374151" }}
+                      style={{ color: isSelected ? "#fbbf24" : agent.enabled ? "#60a5fa" : "#374151" }}
                       />
                       <div
                         className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-[#020912]"
@@ -303,7 +364,7 @@ export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
                     </div>
                     <span
                       className="text-[8px] font-bold tracking-wide text-center leading-tight uppercase line-clamp-2 transition-colors duration-300"
-                      style={{ color: agent.enabled ? "#93c5fd" : "#374151" }}
+                      style={{ color: isSelected ? "#fde68a" : agent.enabled ? "#93c5fd" : "#374151" }}
                     >
                       {agent.name}
                     </span>
@@ -327,11 +388,12 @@ export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
 
               {/* Context actions on hover */}
               <div
-                className="absolute -bottom-7 left-1/2 -translate-x-1/2 z-30 transition-all duration-200"
+                className="absolute -bottom-7 left-1/2 -translate-x-1/2 z-30 transition-opacity duration-200"
                 style={{ opacity: isHov ? 1 : 0, pointerEvents: isHov ? "auto" : "none" }}
               >
                 <div className="flex gap-1">
                   <button
+                    type="button"
                     className="p-1 rounded bg-black/80 border border-blue-500/30 text-blue-400 hover:bg-blue-500/20 transition-colors"
                     onClick={(e) => { e.stopPropagation(); onEdit?.(agent); }}
                     title="Editar"
@@ -339,6 +401,7 @@ export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
                     <Edit2 className="h-2.5 w-2.5" />
                   </button>
                   <button
+                    type="button"
                     className="p-1 rounded bg-black/80 border border-white/10 text-white/50 hover:text-white transition-colors"
                     onClick={(e) => { e.stopPropagation(); navigate(`/agents/${agent.id}`); }}
                     title="Ver"
@@ -346,6 +409,7 @@ export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
                     <span className="text-[8px]">→</span>
                   </button>
                   <button
+                    type="button"
                     className="p-1 rounded bg-black/80 border border-red-500/20 text-red-400/60 hover:text-red-400 transition-colors"
                     onClick={(e) => handleDelete(agent, e)}
                     title="Eliminar"
@@ -359,20 +423,21 @@ export function HoneycombGrid({ agents, onEdit }: HoneycombGridProps) {
         })}
 
         {/* Overflow badge */}
-        {workers.length > allPositions.length && (
+        {workers.length > RING1_AXIAL.length + RING2_AXIAL.length && (
           <div className="absolute bottom-6 right-6 text-[11px] text-white/50 bg-white/5 rounded-full px-3 py-1 border border-white/10 backdrop-blur-sm">
-            +{workers.length - allPositions.length} agentes en lista
+            +{workers.length - RING1_AXIAL.length - RING2_AXIAL.length} agentes en lista
           </div>
         )}
       </div>
 
       {/* Extra agents that don't fit in rings (listed below) */}
-      {workers.length > allPositions.length && (
+      {workers.length > RING1_AXIAL.length + RING2_AXIAL.length && (
         <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 max-w-[740px] mx-auto px-4">
-          {workers.slice(allPositions.length).map(agent => (
+          {workers.slice(RING1_AXIAL.length + RING2_AXIAL.length).map(agent => (
             <button
+              type="button"
               key={agent.id}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] transition-all text-left group"
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] transition-colors text-left group"
               onClick={() => navigate(`/agents/${agent.id}`)}
             >
               <Cpu className="h-4 w-4 text-blue-400/60 shrink-0" />

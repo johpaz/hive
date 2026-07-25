@@ -9,6 +9,7 @@
 import type { Tool } from "../types.ts";
 import { logger } from "../../utils/logger.ts";
 import { getBrowserService, screenshotElement } from "./browser-service.ts";
+import { createArtifact } from "../../artifacts/store.ts";
 
 const log = logger.child("browser-screenshot");
 
@@ -53,7 +54,7 @@ export const browserScreenshotTool: Tool = {
     },
     required: [],
   },
-  execute: async (params: Record<string, unknown>) => {
+  execute: async (params: Record<string, unknown>, config?: any) => {
     const url = params.url as string | undefined;
     const fullPage = (params.fullPage as boolean) ?? false;
     const selector = params.selector as string | undefined;
@@ -99,14 +100,34 @@ export const browserScreenshotTool: Tool = {
       }
 
       const currentUrl = view.url;
-      log.info(`Screenshot captured: ${currentUrl} (${screenshot.length} base64 chars, ${format})`);
+      const bytes = Buffer.from(screenshot, "base64");
+      const effectiveFormat = selector ? "png" : format;
+      const mimeType = effectiveFormat === "png" ? "image/png" : "image/jpeg";
+      const configurable = config?.configurable ?? {};
+      const artifact = await createArtifact({
+        bytes,
+        mimeType,
+        kind: "browser_screenshot",
+        userId: String(configurable.user_id ?? ""),
+        runId: configurable.run_id ? String(configurable.run_id) : null,
+        taskId: configurable.task_id ? String(configurable.task_id) : null,
+        rootDir: configurable.artifact_dir ? String(configurable.artifact_dir) : undefined,
+        width,
+        height,
+      });
+      log.info(`Screenshot stored as artifact ${artifact.id} (${artifact.size} bytes, ${mimeType})`);
 
       return {
         ok: true,
         url: currentUrl,
-        screenshot,
-        format,
-        encoding: "base64",
+        artifact_id: artifact.id,
+        kind: artifact.kind,
+        mime_type: artifact.mime_type,
+        size: artifact.size,
+        sha256: artifact.sha256,
+        status: artifact.status,
+        expires_at: artifact.expires_at,
+        format: effectiveFormat,
         fullPage,
         selector,
         viewport: { width, height },

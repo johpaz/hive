@@ -139,13 +139,10 @@ export async function reconcileOnBoot(bootId: string): Promise<ReconcileResult> 
     log.warn(`[reconcileOnBoot] Failed to repair jobQueue: ${(err as Error).message}`);
   }
 
-  // 5. tasks: in_progress/queued without a live job → pending (attempts+1) or failed
+  // 5. tasks: in_progress without a live job → pending (attempts+1) or failed
   try {
     const tasksCol = await col<TaskDoc>("tasks");
-    const inProgress = [
-      ...(await tasksCol.findBy("status", "in_progress")),
-      ...(await tasksCol.findBy("status", "queued")),
-    ];
+    const inProgress = await tasksCol.findBy("status", "in_progress");
     const { getJob } = await import("../gateway/job-store");
     for (const entry of inProgress) {
       const task = entry.doc;

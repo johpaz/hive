@@ -69,9 +69,8 @@ Skills:
   skills update              Actualizar todas las skills
 
 Configuración:
-  config get <key>           Leer valor de config
-  config set <key> <value>   Escribir valor de config
   config show                Mostrar config completa
+  config edit                Mostrar mecanismos de configuración admitidos
 
 Sesiones y cron:
   sessions list              Listar sesiones de conversación
@@ -79,8 +78,12 @@ Sesiones y cron:
   sessions prune             Eliminar sesiones inactivas
   cron list                  Listar tareas programadas
   cron add                   Añadir tarea programada
-  cron remove <id>           Eliminar tarea programada
-  cron logs                  Ver logs de ejecuciones cron
+  cron pause <id|name>       Pausar una tarea programada
+  cron resume <id|name>      Reanudar una tarea programada
+  cron delete <id|name>      Eliminar una tarea programada
+  cron trigger <id|name>     Ejecutar una tarea ahora
+  cron history <id|name>     Ver historial de ejecuciones
+  cron status                Estado del scheduler
   causal watch [--agent <id>] [--stream <id>]
                              Live-tail del event log causal G9 (sin replay histórico)
 

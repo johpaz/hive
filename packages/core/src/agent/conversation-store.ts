@@ -10,7 +10,7 @@ import { getHiveDb } from "../storage/hivedb"
 import { logger } from "../utils/logger"
 import type { LLMMessage, ContentPart } from "./llm-client"
 import { estimateTokens } from "../utils/toon"
-import type { ConversationDoc, SummaryDoc } from "../storage/collections"
+import type { ConversationDoc, SummaryDoc, MessageSource } from "../storage/collections"
 
 const log = logger.child("conv-store")
 
@@ -21,7 +21,9 @@ export interface StoredMessage {
   id: number
   thread_id: string
   channel: string
-  role: "user" | "assistant" | "tool" | "system"
+  role: "user" | "assistant" | "tool"
+  /** Provenance of this turn. Never null — legacy rows are normalized to "legacy_internal" on read. */
+  source: MessageSource
   content: string
   tool_calls_json: string | null
   tool_call_id: string | null
@@ -31,17 +33,48 @@ export interface StoredMessage {
   created_at: number
 }
 
+// ─── Internal events (delegation fan-in, etc.) ────────────────────────────────
+//
+// These are system-authored turns (async delegation outcomes) that must reach
+// the model as input but must never be persisted with role:"system" — doing so
+// causes every LLM provider to hoist them permanently into the system
+// instruction on every subsequent turn (see gemini.ts/anthropic.ts, which
+// concatenate ALL role:"system" messages into systemInstruction/system). They
+// are persisted as role:"user" + a source tag instead, and wrapped with a
+// framing marker only at serialization time (toAPIMessages), so stored content
+// stays clean and the wording can evolve without a migration.
+
+export const INTERNAL_SOURCES: ReadonlySet<string> =
+  new Set(["task_complete", "delegation_summary", "legacy_internal"])
+
+export function isInternalSource(source: string | null | undefined): boolean {
+  return !!source && INTERNAL_SOURCES.has(source)
+}
+
+export function formatInternalEvent(source: string, content: string): string {
+  return `<hive:internal_event source="${source}">\n` +
+    `Evento interno del sistema — NO es un mensaje del usuario. No lo cites literalmente, no expongas IDs internos (task_id, worker_id, verification_id) ni JSON crudo. Respondé al usuario de forma natural y breve.\n\n` +
+    `${content}\n` +
+    `</hive:internal_event>`
+}
+
 function storageId(threadId: string, seq: number): string {
   return `${threadId}:${String(seq).padStart(15, "0")}`
 }
 
 function toStoredMessage(id: string, doc: ConversationDoc): StoredMessage {
   const seq = parseInt(id.slice(id.lastIndexOf(":") + 1), 10)
+  // Legacy rows (written before `source` existed) used role:"system" as the
+  // sole marker for internal events. Normalize them here so every downstream
+  // reader (getRecentMessages, compaction, context-compiler) sees a single
+  // consistent shape and never has to special-case role:"system" again.
+  const legacyInternal = doc.role === "system"
   return {
     id: seq,
     thread_id: doc.thread_id,
     channel: doc.channel,
-    role: doc.role,
+    role: legacyInternal ? "user" : (doc.role as StoredMessage["role"]),
+    source: doc.source ?? (legacyInternal ? "legacy_internal" : "message"),
     content: doc.content,
     tool_calls_json: doc.tool_calls_json,
     tool_call_id: doc.tool_call_id,
@@ -54,6 +87,16 @@ function toStoredMessage(id: string, doc: ConversationDoc): StoredMessage {
 
 // ─── Message operations ───────────────────────────────────────────────────────
 
+const recentMessageTimestamps: number[] = []
+
+export function getRecentMessageCount(windowMs = 5 * 60_000): number {
+  const cutoff = Date.now() - windowMs
+  while (recentMessageTimestamps.length && recentMessageTimestamps[0] < cutoff) {
+    recentMessageTimestamps.shift()
+  }
+  return recentMessageTimestamps.length
+}
+
 export async function addMessage(
   threadId: string,
   role: StoredMessage["role"],
@@ -63,6 +106,7 @@ export async function addMessage(
     tool_calls?: LLMMessage["tool_calls"]
     tool_call_id?: string
     reasoning_content?: string
+    source?: MessageSource
   }
 ): Promise<number> {
   // Handle multimodal content by extracting text for the content column
@@ -90,6 +134,7 @@ export async function addMessage(
     tool_calls_json,
     tool_call_id: opts?.tool_call_id ?? null,
     reasoning_content: opts?.reasoning_content ?? null,
+    source: opts?.source ?? "message",
     // Estimate tokens: content + tool_calls JSON
     token_count: Math.max(1, estimateTokens(textContent) + estimateTokens(tool_calls_json ?? "")),
     created_at: now,
@@ -99,6 +144,7 @@ export async function addMessage(
   // Fire-and-forget — never block message persistence on the activity chart rollup.
   const hour = new Date(now).toISOString().slice(0, 13)
   bumpRollup("activityRollups", hour, { messageCount: 1 }).catch(() => {})
+  recentMessageTimestamps.push(now)
 
   return seq
 }
@@ -187,6 +233,13 @@ export function toAPIMessages(rows: StoredMessage[]): LLMMessage[] {
     let content: string | ContentPart[] = r.content
     if (r.content_multimodal) {
       try { content = JSON.parse(r.content_multimodal) } catch { /* ignore */ }
+    }
+    // Internal events (delegation fan-in) are wrapped at serialization time —
+    // never at authoring time — so stored content stays clean and legacy rows
+    // (normalized to source:"legacy_internal" in toStoredMessage) get wrapped
+    // for free. Internal events are never multimodal in practice.
+    if (isInternalSource(r.source) && typeof content === "string") {
+      content = formatInternalEvent(r.source, content)
     }
     const msg: LLMMessage = { role: r.role, content }
     // Note: tool_calls and tool_call_id are NOT reconstructed from DB.

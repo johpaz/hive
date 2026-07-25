@@ -70,13 +70,13 @@ export function MeetingPanel() {
     setRecording,
     setError,
     clearActiveSession,
+    generateReport,
   } = useMeetingStore();
 
   const [title, setTitle] = useState("");
   const [elapsed, setElapsed] = useState("00:00");
   const [showSessions, setShowSessions] = useState(true);
   const [reportLoading, setReportLoading] = useState(false);
-  const [reportDone, setReportDone] = useState(false);
   const [captureMode, setCaptureMode] = useState<CaptureMode>("microphone");
   const [systemAudioSupported, setSystemAudioSupported] = useState<boolean | null>(null);
 
@@ -88,6 +88,8 @@ export function MeetingPanel() {
   const destinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const isRecordingRef = useRef(false);
+  const meetingWsRef = useRef<WebSocket | null>(null);
+  const chunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
 
@@ -111,13 +113,25 @@ export function MeetingPanel() {
     });
   }, []);
 
+  useEffect(() => {
+    return () => {
+      isRecordingRef.current = false;
+      if (chunkTimerRef.current) clearTimeout(chunkTimerRef.current);
+      const recorder = mediaRecorderRef.current;
+      if (recorder?.state === "recording") recorder.stop();
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      systemStreamRef.current?.getTracks().forEach((track) => track.stop());
+      void audioContextRef.current?.close();
+      meetingWsRef.current?.close();
+    };
+  }, []);
+
   const handleStart = useCallback(async () => {
     if (!title.trim()) {
       setError("Ingresa el título de la reunión");
       return;
     }
     setError(null);
-    setReportDone(false);
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setError("Tu navegador no puede acceder al micrófono. Asegúrate de usar HTTPS o localhost.");
@@ -193,6 +207,7 @@ export function MeetingPanel() {
     }
 
     const ws = new WebSocket(buildMeetingWsUrl(sessionId));
+    meetingWsRef.current = ws;
     setWsConnection(ws);
 
     const startChunk = () => {
@@ -224,7 +239,7 @@ export function MeetingPanel() {
       };
 
       recorder.start();
-      setTimeout(() => {
+      chunkTimerRef.current = setTimeout(() => {
         if (recorder.state === "recording") recorder.stop();
       }, CHUNK_MS);
     };
@@ -257,6 +272,7 @@ export function MeetingPanel() {
 
     ws.onerror = () => setError("Error en la conexión WebSocket");
     ws.onclose = () => {
+      if (meetingWsRef.current === ws) meetingWsRef.current = null;
       isRecordingRef.current = false;
       setRecording(false);
       streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -267,38 +283,27 @@ export function MeetingPanel() {
 
   const handleStop = useCallback(async () => {
     isRecordingRef.current = false;
+    if (chunkTimerRef.current) {
+      clearTimeout(chunkTimerRef.current);
+      chunkTimerRef.current = null;
+    }
     mediaRecorderRef.current?.stop();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     systemStreamRef.current?.getTracks().forEach((t) => t.stop());
     audioContextRef.current?.close();
     await stopSession();
+    meetingWsRef.current = null;
     setElapsed("00:00");
   }, [stopSession]);
 
   const handleGenerateReport = useCallback(async () => {
     if (!activeSessionId) return;
     setReportLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`${getApiBaseUrl()}/api/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: `Genera el reporte de la reunión ${activeSessionId}`,
-        }),
-      });
-      if (res.ok) {
-        setReportDone(true);
-      } else {
-        setError("Error al enviar el mensaje al agente");
-      }
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setReportLoading(false);
-    }
-  }, [activeSessionId, setError]);
+    await generateReport(activeSessionId);
+    setReportLoading(false);
+  }, [activeSessionId, generateReport]);
 
+  const reportReady = activeSession?.status === "report_ready";
   const isStopped = !isRecording && activeSessionId;
   const isIdle = !isRecording && !activeSession?.status.startsWith("stop") && !activeSessionId;
 
@@ -413,11 +418,11 @@ export function MeetingPanel() {
                       <Button
                         size="sm"
                         onClick={handleGenerateReport}
-                        disabled={reportLoading || reportDone}
+                        disabled={reportLoading || reportReady}
                         className="bg-amber-500 hover:bg-amber-400 text-black font-semibold rounded-xl h-8 px-3 shadow-md shadow-amber-900/30 disabled:opacity-60"
                       >
                         <FileText className="h-3.5 w-3.5 mr-1.5" />
-                        {reportLoading ? "Generando..." : reportDone ? "Enviado ✓" : "Generar Reporte"}
+                        {reportLoading ? "Generando..." : reportReady ? "Reporte generado ✓" : "Generar Reporte"}
                       </Button>
                       <Button
                         variant="ghost"
@@ -441,11 +446,19 @@ export function MeetingPanel() {
               </div>
             )}
 
-            {/* Report sent banner */}
-            {reportDone && (
+            {/* Report ready banner */}
+            {reportReady && activeSessionId && (
               <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-emerald-500/[0.08] border border-emerald-500/20 text-xs text-emerald-400">
                 <span>✓</span>
-                <span>El agente está generando el reporte. Verifica el chat para el informe completo.</span>
+                <span>Reporte generado.</span>
+                <a
+                  href={`${getApiBaseUrl()}/api/meetings/${activeSessionId}/report/download`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline hover:text-emerald-300 font-medium"
+                >
+                  Descargar .docx
+                </a>
               </div>
             )}
           </div>

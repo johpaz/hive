@@ -2,6 +2,8 @@ import { col } from "../../storage/hive.ts"
 import { getUsageStats, hourBucket } from "../../storage/usage.ts"
 import type { ActivityRollupDoc } from "../../storage/collections.ts"
 import { loadConfig } from "../../config/loader.ts"
+import { sessionManager } from "../session.ts"
+import { getRecentMessageCount } from "../../agent/conversation-store.ts"
 import { cpus } from "node:os"
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
@@ -261,13 +263,29 @@ export async function handleTriggerUpdate(
   }
 }
 
+// CPU delta sampling — process.cpuUsage() is cumulative; passing the previous
+// sample back in returns the diff since that call, which process.cpuUsage()
+// computes for us.
+const numCores = cpus().length || 1
+let lastCpuSample = process.cpuUsage()
+let lastCpuSampleTime = Date.now()
+
 export function getSystemStats(startTime: number) {
   const mem = process.memoryUsage()
   const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000)
   const uptimeStr = new Date(uptimeSeconds * 1000).toISOString().substr(11, 8)
 
+  const now = Date.now()
+  const elapsedMs = now - lastCpuSampleTime
+  const usage = process.cpuUsage(lastCpuSample)
+  lastCpuSample = process.cpuUsage()
+  lastCpuSampleTime = now
+  const cpuPercent = elapsedMs > 0
+    ? Math.round(((usage.user + usage.system) / 1000 / elapsedMs / numCores) * 100 * 100) / 100
+    : 0
+
   return {
-    cpu: 0, // Placeholder - Node.js doesn't provide per-process CPU
+    cpu: cpuPercent,
     memory: {
       rss: Math.round(mem.rss / 1024 / 1024), // MB
       heapUsed: Math.round(mem.heapUsed / 1024 / 1024), // MB
@@ -276,9 +294,9 @@ export function getSystemStats(startTime: number) {
       external: Math.round((mem.external || 0) / 1024 / 1024), // MB
     },
     uptime: uptimeStr,
-    connections: 0, // Placeholder
-    cores: cpus().length,
-    recentMessages: 0, // Placeholder
+    connections: sessionManager.list().length,
+    cores: numCores,
+    recentMessages: getRecentMessageCount(),
   }
 }
 

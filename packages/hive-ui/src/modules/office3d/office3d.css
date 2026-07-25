@@ -1,0 +1,481 @@
+/* ============================================================
+   HoloHive · Oficina 3D — HUD de frontera (CSS 2026)
+   ============================================================ */
+
+@property --holo-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.office3d-root {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 1rem;
+  background: oklch(0.09 0.02 264);
+  isolation: isolate;
+}
+
+/* ---------- Capa HUD ---------- */
+.office3d-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  font-family: inherit;
+}
+.office3d-hud :is(button, aside) {
+  pointer-events: auto;
+}
+
+.office3d-glass {
+  background: oklch(0.16 0.03 264 / 0.55);
+  backdrop-filter: blur(14px) saturate(1.5);
+  -webkit-backdrop-filter: blur(14px) saturate(1.5);
+  border: 1px solid oklch(0.7 0.15 230 / 0.18);
+  box-shadow: 0 8px 40px oklch(0.05 0.02 264 / 0.6),
+    inset 0 1px 0 oklch(1 0 0 / 0.06);
+}
+
+/* ---------- Barra superior ---------- */
+.office3d-topbar {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  right: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 1rem;
+  border-radius: 0.9rem;
+  animation: office3d-drop 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes office3d-drop {
+  from { transform: translateY(-120%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.office3d-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.office3d-logo {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 0.65rem;
+  color: oklch(0.85 0.16 85);
+  background:
+    linear-gradient(oklch(0.2 0.04 264), oklch(0.2 0.04 264)) padding-box,
+    conic-gradient(from var(--holo-angle), oklch(0.8 0.18 85), oklch(0.7 0.2 230), oklch(0.8 0.18 85)) border-box;
+  border: 1px solid transparent;
+  animation: office3d-spin-angle 6s linear infinite;
+}
+
+@keyframes office3d-spin-angle {
+  to { --holo-angle: 360deg; }
+}
+
+.office3d-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: oklch(0.95 0.02 264);
+  text-shadow: 0 0 14px oklch(0.7 0.2 230 / 0.55);
+}
+.office3d-subtitle {
+  margin: 0.1rem 0 0;
+  font-size: 0.68rem;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.06em;
+  color: oklch(0.65 0.04 264);
+}
+
+.office3d-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ---------- Badges y botones ---------- */
+.office3d-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+.office3d-live-badge.is-live {
+  color: oklch(0.85 0.18 155);
+  background: oklch(0.75 0.18 155 / 0.14);
+  border: 1px solid oklch(0.75 0.18 155 / 0.3);
+}
+.office3d-live-badge.is-live svg { animation: office3d-pulse 1.8s ease-in-out infinite; }
+.office3d-live-badge.is-off {
+  color: oklch(0.75 0.2 25);
+  background: oklch(0.65 0.22 25 / 0.14);
+  border: 1px solid oklch(0.65 0.22 25 / 0.3);
+}
+
+@keyframes office3d-pulse {
+  50% { opacity: 0.4; }
+}
+
+.office3d-hud-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.34rem 0.7rem;
+  border-radius: 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: oklch(0.75 0.04 264);
+  background: oklch(1 0 0 / 0.05);
+  border: 1px solid oklch(1 0 0 / 0.1);
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+.office3d-hud-btn:hover {
+  color: oklch(0.95 0.02 264);
+  background: oklch(1 0 0 / 0.12);
+  box-shadow: 0 0 16px oklch(0.7 0.2 230 / 0.25);
+}
+.office3d-hud-btn.is-on {
+  color: oklch(0.88 0.16 85);
+  border-color: oklch(0.8 0.16 85 / 0.45);
+  background: oklch(0.8 0.16 85 / 0.12);
+  box-shadow: 0 0 16px oklch(0.8 0.16 85 / 0.3);
+}
+
+/* ---------- Cinta de eventos ---------- */
+.office3d-bottom-left {
+  position: absolute;
+  left: 1rem;
+  bottom: 1rem;
+  width: min(21rem, 42vw);
+}
+
+.office3d-ticker {
+  border-radius: 0.85rem;
+  padding: 0.7rem 0.85rem;
+  background: oklch(0.14 0.03 264 / 0.5);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  border: 1px solid oklch(0.7 0.15 230 / 0.14);
+  mask-image: linear-gradient(to top, black 78%, transparent);
+  -webkit-mask-image: linear-gradient(to top, black 78%, transparent);
+}
+.office3d-ticker-title {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: oklch(0.6 0.05 264);
+  margin-bottom: 0.45rem;
+}
+.office3d-ticker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.office3d-ticker-empty {
+  font-size: 0.7rem;
+  color: oklch(0.5 0.03 264);
+  font-style: italic;
+}
+.office3d-ticker-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  color: oklch(0.85 0.03 264);
+  animation: office3d-ticker-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes office3d-ticker-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.office3d-ticker-item--warn { color: oklch(0.8 0.18 25); }
+.office3d-ticker-item--done { color: oklch(0.85 0.14 155); }
+.office3d-ticker-dot {
+  flex: none;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  box-shadow: 0 0 8px currentColor;
+}
+.office3d-ticker-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.office3d-ticker-time {
+  flex: none;
+  font-size: 0.6rem;
+  font-family: ui-monospace, monospace;
+  color: oklch(0.55 0.03 264);
+}
+
+/* ---------- Inspector de agente ---------- */
+.office3d-inspector {
+  position: absolute;
+  top: 5.4rem;
+  right: 1rem;
+  width: min(19rem, 80vw);
+  padding: 1rem 1.1rem;
+  border-radius: 0.95rem;
+  color: oklch(0.9 0.02 264);
+  background: oklch(0.15 0.03 264 / 0.62);
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  border: 1px solid transparent;
+  background:
+    linear-gradient(oklch(0.15 0.03 264 / 0.86), oklch(0.15 0.03 264 / 0.86)) padding-box,
+    conic-gradient(from var(--holo-angle), var(--agent-color, oklch(0.7 0.2 230)), transparent 40%, var(--agent-color, oklch(0.7 0.2 230))) border-box;
+  animation:
+    office3d-inspector-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both,
+    office3d-spin-angle 8s linear infinite;
+}
+
+/* Entrada elegante con @starting-style (Chrome 117+, Safari 17.4+) */
+@starting-style {
+  .office3d-inspector { opacity: 0; transform: translateX(24px); }
+}
+@keyframes office3d-inspector-in {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.office3d-inspector-close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.45rem;
+  color: oklch(0.65 0.04 264);
+  background: oklch(1 0 0 / 0.06);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.office3d-inspector-close:hover { color: white; background: oklch(1 0 0 / 0.14); }
+
+.office3d-inspector-head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 0.85rem;
+}
+.office3d-inspector-orb {
+  flex: none;
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 50%;
+  background: var(--agent-color, oklch(0.7 0.2 230));
+  box-shadow: 0 0 14px var(--agent-color, oklch(0.7 0.2 230));
+  animation: office3d-pulse 2.2s ease-in-out infinite;
+}
+.office3d-inspector-name {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-shadow: 0 0 12px oklch(0.7 0.2 230 / 0.4);
+}
+.office3d-inspector-id {
+  font-size: 0.62rem;
+  font-family: ui-monospace, monospace;
+  color: oklch(0.55 0.04 264);
+}
+
+.office3d-inspector-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+  font-size: 0.74rem;
+  border-top: 1px solid oklch(1 0 0 / 0.06);
+}
+.office3d-inspector-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: oklch(0.55 0.04 264);
+}
+.office3d-inspector-tool { color: oklch(0.85 0.16 85); }
+.office3d-inspector-desc {
+  margin: 0.6rem 0 0;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: oklch(0.7 0.04 264);
+}
+
+.office3d-state-chip {
+  padding: 0.16rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+.office3d-state-chip--idle { color: oklch(0.8 0.03 264); background: oklch(1 0 0 / 0.07); }
+.office3d-state-chip--thinking { color: oklch(0.85 0.15 230); background: oklch(0.7 0.18 230 / 0.16); }
+.office3d-state-chip--tool_call { color: oklch(0.88 0.16 85); background: oklch(0.8 0.16 85 / 0.16); }
+.office3d-state-chip--stuck { color: oklch(0.8 0.2 25); background: oklch(0.65 0.22 25 / 0.18); }
+.office3d-state-chip--disabled { color: oklch(0.55 0.02 264); background: oklch(1 0 0 / 0.04); }
+
+/* ---------- Etiquetas dentro de la escena (drei Html) ---------- */
+.office3d-core-label {
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.42em;
+  color: oklch(0.88 0.16 85);
+  text-shadow: 0 0 12px oklch(0.8 0.16 85 / 0.8), 0 0 32px oklch(0.8 0.16 85 / 0.4);
+  white-space: nowrap;
+}
+
+.office3d-tool-chip {
+  padding: 0.22rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  color: var(--chip-color, oklch(0.85 0.15 230));
+  background: oklch(0.12 0.03 264 / 0.72);
+  border: 1px solid var(--chip-color, oklch(0.85 0.15 230));
+  box-shadow: 0 0 18px var(--chip-color, oklch(0.85 0.15 230));
+  animation: office3d-ticker-in 0.35s ease both;
+}
+
+/* (la placa de nombre permanente vive en la sección "Identidad y trabajo") */
+
+/* ---------- Identidad y trabajo (quién hace QUÉ, quién delega) ---------- */
+
+.office3d-core-tasks {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.5rem;
+  letter-spacing: 0.18em;
+  color: oklch(0.75 0.1 85);
+  text-shadow: none;
+}
+
+/* Chip de tarea delegada (sobre el holograma) */
+.office3d-task-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 16rem;
+  padding: 0.26rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: oklch(0.92 0.1 85);
+  background: oklch(0.14 0.04 264 / 0.8);
+  border: 1px solid oklch(0.8 0.16 85 / 0.55);
+  box-shadow: 0 0 20px oklch(0.8 0.16 85 / 0.35);
+  animation: office3d-ticker-in 0.35s ease both;
+}
+.office3d-task-chip-prefix {
+  color: var(--chip-color, oklch(0.85 0.16 85));
+  text-shadow: 0 0 8px var(--chip-color, oklch(0.85 0.16 85));
+}
+
+/* Etiqueta flotante en el punto medio del beam de delegación */
+.office3d-beam-label {
+  max-width: 13rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: 0.5rem;
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: oklch(0.9 0.03 264);
+  background: oklch(0.12 0.03 264 / 0.72);
+  border: 1px solid oklch(1 0 0 / 0.12);
+  border-left: 2px solid var(--chip-color, oklch(0.8 0.16 85));
+  box-shadow: 0 4px 18px oklch(0.05 0.02 264 / 0.55);
+  opacity: 0.92;
+}
+
+/* Placa de nombre permanente bajo cada podio */
+.office3d-name-plate {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 0.45rem;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  color: oklch(0.82 0.03 264);
+  background: oklch(0.12 0.03 264 / 0.62);
+  border: 1px solid oklch(1 0 0 / 0.1);
+  border-bottom: 2px solid var(--chip-color, oklch(0.7 0.2 230));
+  opacity: 0.82;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.office3d-name-plate.is-active {
+  opacity: 1;
+  transform: scale(1.08);
+  color: oklch(0.95 0.02 264);
+}
+
+/* Punto de estado en la placa de nombre */
+.office3d-name-dot {
+  flex: none;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: oklch(0.55 0.03 264);
+}
+.office3d-name-dot--idle { background: oklch(0.6 0.04 264); }
+.office3d-name-dot--thinking {
+  background: oklch(0.75 0.16 230);
+  box-shadow: 0 0 8px oklch(0.75 0.16 230);
+  animation: office3d-pulse 1.6s ease-in-out infinite;
+}
+.office3d-name-dot--tool_call {
+  background: oklch(0.82 0.16 85);
+  box-shadow: 0 0 8px oklch(0.82 0.16 85);
+  animation: office3d-pulse 1s ease-in-out infinite;
+}
+.office3d-name-dot--stuck {
+  background: oklch(0.68 0.22 25);
+  box-shadow: 0 0 8px oklch(0.68 0.22 25);
+  animation: office3d-pulse 0.7s ease-in-out infinite;
+}
+.office3d-name-dot--disabled { background: oklch(0.4 0.02 264); }
+
+/* Tarea en el inspector */
+.office3d-inspector-task {
+  max-width: 60%;
+  text-align: right;
+  color: oklch(0.88 0.12 85);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

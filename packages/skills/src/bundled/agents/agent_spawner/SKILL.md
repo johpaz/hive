@@ -8,7 +8,7 @@ category: agents
 permissions:
   - agent_manage
 dependencies: []
-tools: [get_available_models, find_agent, create_agent, archive_agent]
+tools: [get_available_models, agent_find, agent_create, agent_archive]
 
 # Structured skill fields
 triggers:
@@ -31,7 +31,7 @@ preferred_agents: []
 
 steps:
   - step: 1
-    action: find_agent
+    action: agent_find
     instruction: "Search for existing agents before creating new one"
     params:
       search: "agent name or specialty"
@@ -52,7 +52,7 @@ steps:
     output: available_models
 
   - step: 4
-    action: create_agent
+    action: agent_create
     instruction: "Create new worker with focused system_prompt, minimal tools, and optimal provider/model"
     params:
       name: "specialty_name"
@@ -64,7 +64,7 @@ steps:
     output: new_agent_id
 
   - step: 5
-    action: archive_agent (if needed)
+    action: agent_archive (if needed)
     instruction: "Archive workers that are no longer needed or inactive >14 days"
     params:
       agent_id: "agent to archive"
@@ -72,8 +72,9 @@ steps:
     output: archived
 
 rules:
-  - "ALWAYS use find_agent BEFORE create_agent — never duplicate workers"
-  - "ALWAYS use get_available_models BEFORE create_agent — providerId y modelId son OBLIGATORIOS"
+  - "The COLMENA DE AGENTES catalog workers already cover web, browser, files, code, Office, A2UI, cron, APIs and MCP — creating a new worker is a LAST RESORT, not the default path"
+  - "ALWAYS use agent_find BEFORE agent_create — never duplicate workers"
+  - "ALWAYS use get_available_models BEFORE agent_create — providerId y modelId son OBLIGATORIOS"
   - "Workers have role='worker', coordinator has role='coordinator'"
   - "Assign MINIMUM required tools (principle of least privilege)"
   - "system_prompt must be specific and focused on specialty"
@@ -92,13 +93,13 @@ output_format:
 
 examples:
   - user_input: "creá un agente para investigación web"
-    expected_behavior: "find_agent('researcher') → if not exists, create_agent({ name: 'ai_researcher', tools: ['web_search', 'web_fetch'] })"
+    expected_behavior: "agent_find('researcher') → if not exists, agent_create({ name: 'ai_researcher', tools: ['web_search', 'web_fetch'] })"
 
   - user_input: "hay un worker para escribir contenido"
-    expected_behavior: "find_agent({ search: 'writer' }) → return existing writer agents"
+    expected_behavior: "agent_find({ search: 'writer' }) → return existing writer agents"
 
   - user_input: "archivá los agentes inactivos"
-    expected_behavior: "find_agent({ status: 'idle' }) → archive_agent for those inactive >14 days"
+    expected_behavior: "agent_find({ status: 'idle' }) → agent_archive for those inactive >14 days"
 ---
 
 # Agent Spawner Skill
@@ -107,22 +108,24 @@ examples:
 
 Para crear nuevos workers especializados o gestionar el ciclo de vida de agents existentes.
 
+> **Antes de crear nada**: la sección COLMENA DE AGENTES del system prompt ya lista workers listos para recibir trabajo (web, browser, archivos, código, Office, A2UI, cron, APIs, MCP). Crear un worker es el último recurso, cuando ninguno de ellos cubre la especialidad pedida.
+
 ## Herramientas Disponibles
 
 | Tool | Qué hace | Cuándo usarla |
 |------|----------|---------------|
 | `get_available_models` | Consulta providers y modelos activos de la BD | **ANTES de crear** — seleccionar modelo óptimo |
-| `find_agent` | Busca agents existentes | **PRIMERO** — antes de crear |
-| `create_agent` | Crea nuevo worker | Si no existe apto |
-| `archive_agent` | Archiva worker | Limpieza, inactivos |
+| `agent_find` | Busca agents existentes | **PRIMERO** — antes de crear |
+| `agent_create` | Crea nuevo worker | Si no existe apto |
+| `agent_archive` | Archiva worker | Limpieza, inactivos |
 
 ## Workflow
 
 ### Crear Agent
-1. **Buscar** → `find_agent({ search })` — ¿existe?
+1. **Buscar** → `agent_find({ search })` — ¿existe?
 2. **Si existe** → Reutilizar
 3. **Si no existe** → `get_available_models({ capabilities })` — seleccionar modelo óptimo
-4. **Crear** → `create_agent({...})` con providerId y modelId seleccionados
+4. **Crear** → `agent_create({...})` con providerId y modelId seleccionados
 
 ### Create Agent Config
 ```javascript
@@ -131,9 +134,9 @@ get_available_models({ capabilities: "coding" })
 // → [{ providerId: "openai", modelId: "gpt-4o", contextWindow: 128000 }, ...]
 
 // 2. Crear agente con modelo óptimo (providerId y modelId son OBLIGATORIOS)
-create_agent({
+agent_create({
   name: "ai_coder",
-  description: "Especialista en código y refactorización",
+  description: "Experto en código y refactorización",
   system_prompt: `
     Sos desarrollador experto. Tu rol:
     1. Escribir código limpio y testeable

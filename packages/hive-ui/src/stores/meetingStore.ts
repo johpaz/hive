@@ -39,6 +39,7 @@ interface MeetingStore {
   setConnecting: (v: boolean) => void;
   setError: (e: string | null) => void;
   clearActiveSession: () => void;
+  generateReport: (sessionId: string) => Promise<string | null>;
 }
 
 export const useMeetingStore = create<MeetingStore>((set, get) => ({
@@ -124,6 +125,29 @@ export const useMeetingStore = create<MeetingStore>((set, get) => ({
   setError: (e) => set({ error: e }),
   clearActiveSession: () =>
     set({ activeSessionId: null, segments: [], isRecording: false, wsConnection: null }),
+
+  generateReport: async (sessionId) => {
+    set({ error: null });
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/meetings/${sessionId}/report`, {
+        method: "POST",
+      });
+      const data = await res.json() as { ok: boolean; report_path?: string; error?: string };
+      if (!data.ok || !data.report_path) {
+        set({ error: data.error ?? "Error al generar el reporte" });
+        return null;
+      }
+      set((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.id === sessionId ? { ...s, status: "report_ready" as const, report_path: data.report_path! } : s
+        ),
+      }));
+      return data.report_path;
+    } catch (err) {
+      set({ error: (err as Error).message });
+      return null;
+    }
+  },
 }));
 
 export function buildMeetingWsUrl(meetingSessionId: string): string {

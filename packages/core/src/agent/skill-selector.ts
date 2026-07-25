@@ -19,6 +19,7 @@
 import { col } from "../storage/hive"
 import type { SkillDoc } from "../storage/collections"
 import { logger } from "../utils/logger"
+import { isMinimalSkill } from "./minimal-loadout"
 import {
     searchCapabilities,
     applyRelativeCutoff,
@@ -28,20 +29,7 @@ import {
 
 const log = logger.child("skill-selector")
 
-// ─── Minimal Skill Set ─────────────────────────────────────────────────────────
 
-/**
- * Skills mínimas que SIEMPRE están disponibles (asociadas a las 4 tools iniciales)
- * - memory_manager: usa save_note (notas persistentes)
- * - canvas_report: usa report_progress (reportes de progreso)
- * - task_orchestrator: usa notify (comunicación entre agentes)
- */
-export const MINIMAL_SKILL_NAMES = new Set([
-  "capability_discovery", // Core: cómo descubrir tools, MCP, skills, playbook
-  "memory_manager",   // Asociada a save_note
-  "canvas_report",    // Asociada a report_progress
-  "task_orchestrator", // Asociada a notify y agent coordination
-])
 
 // ─── Types ───────────────────────────────────────────────────────────────────────
 
@@ -278,16 +266,17 @@ export async function selectSkills(userMessage: string): Promise<SkillDescriptor
 // ─── Minimal Skills Loader ───────────────────────────────────────────────────
 
 /**
- * Load minimal skills that are ALWAYS available (associated with MINIMAL_TOOLS)
- * These are loaded at startup, not via FTS5 search.
+ * Load the skills that ride along with the minimal tool loadout.
  *
- * @returns Array of minimal skills (memory_manager, canvas_report, task_orchestrator)
+ * Derived, not listed: a skill qualifies when every tool it documents is in
+ * MINIMAL_TOOLS (see minimal-loadout.ts). Any other skill reaches the agent
+ * through discovery, which injects it together with the tools it teaches.
  */
 export async function getMinimalSkills(): Promise<SkillDescriptor[]> {
     try {
         const skillsCol = await col<SkillDoc>("skills")
         const skills = (await skillsCol.scan({}))
-            .filter(e => MINIMAL_SKILL_NAMES.has(e.doc.name) && e.doc.active)
+            .filter(e => e.doc.active && isMinimalSkill(e.doc.tools))
             .map(e => toSkillDescriptor(e.doc))
 
         log.info(`[skill-selector] Loaded ${skills.length} minimal skills: ${skills.map(s => s.name).join(", ")}`)
@@ -306,7 +295,7 @@ export async function getMinimalSkills(): Promise<SkillDescriptor[]> {
  * Replaces all `type=skill` documents atomically (delete-by-filter + one
  * batch commit).
  */
-export async function syncSkillsToFTS(): Promise<void> {
+export async function syncSkillsToIndex(): Promise<void> {
     try {
         // Step 1: Get all enabled skills from database
         const skillsCol = await col<SkillDoc>("skills")
@@ -337,18 +326,6 @@ export async function syncSkillsToFTS(): Promise<void> {
         throw err // Re-throw to inform initializer
     }
 }
-// ─── Initialization ───────────────────────────────────────────────────────
-
-/**
- * Initialize the skill selector
- * DEPRECATED: syncSkillsToFTS() is now called from gateway/initializer.ts
- * This function is kept for backward compatibility but is no longer needed
- */
-export function initializeSkillSelector(): void {
-    log.info(`[skill-selector] Initializing skill selector (deprecated - sync is done in gateway/initializer.ts)`)
-    // syncSkillsToFTS() - No longer needed here, done in gateway/initializer.ts
-}
-
 // ─── Debug/Test Helpers ─────────────────────────────────────────────────────
 
 /**

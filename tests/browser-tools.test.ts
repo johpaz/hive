@@ -9,8 +9,12 @@
  * Correr todos:          BROWSER_TESTS=1 bun test tests/browser-tools.test.ts
  */
 
+process.env.HIVE_DB_PATH = ":memory:";
+
 import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from "bun:test";
-import { writeFileSync, rmSync } from "fs";
+import { writeFileSync, rmSync, mkdtempSync } from "fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // ─── Tipos mínimos para el mock ───────────────────────────────────────────────
 
@@ -344,7 +348,7 @@ describe("browser_type", () => {
 });
 
 describe("browser_screenshot", () => {
-  it("retorna screenshot en base64 del viewport", async () => {
+  it("retorna un artefacto administrado del viewport, no base64", async () => {
     const mod = await import("../packages/core/src/tools/web/browser-screenshot.ts");
     const browserServiceMod = await import("../packages/core/src/tools/web/browser-service.ts");
 
@@ -354,13 +358,18 @@ describe("browser_screenshot", () => {
     const service = createMockService(view);
     const spy = spyOn(browserServiceMod, "getBrowserService").mockReturnValue(service as any);
 
-    const result = await mod.browserScreenshotTool.execute({}) as any;
+    const artifactDir = mkdtempSync(join(tmpdir(), "hive-browser-artifact-"));
+    const result = await mod.browserScreenshotTool.execute(
+      {},
+      { configurable: { user_id: "test", artifact_dir: artifactDir } },
+    ) as any;
     expect(result.ok).toBe(true);
-    expect(result.screenshot).toBe("fullpagebase64==");
+    expect(result.artifact_id).toBeString();
+    expect(result.screenshot).toBeUndefined();
     expect(result.format).toBe("jpeg");
-    expect(result.encoding).toBe("base64");
 
     spy.mockRestore();
+    rmSync(artifactDir, { recursive: true, force: true });
   });
 
   it("usa screenshotElement cuando se pasa selector", async () => {
@@ -376,11 +385,17 @@ describe("browser_screenshot", () => {
     const service = createMockService(view);
     const spy = spyOn(browserServiceMod, "getBrowserService").mockReturnValue(service as any);
 
-    const result = await mod.browserScreenshotTool.execute({ selector: "#hero" }) as any;
+    const artifactDir = mkdtempSync(join(tmpdir(), "hive-browser-artifact-"));
+    const result = await mod.browserScreenshotTool.execute(
+      { selector: "#hero" },
+      { configurable: { user_id: "test", artifact_dir: artifactDir } },
+    ) as any;
     expect(result.ok).toBe(true);
-    expect(typeof result.screenshot).toBe("string");
+    expect(result.artifact_id).toBeString();
+    expect(result.screenshot).toBeUndefined();
 
     spy.mockRestore();
+    rmSync(artifactDir, { recursive: true, force: true });
     try { rmSync(tmpPath); } catch { /* already cleaned by screenshotElement */ }
   });
 
@@ -392,10 +407,16 @@ describe("browser_screenshot", () => {
     const service = createMockService(view);
     const spy = spyOn(browserServiceMod, "getBrowserService").mockReturnValue(service as any);
 
-    await mod.browserScreenshotTool.execute({ url: "https://example.com" });
+    const artifactDir = mkdtempSync(join(tmpdir(), "hive-browser-artifact-"));
+    const result = await mod.browserScreenshotTool.execute(
+      { url: "https://example.com" },
+      { configurable: { user_id: "test", artifact_dir: artifactDir } },
+    ) as any;
+    expect(result.ok).toBe(true);
     expect(view.navigate).toHaveBeenCalledWith("https://example.com");
 
     spy.mockRestore();
+    rmSync(artifactDir, { recursive: true, force: true });
   });
 });
 

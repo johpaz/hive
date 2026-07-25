@@ -224,37 +224,6 @@ export async function getUnreadMessagesForWorker(workerId: string, limit: number
   }
 }
 
-/**
- * Obtiene el historial de mensajes de un proyecto
- */
-export async function getProjectMessageHistory(projectId: string, limit: number = 100): Promise<AgentBusMessage[]> {
-  try {
-    // Primero obtenemos los task_ids del proyecto
-    const tasksCol = await col<TaskDoc>("tasks");
-    const tasks = (await tasksCol.findBy("project_id", projectId)).map(e => e.doc);
-
-    if (tasks.length === 0) return [];
-
-    // Obtenemos los agent_ids de las tareas
-    const agentIds = new Set(
-      tasks.map(t => fromIndexable(t.agent_id)).filter((id): id is string => id !== null)
-    );
-
-    if (agentIds.size === 0) return [];
-
-    // Obtenemos mensajes relacionados a estos agents
-    const messagesCol = await col<AgentBusMessageDoc>("agentBusMessages");
-    const entries = (await messagesCol.scan({}))
-      .filter(e => agentIds.has(fromIndexable(e.doc.from_worker_id) ?? ""))
-      .sort((a, b) => b.doc.created_at - a.doc.created_at)
-      .slice(0, limit);
-
-    return entries.map(e => docToMessage(e.doc));
-  } catch (err) {
-    log.error(`Failed to get project message history: ${(err as Error).message}`);
-    return [];
-  }
-}
 
 // ─── Agent Bus Implementation ────────────────────────────────────────────────
 

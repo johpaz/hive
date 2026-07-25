@@ -23,8 +23,7 @@ import type {
   PlaybookDoc,
   AgentDoc,
   CursorDoc,
-  SpecialistDoc,
-  SpecialistProposalDoc,
+  AgentProposalDoc,
   TraceDoc,
 } from "../storage/collections"
 
@@ -75,8 +74,12 @@ export async function runCurator(): Promise<void> {
     // (set by tracer.ts) instead of a correlated MAX(created_at) subquery.
     const cutoff = Date.now() - (DAYS_BEFORE_ARCHIVE * 86400 * 1000)
     const allAgents = await agentsCol.scan({})
+    // Catalog personas are excluded: they are permanent capabilities, and they
+    // are seeded with lastTraceAt=null (which reads as epoch 0), so inactivity
+    // archiving would file every unused one away on its first run.
     const staleWorkers = allAgents.filter(e =>
       e.doc.role === "worker" &&
+      e.doc.source !== "catalog" &&
       e.doc.status !== "archived" &&
       e.doc.enabled &&
       (e.doc.lastTraceAt ?? 0) < cutoff
@@ -97,7 +100,7 @@ export async function runCurator(): Promise<void> {
       log.info(`[curator] Archived inactive worker: ${worker.doc.name} (${worker.id})`)
     }
 
-    await curateSpecialistStructure()
+    await curateAgentStructure()
 
     log.info("[curator] Playbook updated")
   } catch (err) {
@@ -105,25 +108,30 @@ export async function runCurator(): Promise<void> {
   }
 }
 
-async function curateSpecialistStructure(): Promise<void> {
-  const specialistsCol = await col<SpecialistDoc>("specialists")
-  const proposalsCol = await col<SpecialistProposalDoc>("specialistProposals")
-  const tracesCol = await col<TraceDoc>("traces")
+async function curateAgentStructure(): Promise<void> {
   const agentsCol = await col<AgentDoc>("agents")
+  const proposalsCol = await col<AgentProposalDoc>("agentProposals")
+  const tracesCol = await col<TraceDoc>("traces")
   const now = Date.now()
 
-  // Harmful specialists fail closed after the same minimum evidence threshold
-  // already used for playbook pruning.
-  for (const entry of await specialistsCol.findBy("active", true)) {
-    if (entry.doc.harmful_count > entry.doc.helpful_count && entry.doc.harmful_count >= MAX_HARMFUL_BEFORE_PRUNE) {
-      await specialistsCol.put(entry.id, { ...entry.doc, active: false, updated_at: now }, { expectedVersion: entry.version })
-      await ensureSpecialistProposal(proposalsCol, {
-        type: "disable_specialist",
-        specialistId: entry.id,
+  // A catalog agent is a capability, not a disposable worker: disabling
+  // `workspace_file_operator` takes filesystem work away from the whole hive
+  // and nothing replaces it, so a bad streak can never switch one off by
+  // itself. It raises a proposal for a human to decide instead — and the ACE
+  // counters keep accumulating either way, so routing still sees the signal.
+  for (const entry of await agentsCol.findBy("source", "catalog")) {
+    if (!entry.doc.enabled) continue
+    const helpful = entry.doc.helpful_count ?? 0
+    const harmful = entry.doc.harmful_count ?? 0
+    if (harmful > helpful && harmful >= MAX_HARMFUL_BEFORE_PRUNE) {
+      await ensureAgentProposal(proposalsCol, {
+        type: "disable_agent",
+        agentId: entry.id,
         change: { active: false, reason: "harmful_count exceeded helpful_count" },
         evidence: [],
         confidence: 1,
       })
+      log.warn(`[curator] Catalog agent '${entry.doc.name}' (${entry.id}) is failing verification (helpful=${helpful}, harmful=${harmful}) — proposed for review, left enabled`)
     }
   }
 
@@ -134,7 +142,7 @@ async function curateSpecialistStructure(): Promise<void> {
   const freeSuccess = new Map<string, TraceDoc[]>()
   for (const trace of traces) {
     const agent = agents.get(trace.agent_id)
-    if (!trace.success || trace.tool_used || trace.specialist_id || agent?.role !== "worker" || agent.specialist_id) continue
+    if (!trace.success || trace.tool_used || trace.catalog_agent_id || agent?.role !== "worker" || agent.source === "catalog") continue
     const bucket = freeSuccess.get(trace.agent_id) ?? []
     bucket.push(trace)
     freeSuccess.set(trace.agent_id, bucket)
@@ -142,9 +150,9 @@ async function curateSpecialistStructure(): Promise<void> {
   for (const [agentId, evidence] of freeSuccess) {
     if (evidence.length < 5) continue
     const agent = agents.get(agentId)!
-    await ensureSpecialistProposal(proposalsCol, {
-      type: "create_specialist",
-      specialistId: `candidate:${agentId}`,
+    await ensureAgentProposal(proposalsCol, {
+      type: "create_agent",
+      agentId: `candidate:${agentId}`,
       change: {
         suggested_name: agent.name,
         suggested_description: agent.description,
@@ -159,47 +167,47 @@ async function curateSpecialistStructure(): Promise<void> {
   // permissions are never changed automatically.
   const failures = new Map<string, TraceDoc[]>()
   for (const trace of traces) {
-    if (trace.success || !trace.specialist_id || !trace.tool_used) continue
-    const key = `${trace.specialist_id}\0${trace.tool_used}`
+    if (trace.success || !trace.catalog_agent_id || !trace.tool_used) continue
+    const key = `${trace.catalog_agent_id}\0${trace.tool_used}`
     const bucket = failures.get(key) ?? []
     bucket.push(trace)
     failures.set(key, bucket)
   }
   for (const [key, evidence] of failures) {
     if (evidence.length < 3) continue
-    const [specialistId, tool] = key.split("\0")
-    await ensureSpecialistProposal(proposalsCol, {
+    const [agentId, tool] = key.split("\0")
+    await ensureAgentProposal(proposalsCol, {
       type: "move_tool",
-      specialistId,
+      agentId,
       change: { tool, reason: "repeated failures; review ownership or remove from loadout" },
       evidence: evidence.slice(-10).map((trace) => trace.id),
       confidence: Math.min(0.95, 0.55 + evidence.length * 0.05),
     })
   }
 
-  const { syncSpecialistsToIndex } = await import("./specialist-selector")
-  await syncSpecialistsToIndex()
+  const { syncCatalogAgentsToIndex } = await import("./catalog-selector")
+  await syncCatalogAgentsToIndex()
 }
 
-async function ensureSpecialistProposal(
-  proposalsCol: Awaited<ReturnType<typeof col<SpecialistProposalDoc>>>,
+async function ensureAgentProposal(
+  proposalsCol: Awaited<ReturnType<typeof col<AgentProposalDoc>>>,
   input: {
-    type: SpecialistProposalDoc["type"]
-    specialistId: string
+    type: AgentProposalDoc["type"]
+    agentId: string
     change: unknown
     evidence: string[]
     confidence: number
   },
 ): Promise<void> {
-  const existing = (await proposalsCol.findBy("specialist_id", input.specialistId))
+  const existing = (await proposalsCol.findBy("agent_id", input.agentId))
     .find((entry) => entry.doc.type === input.type && entry.doc.status === "proposed")
   if (existing) return
-  const id = await nextId("specialistProposals")
+  const id = await nextId("agentProposals")
   const now = Date.now()
   await proposalsCol.put(id, {
     id,
     type: input.type,
-    specialist_id: input.specialistId,
+    agent_id: input.agentId,
     proposed_change_json: JSON.stringify(input.change),
     evidence_trace_ids_json: JSON.stringify(input.evidence),
     confidence: input.confidence,
@@ -222,7 +230,7 @@ async function processReflection(
     const agentsCol = await col<AgentDoc>("agents")
     for (const agentId of JSON.parse(reflection.affected_agents) as string[]) {
       const agent = await agentsCol.get(agentId)
-      if (agent?.doc.specialist_id) applicable.push(`specialist:${agent.doc.specialist_id}`)
+      if (agent?.doc.source === "catalog") applicable.push(`agent:${agent.doc.id}`)
     }
   }
   const applicableTo = applicable.length ? JSON.stringify([...new Set(applicable)]) : null

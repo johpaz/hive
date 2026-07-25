@@ -100,7 +100,15 @@ export function SystemMonitor() {
 
           </div>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 pt-4">
+        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5 pt-4">
+          <MetricCard
+            icon={Zap}
+            label="CPU del proceso"
+            value={`${metrics?.cpu ?? 0}%`}
+            subValue={`${metrics?.cores ?? 1} núcleos disponibles`}
+            color={getColor(metrics?.cpu ?? 0)}
+            progress={Math.min(100, metrics?.cpu ?? 0)}
+          />
           <MetricCard
             icon={MessageSquare}
             label="Actividad reciente"

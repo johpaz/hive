@@ -377,7 +377,7 @@ export function SkillsTab() {
                     value={editForm.name}
                     onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))}
                     className="bg-white/5 border-white/10 focus-visible:ring-blue-500/30 text-white font-medium"
-                    placeholder="Ej: canvas_dashboard"
+                    placeholder="Ej: a2ui_dashboard"
                   />
                 </div>
                 <div className="space-y-1.5">

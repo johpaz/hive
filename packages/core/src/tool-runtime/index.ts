@@ -35,6 +35,12 @@ export type ExecuteToolBatchOptions = {
     thread_id?: string
     channel?: string
     workspace?: string | null
+    /** The currently-running agent's own id (agent-loop.ts's opts.agentId) — read by tools that need to know who's calling them (task_delegate's parent lookup, agent_create's parent_id, bus_publish's sender). */
+    agent_id?: string
+    run_id?: string
+    turn_id?: string
+    task_id?: string
+    session_id?: string
   }
   hiveConfig?: Config
   workerPool?: ToolRuntimeConfig
@@ -178,24 +184,14 @@ const DEFAULT_MAIN_THREAD_TOOL_NAMES = new Set([
   "bus_publish",
   "bus_read",
   "get_available_models",
-  "meeting_start",
-  "meeting_add_segment",
-  "meeting_stop",
-  "meeting_report",
   "browser_navigate",
   "browser_screenshot",
+  "artifact_inspect",
   "browser_click",
   "browser_type",
   "browser_extract",
   "browser_script",
   "browser_wait",
-  "canvas_render",
-  "canvas_ask",
-  "canvas_confirm",
-  "canvas_show_card",
-  "canvas_show_progress",
-  "canvas_show_list",
-  "canvas_clear",
   "a2ui_create_surface",
   "a2ui_update_components",
   "a2ui_update_data_model",
@@ -211,13 +207,7 @@ const DEFAULT_MAIN_THREAD_TOOL_NAMES = new Set([
   "notify",
   "report_progress",
   "task_delegate",
-  "task_delegate_code",
-  "project_create",
-  "task_create",
-  "task_complete",
-  "project_status",
-  "voice_transcribe",
-  "voice_speak",
+  "task_list",
 ])
 
 async function executeInMainThread(job: {
@@ -265,6 +255,7 @@ class ToolWorkerPool {
   private workers: WorkerSlot[] = []
   private queue: QueuedJob[] = []
   private readonly maxWorkers: number
+  private disposed = false
 
   constructor(maxWorkers: number) {
     this.maxWorkers = Math.max(1, maxWorkers)
@@ -272,6 +263,18 @@ class ToolWorkerPool {
 
   execute(job: Omit<QueuedJob, "resolve" | "settled" | "startedAt">): Promise<ToolBatchResult> {
     return new Promise((resolve) => {
+      if (this.disposed) {
+        resolve({
+          toolCall: job.toolCall,
+          toolName: job.toolCall.function.name,
+          result: toolErrorResult(job.toolCall.function.name, "Tool runtime shut down"),
+          ok: false,
+          durationMs: 0,
+          error: { name: "AbortError", message: "Tool runtime shut down" },
+          aborted: true,
+        })
+        return
+      }
       this.queue.push({
         ...job,
         resolve,
@@ -319,14 +322,48 @@ class ToolWorkerPool {
   }
 
   dispose(): void {
+    this.disposed = true
+    const reason = "Tool runtime shut down"
+
+    for (const job of this.queue) {
+      if (job.settled) continue
+      job.settled = true
+      job.resolve({
+        toolCall: job.toolCall,
+        toolName: job.toolCall.function.name,
+        result: toolErrorResult(job.toolCall.function.name, reason),
+        ok: false,
+        durationMs: 0,
+        error: { name: "AbortError", message: reason },
+        aborted: true,
+      })
+    }
+    this.queue = []
+
     for (const slot of this.workers) {
+      const job = slot.job
+      if (job && !job.settled) {
+        job.settled = true
+        if (job.timer) clearTimeout(job.timer)
+        job.resolve({
+          toolCall: job.toolCall,
+          toolName: job.toolCall.function.name,
+          result: toolErrorResult(job.toolCall.function.name, reason),
+          ok: false,
+          durationMs: Math.round(performance.now() - job.startedAt),
+          error: { name: "AbortError", message: reason },
+          aborted: true,
+        })
+      }
+      slot.job = undefined
+      slot.busy = false
       slot.worker.terminate()
     }
     this.workers = []
-    this.queue = []
   }
 
   private drain(): void {
+    if (this.disposed) return
     while (this.queue.length > 0) {
       const slot = this.getIdleSlot()
       if (!slot) return
@@ -428,6 +465,7 @@ class ToolWorkerPool {
   ): Promise<void> {
     const job = slot.job
     if (!job || job.id !== message.jobId || job.settled) return
+    const worker = slot.worker
 
     try {
       const result = await executeInMainThread({
@@ -441,9 +479,15 @@ class ToolWorkerPool {
         allTools: job.allTools,
         toolConfig: job.toolConfig,
       })
-      slot.worker.postMessage({ type: "rpc_result", rpcId: message.rpcId, ok: true, result })
+      if (this.disposed || slot.job !== job || job.settled || slot.worker !== worker) return
+      worker.postMessage({ type: "rpc_result", rpcId: message.rpcId, ok: true, result })
     } catch (error) {
-      slot.worker.postMessage({ type: "rpc_result", rpcId: message.rpcId, ok: false, error: serializeError(error) })
+      if (this.disposed || slot.job !== job || job.settled || slot.worker !== worker) return
+      try {
+        worker.postMessage({ type: "rpc_result", rpcId: message.rpcId, ok: false, error: serializeError(error) })
+      } catch {
+        // El worker pudo terminar entre la comprobación y el envío.
+      }
     }
   }
 

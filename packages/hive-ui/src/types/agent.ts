@@ -31,13 +31,24 @@ export interface Agent {
   // Tools & skills
   toolsJson?: string;
   skillsJson?: string;
+  minimalTools?: string[];
+  minimalSkills?: Array<{
+    id: string;
+    name: string;
+    description?: string;
+    category?: string;
+    tools?: string;
+  }>;
 
   // Hierarchy
   parentId?: string;
   maxIterations?: number;
 
-  // Set when this worker was materialized from a dormant specialist template
-  specialistId?: string | null;
+  // "catalog" for the seeded personas (agent-catalog.ts), "user" otherwise.
+  // Catalog agents live in the same `agents` table — no separate collection/endpoint.
+  source?: "user" | "catalog";
+  ace?: { helpful: number; harmful: number } | null;
+  lastVerification?: { status: string; taskId: string; createdAt: number } | null;
 
   // Workspace
   workspace?: string;

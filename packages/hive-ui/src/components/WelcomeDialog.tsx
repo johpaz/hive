@@ -188,7 +188,7 @@ export function WelcomeDialog() {
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <Capability icon="🗣️" text="Voz en tiempo real (STT/TTS)" />
                   <Capability icon="🔌" text="MCP Servers" />
-                  <Capability icon="🎨" text="Canvas visual" />
+                  <Capability icon="🎨" text="Panel interactivo" />
                   <Capability icon="📱" text="Múltiples canales" />
                   <Capability icon="🧠" text="Múltiples agentes" />
                   <Capability icon="💬" text="Memoria conversacional" />

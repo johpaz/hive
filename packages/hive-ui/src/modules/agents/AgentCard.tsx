@@ -28,10 +28,20 @@ import { useAgents, useProviders, useModels } from "@/stores/useGlobalConfigStor
 import { swal } from "@/lib/swal";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+import { getAgentSkillIds, getAgentToolIds } from "./agentCapabilities";
 
 interface AgentCardProps {
   agent: Agent;
   onEdit?: (agent: Agent) => void;
+}
+
+function formatAgentDate(value?: string | number) {
+  if (!value) return null;
+  try {
+    return format(new Date(value), "dd MMM yyyy", { locale: es });
+  } catch {
+    return null;
+  }
 }
 
 export function AgentCard({ agent, onEdit }: AgentCardProps) {
@@ -77,24 +87,12 @@ export function AgentCard({ agent, onEdit }: AgentCardProps) {
   const modelName = models.find(m => m.id === modelId)?.name || modelId;
   const displayStatus = agent.enabled ? agent.status : "hibernated";
 
-  // Parse tools and skills from JSON
-  const tools = agent.toolsJson ? JSON.parse(agent.toolsJson) as any[] : [];
-  const skills = agent.skillsJson ? JSON.parse(agent.skillsJson) as any[] : [];
-  const toolsCount = tools.length || 0;
-  const skillsCount = skills.length || 0;
+  const toolsCount = getAgentToolIds(agent).length;
+  const skillsCount = getAgentSkillIds(agent).length;
   const hasSystemPrompt = !!agent.systemPrompt;
   const maxIterations = agent.maxIterations || 10;
 
-  const formatDate = (val?: string | number) => {
-    if (!val) return null;
-    try {
-      return format(new Date(val), "dd MMM yyyy", { locale: es });
-    } catch (e) {
-      return null;
-    }
-  };
-
-  const createdAt = formatDate(agent.created_at || agent.createdAt);
+  const createdAt = formatAgentDate(agent.created_at || agent.createdAt);
 
   return (
     <div

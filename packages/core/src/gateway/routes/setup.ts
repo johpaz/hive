@@ -8,7 +8,6 @@ import {
   saveAgentConfig,
   saveProviderConfig,
   activateChannel,
-  saveVoiceConfig,
   activateEthics,
 } from "../../storage/onboarding"
 import { getHiveDir } from "../../config/loader"
@@ -108,6 +107,7 @@ export async function handleSetupOllamaModels(
           await modelsCol.put(m.name, {
             id: m.name, name: m.name, provider_id: "ollama", model_type: "llm",
             context_window: 0, capabilities: null, enabled: true, active: false,
+            source: "discovered",
           }, { expectedVersion: 0 })
         }
       }
@@ -370,6 +370,7 @@ export async function handleCompleteSetup(
           await modelsCol.put(body.model, {
             id: body.model, name: body.model, provider_id: "ollama", model_type: "llm",
             context_window: 0, capabilities: null, enabled: true, active: true,
+            source: "discovered",
           }, { expectedVersion: 0 })
         }
       } catch { /* ignore */ }
@@ -419,15 +420,8 @@ export async function handleCompleteSetup(
       }
     }
 
-    if (body.voiceEnabled) {
-      await saveVoiceConfig({
-        userId,
-        channelId: "webchat",
-        voiceEnabled: true,
-        sttProvider: body.sttProvider || "groq-whisper",
-        ttsProvider: body.ttsProvider || "elevenlabs",
-      })
-    }
+    // Voice is not part of the setup wizard anymore — it is configured per
+    // channel afterwards (PUT /api/channels/:id).
 
     // Activar ethics — usar las seleccionadas por el usuario, o "default" si no viene nada
     if (body.ethicsRules && typeof body.ethicsRules === "object") {

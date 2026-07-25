@@ -3,27 +3,18 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Layers } from "lucide-react";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { A2UIRenderer } from "./A2UIRenderer";
-import { ComponentRenderer } from "../ComponentRenderer";
 import type { A2UIActionMessage } from "@/types/a2ui";
 
 export function A2UISurfacePanel() {
   const a2uiSurfaces = useCanvasStore((s) => s.a2uiSurfaces);
-  const components = useCanvasStore((s) => s.components);
-  const sendMessage = useCanvasStore((s) => s.sendMessage);
-  const removeComponent = useCanvasStore((s) => s.removeComponent);
   const sendA2UIAction = useCanvasStore((s) => s.sendA2UIAction);
-
-  const handleInteraction = useCallback((componentId: string, action: string, data?: unknown) => {
-    sendMessage({ type: "canvas:interact", componentId, action, data });
-    removeComponent(componentId);
-  }, [sendMessage, removeComponent]);
 
   const handleA2UIAction = useCallback((action: A2UIActionMessage) => {
     sendA2UIAction(action);
   }, [sendA2UIAction]);
 
   const surfacesList = Array.from(a2uiSurfaces.values());
-  const isEmpty = surfacesList.length === 0 && components.length === 0;
+  const isEmpty = surfacesList.length === 0;
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden"
@@ -35,8 +26,8 @@ export function A2UISurfacePanel() {
       {isEmpty ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-white/20">
           <Layers className="h-10 w-10 opacity-30" />
-          <p className="text-sm">Sin superficies A2UI activas</p>
-          <p className="text-xs text-white/15">El agente puede crear interfaces aquí con a2ui_create_surface</p>
+          <p className="text-sm">Sin paneles interactivos activos</p>
+          <p className="text-xs text-white/15">Los resultados y formularios creados por los agentes aparecerán aquí.</p>
         </div>
       ) : (
         <ScrollArea className="flex-1 p-6">
@@ -67,27 +58,6 @@ export function A2UISurfacePanel() {
             </div>
           )}
 
-          {components.length > 0 && (
-            <div className={surfacesList.length > 0 ? "mt-8" : ""}>
-              <p className="hive-label mb-3">Componentes</p>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                {components.map((component) => (
-                  <div
-                    key={component.id}
-                    className={
-                      component.span === "full"
-                        ? "col-span-full"
-                        : component.span === "half"
-                        ? "lg:col-span-2 xl:col-span-1"
-                        : ""
-                    }
-                  >
-                    <ComponentRenderer component={component} onInteraction={handleInteraction} />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </ScrollArea>
       )}
 
@@ -97,7 +67,7 @@ export function A2UISurfacePanel() {
           <span className="hive-mono">
             {surfacesList.length > 0
               ? `${surfacesList.length} superficie${surfacesList.length > 1 ? "s" : ""} A2UI activa${surfacesList.length > 1 ? "s" : ""}`
-              : "A2UI · sin superficies"}
+              : "Panel interactivo · sin superficies"}
           </span>
         </div>
       </div>

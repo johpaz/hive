@@ -35,7 +35,7 @@ steps:
     output: validated_command
 
   - step: 2
-    action: exec or terminal
+    action: cli_exec
     instruction: "Execute command and capture full output (stdout + stderr)"
     params:
       command: "validated command"
@@ -48,7 +48,7 @@ steps:
     output: formatted_output
 
   - step: 4
-    action: project_write
+    action: fs_write
     instruction: "Write output to specified file path"
     params:
       path: "logs/command_YYYY-MM-DD_HH-MM-SS.log"
@@ -74,13 +74,13 @@ output_format:
 
 examples:
   - user_input: "ejecutá npm install y guardá el output en logs/install.log"
-    expected_behavior: "exec({ command: 'npm install' }) → format with metadata → project_write({ path: 'logs/install.log' })"
+    expected_behavior: "cli_exec({ command: 'npm install' }) → format with metadata → fs_write({ path: 'logs/install.log' })"
 
   - user_input: "corré los tests y guardá el resultado"
-    expected_behavior: "terminal({ command: 'npm test' }) → capture full output → write to timestamped log file"
+    expected_behavior: "cli_exec({ command: 'npm test' }) → capture full output → write to timestamped log file"
 
   - user_input: "hacé un pipeline de git log a archivo"
-    expected_behavior: "exec({ command: 'git log --oneline' }) → write to 'logs/git_log_YYYY-MM-DD.md'"
+    expected_behavior: "cli_exec({ command: 'git log --oneline' }) → write to 'logs/git_log_YYYY-MM-DD.md'"
 ---
 
 # CLI Pipeline Skill
@@ -93,16 +93,15 @@ Para ejecutar comandos y guardar el output en archivos para logging o procesamie
 
 | Tool | Qué hace | Cuándo usarla |
 |------|----------|---------------|
-| `exec` | Ejecuta comando | Comandos simples |
-| `terminal` | Ejecuta con entorno | Comandos complejos |
-| `project_write` | Escribe archivo | Guardar output |
+| `cli_exec` | Ejecuta un comando con timeout y captura su salida | Comandos autorizados |
+| `fs_write` | Escribe un archivo dentro del workspace | Guardar output |
 
 ## Workflow
 
 1. **Validar comando** → Seguro para ejecución
 2. **Ejecutar** → Capturar stdout + stderr
 3. **Formatear** → Agregar timestamp, comando, metadata
-4. **Escribir** → `project_write({ path, content })`
+4. **Escribir** → `fs_write({ path, content })`
 
 ## Formato de Log
 

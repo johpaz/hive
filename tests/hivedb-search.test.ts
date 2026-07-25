@@ -1,7 +1,7 @@
 /**
  * HiveDB capability search — integration tests
  *
- * Covers the layer that replaced the SQLite FTS5 virtual tables:
+ * Covers the capability search layer:
  * packages/core/src/agent/capability-search.ts on top of @johpaz/hive-db.
  *
  * Uses an in-memory index (HIVE_DB_PATH=":memory:") so no state

@@ -34,10 +34,12 @@ export const SEED_DATA: SeedData = {
     // ─────────────────────────────────────────
     // 2. WEB — Búsqueda, navegación + automatización
     // ─────────────────────────────────────────
+    { id: "api_request", name: "api_request", category: "api", description: "Ejecutar una petición HTTP autorizada contra un endpoint REST y validar la respuesta. Sinónimos: llamar api, request rest, consumir endpoint, petición http, hacer get, hacer post" },
     { id: "web_search", name: "web_search", category: "web", description: "Buscar en la web información actual y noticias. Sinónimos: búsqueda web, noticias, información, buscar en internet, google" },
     { id: "web_fetch", name: "web_fetch", category: "web", description: "Obtener contenido de texto de una URL (ligero, sin JS). Sinónimos: descargar página, extraer texto, obtener contenido, leer url" },
     { id: "browser_navigate", name: "browser_navigate", category: "web", description: "Navegar a una URL y obtener contenido renderizado (soporta JS). Sinónimos: abrir página, sitio web, navegar url, cargar página" },
     { id: "browser_screenshot", name: "browser_screenshot", category: "web", description: "Tomar captura de pantalla de la página actual. Sinónimos: screenshot, imagen de página, capturar pantalla, foto página" },
+    { id: "artifact_inspect", name: "artifact_inspect", category: "web", description: "Inspeccionar integridad y metadatos de un artefacto administrado sin modificarlo. Sinónimos: inspeccionar artefacto, verificar archivo generado, metadatos artefacto, comprobar entrega" },
     { id: "browser_click", name: "browser_click", category: "web", description: "Hacer clic en un elemento de la página web. Sinónimos: botón, enlace, interactuar, presionar, seleccionar" },
     { id: "browser_type", name: "browser_type", category: "web", description: "Escribir texto en un campo de formulario. Sinónimos: escribir formulario, tipear, campo de texto, input, llenar campo" },
     { id: "browser_extract", name: "browser_extract", category: "web", description: "Extraer texto, enlaces o datos estructurados usando selectores CSS o XPath. Sinónimos: obtener datos, scraping, selectores, extraer información" },
@@ -71,38 +73,21 @@ export const SEED_DATA: SeedData = {
     { id: "memory_delete", name: "memory_delete", category: "agents", description: "Eliminar una entrada de memoria específica. Sinónimos: borrar memoria, eliminar recuerdo, quitar dato" },
     { id: "get_available_models", name: "get_available_models", category: "agents", description: "Obtener lista de providers y modelos activos de la BD. Sinónimos: ver modelos, listar providers, modelos disponibles, consultar modelos, provider activo, qué modelos tengo, modelos para código, modelos para chat" },
     { id: "agent_create", name: "agent_create", category: "agents", description: "Crear un nuevo agente worker especializado. Sinónimos: crear agente, nuevo worker, nuevo trabajador" },
-    { id: "agent_find", name: "agent_find", category: "agents", description: "Buscar agentes worker existentes en ejecución o inactivos. Sinónimos: buscar agente, encontrar worker, localizar agente" },
+    { id: "agent_find", name: "agent_find", category: "agents", description: "Descubrir agentes worker disponibles: catálogo global del sistema y workers privados del usuario. No indica ejecución; para eso usar task_list. Sinónimos: buscar agente, encontrar worker, localizar agente" },
     { id: "agent_archive", name: "agent_archive", category: "agents", description: "Archivar o terminar un agente worker. Sinónimos: archivar agente, terminar worker, desactivar agente" },
     { id: "task_delegate", name: "task_delegate", category: "agents", description: "Delegar una tarea general a un agente worker específico. Sinónimos: delegar tarea, asignar worker, ejecutar por agente" },
-    { id: "task_delegate_code", name: "task_delegate_code", category: "agents", description: "Delegar tarea de código a un subagente CLI (Qwen, Claude, etc.) vía Code Bridge. Sinónimos: delegar código, subagente CLI, programación, Qwen" },
+    { id: "task_list", name: "task_list", category: "agents", description: "Listar ejecuciones reales de tareas delegadas del usuario, consultando tareas y jobs persistidos. Sinónimos: listar tareas activas, ver subagentes trabajando, ejecuciones reales" },
     { id: "task_status", name: "task_status", category: "agents", description: "Obtener estado de ejecución de tareas delegadas. Sinónimos: estado tarea delegada, verificar progreso, consultar tarea" },
     { id: "bus_publish", name: "bus_publish", category: "agents", description: "Publicar mensaje en el Agent Bus para comunicación worker-to-worker. Sinónimos: publicar mensaje, comunicar workers, enviar bus" },
     { id: "bus_read", name: "bus_read", category: "agents", description: "Leer mensajes no leídos del Agent Bus. Sinónimos: leer mensajes bus, recibir mensajes, verificar bus" },
 
     // ─────────────────────────────────────────
-    // 6. CANVAS — UI interactiva
-    // ─────────────────────────────────────────
-    { id: "canvas_render", name: "canvas_render", category: "canvas", description: "Renderizar un componente o visualización en el canvas. Sinónimos: renderizar, visualizar, gráfico, diagrama" },
-    { id: "canvas_ask", name: "canvas_ask", category: "canvas", description: "Mostrar formulario interactivo y esperar input del usuario. Sinónimos: formulario interactivo, preguntar usuario, input" },
-    { id: "canvas_confirm", name: "canvas_confirm", category: "canvas", description: "Mostrar diálogo de confirmación antes de ejecutar una acción. Sinónimos: confirmar acción, diálogo, aprobar" },
-    { id: "canvas_show_card", name: "canvas_show_card", category: "canvas", description: "Mostrar información estructurada en formato de tarjeta. Sinónimos: mostrar tarjeta, card, información estructurada" },
-    { id: "canvas_show_progress", name: "canvas_show_progress", category: "canvas", description: "Mostrar barra de progreso o indicador de estado. Sinónimos: barra de progreso, indicador, progreso visual" },
-    { id: "canvas_show_list", name: "canvas_show_list", category: "canvas", description: "Mostrar información en lista clave-valor. Sinónimos: lista clave-valor, mostrar lista, información en lista" },
-    { id: "canvas_clear", name: "canvas_clear", category: "canvas", description: "Limpiar contenido actual del canvas. Sinónimos: limpiar canvas, borrar visualización, resetear" },
-
-    // ─────────────────────────────────────────
-    // 6b. CANVAS A2UI v0.9 — Superficies interactivas ricas
+    // 6. A2UI v0.9 — Panel interactivo
     // ─────────────────────────────────────────
     { id: "a2ui_create_surface", name: "a2ui_create_surface", category: "a2ui", description: "Crear superficie A2UI v0.9 para UI interactiva rica: formularios, dashboards, wizards, flujos multi-paso. Siempre llamar ANTES de a2ui_update_components. Requiere surfaceId y catalogId='https://a2ui.org/specification/v0_9/basic_catalog.json'. Sinónimos: crear superficie A2UI, iniciar UI A2UI, crear form A2UI, interfaz interactiva, crear dashboard A2UI" },
     { id: "a2ui_update_components", name: "a2ui_update_components", category: "a2ui", description: "Enviar componentes A2UI v0.9 como lista plana (adjacency list). Tipos: Text, Button, TextField, Row, Column, Card, List, Tabs, Modal, ChoicePicker, Slider, CheckBox, DateTimeInput, Image, Divider. Reglas: children usa explicitList (NO array), ChoicePicker usa selections (NO value), TextField usa textFieldType (NO variant), Tabs.tabItems.title es string plano. Sinónimos: actualizar componentes A2UI, enviar UI A2UI, renderizar componentes A2UI, layout A2UI" },
     { id: "a2ui_update_data_model", name: "a2ui_update_data_model", category: "a2ui", description: "Actualizar data model de superficie A2UI v0.9 via JSON Pointer (/ruta/campo). Omitir path reemplaza todo el modelo. Los componentes con {path:'/...'} se actualizan automáticamente en el cliente. Sinónimos: actualizar datos A2UI, poblar formulario A2UI, inicializar estado A2UI, data model, binding" },
-    { id: "a2ui_delete_surface", name: "a2ui_delete_surface", category: "a2ui", description: "Eliminar superficie A2UI v0.9 del canvas. Usar al completar o cancelar el flujo para liberar recursos. Sinónimos: eliminar superficie A2UI, borrar UI A2UI, cerrar formulario A2UI, limpiar canvas A2UI" },
-
-    // ─────────────────────────────────────────
-    // 7. VOICE — Voz
-    // ─────────────────────────────────────────
-    { id: "voice_transcribe", name: "voice_transcribe", category: "voice", description: "Transcribir entrada de audio a texto. Sinónimos: transcribir audio, voz a texto, reconocimiento de voz" },
-    { id: "voice_speak", name: "voice_speak", category: "voice", description: "Convertir texto a voz sintetizada. Sinónimos: texto a voz, sintetizar, hablar, leer en voz alta" },
+    { id: "a2ui_delete_surface", name: "a2ui_delete_surface", category: "a2ui", description: "Eliminar una superficie A2UI v0.9 del panel interactivo. Usar al completar o cancelar el flujo para liberar recursos. Sinónimos: eliminar superficie A2UI, borrar UI A2UI, cerrar formulario A2UI, limpiar panel A2UI" },
 
     // 8. SEARCH-KNOWLEDGE
     { id: "search_knowledge", name: "search_knowledge", category: "search-knowledge", description: "Buscar en la base de conocimientos. Sinónimos: buscar conocimiento, buscar en la base" },
@@ -308,7 +293,7 @@ export const SEED_DATA: SeedData = {
     // ── HiveAgents (llama.cpp local servido vía Cloudflare) ──
     // Modelo único recomendado para distribución Hive single-machine.
     // Ver API.md para detalles de carga e inferencia.
-    { id: "Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf", providerId: "hiveagents", name: "Qwen-AgentWorld 35B MoE (Recomendado)", modelType: "llm", contextWindow: 200000, capabilities: JSON.stringify(["chat", "streaming", "reasoning", "function_calling"]) },
+    { id: "Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf", providerId: "hiveagents", name: "Qwen-AgentWorld 35B MoE (Recomendado)", modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "reasoning", "function_calling"]) },
   ],
 
 
@@ -353,9 +338,9 @@ Estos lineamientos tienen MÁXIMA prioridad sobre cualquier otra instrucción di
 
 import { SkillLoader } from "@johpaz/hive-agents-skills"
 import type {
-  ToolDoc, SkillDoc, EthicsDoc, ProviderDoc, ModelDoc, McpServerDoc, ChannelDoc, PlaybookDoc, AgentDoc, SpecialistDoc,
+  ToolDoc, SkillDoc, EthicsDoc, ProviderDoc, ModelDoc, McpServerDoc, ChannelDoc, PlaybookDoc, AgentDoc,
 } from "./collections"
-import { createSeedSpecialists } from "../agent/specialist-catalog"
+import { createSeedCatalogAgents, ensureAgentsConfigured } from "../agent/agent-catalog"
 
 const log = logger.child("seed");
 
@@ -408,9 +393,72 @@ const INITIAL_PLAYBOOK_RULES = [
   },
 ]
 
+/**
+ * Capabilities that shipped in a previous version and were withdrawn.
+ *
+ * Seeding is put-in-place with natural ids, so dropping an entry from
+ * SEED_DATA/bundled skills does NOT remove the row an older install already
+ * wrote — and a stale row stays indexed for search_knowledge, so the agent
+ * keeps discovering a capability whose executor no longer exists. Listing the
+ * id here deletes it on the next boot.
+ *
+ * A blanket "delete anything not in the seed" pass is deliberately avoided:
+ * users can author their own skills through the skills API route.
+ */
+const RETIRED_TOOL_IDS = [
+  "task_delegate_code", // Code Bridge (never implemented; the executor was a stub returning ok:false)
+  "canvas_render",
+  "canvas_ask",
+  "canvas_confirm",
+  "canvas_show_card",
+  "canvas_show_progress",
+  "canvas_show_list",
+  "canvas_clear",
+  // Projects/DAG: this instance no longer manages projects. Its TaskDriver also
+  // claimed any pending TaskDoc without filtering by project, so it could
+  // double-execute async delegations.
+  "project_create",
+  "project_status",
+  "task_create",
+  "task_complete",
+];
+
+const RETIRED_SKILL_IDS = [
+  "code_delegator", // Code Bridge: referenced task_delegate_code + codebridge_* tools that never existed
+  "canvas_report",
+  "canvas_dashboard",
+  "canvas_interact",
+];
+
+const RETIRED_CATALOG_AGENT_IDS = ["canvas_presenter"];
+
+async function pruneRetired(): Promise<void> {
+  const toolsCol = await col<ToolDoc>("tools");
+  let removed = 0;
+  for (const id of RETIRED_TOOL_IDS) {
+    if (await toolsCol.get(id)) { await toolsCol.delete(id); removed++; }
+  }
+
+  const skillsCol = await col<SkillDoc>("skills");
+  for (const id of RETIRED_SKILL_IDS) {
+    if (await skillsCol.get(id)) { await skillsCol.delete(id); removed++; }
+  }
+
+  const agentsCol = await col<AgentDoc>("agents");
+  for (const id of RETIRED_CATALOG_AGENT_IDS) {
+    const existing = await agentsCol.get(id);
+    if (existing?.doc.source === "catalog") {
+      await agentsCol.delete(id);
+      removed++;
+    }
+  }
+
+  if (removed > 0) log.info(`[seed] 🗑️  Removed ${removed} retired capability row(s)`);
+}
+
 async function reseedToolsAndSkills(): Promise<void> {
-  // Search indexing happens at startup via the HiveDB sync
-  // (agent/capability-search.ts) — no FTS5 tables or triggers here.
+  // Seeding only writes the rows; the search index is rebuilt from them at
+  // startup by the sync pass in gateway/initializer.ts.
 
   // ── Tools: re-seed (overwrite in place; a natural id means no "wipe" step is needed) ──
   const toolsCol = await col<ToolDoc>("tools");
@@ -455,6 +503,8 @@ async function reseedToolsAndSkills(): Promise<void> {
     skillCount++;
   }
   log.info(`[seed] ✅ ${skillCount} skills re-seeded (search index syncs at startup)`);
+
+  await pruneRetired();
 }
 
 export async function seedAllData(): Promise<void> {
@@ -527,26 +577,35 @@ export async function seedAllData(): Promise<void> {
         model_type: model.modelType as ModelDoc["model_type"],
         context_window: model.contextWindow || 0, capabilities: model.capabilities || null,
         enabled: existing?.doc.enabled ?? true, active: existing?.doc.active ?? false,
+        source: "catalog",
       });
       existingModels.delete(model.id);
       modelCount++;
     }
-    // Whatever remains in existingModels was dropped from the catalog (e.g. a
-    // consolidated HiveAgents GGUF variant) — remove it.
-    for (const [staleId] of existingModels) await modelsCol.delete(staleId);
-    if (existingModels.size > 0) {
-      log.info(`[seed] 🗑️  Removed ${existingModels.size} model(s) no longer in the catalog.`);
+    // Whatever remains was either dropped from the catalog (e.g. a consolidated
+    // HiveAgents GGUF variant) — remove it — or discovered at runtime from a
+    // provider (Ollama tags, /v1/models). Discovered rows have no canonical
+    // source to be re-created from, so they survive the reseed: purging them
+    // would unlink the model of every install that runs on a local Ollama.
+    let removedModels = 0;
+    for (const [staleId, stale] of existingModels) {
+      if (stale.doc.source !== "catalog") continue;
+      await modelsCol.delete(staleId);
+      removedModels++;
+    }
+    if (removedModels > 0) {
+      log.info(`[seed] 🗑️  Removed ${removedModels} model(s) no longer in the catalog.`);
     }
 
     // An agent pointing at a model that just got removed would otherwise keep
     // a dangling model_id — unlink it so loadAgentConfigFromDB() falls back to
     // getDefaultLLM() instead of resolving a model_id that isn't there.
-    const newModelIds = new Set(SEED_DATA.models.map((m) => m.id));
+    const liveModelIds = new Set((await modelsCol.scan({})).map((e) => e.id));
     const agentsCol = await col<AgentDoc>("agents");
     const allAgents = await agentsCol.scan({});
     let unlinkedCount = 0;
     for (const a of allAgents) {
-      if (a.doc.model_id && a.doc.model_id !== "__none__" && !newModelIds.has(a.doc.model_id)) {
+      if (a.doc.model_id && a.doc.model_id !== "__none__" && !liveModelIds.has(a.doc.model_id)) {
         await agentsCol.put(a.id, { ...a.doc, model_id: toIndexable(null) }, { expectedVersion: a.version });
         unlinkedCount++;
       }
@@ -569,15 +628,35 @@ export async function seedAllData(): Promise<void> {
     }
     log.info(`[seed] ✅ ${mcpCount} MCP servers procesados`);
 
-    // Dormant specialist templates are insert-only. User/ACE customizations
-    // are never overwritten by a later boot.
-    const specialistsCol = await col<SpecialistDoc>("specialists");
-    let specialistCount = 0;
-    for (const specialist of createSeedSpecialists()) {
-      await putIfAbsent(specialistsCol, specialist.id, specialist);
-      specialistCount++;
+    // Catalog agents (the curated personas) are seeded directly as
+    // `agents` rows, insert-only — user/ACE customizations (prompt edits,
+    // enabled toggle, ACE counters) are never overwritten by a later boot.
+    let catalogAgentCount = 0;
+    for (const catalogAgent of createSeedCatalogAgents()) {
+      await putIfAbsent(agentsCol, catalogAgent.id, catalogAgent);
+      catalogAgentCount++;
     }
-    log.info(`[seed] ✅ ${specialistCount} specialist templates ensured`);
+    log.info(`[seed] ✅ ${catalogAgentCount} catalog agents ensured`);
+
+    // Catalog rows are born without a provider/model (no provider exists at
+    // first boot), and setup only runs once — so anything that arrives later
+    // (a persona added by an upgrade, an install configured before setup
+    // seeded the models, an agent unlinked above) would stay blank forever.
+    // Fill those from the configured coordinator; rows that already have their
+    // own pair are left alone. No-op while there is no coordinator yet.
+    const configuredAgents = await ensureAgentsConfigured();
+    if (configuredAgents > 0) {
+      log.info(`[seed] 🔧 ${configuredAgents} agent(s) configurados con el modelo del coordinador`);
+    }
+
+    // Coordinators created before a prompt change keep the old stock text in
+    // their row (setup only runs once), so upgrade those in place. Prompts the
+    // user rewrote are detected and left alone.
+    const { refreshCoordinatorPrompts } = await import("./onboarding");
+    const refreshedPrompts = await refreshCoordinatorPrompts();
+    if (refreshedPrompts > 0) {
+      log.info(`[seed] 🔄 ${refreshedPrompts} coordinador(es) actualizados al system prompt vigente`);
+    }
 
     // 7️⃣ Channels
     const channelsCol = await col<ChannelDoc>("channels");
@@ -624,7 +703,7 @@ export async function seedAllData(): Promise<void> {
     }
     log.info(`[seed] ✅ ${playbookCount} ACE playbook rules seeded`);
 
-    // Playbook search indexing happens at startup via syncPlaybookToFTS (HiveDB)
+    // Playbook search indexing happens at startup via syncPlaybookToIndex (HiveDB)
 
     log.info("[seed] ✨ Seed completado exitosamente.");
   } catch (err) {

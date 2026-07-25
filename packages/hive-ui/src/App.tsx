@@ -12,13 +12,13 @@ const AgentsPage = lazy(() => import("@/pages/AgentsPage").then(m => ({ default:
 const AgentDetailPage = lazy(() => import("@/pages/AgentDetailPage").then(m => ({ default: m.AgentDetailPage })));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage").then(m => ({ default: m.SettingsPage })));
 const AgentNewPage = lazy(() => import("@/pages/AgentNewPage").then(m => ({ default: m.AgentNewPage })));
-const CanvasPage = lazy(() => import("@/pages/CanvasPage").then(m => ({ default: m.CanvasPage })));
 const A2UIPage = lazy(() => import("@/pages/A2UIPage").then(m => ({ default: m.A2UIPage })));
 const LogsPage = lazy(() => import("@/pages/LogsPage").then(m => ({ default: m.LogsPage })));
 const ChannelsPage = lazy(() => import("@/pages/ChannelsPage").then(m => ({ default: m.ChannelsPage })));
 const ProvidersPage = lazy(() => import("@/pages/ProvidersPage").then(m => ({ default: m.ProvidersPage })));
 const WebChatPage = lazy(() => import("@/pages/WebChatPage").then(m => ({ default: m.WebChatPage })));
 const MeetingPage = lazy(() => import("@/pages/MeetingPage").then(m => ({ default: m.MeetingPage })));
+const Office3DPage = lazy(() => import("@/modules/office3d/Office3DPage"));
 const ApiClientPage = lazy(() => import("@/pages/ApiClientPage").then(m => ({ default: m.ApiClientPage })));
 const SetupPage = lazy(() => import("@/pages/SetupPage"));
 const LoginPage = lazy(() => import("@/pages/LoginPage"));
@@ -159,8 +159,7 @@ const AppContent = () => {
           <Route path="/cron-jobs" element={<SettingsPage forcePanel="cron-jobs" />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/:panel" element={<SettingsPage />} />
-          <Route path="/canvas" element={<CanvasPage />} />
-          <Route path="/canvas/:sessionId" element={<CanvasPage />} />
+          <Route path="/office" element={<Office3DPage />} />
           <Route path="/a2ui" element={<A2UIPage />} />
           <Route path="/a2ui/:sessionId" element={<A2UIPage />} />
           <Route path="/meeting" element={<MeetingPage />} />

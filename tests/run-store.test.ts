@@ -128,6 +128,52 @@ describe("run-store: checkpoint", () => {
     expect(deserialized!.injectedToolNames).toEqual(["search_knowledge"]);
   });
 
+  test("normalizes a stray trailing system message (pre-source checkpoint) to a wrapped user turn", async () => {
+    const run = await createRun({
+      thread_id: "thread-stray-system",
+      agent_id: "agent1",
+      user_id: "user1",
+      channel: "webchat",
+      kind: "chat",
+      max_iterations: 10,
+    });
+
+    // Checkpoints written before `source` existed could carry a second
+    // system message — the compaction summary or a delegation notice —
+    // after the real system prompt at index 0.
+    const state: RunCheckpointState = {
+      version: 1,
+      messages: [
+        { role: "system", content: "You are an agent" },
+        { role: "user", content: "Hello" },
+        { role: "system", content: "[Conversation Summary]: resumen previo" },
+      ],
+      iterations: 1,
+      totalInputTokens: 10,
+      totalOutputTokens: 10,
+      lastToolSignature: "",
+      consecutiveRepeat: 0,
+      idleIterations: 0,
+      injectedToolNames: [],
+      systemPromptSkillSections: [],
+    };
+
+    await checkpoint(run.id, state);
+    const saved = await getRun(run.id);
+    const deserialized = deserializeCheckpoint(saved!);
+
+    expect(deserialized).not.toBeNull();
+    // index 0 stays the real system prompt.
+    expect(deserialized!.messages[0].role).toBe("system");
+    expect(deserialized!.messages[0].content).toBe("You are an agent");
+    // the stray one is rewritten as a wrapped user turn, not dropped.
+    expect(deserialized!.messages[2].role).toBe("user");
+    expect(deserialized!.messages[2].content).toContain('<hive:internal_event source="legacy_internal">');
+    expect(deserialized!.messages[2].content).toContain("resumen previo");
+    // exactly one system message survives.
+    expect(deserialized!.messages.filter((m) => m.role === "system")).toHaveLength(1);
+  });
+
   test("truncates large tool results to stay under MAX_STATE_BYTES", async () => {
     const run = await createRun({
       thread_id: "thread1",

@@ -8,26 +8,29 @@
  * Executors:
  * - chat_turn: runs the agent loop + streams tokens back to the WS channel
  * - worker_task: runs an isolated worker agent + notifies the bus + channel
- * - project_task: runs a project subtask worker + updates TaskDoc
+ * - goal_run: multi-turn orchestration until the goal verifies or budget ends
  */
 
 import { registerExecutor, type JobExecutor } from "./durable-queue";
 import { logger } from "../utils/logger";
-import { col, updateDoc, fromIndexable } from "../storage/hive";
+import { col, updateDoc } from "../storage/hive";
 import { isRetryableError } from "../resilience/retry";
 import type { JobDoc, TaskDoc, AgentRunDoc, AgentDoc } from "../storage/collections";
-import { runAgent, runAgentIsolated } from "../agent/agent-loop";
+import { runAgent, runAgentIsolated, runAgentIsolatedDetailed } from "../agent/agent-loop";
 import { createRun, completeRun, failRun, interruptRun, getRun, reclaimRun, bumpTurn, startLeaseRenewal, stopLeaseRenewal, deserializeAcceptance, deserializeEpoch } from "../agent/run-store";
 import { getDurableQueue } from "./durable-queue";
 import { sendToUserChannel } from "./channel-notify";
 import { verifyGoal } from "../agent/goal-runner";
 import { buildProofPacket } from "../agent/proof-packet";
-import { verifySpecialistDelivery } from "../agent/acceptance-verifier";
-import { wakeSpecialist, type AwakeSpecialist } from "../agent/specialist-runtime";
+import { verifyAgentDelivery } from "../agent/acceptance-verifier";
+import { prepareDelegation, type PreparedDelegation } from "../agent/delegation-runtime";
 import { runWebchatTurn, type WebchatTurnPayload } from "./webchat-turn";
 import { agentBus } from "../events/agent-bus";
 import { resolveContext } from "./resolver";
 import type { MCPClientManager } from "@johpaz/hive-agents-mcp";
+import { publishNarration } from "../events/narration";
+import { emitDelegationStarted, emitDelegationFinished, emitVerificationStarted, emitVerificationFinished } from "../canvas/emitter";
+import { VERIFIER_AGENT_ID } from "../agent/acceptance-verifier";
 
 const log = logger.child("job-executors");
 
@@ -67,10 +70,15 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
   const taskDescription = payload.taskDescription as string;
   const taskName = payload.taskName as string;
   const taskId = payload.taskId as string | undefined;
-  const specialistId = payload.specialistId as string | undefined;
   const acceptance = (payload.acceptance ?? null) as import("../agent/run-store").AcceptanceCriterion[] | null;
   const mcpServerIds = (payload.mcpServerIds ?? []) as string[];
   const runId = job.run_id;
+  const turnId = payload.turnId as string | undefined;
+  const parentAgentId = (payload.parentAgentId as string | undefined) ?? "";
+  const originThreadId = payload.originThreadId as string | undefined;
+  const originChannel = payload.originChannel as string | undefined;
+  const originUserId = payload.userId as string | undefined;
+  const originSessionId = payload.originSessionId as string | undefined;
 
   log.info(`[worker_task] Job ${job.id} → worker=${workerId} task="${taskName}"`);
 
@@ -80,7 +88,25 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
   if (!workerEntry.doc.enabled) return { ok: false, error: `Worker disabled: ${workerEntry.doc.name}`, retryable: false };
 
   const workerName = workerEntry.doc.name;
+  const isCatalogAgent = workerEntry.doc.source === "catalog";
   agentBus.notifyTaskStarted(workerId, workerName, 0, taskName, "");
+  const delegationRef = taskId ?? job.id;
+  emitDelegationStarted({ workerId, parentAgentId, taskRef: delegationRef, taskName });
+  if (turnId && originThreadId) {
+    await publishNarration({
+      turnId,
+      threadId: originThreadId,
+      channel: originChannel,
+      userId: originUserId,
+      sessionId: originSessionId,
+      agentId: workerId,
+      agentName: workerName,
+      kind: "worker_started",
+      status: "running",
+      label: `${workerName} inició “${taskName}”`,
+      dedupeKey: `worker_started:${taskId ?? job.id}`,
+    });
+  }
 
   // Update TaskDoc → in_progress if we have a taskId
   if (taskId) {
@@ -93,24 +119,21 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
     } as Partial<TaskDoc>).catch(() => {});
   }
 
-  let awake: AwakeSpecialist | null = null;
+  let prepared: PreparedDelegation | null = null;
   try {
-    if (specialistId) {
-      awake = await wakeSpecialist({
-        specialistId,
-        userId: payload.userId ?? workerEntry.doc.user_id ?? "",
-        parentAgentId: payload.parentAgentId ?? fromIndexable(workerEntry.doc.parent_id) ?? workerId,
-        workspace: payload.workspace ?? workerEntry.doc.workspace ?? null,
-        mcpServerIds,
-        mcpManager,
-      });
-    }
+    prepared = await prepareDelegation(workerId, {
+      workspace: payload.workspace ?? workerEntry.doc.workspace ?? null,
+      mcpServerIds,
+      parentProviderId: payload.parentProviderId ?? null,
+      parentModelId: payload.parentModelId ?? null,
+      mcpManager,
+    });
     // Resume from the checkpoint on a re-claimed job (payload can't know this)
     const run = runId ? await getRun(runId) : null;
     const resume = !!run?.state_json;
     const threadId = run?.thread_id || `task-${Date.now()}-${workerId}`;
 
-    const result = await runAgentIsolated({
+    const execution = await runAgentIsolatedDetailed({
       agentId: workerId,
       taskDescription,
       threadId,
@@ -119,7 +142,13 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
       resume,
       durable: !!runId,
       signal,
+      turnId,
+      taskId,
+      userId: originUserId,
+      channel: originChannel,
+      sessionId: originSessionId,
     });
+    const result = execution.content;
 
     if (signal.aborted) {
       agentBus.notifyTaskFailed(workerId, workerName, 0, taskName, "", "Aborted");
@@ -133,23 +162,56 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
     }
 
     const finishedRun = runId ? await getRun(runId) : null;
-    const verification = await verifySpecialistDelivery({
+    if (turnId && originThreadId) {
+      await publishNarration({
+        turnId,
+        threadId: originThreadId,
+        channel: originChannel,
+        userId: originUserId,
+        sessionId: originSessionId,
+        agentId: workerId,
+        agentName: workerName,
+        kind: "verifying",
+        status: "running",
+        label: `El verificador está revisando la entrega de ${workerName}`,
+        dedupeKey: `verifying:${taskId ?? job.id}`,
+      });
+    }
+    emitVerificationStarted({ verifierId: VERIFIER_AGENT_ID, workerId, taskRef: delegationRef, taskName });
+    const verification = await verifyAgentDelivery({
       runId,
       taskId,
       executorAgentId: workerId,
       objective: taskDescription,
       acceptance: acceptance ?? (finishedRun ? deserializeAcceptance(finishedRun) : null),
       delivery: result,
-      evidence: [result],
+      evidence: [result, ...execution.toolEvidence],
       executorEpoch: finishedRun ? deserializeEpoch(finishedRun) : null,
-      mcpServerIds,
+      mcpServerIds: prepared.mcpServerIds,
       mcpManager,
     });
     const verdict = JSON.parse(verification.verdict_json);
+    emitVerificationFinished({ verifierId: VERIFIER_AGENT_ID, taskRef: delegationRef });
     if (verification.status !== "verified") {
+      if (turnId && originThreadId) {
+        await publishNarration({
+          turnId,
+          threadId: originThreadId,
+          channel: originChannel,
+          userId: originUserId,
+          sessionId: originSessionId,
+          agentId: workerId,
+          agentName: workerName,
+          kind: "failed",
+          status: "error",
+          label: `El verificador no aprobó la entrega de ${workerName}`,
+          detail: verdict.summary || "Falta evidencia independiente.",
+          dedupeKey: `verification_failed:${taskId ?? job.id}`,
+        });
+      }
       if (taskId) {
         await updateDoc<TaskDoc>("tasks", taskId, {
-          status: "pending",
+          status: "blocked",
           error: verdict.summary || "Independent verification did not authorize success.",
           updated_at: Date.now(),
         } as Partial<TaskDoc>).catch(() => {});
@@ -157,8 +219,24 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
       return {
         ok: false,
         error: verdict.summary || "Independent verification did not authorize success.",
-        retryable: verification.attempt < 3,
+        retryable: false,
       };
+    }
+    if (turnId && originThreadId) {
+      await publishNarration({
+        turnId,
+        threadId: originThreadId,
+        channel: originChannel,
+        userId: originUserId,
+        sessionId: originSessionId,
+        agentId: workerId,
+        agentName: workerName,
+        kind: "verified",
+        status: "done",
+        label: `El verificador aprobó la entrega de ${workerName}`,
+        detail: `verification_id=${verification.id}`,
+        dedupeKey: `verified:${taskId ?? job.id}`,
+      });
     }
 
     agentBus.notifyTaskCompleted(workerId, workerName, 0, taskName, "", result);
@@ -180,16 +258,39 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
       intendedOutcome: taskDescription,
       met: true,
       checksRun: acceptance?.map((criterion) => criterion.checkTool ?? "acceptance_verifier") ?? ["acceptance_verifier"],
-      evidence: [result],
+      evidence: [result, ...execution.toolEvidence],
       epoch: finishedRun ? deserializeEpoch(finishedRun) : null,
       verificationId: verification.id,
-      specialistId: specialistId ?? null,
+      catalogAgentId: isCatalogAgent ? workerId : null,
     });
 
-    return { ok: true, result: { content: result, verification_id: verification.id } };
+    return {
+      ok: true,
+      result: {
+        content: result,
+        evidence: execution.toolEvidence,
+        verification_id: verification.id,
+      },
+    };
   } catch (err) {
     const errorMsg = (err as Error).message;
     agentBus.notifyTaskFailed(workerId, workerName, 0, taskName, "", errorMsg);
+    if (turnId && originThreadId) {
+      await publishNarration({
+        turnId,
+        threadId: originThreadId,
+        channel: originChannel,
+        userId: originUserId,
+        sessionId: originSessionId,
+        agentId: workerId,
+        agentName: workerName,
+        kind: "failed",
+        status: "error",
+        label: `${workerName} no pudo completar “${taskName}”`,
+        detail: errorMsg,
+        dedupeKey: `worker_failed:${taskId ?? job.id}`,
+      });
+    }
 
     // Update TaskDoc → failed
     if (taskId) {
@@ -202,128 +303,10 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
 
     return { ok: false, error: errorMsg, retryable: isRetryableError(err) };
   } finally {
-    await awake?.release();
-  }
-};
-
-// ─── project_task executor ──────────────────────────────────────────────────
-
-const projectTaskExecutor: JobExecutor = async (job, signal) => {
-  const payload = JSON.parse(job.payload_json);
-  const taskId = payload.taskId as string;
-  const workerId = payload.workerId as string;
-  const taskDescription = payload.taskDescription as string;
-  const runId = job.run_id;
-
-  log.info(`[project_task] Job ${job.id} → task=${taskId} worker=${workerId}`);
-
-  // Update TaskDoc → in_progress
-  await updateDoc<TaskDoc>("tasks", taskId, {
-    status: "in_progress",
-    started_at: Date.now(),
-    job_id: job.id,
-    run_id: runId,
-    updated_at: Date.now(),
-  } as Partial<TaskDoc>).catch(() => {});
-
-  try {
-    // Resume from the checkpoint on a re-claimed job (payload can't know this)
-    const run = runId ? await getRun(runId) : null;
-    const resume = !!run?.state_json;
-    const threadId = run?.thread_id || `project-${taskId}-${Date.now()}`;
-
-    const result = await runAgentIsolated({
-      agentId: workerId,
-      taskDescription,
-      threadId,
-      mcpManager,
-      runId,
-      resume,
-      durable: !!runId,
-      signal,
-    });
-
-    if (signal.aborted) {
-      await updateDoc<TaskDoc>("tasks", taskId, {
-        status: "pending",
-        updated_at: Date.now(),
-      } as Partial<TaskDoc>).catch(() => {});
-      return { ok: false, error: "Aborted", retryable: false };
-    }
-
-    const finishedRun = runId ? await getRun(runId) : null;
-    const executorAgent = await (await col<AgentDoc>("agents")).get(workerId);
-    const specialistId = executorAgent?.doc.specialist_id ?? null;
-    const verification = await verifySpecialistDelivery({
-      runId,
-      taskId,
-      executorAgentId: workerId,
-      objective: taskDescription,
-      acceptance: finishedRun ? deserializeAcceptance(finishedRun) : null,
-      delivery: result,
-      evidence: [result],
-      executorEpoch: finishedRun ? deserializeEpoch(finishedRun) : null,
-      mcpManager,
-    });
-    if (verification.status !== "verified") {
-      const verdict = JSON.parse(verification.verdict_json);
-      await updateDoc<TaskDoc>("tasks", taskId, {
-        status: "pending",
-        error: verdict.summary || "Independent verification did not authorize success.",
-        updated_at: Date.now(),
-      } as Partial<TaskDoc>).catch(() => {});
-      return {
-        ok: false,
-        error: verdict.summary || "Independent verification did not authorize success.",
-        retryable: verification.attempt < 3,
-      };
-    }
-
-    // Update TaskDoc → completed
-    await updateDoc<TaskDoc>("tasks", taskId, {
-      status: "completed",
-      progress: 100,
-      result,
-      completed_at: Date.now(),
-      updated_at: Date.now(),
-    } as Partial<TaskDoc>).catch(() => {});
-
-    if (runId) {
-      await buildProofPacket({
-        runId,
-        agentId: workerId,
-        intendedOutcome: taskDescription,
-        met: true,
-        checksRun: [],
-        evidence: [typeof result === "string" ? result : JSON.stringify(result)].filter(Boolean),
-        epoch: finishedRun ? deserializeEpoch(finishedRun) : null,
-        verificationId: verification.id,
-        specialistId,
-      });
-    }
-
-    // Kick the TaskDriver to check for newly-ready tasks
-    try {
-      const { getTaskDriver } = await import("../scheduler/task-driver");
-      await getTaskDriver().kick("project_task:completed");
-    } catch { /* non-critical */ }
-
-    return { ok: true, result };
-  } catch (err) {
-    const errorMsg = (err as Error).message;
-    await updateDoc<TaskDoc>("tasks", taskId, {
-      status: "failed",
-      error: errorMsg,
-      updated_at: Date.now(),
-    } as Partial<TaskDoc>).catch(() => {});
-
-    // Kick the TaskDriver to check for newly-ready tasks (or blocked dependents)
-    try {
-      const { getTaskDriver } = await import("../scheduler/task-driver");
-      await getTaskDriver().kick("project_task:failed");
-    } catch { /* non-critical */ }
-
-    return { ok: false, error: errorMsg, retryable: isRetryableError(err) };
+    // Idempotente: cubre también el caso en que verifyAgentDelivery lance
+    emitVerificationFinished({ verifierId: VERIFIER_AGENT_ID, taskRef: delegationRef });
+    emitDelegationFinished({ workerId, taskRef: delegationRef });
+    await prepared?.release();
   }
 };
 
@@ -437,7 +420,7 @@ const goalRunExecutor: JobExecutor = async (job, signal) => {
       ], providerCfg, acceptance);
 
       if (verdict.met) {
-        const independent = await verifySpecialistDelivery({
+        const independent = await verifyAgentDelivery({
           runId: goalRunId,
           executorAgentId: agentId,
           objective: goal,
@@ -466,7 +449,7 @@ const goalRunExecutor: JobExecutor = async (job, signal) => {
           evidence: [verdict.reason, lastContent].filter(Boolean),
           epoch,
           verificationId: independent.id,
-          specialistId: null,
+          catalogAgentId: null,
         });
         return { ok: true, result: { met: true, attempts, reason: verdict.reason, content: lastContent } };
       }
@@ -505,7 +488,6 @@ export function initJobExecutors(): void {
   if (initialized) return;
   registerExecutor("chat_turn", chatTurnExecutor);
   registerExecutor("worker_task", workerTaskExecutor);
-  registerExecutor("project_task", projectTaskExecutor);
   registerExecutor("goal_run", goalRunExecutor);
   initialized = true;
   log.info("[initJobExecutors] All executors registered");

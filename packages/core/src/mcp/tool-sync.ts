@@ -85,7 +85,7 @@ export async function syncMCPToolsToDB(
  *
  * This does a full replace of `type=mcp` documents to avoid drift.
  */
-export async function syncMCPToolsToFTS(): Promise<void> {
+export async function syncMCPToolsToIndex(): Promise<void> {
     try {
         const mcpToolsCol = await col<McpToolDoc>("mcpTools")
         const mcpTools = (await mcpToolsCol.scan({})).map(e => e.doc).filter(t => t.active)

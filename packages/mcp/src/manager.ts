@@ -130,7 +130,7 @@ export class MCPClientManager {
           });
           // A server the user just added should be usable right away — only
           // servers that were already dormant (e.g. from a previous boot)
-          // wait for an explicit connect or a specialist lease.
+          // wait for an explicit connect or an agent's task-scoped lease.
           await this.connectServer(name).catch((err) => {
             this.log.error(`Failed to connect new server ${name}: ${err.message}`);
           });

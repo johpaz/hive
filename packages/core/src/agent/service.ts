@@ -161,8 +161,8 @@ export class AgentService {
    */
   async reloadSkills(): Promise<void> {
     log.info("Reloading skills...")
-    const { syncSkillsToFTS } = await import("./context-compiler")
-    await syncSkillsToFTS()
+    const { syncSkillsToIndex } = await import("./context-compiler")
+    await syncSkillsToIndex()
     log.info("Skills reloaded")
   }
 

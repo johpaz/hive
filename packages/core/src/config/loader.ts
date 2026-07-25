@@ -346,17 +346,6 @@ const SecurityConfigSchema = z.object({
   allowedUsers: z.array(z.string()).optional(),
 });
 
-const CaptchaConfigSchema = z.object({
-  enabled: z.boolean().optional(),
-  autoSolve: z.boolean().optional(),
-  visionProvider: z.enum(["gemini", "openai", "anthropic"]).optional(),
-  visionModel: z.string().optional(),
-  maxAttempts: z.number().optional(),
-  maxRounds: z.number().optional(),
-  apiKey: z.string().optional(),
-  enabledSites: z.array(z.string()).optional(),
-});
-
 const UserConfigSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -389,7 +378,6 @@ const ConfigSchema = z.object({
   harness: HarnessConfigSchema.optional(),
   security: SecurityConfigSchema.optional(),
   hooks: HooksConfigSchema.optional(),
-  captcha: CaptchaConfigSchema.optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -399,7 +387,6 @@ export type MCPServerConfig = z.infer<typeof MCPServerConfigSchema>;
 export type AgentEntry = z.infer<typeof AgentEntrySchema>;
 export type Binding = z.infer<typeof BindingSchema>;
 export type UserConfig = z.infer<typeof UserConfigSchema>;
-export type CaptchaConfig = z.infer<typeof CaptchaConfigSchema>;
 
 function buildDefaultConfig(): Config {
   const hiveDir = getHiveDir();
@@ -563,15 +550,6 @@ function buildDefaultConfig(): Config {
     },
     hooks: {
       scripts: {},
-    },
-    captcha: {
-      enabled: false,
-      autoSolve: true,
-      visionProvider: 'gemini',
-      visionModel: 'gemini-2.0-flash-exp',
-      maxAttempts: 3,
-      maxRounds: 5,
-      enabledSites: [],
     },
   };
 }

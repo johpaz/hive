@@ -65,6 +65,10 @@ describe("delegation-notify", () => {
     expect(notices[0].payload.sessionId).toBe("sess-1");
     expect(notices[0].payload.content).toContain("Investigar X");
     expect(notices[0].payload.content).toContain("Reporte listo");
+    // No manual framing — persisted with source:"task_complete" and framed
+    // at serialization time by formatInternalEvent, not baked into content.
+    expect(notices[0].payload.content).not.toContain("[Sistema]");
+    expect(notices[0].payload.source).toBe("task_complete");
   });
 
   test("a worker_task without originThreadId (no origin conversation) does not notify", async () => {

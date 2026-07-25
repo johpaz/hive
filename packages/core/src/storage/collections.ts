@@ -45,6 +45,14 @@ export interface ModelDoc {
   capabilities: string | null
   enabled: boolean
   active: boolean
+  /**
+   * "catalog" for rows that come from SEED_DATA, "discovered" for rows
+   * inserted at runtime by querying a provider (Ollama tags, /v1/models).
+   * The boot reseed only purges catalog rows — a discovered model has no
+   * canonical source to be re-created from, so wiping it would orphan every
+   * agent pointing at it. Legacy rows (undefined) are treated as discovered.
+   */
+  source?: "catalog" | "discovered"
 }
 
 export interface AgentDoc {
@@ -75,14 +83,14 @@ export interface AgentDoc {
   updated_at: number
 
   // ─── Catalog fields (only populated for source:"catalog" seeded agents) ────
-  /** "catalog" = seeded persona from specialist-catalog.ts (insert-only, survives reseed). Absent/"user" for everything else (coordinator, agent_create workers). */
+  /** "catalog" = seeded persona from agent-catalog.ts (insert-only, survives reseed). Absent/"user" for everything else (coordinator, agent_create workers). */
   source?: "user" | "catalog"
   /** BM25 routing metadata (capability-search.ts) — `description` itself is already routing-friendly (one line, suitable for small local models) and doubles as the catalog line shown to the coordinator. */
   routing_examples_json?: string | null
   routing_exclusions_json?: string | null
   /** Glob patterns. When present, task_delegate re-expands against the live tool registry at delegation time instead of trusting a possibly-stale tools_json. */
   tool_allowlist_json?: string | null
-  /** Fixed MCP defaults this agent may lease. Dynamic task-scoped MCP requests are restricted to the MCP operator (see specialist-catalog.ts). */
+  /** Fixed MCP defaults this agent may lease. Dynamic task-scoped MCP requests are restricted to the MCP operator (see agent-catalog.ts). */
   mcp_server_ids_json?: string | null
   workspace_scope_json?: string | null
   model_override_json?: string | null
@@ -166,19 +174,18 @@ export interface ToolDoc {
 // Sub-types for AgentDoc's catalog fields (workspace_scope_json, model_override_json,
 // default_acceptance_json) — kept as named types for readability even though they're
 // stored as JSON strings on the shared agents table, not a separate collection.
-export type SpecialistWorkspaceScope =
+export type AgentWorkspaceScope =
   | { kind: "none" }
   | { kind: "workspace"; read_globs: string[]; write_globs: string[] }
   | { kind: "resource"; resource_types: string[] }
 
-export interface SpecialistModelOverride {
+export interface AgentModelOverride {
   required_capabilities: string[]
-  preferred_model_ids: string[]
   fallback: "general"
   prefer_different_family?: boolean
 }
 
-export interface SpecialistAcceptanceCriterion {
+export interface AgentAcceptanceCriterion {
   id: string
   description: string
   check_tool?: string | null
@@ -238,16 +245,27 @@ export interface RefreshTokenDoc {
 
 // ─── Stage 4: chat/ACE ────────────────────────────────────────────────────────
 
+/** Where an incoming turn's content came from. */
+export type TurnSource =
+  | "message" | "audio" | "a2ui" | "canvas" | "api"
+  | "task_complete" | "delegation_summary"
+
+/** What gets persisted — adds the synthetic marker for rows written before `source` existed. */
+export type MessageSource = TurnSource | "legacy_internal"
+
 export interface ConversationDoc {
   id: string
   thread_id: string
   channel: string
+  /** @deprecated "system" only appears in rows written before `source` existed — never written going forward. */
   role: "user" | "assistant" | "tool" | "system"
   content: string
   content_multimodal: string | null
   tool_calls_json: string | null
   tool_call_id: string | null
   reasoning_content: string | null
+  /** null on rows written before this field existed (legacy). */
+  source: MessageSource | null
   token_count: number
   created_at: number
   updated_at: number
@@ -275,8 +293,8 @@ export interface TraceDoc {
   created_at: number
   /** G9 causal stream id for this run (agent-loop.ts's causalStreamId), when the causal log is enabled. */
   causal_stream_id?: string | null
-  /** Stable dormant-template id when this trace belongs to a materialized specialist. */
-  specialist_id?: string
+  /** Catalog agent id when this trace belongs to a source:"catalog" agent. */
+  catalog_agent_id?: string
 }
 
 export interface ReflectionDoc {
@@ -343,8 +361,8 @@ export interface AgentRunDoc {
   acceptance_json: string | null
   /** Fixed-worker epoch recorded at run creation: {provider, model, app_version, tool_catalog_hash}. */
   epoch_json: string | null
-  /** `toIndexable`-encoded specialist template id, or `NO_PARENT` for ordinary agents. */
-  specialist_id?: string
+  /** `toIndexable`-encoded catalog agent id, or `NO_PARENT` for ordinary agents. */
+  catalog_agent_id?: string
 
   error: string | null
   created_at: number
@@ -355,7 +373,7 @@ export interface AgentRunDoc {
 export interface JobDoc {
   id: string
   lane: string
-  type: "chat_turn" | "worker_task" | "project_task" | "goal_run"
+  type: "chat_turn" | "worker_task" | "goal_run"
   status: "pending" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
   priority: number
   payload_json: string
@@ -433,10 +451,29 @@ export interface ProofPacketDoc {
   epoch_json: string | null
   /** Required when met=true. Points at an independent verified verdict. */
   verification_id: string
-  /** `toIndexable`-encoded specialist template id, or `NO_PARENT`. */
-  specialist_id: string
+  /** `toIndexable`-encoded catalog agent id, or `NO_PARENT`. */
+  catalog_agent_id: string
   met: boolean
   created_at: number
+}
+
+/** Durable metadata for binary evidence managed under HIVE_HOME/artifacts. */
+export interface ArtifactDoc {
+  id: string
+  run_id: string | null
+  task_id: string | null
+  user_id: string
+  kind: string
+  path: string
+  mime_type: string
+  size: number
+  sha256: string
+  width: number | null
+  height: number | null
+  status: "active" | "expired"
+  created_at: number
+  expires_at: number
+  expired_at: number | null
 }
 
 export interface VerificationCriterionResult {
@@ -460,9 +497,9 @@ export interface VerificationDoc {
   id: string
   run_id: string
   task_id: string
-  /** Any AgentDoc id (catalog-seeded or not) — the field name predates the agents/specialists merge. */
-  executor_specialist_id: string
-  verifier_specialist_id: "acceptance_verifier"
+  /** Any AgentDoc id (catalog-seeded or not). */
+  executor_agent_id: string
+  verifier_agent_id: "acceptance_verifier"
   objective: string
   acceptance_json: string
   verdict_json: string
@@ -470,13 +507,21 @@ export interface VerificationDoc {
   attempt: number
   executor_epoch_json: string
   verifier_epoch_json: string
+  /** Diagnostic classification when the verifier could not produce a usable verdict. */
+  failure_code?: "invalid_output" | "verifier_error" | null
+  /** Sanitized diagnostic detail; never used to authorize success. */
+  failure_detail?: string | null
+  /** Bounded and sanitized preview of the verifier output. */
+  raw_output_preview?: string | null
+  verifier_provider?: string | null
+  verifier_model?: string | null
   created_at: number
 }
 
-export interface SpecialistProposalDoc {
+export interface AgentProposalDoc {
   id: string
-  type: "move_tool" | "create_specialist" | "disable_specialist"
-  specialist_id: string
+  type: "move_tool" | "create_agent" | "disable_agent"
+  agent_id: string
   proposed_change_json: string
   evidence_trace_ids_json: string
   confidence: number
@@ -508,52 +553,57 @@ export interface MemoryDoc {
   updated_at: number
 }
 
-export interface ProjectDoc {
-  id: string
-  user_id: string
-  /** `toIndexable`-encoded — `NO_PARENT` when unset. */
-  agent_id: string
-  name: string
-  description: string | null
-  type: string
-  task: string | null
-  progress: number
-  status: "pending" | "active" | "paused" | "done" | "failed"
-  context: string | null
-  /** `toIndexable`-encoded — `NO_PARENT` for a top-level project. */
-  parent_id: string
-  created_at: number
-  updated_at: number
-  started_at: number | null
-  completed_at: number | null
-}
-
 export interface TaskDoc {
   id: string
-  project_id: string
   /** `toIndexable`-encoded — `NO_PARENT` when unset. */
   agent_id: string
-  parent_task_id: string | null
   name: string
   description: string | null
-  /** "queued" = claimed by the TaskDriver and enqueued, awaiting execution. */
-  status: "pending" | "queued" | "in_progress" | "completed" | "failed" | "blocked"
+  status: "pending" | "in_progress" | "completed" | "failed" | "blocked"
   progress: number
-  priority: number
-  depends_on: string | null
   result: string | null
   error: string | null
   metadata: string | null
   job_id: string | null
   run_id: string | null
   thread_id: string | null
-  /** `toIndexable`-encoded specialist template id, or `NO_PARENT`. */
-  specialist_id?: string
+  delegation_group_id?: string | null
+  /** `toIndexable`-encoded catalog agent id, or `NO_PARENT`. */
+  catalog_agent_id?: string
   started_at: number | null
   attempts: number
   created_at: number
   updated_at: number
   completed_at: number | null
+}
+
+export interface DelegationGroupOutcome {
+  task_id: string
+  job_id: string
+  worker_id: string
+  task_name: string
+  ok: boolean
+  result: unknown | null
+  error: string | null
+  finished_at: number
+}
+
+export interface DelegationGroupDoc {
+  id: string
+  turn_id: string
+  thread_id: string
+  channel: string
+  user_id: string
+  session_id: string
+  coordinator_agent_id: string
+  status: "open" | "sealed" | "ready" | "notified"
+  task_ids_json: string
+  outcomes_json: string
+  summary_job_id: string | null
+  created_at: number
+  sealed_at: number | null
+  ready_at: number | null
+  notified_at: number | null
 }
 
 export interface AgentBusMessageDoc {
@@ -567,6 +617,23 @@ export interface AgentBusMessageDoc {
   content: string
   metadata: string | null
   read: boolean
+  created_at: number
+}
+
+export interface NarrationEventDoc {
+  id: string
+  turn_id: string
+  thread_id: string
+  channel: string
+  user_id: string
+  session_id: string
+  agent_id: string
+  agent_name: string
+  kind: "delegated" | "worker_started" | "tool_call" | "tool_result" | "verifying" | "verified" | "failed" | "group_ready"
+  status: "queued" | "running" | "done" | "error"
+  label: string
+  detail: string | null
+  dedupe_key: string
   created_at: number
 }
 

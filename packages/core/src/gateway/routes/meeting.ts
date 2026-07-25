@@ -1,9 +1,102 @@
+import * as path from "node:path";
 import { voiceService, type AudioInput } from "../../voice/index";
 import { logger } from "../../utils/logger";
 import { col, nextId, toIndexable } from "../../storage/hive";
 import type { MeetingSessionDoc, MeetingSegmentDoc, ModelDoc, ProviderDoc } from "../../storage/collections";
+import { getHiveDir } from "../../config/loader";
+import { getDefaultLLM, resolveProviderConfig, callLLM } from "../../agent/llm-client";
+import { officeEscribirDocxTool } from "../../tools/office/office-escribir-docx";
 
 const log = logger.child("meeting-routes");
+
+const REPORT_SECTIONS = [
+  "Resumen Ejecutivo",
+  "Participantes Detectados",
+  "Decisiones Tomadas",
+  "Action Items",
+  "Próximos Pasos",
+  "Temas de Seguimiento",
+] as const;
+
+function sanitizeFilename(name: string): string {
+  return name.replace(/[^a-zA-Z0-9-_ ]/g, "").trim() || "reporte";
+}
+
+function stripInlineMarkdown(text: string): string {
+  return text.replace(/\*\*(.*?)\*\*/g, "$1").replace(/__(.*?)__/g, "$1").trim();
+}
+
+interface ParsedReport {
+  titulo?: string;
+  parrafos: Array<{ texto: string; tipo?: "titulo1" | "titulo2" | "titulo3" | "parrafo" | "lista" }>;
+  tablas: Array<{ filas: Array<{ celdas: string[] }>; encabezado?: boolean }>;
+}
+
+// Parses the strict markdown contract requested from the LLM (see
+// buildReportPrompt) into office_escribir_docx's paragraph/table shape.
+function parseReportMarkdown(markdown: string): ParsedReport {
+  const lines = markdown.split("\n");
+  const result: ParsedReport = { parrafos: [], tablas: [] };
+  let tableBuffer: string[][] = [];
+
+  const flushTable = () => {
+    if (tableBuffer.length === 0) return;
+    result.tablas.push({
+      filas: tableBuffer.map((celdas) => ({ celdas })),
+      encabezado: true,
+    });
+    tableBuffer = [];
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      flushTable();
+      continue;
+    }
+
+    if (line.startsWith("|")) {
+      if (/^\|[\s:-]+\|$/.test(line)) continue; // separator row
+      const cells = line.split("|").map((c) => stripInlineMarkdown(c)).filter((_, i, arr) => i > 0 && i < arr.length - 1);
+      tableBuffer.push(cells);
+      continue;
+    }
+    flushTable();
+
+    if (line.startsWith("## ")) {
+      result.titulo = stripInlineMarkdown(line.slice(3));
+      continue;
+    }
+    if (line.startsWith("### ")) {
+      result.parrafos.push({ texto: stripInlineMarkdown(line.slice(4)), tipo: "titulo2" });
+      continue;
+    }
+    if (line.startsWith("- ") || line.startsWith("* ")) {
+      result.parrafos.push({ texto: stripInlineMarkdown(line.slice(2)), tipo: "lista" });
+      continue;
+    }
+    result.parrafos.push({ texto: stripInlineMarkdown(line), tipo: "parrafo" });
+  }
+  flushTable();
+  return result;
+}
+
+function buildReportPrompt(title: string, durationLabel: string, segmentCount: number, transcript: string) {
+  const system =
+    "Eres un asistente que redacta informes gerenciales de reuniones en español. " +
+    "Responde ÚNICAMENTE con el informe en el siguiente formato exacto, sin texto adicional antes o después:\n" +
+    "- Un único encabezado `## Informe de Reunión: <título>`.\n" +
+    `- Seis encabezados \`### N. <sección>\`, en este orden exacto: ${REPORT_SECTIONS.map((s, i) => `${i + 1}. ${s}`).join(", ")}.\n` +
+    "- Las viñetas empiezan con `- `.\n" +
+    "- La sección Action Items debe ser una única tabla markdown con encabezado `| Qué | Quién | Cuándo |` y fila separadora `|---|---|---|`.\n" +
+    "- No uses negrita/cursiva ni comentarios adicionales.";
+
+  const user =
+    `Título: ${title}\nDuración: ${durationLabel}\nSegmentos: ${segmentCount}\n\n` +
+    `Transcript:\n${transcript}\n\nGenera el informe siguiendo exactamente el formato solicitado.`;
+
+  return { system, user };
+}
 
 type CorsHelper = (r: Response, req: Request) => Response;
 
@@ -235,6 +328,158 @@ export async function handleStopMeeting(
     );
   } catch (error) {
     log.error(`handleStopMeeting: ${(error as Error).message}`);
+    return addCorsHeaders(
+      Response.json({ ok: false, error: (error as Error).message }, { status: 500 }),
+      req
+    );
+  }
+}
+
+// POST /api/meetings/:id/report — Generar informe gerencial (.docx) vía una única llamada LLM directa
+export async function handleGenerateMeetingReport(
+  req: Request,
+  addCorsHeaders: CorsHelper,
+  sessionId: string
+): Promise<Response> {
+  try {
+    const sessionsCol = await col<MeetingSessionDoc>("meetingSessions");
+    const sessionEntry = await sessionsCol.get(sessionId);
+
+    if (!sessionEntry) {
+      return addCorsHeaders(
+        Response.json({ ok: false, error: "Sesión no encontrada" }, { status: 404 }),
+        req
+      );
+    }
+    const session = sessionEntry.doc;
+
+    if (session.status === "active") {
+      return addCorsHeaders(
+        Response.json({ ok: false, error: "Detén la sesión antes de generar el reporte." }, { status: 409 }),
+        req
+      );
+    }
+
+    const segmentsCol = await col<MeetingSegmentDoc>("meetingSegments");
+    const segments = (await segmentsCol.scan({ prefix: `${sessionId}:` }))
+      .map((e) => e.doc)
+      .sort((a, b) => a.seq - b.seq);
+
+    if (segments.length === 0) {
+      return addCorsHeaders(
+        Response.json({ ok: false, error: "La sesión no tiene segmentos transcritos." }, { status: 400 }),
+        req
+      );
+    }
+
+    const transcript = segments
+      .map((s) => (s.speaker ? `[${s.speaker}]: ${s.text}` : s.text))
+      .join("\n");
+
+    const durationSec = Math.floor(((session.stopped_at ?? Date.now()) - session.started_at) / 1000);
+    const durationMin = Math.floor(durationSec / 60);
+    const durationSecRem = durationSec % 60;
+    const durationLabel = `${durationMin}m ${durationSecRem}s`;
+
+    const defaultLLM = await getDefaultLLM();
+    if (!defaultLLM) {
+      return addCorsHeaders(
+        Response.json({ ok: false, error: "No hay proveedor LLM activo configurado." }, { status: 500 }),
+        req
+      );
+    }
+    const providerCfg = await resolveProviderConfig(defaultLLM.provider, defaultLLM.model);
+
+    const { system, user } = buildReportPrompt(session.title, durationLabel, segments.length, transcript);
+    const response = await callLLM({
+      ...providerCfg,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    });
+
+    const reportMarkdown = response.content.trim();
+    if (!reportMarkdown || response.stop_reason === "error") {
+      return addCorsHeaders(
+        Response.json({ ok: false, error: reportMarkdown || "El LLM no devolvió contenido." }, { status: 500 }),
+        req
+      );
+    }
+
+    const parsed = parseReportMarkdown(reportMarkdown);
+    const reportPath = path.join(getHiveDir(), "meeting-reports", `${sessionId}.docx`);
+
+    const result = (await officeEscribirDocxTool.execute({
+      ruta: reportPath,
+      titulo: parsed.titulo ?? `Informe de Reunión: ${session.title}`,
+      parrafos: parsed.parrafos,
+      tablas: parsed.tablas,
+    })) as { ok: boolean; ruta?: string; error?: string };
+
+    if (!result.ok || !result.ruta) {
+      return addCorsHeaders(
+        Response.json({ ok: false, error: result.error ?? "No se pudo generar el archivo DOCX." }, { status: 500 }),
+        req
+      );
+    }
+
+    await sessionsCol.put(
+      sessionId,
+      { ...session, status: "report_ready", report_path: result.ruta },
+      { expectedVersion: sessionEntry.version }
+    );
+
+    log.info(`Meeting report generated: ${sessionId} → ${result.ruta}`);
+    return addCorsHeaders(
+      Response.json({ ok: true, session_id: sessionId, report_path: result.ruta, status: "report_ready" }),
+      req
+    );
+  } catch (error) {
+    log.error(`handleGenerateMeetingReport: ${(error as Error).message}`);
+    return addCorsHeaders(
+      Response.json({ ok: false, error: (error as Error).message }, { status: 500 }),
+      req
+    );
+  }
+}
+
+// GET /api/meetings/:id/report/download — Descargar el .docx generado
+export async function handleDownloadMeetingReport(
+  req: Request,
+  addCorsHeaders: CorsHelper,
+  sessionId: string
+): Promise<Response> {
+  try {
+    const sessionsCol = await col<MeetingSessionDoc>("meetingSessions");
+    const sessionEntry = await sessionsCol.get(sessionId);
+
+    if (!sessionEntry || !sessionEntry.doc.report_path) {
+      return addCorsHeaders(
+        Response.json({ ok: false, error: "Reporte no encontrado" }, { status: 404 }),
+        req
+      );
+    }
+
+    const file = Bun.file(sessionEntry.doc.report_path);
+    if (!(await file.exists())) {
+      return addCorsHeaders(
+        Response.json({ ok: false, error: "El archivo del reporte ya no existe" }, { status: 404 }),
+        req
+      );
+    }
+
+    return addCorsHeaders(
+      new Response(file, {
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "Content-Disposition": `attachment; filename="${sanitizeFilename(sessionEntry.doc.title)}.docx"`,
+        },
+      }),
+      req
+    );
+  } catch (error) {
+    log.error(`handleDownloadMeetingReport: ${(error as Error).message}`);
     return addCorsHeaders(
       Response.json({ ok: false, error: (error as Error).message }, { status: 500 }),
       req

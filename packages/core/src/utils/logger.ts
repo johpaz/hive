@@ -1,4 +1,11 @@
-import { mkdirSync, unlinkSync, renameSync, existsSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  unlinkSync,
+  renameSync,
+  existsSync,
+  statSync,
+} from "node:fs";
 import * as path from "node:path";
 import { homedir } from "node:os";
 import { getHiveDir, loadConfig } from "../config/loader.ts";
@@ -70,6 +77,18 @@ const SENSITIVE_PATTERNS = [
   /auth/i,
 ];
 
+const BINARY_FIELD_PATTERNS = [
+  /base64/i,
+  /screenshot/i,
+  /image[_-]?data/i,
+  /audio[_-]?data/i,
+  /binary/i,
+  /bytes/i,
+];
+
+const DATA_URI_PATTERN = /data:[a-z0-9.+-]+\/[a-z0-9.+-]+;base64,[a-z0-9+/=\s]+/gi;
+const LONG_BASE64_PATTERN = /(?:[A-Za-z0-9+/]{80,}={0,2})/g;
+
 const COLORS = {
   debug: "\x1b[36m",
   info: "\x1b[32m",
@@ -87,7 +106,14 @@ function expandPath(p: string): string {
   return p;
 }
 
+function sanitizeString(value: string): string {
+  return value
+    .replace(DATA_URI_PATTERN, "[REDACTED_BINARY]")
+    .replace(LONG_BASE64_PATTERN, "[REDACTED_BINARY]");
+}
+
 function redact(obj: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
+  if (typeof obj === "string") return sanitizeString(obj);
   if (obj === null || typeof obj !== "object") {
     return obj;
   }
@@ -104,13 +130,13 @@ function redact(obj: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
 
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
-    const isSensitive = SENSITIVE_PATTERNS.some((p) => p.test(key));
+    const isSensitive = [...SENSITIVE_PATTERNS, ...BINARY_FIELD_PATTERNS].some((p) => p.test(key));
     if (isSensitive) {
       result[key] = "[REDACTED]";
     } else if (typeof value === "object" && value !== null) {
       result[key] = redact(value, seen);
     } else {
-      result[key] = value;
+      result[key] = typeof value === "string" ? sanitizeString(value) : value;
     }
   }
   return result;
@@ -171,8 +197,7 @@ export class Logger {
 
       this.logFile = path.join(logDir, `hive-${new Date().toISOString().split("T")[0]}.log`);
 
-      const file = Bun.file(this.logFile);
-      this.currentSize = file.size ?? 0;
+      this.currentSize = existsSync(this.logFile) ? statSync(this.logFile).size : 0;
     } catch {
       this.logFile = null;
     }
@@ -182,14 +207,12 @@ export class Logger {
     return LOG_LEVELS[level] >= LOG_LEVELS[this.config.level];
   }
 
-  private writeToConsole(level: LogLevel, message: string, meta?: unknown): void {
+  private writeToConsole(level: LogLevel, message: string, mergedMeta?: unknown): void {
     if (!this.config.console) return;
 
     const color = COLORS[level];
-    const mergedMeta = this.mergeMeta(meta);
-    const displayMeta = this.config.redactSensitive && mergedMeta ? redact(mergedMeta) : mergedMeta;
-    const metaStr = displayMeta && Object.keys(displayMeta as object).length > 0
-      ? ` ${JSON.stringify(displayMeta)}`
+    const metaStr = mergedMeta && Object.keys(mergedMeta as object).length > 0
+      ? ` ${JSON.stringify(mergedMeta)}`
       : "";
 
     const prefix = `${COLORS.dim}${formatTimestamp()}${COLORS.reset}`;
@@ -227,10 +250,7 @@ export class Logger {
         this.rotateLogs();
       }
 
-      // Use sync append for logging reliability
-      const encoder = new TextEncoder();
-      const data = encoder.encode(line);
-      Bun.write(this.logFile, data).catch(() => { });
+      appendFileSync(this.logFile, line, "utf8");
       this.currentSize += bytes;
     } catch {
       // Silently fail if we can't write to log file
@@ -270,38 +290,46 @@ export class Logger {
 
   debug(message: string, meta?: unknown): void {
     if (!this.shouldLog("debug")) return;
-    const mergedMeta = this.mergeMeta(meta);
-    const formatted = formatMessage("debug", message, mergedMeta, this.correlationContext.correlationId);
-    this.writeToConsole("debug", message, meta);
+    const safeMessage = this.config.redactSensitive ? sanitizeString(message) : message;
+    const rawMeta = this.mergeMeta(meta);
+    const mergedMeta = this.config.redactSensitive && rawMeta ? redact(rawMeta) : rawMeta;
+    const formatted = formatMessage("debug", safeMessage, mergedMeta, this.correlationContext.correlationId);
+    this.writeToConsole("debug", safeMessage, mergedMeta);
     this.writeToFile(formatted);
-    emitLogEntry({ timestamp: formatTimestamp(), level: "debug", source: "core", message, meta: mergedMeta as Record<string, unknown> | undefined });
+    emitLogEntry({ timestamp: formatTimestamp(), level: "debug", source: "core", message: safeMessage, meta: mergedMeta as Record<string, unknown> | undefined });
   }
 
   info(message: string, meta?: unknown): void {
     if (!this.shouldLog("info")) return;
-    const mergedMeta = this.mergeMeta(meta);
-    const formatted = formatMessage("info", message, mergedMeta, this.correlationContext.correlationId);
-    this.writeToConsole("info", message, meta);
+    const safeMessage = this.config.redactSensitive ? sanitizeString(message) : message;
+    const rawMeta = this.mergeMeta(meta);
+    const mergedMeta = this.config.redactSensitive && rawMeta ? redact(rawMeta) : rawMeta;
+    const formatted = formatMessage("info", safeMessage, mergedMeta, this.correlationContext.correlationId);
+    this.writeToConsole("info", safeMessage, mergedMeta);
     this.writeToFile(formatted);
-    emitLogEntry({ timestamp: formatTimestamp(), level: "info", source: "core", message, meta: mergedMeta as Record<string, unknown> | undefined });
+    emitLogEntry({ timestamp: formatTimestamp(), level: "info", source: "core", message: safeMessage, meta: mergedMeta as Record<string, unknown> | undefined });
   }
 
   warn(message: string, meta?: unknown): void {
     if (!this.shouldLog("warn")) return;
-    const mergedMeta = this.mergeMeta(meta);
-    const formatted = formatMessage("warn", message, mergedMeta, this.correlationContext.correlationId);
-    this.writeToConsole("warn", message, meta);
+    const safeMessage = this.config.redactSensitive ? sanitizeString(message) : message;
+    const rawMeta = this.mergeMeta(meta);
+    const mergedMeta = this.config.redactSensitive && rawMeta ? redact(rawMeta) : rawMeta;
+    const formatted = formatMessage("warn", safeMessage, mergedMeta, this.correlationContext.correlationId);
+    this.writeToConsole("warn", safeMessage, mergedMeta);
     this.writeToFile(formatted);
-    emitLogEntry({ timestamp: formatTimestamp(), level: "warn", source: "core", message, meta: mergedMeta as Record<string, unknown> | undefined });
+    emitLogEntry({ timestamp: formatTimestamp(), level: "warn", source: "core", message: safeMessage, meta: mergedMeta as Record<string, unknown> | undefined });
   }
 
   error(message: string, meta?: unknown): void {
     if (!this.shouldLog("error")) return;
-    const mergedMeta = this.mergeMeta(meta);
-    const formatted = formatMessage("error", message, mergedMeta, this.correlationContext.correlationId);
-    this.writeToConsole("error", message, meta);
+    const safeMessage = this.config.redactSensitive ? sanitizeString(message) : message;
+    const rawMeta = this.mergeMeta(meta);
+    const mergedMeta = this.config.redactSensitive && rawMeta ? redact(rawMeta) : rawMeta;
+    const formatted = formatMessage("error", safeMessage, mergedMeta, this.correlationContext.correlationId);
+    this.writeToConsole("error", safeMessage, mergedMeta);
     this.writeToFile(formatted);
-    emitLogEntry({ timestamp: formatTimestamp(), level: "error", source: "core", message, meta: mergedMeta as Record<string, unknown> | undefined });
+    emitLogEntry({ timestamp: formatTimestamp(), level: "error", source: "core", message: safeMessage, meta: mergedMeta as Record<string, unknown> | undefined });
   }
 
   child(context: string): ChildLogger {

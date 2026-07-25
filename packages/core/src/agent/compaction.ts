@@ -21,8 +21,9 @@ import {
   getHistory,
   getSummary,
   saveSummary,
-  toAPIMessages,
   getMessageCount,
+  isInternalSource,
+  type StoredMessage,
 } from "./conversation-store"
 import { estimateTokens } from "../utils/toon"
 import { callLLM, resolveProviderConfig, getDefaultLLM, type ContentPart } from "./llm-client"
@@ -81,6 +82,37 @@ export async function maybeCompact(
 }
 
 /**
+ * Find a clean cut point: the "keep" side must begin with a user turn so we
+ * never leave orphaned tool messages at the start of the visible window.
+ * Internal events (delegation fan-in) are persisted as role:"user", so they
+ * are valid boundaries here same as human turns.
+ * Returns 0 when no clean boundary exists (caller should skip compaction).
+ */
+export function findCompactionCutIndex(rows: StoredMessage[], keepLastN = KEEP_LAST_N_MESSAGES): number {
+  let cutIndex = rows.length - keepLastN
+  while (cutIndex > 0 && rows[cutIndex]?.role !== "user") {
+    cutIndex--
+  }
+  return cutIndex
+}
+
+/**
+ * Render a transcript for the summarizer LLM. Internal events (delegation
+ * fan-in notices) are labeled distinctly — they are persisted as
+ * role:"user" so the LLM treats them as input, but labeling them [USER] here
+ * would make the summarizer attribute system-generated task outcomes to the
+ * human, baking that misattribution into the durable summary.
+ */
+export function renderTranscript(rows: StoredMessage[], maxMsgChars = MAX_MSG_CHARS): string {
+  return rows
+    .map((r) => {
+      const label = isInternalSource(r.source) ? "EVENTO INTERNO" : r.role.toUpperCase()
+      return `[${label}]: ${r.content.substring(0, maxMsgChars)}`
+    })
+    .join("\n\n")
+}
+
+/**
  * Compress a thread's history into a summary.
  */
 export async function compactThread(
@@ -90,12 +122,7 @@ export async function compactThread(
   const allMessages = await getHistory(threadId)
   if (allMessages.length <= KEEP_LAST_N_MESSAGES) return
 
-  // Find a clean cut point: the "keep" side must begin with a user turn so
-  // we never leave orphaned tool messages at the start of the visible window.
-  let cutIndex = allMessages.length - KEEP_LAST_N_MESSAGES
-  while (cutIndex > 0 && allMessages[cutIndex]?.role !== "user") {
-    cutIndex--
-  }
+  const cutIndex = findCompactionCutIndex(allMessages)
   if (cutIndex <= 0) {
     log.info(`[compaction] No clean user-turn boundary found — skipping`)
     return
@@ -111,17 +138,7 @@ export async function compactThread(
 
   // Cap transcript to avoid overflowing small model contexts
   const capped = toSummarize.slice(-MAX_TRANSCRIPT_MSGS)
-  const apiMessages = toAPIMessages(capped)
-  const transcript = apiMessages
-    .map((m) => {
-      const text = typeof m.content === "string"
-        ? m.content
-        : Array.isArray(m.content)
-          ? m.content.filter(p => p.type === "text").map(p => (p as any).text).join("\n")
-          : ""
-      return `[${m.role.toUpperCase()}]: ${text.substring(0, MAX_MSG_CHARS)}`
-    })
-    .join("\n\n")
+  const transcript = renderTranscript(capped)
 
   const defaultLLM = await getDefaultLLM()
   if (!defaultLLM) throw new Error("No active LLM providers/models configured in the database")

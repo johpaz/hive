@@ -253,7 +253,7 @@ async function isRunning(): Promise<boolean> {
   // HTTP health check first — if the port responds, something is running
   // regardless of PID file or adapter state
   try {
-    const coreConfig = await loadConfig().catch(() => null);
+    const coreConfig = loadConfig();
     const port = coreConfig?.gateway?.port ?? 18790;
     const res = await fetch(`http://127.0.0.1:${port}/health`, {
       signal: AbortSignal.timeout(600),
@@ -594,7 +594,7 @@ async function handleDevMode(
 ║  UI:        ${url.padEnd(24)}║
 ║  API:       http://127.0.0.1:18790     ║
 ║  WebSocket: ws://127.0.0.1:18790/ws    ║
-║  Canvas:    ws://127.0.0.1:18790/canvas║
+║  Actividad: ws://127.0.0.1:18790/canvas║
 ║  Vite HMR:  http://localhost:5173      ║
 ╠════════════════════════════════════════╣
 ║  ${setupMode ? "🎉 Primer arranque — abriendo setup..." : "Administra tu Hive aquí                "}║

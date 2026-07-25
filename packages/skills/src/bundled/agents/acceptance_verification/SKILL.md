@@ -7,7 +7,7 @@ icon: "✅"
 category: agents
 permissions: [filesystem_read]
 dependencies: []
-tools: [fs_read, fs_exists, fs_list, web_fetch, browser_navigate, browser_extract, browser_screenshot, office_leer_pdf, office_leer_docx, office_leer_xlsx, office_leer_pptx, cron.list, cron.history, project_status, task_status]
+tools: [fs_read, fs_exists, fs_list, web_fetch, browser_navigate, browser_extract, browser_screenshot, office_leer_pdf, office_leer_docx, office_leer_xlsx, office_leer_pptx, cron.list, cron.history, task_status]
 triggers: [verificar cumplimiento, acceptance gate, audit result, proof packet]
 preferred_agents: [acceptance_verifier]
 ---

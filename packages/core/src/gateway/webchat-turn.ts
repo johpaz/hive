@@ -21,13 +21,13 @@ import { sendToUserChannel } from "./channel-notify";
 import { getNarration } from "./helpers";
 import { createRun, getRun } from "../agent/run-store";
 import { getDurableQueue } from "./durable-queue";
-import type { JobDoc } from "../storage/collections";
+import type { JobDoc, TurnSource } from "../storage/collections";
 
 const log = logger.child("webchat-turn");
 
 export interface WebchatTurnPayload {
-  /** "task_complete": synthetic system-authored turn delivering an async-delegated task's outcome (see delegation-notify.ts). Not literal user speech. */
-  source: "message" | "audio" | "a2ui" | "canvas" | "api" | "task_complete";
+  /** "task_complete"/"delegation_summary": synthetic system-authored turns delivering an async-delegated task's outcome (see delegation-notify.ts). Not literal user speech — persisted with the matching `source` so history/compaction/LLM serialization can treat them correctly. */
+  source: TurnSource;
   /** webchat channelUserId for WS sources; canonical threadId for "api". */
   sessionId: string;
   /** User text / audio transcript / interaction description. */
@@ -44,6 +44,7 @@ export interface WebchatTurnPayload {
   channel?: string;
   /** Linked AgentRun (checkpoint/resume). Set by enqueueChatTurn. */
   runId?: string;
+  turnId?: string;
 }
 
 export interface WebchatTurnLive {
@@ -52,7 +53,7 @@ export interface WebchatTurnLive {
 }
 
 export interface WebchatTurnDeps {
-  runner: { generate: (opts: Record<string, unknown>) => Promise<{ content?: string }> };
+  runner: { generate: (opts: any) => Promise<{ content?: string }> };
   getProvider: () => string;
   getModel: () => string;
 }
@@ -139,6 +140,9 @@ function createProcessReporter(sendRaw: (payload: string) => void, sessionId: st
     error(summary = "No se pudo completar el proceso") {
       send({ status: "error", summary });
     },
+    pending(summary = "Tareas delegadas en ejecución") {
+      send({ kind: "analysis", status: "thinking", summary });
+    },
   };
 }
 
@@ -171,7 +175,7 @@ export async function runWebchatTurn(
   let userId: string;
   let threadId: string;
   const channel = payload.channel ?? "webchat";
-  if (payload.source === "api") {
+  if (payload.source === "api" || payload.source === "delegation_summary") {
     userId = payload.userId ?? "default";
     threadId = payload.sessionId;
   } else {
@@ -287,6 +291,16 @@ export async function runWebchatTurn(
       runId: payload.runId,
       resume,
       durable: !!payload.runId,
+      turnId: payload.turnId,
+      sessionId,
+      channel,
+      rawUserMessage: payload.rawContent ?? payload.content,
+      // Every turn persists its provenance — see AgentLoopOptions.historySource.
+      // System-authored turns (async-delegation fan-in/fan-out notices) still
+      // use role:"user" in `messages` above to trigger generation; `source`
+      // lets downstream readers (history endpoint, compaction, LLM
+      // serialization) recognize and frame them without a second role.
+      historySource: payload.source,
       onToken: async (token: string) => {
         if (signal.aborted) return;
         if (!reportedWriting && token.trim()) {
@@ -315,8 +329,6 @@ export async function runWebchatTurn(
       },
       onStep: async (step: { type: string; message?: string; toolName?: string }) => {
         if (signal.aborted) return;
-        processReporter?.step(step);
-
         // "tool_result" = resultado de herramienta → solo si pide enviarse al usuario
         if (step.type === "tool_result" && step.message) {
           try {
@@ -340,9 +352,15 @@ export async function runWebchatTurn(
     }
 
     const response = await d.runner.generate(generateOpts);
+    const { sealDelegationGroup } = await import("./delegation-groups");
+    const delegationGroup = payload.turnId
+      ? await sealDelegationGroup(payload.turnId)
+      : null;
 
     // Use streamed content from onToken, fallback to response.content
-    const content = streamedContent || response.content?.trim() || "";
+    const content = delegationGroup
+      ? ""
+      : streamedContent || response.content?.trim() || "";
     log.info(`Response ready for session ${threadId} (${content.length} chars)`);
 
     send({ type: "typing", isTyping: false, sessionId });
@@ -412,7 +430,11 @@ export async function runWebchatTurn(
       );
     }
 
-    processReporter?.done("Listo");
+    if (delegationGroup) {
+      processReporter?.pending();
+    } else {
+      processReporter?.done("Listo");
+    }
     return content;
   } catch (error) {
     processReporter?.error("No se pudo completar la respuesta");
@@ -434,7 +456,9 @@ export async function enqueueChatTurn(input: {
   lane: string;
   payload: WebchatTurnPayload;
   live?: WebchatTurnLive;
+  idempotencyKey?: string;
 }): Promise<JobDoc> {
+  input.payload.turnId ??= crypto.randomUUID();
   const run = await createRun({
     thread_id: input.payload.source === "api" ? input.payload.sessionId : `webchat:${input.payload.sessionId}`,
     agent_id: input.payload.agentId ?? "",
@@ -451,5 +475,6 @@ export async function enqueueChatTurn(input: {
     run_id: run.id,
     payload: input.payload as unknown as Record<string, unknown>,
     callbacks: input.live?.sendRaw ? { sendRaw: input.live.sendRaw } : undefined,
+    idempotency_key: input.idempotencyKey,
   });
 }

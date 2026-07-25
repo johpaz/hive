@@ -14,7 +14,7 @@ import { enqueueChatTurn } from "../webchat-turn";
 import { getJob } from "../job-store";
 import { getDefaultLLM } from "../../agent/llm-client";
 import { logger } from "../../utils/logger";
-import { saveScratchpadNote, listAllScratchpadNotes } from "../../agent/conversation-store";
+import { saveScratchpadNote, listAllScratchpadNotes, isInternalSource } from "../../agent/conversation-store";
 import { col, fromIndexable } from "../../storage/hive";
 import type { UserDoc, AgentDoc, ConversationDoc } from "../../storage/collections";
 
@@ -195,7 +195,10 @@ export async function handleGetChatHistory(req: Request, addCorsHeaders: (r: Res
 
   const conversationsCol = await col<ConversationDoc>("conversations")
   const entries = (await conversationsCol.scan({ prefix: `${threadId}:`, reverse: true }))
-    .filter(e => e.doc.role === "user" || e.doc.role === "assistant")
+    // Legacy internal turns still carry role:"system" and are excluded by the
+    // role allowlist; current ones persist as role:"user" + an internal
+    // `source` and are excluded by isInternalSource instead.
+    .filter(e => (e.doc.role === "user" || e.doc.role === "assistant") && !isInternalSource(e.doc.source))
     .slice(0, limit)
 
   const messages = entries.map(e => ({
@@ -203,6 +206,7 @@ export async function handleGetChatHistory(req: Request, addCorsHeaders: (r: Res
     thread_id: e.doc.thread_id,
     channel: e.doc.channel,
     role: e.doc.role,
+    source: e.doc.source,
     content: e.doc.content,
     tool_calls_json: e.doc.tool_calls_json,
     tool_call_id: e.doc.tool_call_id,
@@ -213,10 +217,6 @@ export async function handleGetChatHistory(req: Request, addCorsHeaders: (r: Res
   })).reverse()
 
   return addCorsHeaders(Response.json({ messages }), req)
-}
-
-export async function handleGetCanvas(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
-  return addCorsHeaders(Response.json({ nodes: [], edges: [] }), req)
 }
 
 export async function handleGetNotes(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {

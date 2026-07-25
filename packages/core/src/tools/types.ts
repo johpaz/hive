@@ -2,7 +2,7 @@
  * Tool Type Definitions
  * Shared across all tool categories
  * 
- * These types are used by all 52 native tools in Hive
+ * These types are shared by every native tool in Hive.
  */
 
 export interface Tool {

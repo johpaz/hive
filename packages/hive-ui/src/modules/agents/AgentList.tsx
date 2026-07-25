@@ -5,9 +5,11 @@ import type { Agent } from "@/types";
 interface AgentListProps {
   agents: Agent[];
   onEdit?: (agent: Agent) => void;
+  selectedId?: string;
+  onSelect?: (id: string) => void;
 }
 
-export function AgentList({ agents, onEdit }: AgentListProps) {
+export function AgentList({ agents, onEdit, selectedId, onSelect }: AgentListProps) {
   if (agents.length === 0) {
     return (
       <div className="hive-empty-state">
@@ -24,7 +26,12 @@ export function AgentList({ agents, onEdit }: AgentListProps) {
     <>
       {/* Honeycomb view — desktop */}
       <div className="hidden md:block">
-        <HoneycombGrid agents={agents} onEdit={onEdit} />
+        <HoneycombGrid
+          agents={agents}
+          onEdit={onEdit}
+          selectedId={selectedId}
+          onSelect={onSelect}
+        />
       </div>
 
       {/* Card grid — mobile */}

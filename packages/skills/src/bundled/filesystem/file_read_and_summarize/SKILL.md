@@ -8,7 +8,7 @@ category: filesystem
 permissions:
   - filesystem_read
 dependencies: []
-tools: [fs_read]
+tools: [fs_read, fs_exists]
 
 # Structured skill fields
 triggers:
@@ -26,12 +26,12 @@ preferred_agents: []
 
 steps:
   - step: 1
-    action: project_exists
+    action: fs_exists
     instruction: "Verify file exists before attempting to read"
     output: exists_boolean
 
   - step: 2
-    action: project_read
+    action: fs_read
     instruction: "Read file content. Use offset/limit for large files (>1000 lines)"
     params:
       path: "file path"
@@ -45,7 +45,7 @@ steps:
     output: summary
 
 rules:
-  - "Always check file exists with project_exists before reading"
+  - "Always check file exists with fs_exists before reading"
   - "Use offset and limit for files >1000 lines to avoid context saturation"
   - "Read in chunks for very large files — iterate with offset"
   - "Summarize automatically for files >500 lines unless user requests full content"
@@ -63,13 +63,13 @@ output_format:
 
 examples:
   - user_input: "leé el archivo package.json"
-    expected_behavior: "Check exists → project_read({ path: 'package.json' }) → return full content (small file)"
+    expected_behavior: "Check exists → fs_read({ path: 'package.json' }) → return full content (small file)"
 
   - user_input: "resumí el archivo src/main.ts"
-    expected_behavior: "project_read with offset/limit → identify main exports and functions → summarize structure"
+    expected_behavior: "fs_read with offset/limit → identify main exports and functions → summarize structure"
 
   - user_input: "qué dice este archivo de configuración"
-    expected_behavior: "project_read → parse config format → explain key settings in plain language"
+    expected_behavior: "fs_read → parse config format → explain key settings in plain language"
 ---
 
 # File Read and Summarize Skill
@@ -85,12 +85,13 @@ Esta skill se activa cuando el usuario necesita leer y entender el contenido de 
 
 | Tool | Qué hace | Cuándo usarla |
 |------|----------|---------------|
-| `project_read` | Lee contenido de archivo del workspace | Lectura de cualquier archivo |
+| `fs_exists` | Comprueba que el path exista | Antes de leer |
+| `fs_read` | Lee contenido de archivo del workspace | Lectura de cualquier archivo |
 
 ## Workflow
 
-1. **Verificar existencia** → `project_exists({ path })`
-2. **Leer contenido** → `project_read({ path, offset, limit })`
+1. **Verificar existencia** → `fs_exists({ path })`
+2. **Leer contenido** → `fs_read({ path, offset, limit })`
 3. **Sintetizar** → Resumir si es grande, extraer puntos clave
 
 ## Mejores Prácticas

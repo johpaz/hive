@@ -6,11 +6,13 @@
 
 import type { Tool } from "../types.ts";
 import { col, toIndexable, fromIndexable, BROADCAST } from "../../storage/hive.ts";
-import type { MemoryDoc, AgentDoc, ProviderDoc, ModelDoc, TaskDoc, AgentBusMessageDoc, SpecialistDoc } from "../../storage/collections.ts";
+import type { MemoryDoc, AgentDoc, ProviderDoc, ModelDoc, TaskDoc, AgentBusMessageDoc, AgentAcceptanceCriterion } from "../../storage/collections.ts";
 import type { AcceptanceCriterion } from "../../agent/run-store.ts";
-import type { AwakeSpecialist } from "../../agent/specialist-runtime.ts";
+import type { PreparedDelegation } from "../../agent/delegation-runtime.ts";
 import { logger } from "../../utils/logger.ts";
 import { agentBus } from "../../events/agent-bus.ts";
+import { emitDelegationStarted, emitDelegationFinished, emitVerificationStarted, emitVerificationFinished } from "../../canvas/emitter.ts";
+import { VERIFIER_AGENT_ID } from "../../agent/acceptance-verifier.ts";
 
 const log = logger.child("agents");
 
@@ -313,24 +315,30 @@ export const agentCreateTool: Tool = {
 
 export const agentFindTool: Tool = {
   name: "agent_find",
-  description: "Find existing running or idle worker agents. Spanish: buscar agente, encontrar worker, localizar agente",
+  description: "Discover available worker agents. Includes global system catalog agents plus private workers owned by the current user. This tool does not report task execution; use task_list/task_status for that. Spanish: buscar agente, encontrar worker, localizar agente",
   parameters: {
     type: "object",
     properties: {
       search: { type: "string", description: "Search term for agent name or description" },
-      status: { type: "string", enum: ["idle", "active", "any"], description: "Filter by status" },
+      availability: { type: "string", enum: ["enabled", "disabled", "any"], description: "Filter by whether the worker can accept tasks" },
+      status: { type: "string", enum: ["idle", "active", "any"], description: "Deprecated compatibility alias. It does not represent task execution; use task_list." },
     },
   },
   execute: async (params: Record<string, unknown>, config?: any) => {
     const userId = config?.configurable?.user_id;
     const search = params.search as string | undefined;
-    const status = params.status as string | undefined;
+    const legacyStatus = params.status as string | undefined;
+    const availability = (params.availability as string | undefined)
+      ?? (legacyStatus === "any" ? "any" : legacyStatus ? "enabled" : "any");
 
     try {
       const agentsCol = await col<AgentDoc>("agents");
       let agents = (await agentsCol.scan({}))
         .map(e => e.doc)
-        .filter(a => a.user_id === userId && a.role === "worker");
+        .filter(a =>
+          a.role === "worker"
+          && (a.source === "catalog" || (!!userId && a.user_id === userId))
+        );
 
       if (search) {
         const needle = search.toLowerCase();
@@ -339,19 +347,23 @@ export const agentFindTool: Tool = {
         );
       }
 
-      if (status && status !== "any") {
-        agents = agents.filter(a => a.status === status);
+      if (availability !== "any") {
+        agents = agents.filter(a => availability === "enabled" ? a.enabled : !a.enabled);
       }
 
       return {
         ok: true,
         count: agents.length,
+        execution_source: "Use task_list or task_status for real execution state.",
+        ...(legacyStatus ? { warning: "The status filter is deprecated and cannot prove whether a task is running." } : {}),
         agents: agents.map((a) => ({
           id: a.id,
           name: a.name,
           description: a.description,
           role: a.role,
-          status: a.status,
+          source: a.source ?? "user",
+          enabled: a.enabled,
+          availability: a.enabled ? "enabled" : "disabled",
         })),
       };
     } catch (error) {
@@ -364,11 +376,11 @@ export const agentFindTool: Tool = {
 
 export const agentArchiveTool: Tool = {
   name: "agent_archive",
-  description: "Archive or terminate a worker agent. Spanish: archivar agente, terminar worker, desactivar agente",
+  description: "Archive or terminate a worker you created. Catalog agents cannot be archived — only the user can disable those from the UI. Spanish: archivar agente, terminar worker",
   parameters: {
     type: "object",
     properties: {
-      agentId: { type: "string", description: "ID of the agent to archive" },
+      agentId: { type: "string", description: "ID of the worker to archive (not a catalog agent)" },
     },
     required: ["agentId"],
   },
@@ -381,6 +393,15 @@ export const agentArchiveTool: Tool = {
 
       if (!existing) {
         return { ok: false, error: `Agent not found: ${agentId}` };
+      }
+
+      // Catalog personas are shared capabilities of the whole hive — turning
+      // one off is the user's call, from the UI, never an agent's.
+      if (existing.doc.source === "catalog") {
+        return {
+          ok: false,
+          error: `'${existing.doc.name}' is a catalog agent and stays available. Only the user can disable it from the Agents UI.`,
+        };
       }
 
       await agentsCol.put(agentId, { ...existing.doc, enabled: false, updated_at: Date.now() }, { expectedVersion: existing.version });
@@ -396,16 +417,15 @@ export const agentArchiveTool: Tool = {
 
 export const taskDelegateTool: Tool = {
   name: "task_delegate",
-  description: "Delegate a bounded task to either a dormant specialist_id or an existing worker_id. Specialist work is independently verified before success is returned. mode=sync blocks the conversation until done; mode=async enqueues and frees the conversation immediately — the user is notified automatically in this same chat when the specialist finishes. Prefer async unless you expect the result in a few seconds.",
+  description: "Delegate a bounded task to an existing worker_id (any `agents` row: catalog-seeded or agent_create-made). The delivery is independently verified before success is returned. mode=sync blocks the conversation until done; mode=async enqueues and frees the conversation immediately — the user is notified automatically in this same chat when the worker finishes. Prefer async unless you expect the result in a few seconds.",
   parameters: {
     type: "object",
     properties: {
-      worker_id: { type: "string", description: "Existing free-worker ID. Omit when specialist_id is provided." },
-      specialist_id: { type: "string", description: "Dormant specialist template ID. Preferred for common domains." },
+      worker_id: { type: "string", description: "Target agent ID — from agent_find or the catalog agent list in the system prompt." },
       task_description: { type: "string", description: "Clear, detailed instructions for the worker" },
       acceptance: {
         type: "array",
-        description: "Verifiable acceptance criteria. Specialist defaults are used when omitted.",
+        description: "Verifiable acceptance criteria. The worker's default criteria are used when omitted.",
         items: {
           type: "object",
           properties: {
@@ -422,46 +442,37 @@ export const taskDelegateTool: Tool = {
     required: ["task_description"],
   },
   execute: async (params: Record<string, unknown>, config?: any) => {
-    let workerId = params.worker_id as string | undefined;
-    const specialistId = params.specialist_id as string | undefined;
+    const agentId = params.worker_id as string | undefined;
     const taskDescription = params.task_description as string;
     const mcpServerIds = (params.mcp_server_ids as string[] | undefined) ?? [];
     const mode = (params.mode as string) ?? "sync";
+    const turnId = config?.configurable?.turn_id as string | undefined;
+
+    if (!agentId) return { ok: false, error: "Provide worker_id." };
 
     const agentsCol = await col<AgentDoc>("agents");
-    let awake: AwakeSpecialist | null = null;
-    if (specialistId) {
-      const { wakeSpecialist } = await import("../../agent/specialist-runtime.ts");
-      const { getMCPManager } = await import("../../mcp/singleton.ts");
-      awake = await wakeSpecialist({
-        specialistId,
-        userId: config?.configurable?.user_id ?? "",
-        parentAgentId: config?.configurable?.agent_id ?? "",
-        workspace: config?.configurable?.workspace ?? null,
-        mcpServerIds,
-        mcpManager: getMCPManager(),
-      });
-      workerId = awake.workerId;
+    const parentAgentId = config?.configurable?.agent_id ?? "";
+    if (!parentAgentId) {
+      return { ok: false, error: "Delegation caller identity is missing (config.configurable.agent_id). The coordinator may exist, but its ID was not propagated to task_delegate." };
     }
-    if (!workerId) return { ok: false, error: "Provide specialist_id or worker_id." };
-    const workerEntry = await agentsCol.get(workerId);
+    const parentEntry = await agentsCol.get(parentAgentId);
+    if (!parentEntry) return { ok: false, error: `Delegation caller agent not found: ${parentAgentId}` };
+    if (!parentEntry.doc.enabled) return { ok: false, error: `Delegation caller agent is disabled: ${parentAgentId}` };
+    const parent = parentEntry.doc;
+    const parentProviderId = fromIndexable(parent.provider_id);
+    const parentModelId = fromIndexable(parent.model_id);
 
-    if (!workerEntry) {
-      await awake?.release();
-      return { ok: false, error: `Worker not found: ${workerId}` };
-    }
+    const workerEntry = await agentsCol.get(agentId);
+    if (!workerEntry) return { ok: false, error: `Agent not found: ${agentId}` };
     const worker = workerEntry.doc;
-    if (!worker.enabled) {
-      await awake?.release();
-      return { ok: false, error: `Worker is disabled: ${worker.name}` };
-    }
+    if (!worker.enabled) return { ok: false, error: `Agent is disabled: ${worker.name}` };
 
     const taskName = taskDescription.slice(0, 60);
-    const specialistEntry = specialistId
-      ? await (await col<SpecialistDoc>("specialists")).get(specialistId)
+    const defaultAcceptance: AgentAcceptanceCriterion[] | null = worker.default_acceptance_json
+      ? JSON.parse(worker.default_acceptance_json)
       : null;
     const acceptance = ((params.acceptance as AcceptanceCriterion[] | undefined)
-      ?? specialistEntry?.doc.default_acceptance.map((criterion) => ({
+      ?? defaultAcceptance?.map((criterion) => ({
         id: criterion.id,
         description: criterion.description,
         checkTool: criterion.check_tool,
@@ -471,7 +482,7 @@ export const taskDelegateTool: Tool = {
     // ── Async mode: create TaskDoc + enqueue worker_task in durable queue ──
     if (mode === "async") {
       try {
-        const { nextId, toIndexable } = await import("../../storage/hive.ts");
+        const { nextId, toIndexable, updateDoc } = await import("../../storage/hive.ts");
         const { createRun } = await import("../../agent/run-store.ts");
         const { getDurableQueue } = await import("../../gateway/durable-queue.ts");
 
@@ -480,22 +491,19 @@ export const taskDelegateTool: Tool = {
         const tasksCol = await col<TaskDoc>("tasks");
         await tasksCol.put(taskId, {
           id: taskId,
-          project_id: toIndexable(null),
-          agent_id: toIndexable(workerId),
-          parent_task_id: null,
+          agent_id: toIndexable(agentId),
           name: taskName,
           description: taskDescription,
           status: "pending",
           progress: 0,
-          priority: 0,
-          depends_on: null,
           result: null,
           error: null,
           metadata: null,
           job_id: null,
           run_id: null,
           thread_id: null,
-          specialist_id: toIndexable(specialistId),
+          delegation_group_id: turnId ?? null,
+          catalog_agent_id: toIndexable(worker.source === "catalog" ? agentId : null),
           started_at: null,
           attempts: 0,
           created_at: now,
@@ -503,16 +511,29 @@ export const taskDelegateTool: Tool = {
           completed_at: null,
         }, { expectedVersion: 0 });
 
+        if (turnId) {
+          const { registerDelegatedTask } = await import("../../gateway/delegation-groups.ts");
+          await registerDelegatedTask({
+            turnId,
+            taskId,
+            threadId: config?.configurable?.thread_id ?? "",
+            channel: config?.configurable?.channel,
+            userId: config?.configurable?.user_id,
+            sessionId: config?.configurable?.session_id,
+            coordinatorAgentId: parentAgentId,
+          });
+        }
+
         const run = await createRun({
-          thread_id: `task-${taskId}-${workerId}`,
-          agent_id: workerId,
+          thread_id: `task-${taskId}-${agentId}`,
+          agent_id: agentId,
           user_id: config?.configurable?.user_id ?? "",
           channel: config?.configurable?.channel ?? null,
           kind: "worker",
           max_iterations: worker.max_iterations || 10,
           resume_policy: "resume",
           acceptance,
-          specialist_id: specialistId,
+          catalog_agent_id: worker.source === "catalog" ? agentId : undefined,
         });
 
         const queue = getDurableQueue();
@@ -521,63 +542,95 @@ export const taskDelegateTool: Tool = {
           type: "worker_task",
           run_id: run.id,
           payload: {
-            workerId,
+            workerId: agentId,
             taskDescription,
             taskName,
             taskId,
-            specialistId,
             acceptance,
             mcpServerIds,
-            parentAgentId: config?.configurable?.agent_id ?? "",
+            parentAgentId,
+            parentProviderId,
+            parentModelId,
             userId: config?.configurable?.user_id ?? "",
             workspace: config?.configurable?.workspace ?? null,
             // Delegating conversation's thread — lets delegation-notify.ts relay
             // the outcome back to the user once this job reaches a terminal state.
             originThreadId: config?.configurable?.thread_id ?? null,
+            originChannel: config?.configurable?.channel ?? null,
+            originSessionId: config?.configurable?.session_id ?? null,
+            turnId: turnId ?? null,
           },
         });
 
-        await import("../../storage/hive.ts").then(({ updateDoc }) =>
-          updateDoc<TaskDoc>("tasks", taskId, {
-            job_id: job.id,
-            run_id: run.id,
-            thread_id: `task-${taskId}-${workerId}`,
-            updated_at: Date.now(),
-          } as Partial<TaskDoc>)
-        );
+        await updateDoc<TaskDoc>("tasks", taskId, {
+          job_id: job.id,
+          run_id: run.id,
+          thread_id: `task-${taskId}-${agentId}`,
+          updated_at: Date.now(),
+        } as Partial<TaskDoc>);
 
-        agentBus.notifyTaskStarted(workerId, worker.name, 0, taskName, "");
+        agentBus.notifyTaskStarted(agentId, worker.name, 0, taskName, "");
+        if (turnId) {
+          const { publishNarration } = await import("../../events/narration.ts");
+          await publishNarration({
+            turnId,
+            threadId: config?.configurable?.thread_id ?? "",
+            channel: config?.configurable?.channel,
+            userId: config?.configurable?.user_id,
+            sessionId: config?.configurable?.session_id,
+            agentId,
+            agentName: worker.name,
+            kind: "delegated",
+            status: "queued",
+            label: `Delegué “${taskName}” a ${worker.name}`,
+            dedupeKey: `delegated:${taskId}`,
+          });
+        }
 
         return {
           ok: true,
           task_id: taskId,
           job_id: job.id,
           run_id: run.id,
-          worker_id: workerId,
+          worker_id: agentId,
           worker_name: worker.name,
           status: "queued",
-          message: `Task enqueued (async). Use task_status with task_id="${taskId}" to check progress.`,
+          message: `Task enqueued (async). Use task_list for the queue or task_status with task_id="${taskId}" for this task.`,
         };
       } catch (err) {
         return { ok: false, error: `Async delegation failed: ${(err as Error).message}` };
-      } finally {
-        await awake?.release();
       }
     }
 
-    // ── Sync mode: blocking execution with 2min timeout (existing behavior) ──
-    agentBus.notifyTaskStarted(workerId, worker.name, 0, taskName, "");
+    // ── Sync mode: blocking execution with 2min timeout ──
+    const { prepareDelegation } = await import("../../agent/delegation-runtime.ts");
+    const { getMCPManager } = await import("../../mcp/singleton.ts");
+    const mcpManager = getMCPManager();
 
-    log.info(`[task_delegate] Delegating (sync) to ${worker.name} (${workerId})`);
+    let prepared: PreparedDelegation;
+    try {
+      prepared = await prepareDelegation(agentId, {
+        workspace: config?.configurable?.workspace ?? null,
+        mcpServerIds,
+        parentProviderId,
+        parentModelId,
+        mcpManager,
+      });
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+
+    agentBus.notifyTaskStarted(agentId, worker.name, 0, taskName, "");
+    log.info(`[task_delegate] Delegating (sync) to ${worker.name} (${agentId})`);
+    const syncDelegationRef = `sync-${Date.now()}-${agentId}`;
+    emitDelegationStarted({ workerId: agentId, parentAgentId, taskRef: syncDelegationRef, taskName });
 
     try {
-      const { runAgentIsolated } = await import("../../agent/agent-loop.ts");
+      const { runAgentIsolated, withTimeout } = await import("../../agent/agent-loop.ts");
 
-      const threadId = `task-${Date.now()}-${workerId}`;
+      const threadId = `task-${Date.now()}-${agentId}`;
       const SYNC_TIMEOUT_MS = 2 * 60 * 1000;
 
-      const { withTimeout } = await import("../../agent/agent-loop.ts");
-      const { getMCPManager } = await import("../../mcp/singleton.ts");
       // Real cancellation (e.g. the user's "stop" button): the job's AbortSignal
       // reaches us via config.signal (tool-runtime/index.ts's executeToolBatch),
       // and runAgentIsolated/runAgent already honor it mid-run. withTimeout stays
@@ -585,89 +638,140 @@ export const taskDelegateTool: Tool = {
       const signal = config?.signal as AbortSignal | undefined;
       const result = await withTimeout(
         () => runAgentIsolated({
-          agentId: workerId,
+          agentId,
           taskDescription,
           threadId,
-          mcpManager: getMCPManager(),
+          mcpManager,
           signal,
         }),
         SYNC_TIMEOUT_MS,
       );
 
-      agentBus.notifyTaskCompleted(workerId, worker.name, 0, taskName, "", result);
+      agentBus.notifyTaskCompleted(agentId, worker.name, 0, taskName, "", result);
 
-      if (specialistId) {
-        const { verifySpecialistDelivery } = await import("../../agent/acceptance-verifier.ts");
-        const verification = await verifySpecialistDelivery({
-          runId: `sync-${crypto.randomUUID()}`,
-          executorAgentId: workerId,
-          objective: taskDescription,
-          acceptance,
-          delivery: result,
-          mcpServerIds,
-          mcpManager: getMCPManager(),
-        });
-        const verdict = JSON.parse(verification.verdict_json);
-        if (verification.status !== "verified") {
-          return {
-            ok: false,
-            status: verification.status,
-            verification_id: verification.id,
-            error: verdict.summary || "Independent verification did not authorize success.",
-            retry_guidance: verdict.retry_guidance,
-          };
-        }
+      // Verification now always runs, closing the old gap where a plain
+      // worker_id delegation (agent_create) skipped it entirely in sync mode.
+      const { verifyAgentDelivery } = await import("../../agent/acceptance-verifier.ts");
+      emitVerificationStarted({ verifierId: VERIFIER_AGENT_ID, workerId: agentId, taskRef: syncDelegationRef, taskName });
+      const verification = await verifyAgentDelivery({
+        runId: `sync-${crypto.randomUUID()}`,
+        executorAgentId: agentId,
+        objective: taskDescription,
+        acceptance,
+        delivery: result,
+        mcpServerIds: prepared.mcpServerIds,
+        mcpManager,
+      });
+      const verdict = JSON.parse(verification.verdict_json);
+      emitVerificationFinished({ verifierId: VERIFIER_AGENT_ID, taskRef: syncDelegationRef });
+      if (verification.status !== "verified") {
         return {
-          ok: true,
-          worker_id: workerId,
-          worker_name: worker.name,
-          specialist_id: specialistId,
+          ok: false,
+          status: verification.status,
           verification_id: verification.id,
-          result,
+          error: verdict.summary || "Independent verification did not authorize success.",
+          retry_guidance: verdict.retry_guidance,
         };
       }
-
       return {
         ok: true,
-        worker_id: workerId,
+        worker_id: agentId,
         worker_name: worker.name,
+        verification_id: verification.id,
         result,
       };
     } catch (err) {
-      agentBus.notifyTaskFailed(workerId, worker.name, 0, taskName, "", (err as Error).message);
+      agentBus.notifyTaskFailed(agentId, worker.name, 0, taskName, "", (err as Error).message);
 
       return {
         ok: false,
-        worker_id: workerId,
+        worker_id: agentId,
         error: (err as Error).message,
       };
     } finally {
-      await awake?.release();
+      emitVerificationFinished({ verifierId: VERIFIER_AGENT_ID, taskRef: syncDelegationRef });
+      emitDelegationFinished({ workerId: agentId, taskRef: syncDelegationRef });
+      await prepared.release();
     }
   },
 };
 
-// ─── task_delegate_code ──────────────────────────────────────────────────────
+// ─── task_list ──────────────────────────────────────────────────────────────
 
-export const taskDelegateCodeTool: Tool = {
-  name: "task_delegate_code",
-  description: "Delegate a coding task to a CLI subagent (Qwen, Claude, etc.) via Code Bridge. Spanish: delegar código, subagente CLI, programación, Qwen",
+export const taskListTool: Tool = {
+  name: "task_list",
+  description: "List real delegated task executions for the current user. TaskDoc and JobDoc are the source of truth. Use this instead of agent_find to determine whether work is pending, running, completed, failed, or blocked.",
   parameters: {
     type: "object",
     properties: {
-      cli: { type: "string", enum: ["qwen", "claude", "opencode", "gemini"], description: "CLI tool to use" },
-      task_instructions: { type: "string", description: "Coding task instructions" },
+      status: {
+        type: "string",
+        enum: ["pending", "running", "completed", "failed", "blocked", "all"],
+        description: "Execution-state filter (default: all)",
+      },
+      worker_id: { type: "string", description: "Optional worker agent ID" },
+      limit: { type: "number", description: "Maximum tasks to return (default 20, maximum 100)" },
     },
-    required: ["cli", "task_instructions"],
   },
-  execute: async (params: Record<string, unknown>) => {
-    const cli = params.cli as string;
-    const taskInstructions = params.task_instructions as string;
+  execute: async (params: Record<string, unknown>, config?: any) => {
+    const userId = config?.configurable?.user_id as string | undefined;
+    if (!userId) return { ok: false, error: "Missing user context for task_list." };
 
-    return {
-      ok: false,
-      error: `Code Bridge not implemented yet. CLI "${cli}" delegation is a stub. The task was not executed: "${taskInstructions.substring(0, 100)}..."`,
-    };
+    const status = (params.status as string | undefined) ?? "all";
+    const workerId = params.worker_id as string | undefined;
+    const limit = Math.max(1, Math.min(100, Number(params.limit) || 20));
+
+    try {
+      const tasksCol = await col<TaskDoc>("tasks");
+      const runsCol = await col<import("../../storage/collections.ts").AgentRunDoc>("agentRuns");
+      const { getJob } = await import("../../gateway/job-store.ts");
+      const allTasks = (await tasksCol.scan({}))
+        .map((entry) => entry.doc)
+        .sort((a, b) => b.updated_at - a.updated_at);
+
+      const result: Array<Record<string, unknown>> = [];
+      for (const task of allTasks) {
+        if (result.length >= limit) break;
+        if (workerId && fromIndexable(task.agent_id) !== workerId) continue;
+
+        const run = task.run_id ? await runsCol.get(task.run_id) : null;
+        if (!run || run.doc.user_id !== userId) continue;
+
+        const job = task.job_id ? await getJob(task.job_id) : null;
+        const executionState =
+          task.status === "pending"
+            ? "pending"
+            : task.status === "in_progress"
+              ? "running"
+              : task.status;
+        if (status !== "all" && executionState !== status) continue;
+
+        result.push({
+          id: task.id,
+          name: task.name,
+          description: task.description,
+          worker_id: fromIndexable(task.agent_id),
+          status: task.status,
+          execution_state: executionState,
+          progress: task.progress,
+          result: task.result,
+          error: task.error,
+          job_id: task.job_id,
+          job_status: job?.status ?? null,
+          run_id: task.run_id,
+          run_status: run.doc.status,
+          attempts: task.attempts ?? 0,
+          created_at: task.created_at,
+          started_at: task.started_at,
+          updated_at: task.updated_at,
+          completed_at: task.completed_at,
+        });
+      }
+
+      return { ok: true, task_count: result.length, tasks: result };
+    } catch (error) {
+      return { ok: false, error: `Failed to list delegated tasks: ${(error as Error).message}` };
+    }
   },
 };
 
@@ -836,7 +940,7 @@ export function createTools(): Tool[] {
     agentFindTool,
     agentArchiveTool,
     taskDelegateTool,
-    taskDelegateCodeTool,
+    taskListTool,
     taskStatusTool,
     busPublishTool,
     busReadTool,

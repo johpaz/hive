@@ -20,11 +20,17 @@ export const TOOL_NARRATIONS: Record<string, string> = {
   "cron.trigger": "Ejecutando tarea ahora...",
   "cron.history": "Consultando historial...",
   // Agents
-  create_agent: "Creando agente worker...",
-  find_agent: "Buscando agente disponible...",
-  archive_agent: "Archivando agente...",
-  task_delegate: "Delegando tarea a un especialista...",
+  agent_create: "Creando agente worker...",
+  agent_find: "Buscando agente disponible...",
+  agent_archive: "Archivando agente...",
+  get_available_models: "Consultando modelos disponibles...",
+  task_delegate: "Delegando tarea a un agente...",
+  task_list: "Listando tareas en ejecución...",
   task_status: "Consultando estado de la tarea...",
+  bus_publish: "Coordinando con otro agente...",
+  bus_read: "Leyendo mensajes de los agentes...",
+  // Discovery
+  search_knowledge: "Buscando capacidades disponibles...",
   // Memory
   save_note: "Guardando nota...",
   memory_write: "Guardando en memoria...",
@@ -41,9 +47,6 @@ export const TOOL_NARRATIONS: Record<string, string> = {
   // Canvas
   canvas_add_node: "Actualizando canvas...",
   canvas_update: "Actualizando canvas...",
-  // Code Bridge
-  bridge_send: "Enviando tarea al CLI...",
-  bridge_exec: "Ejecutando en el Code Bridge...",
   // Notify
   notify: "Enviando notificación...",
   report_progress: "Reportando progreso...",

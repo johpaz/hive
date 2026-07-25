@@ -17,6 +17,7 @@ import { logger } from "../utils/logger";
 import { loadConfig } from "../config/loader";
 import type { LLMMessage } from "./llm-client";
 import type { RunEpoch } from "./run-epoch";
+import { formatInternalEvent } from "./conversation-store";
 
 const log = logger.child("run-store");
 
@@ -66,7 +67,7 @@ export interface CreateRunInput {
   resume_policy?: AgentRunDoc["resume_policy"]
   acceptance?: AcceptanceCriterion[]
   epoch?: RunEpoch
-  specialist_id?: string | null
+  catalog_agent_id?: string | null
 }
 
 export async function createRun(input: CreateRunInput): Promise<AgentRunDoc> {
@@ -99,7 +100,7 @@ export async function createRun(input: CreateRunInput): Promise<AgentRunDoc> {
     resume_policy: input.resume_policy ?? "resume",
     acceptance_json: input.acceptance ? JSON.stringify(input.acceptance) : null,
     epoch_json: input.epoch ? JSON.stringify(input.epoch) : null,
-    specialist_id: toIndexable(input.specialist_id),
+    catalog_agent_id: toIndexable(input.catalog_agent_id),
     error: null,
     created_at: now,
     updated_at: now,
@@ -270,12 +271,30 @@ export function deserializeEpoch(run: AgentRunDoc): RunEpoch | null {
  * run has no checkpoint (empty state_json — chat runs that never promoted
  * to durable).
  */
+/**
+ * Checkpoints written before `source`-based internal events existed may still
+ * carry a stray `role:"system"` message after index 0 — either the
+ * compaction summary (formerly prepended to `ctx.messages`) or a delegation
+ * fan-in notice. `messages[0]` is always the real system prompt and stays;
+ * anything after it must not reach the provider as a second system message
+ * (see gemini.ts/anthropic.ts, which hoist ALL role:"system" messages into a
+ * single system instruction). Rewrite those as wrapped user turns in place —
+ * this is a read-time fixup, not a migration, so no version bump is needed.
+ */
+function normalizeStraySystemMessages(messages: LLMMessage[]): LLMMessage[] {
+  return messages.map((m, i) => {
+    if (i === 0 || m.role !== "system" || typeof m.content !== "string") return m;
+    return { ...m, role: "user" as const, content: formatInternalEvent("legacy_internal", m.content) };
+  });
+}
+
 export function deserializeCheckpoint(run: AgentRunDoc): RunCheckpointState | null {
   if (!run.state_json) return null;
   try {
     const raw = JSON.parse(run.state_json);
     if (raw.version !== 1) return null;
-    return raw as RunCheckpointState;
+    const state = raw as RunCheckpointState;
+    return { ...state, messages: normalizeStraySystemMessages(state.messages) };
   } catch {
     log.warn(`[deserializeCheckpoint] Failed to parse state_json for run ${run.id}`);
     return null;

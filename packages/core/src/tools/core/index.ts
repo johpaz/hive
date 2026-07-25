@@ -6,7 +6,7 @@
 
 import type { Tool } from "../types.ts";
 import { col } from "../../storage/hive.ts";
-import type { ToolDoc, SkillDoc, PlaybookDoc, McpToolDoc, TaskDoc, SpecialistDoc } from "../../storage/collections.ts";
+import type { ToolDoc, SkillDoc, PlaybookDoc, McpToolDoc, TaskDoc, AgentDoc } from "../../storage/collections.ts";
 import { logger } from "../../utils/logger.ts";
 import {
   searchCapabilities,
@@ -138,7 +138,7 @@ function translateQueryToEnglish(query: string): string {
 
 export const searchKnowledgeTool: Tool = {
   name: "search_knowledge",
-  description: "Busca en TODO el conocimiento de Hive: tools nativas, MCP, skills, especialistas y playbook.",
+  description: "Busca en TODO el conocimiento de Hive: tools nativas, MCP, skills, agentes de catálogo y playbook.",
   parameters: {
     type: "object",
     properties: {
@@ -148,7 +148,7 @@ export const searchKnowledgeTool: Tool = {
       },
       type: {
         type: "string",
-        enum: ["all", "tools", "skills", "playbook", "mcp", "specialists"],
+        enum: ["all", "tools", "skills", "playbook", "mcp", "agents"],
         description: "Opcional. Por defecto 'all' (busca en todo). Usa 'mcp' para filtrar solo herramientas externas, 'tools' para solo nativas.",
       },
       limit: {
@@ -171,21 +171,21 @@ export const searchKnowledgeTool: Tool = {
       skills: ["skill"],
       playbook: ["playbook"],
       mcp: ["mcp"],
-      specialists: ["specialist"],
+      agents: ["agent"],
     };
     const types = typeMap[type] ?? undefined;
 
     try {
       if (!query) {
         log.info(`[search_knowledge] Empty query — returning empty results`)
-        return { query, type, tools: [], skills: [], playbook: [], toolsmcp: [], specialists: [] }
+        return { query, type, tools: [], skills: [], playbook: [], toolsmcp: [], agents: [] }
       }
       // HiveDB parses raw text leniently (accents, quotes, operators are all
       // safe), so the query goes in as-is — only underscores become spaces so
       // tool ids like "send_email" match their tokens.
       const normalizedQuery = query.replace(/_/g, " ").trim();
 
-      const result: any = { query, type, tools: [], skills: [], playbook: [], toolsmcp: [], specialists: [] };
+      const result: any = { query, type, tools: [], skills: [], playbook: [], toolsmcp: [], agents: [] };
 
       // ─── Hydration from HiveDB collections (index stores only ids + search text) ──
 
@@ -195,7 +195,7 @@ export const searchKnowledgeTool: Tool = {
       const skillsCol = await col<SkillDoc>("skills");
       const playbookCol = await col<PlaybookDoc>("playbook");
       const mcpToolsCol = await col<McpToolDoc>("mcpTools");
-      const specialistsCol = await col<SpecialistDoc>("specialists");
+      const agentsCol = await col<AgentDoc>("agents");
 
       async function hydrateTool(hit: CapabilityHit): Promise<any | null> {
         const entry = await toolsCol.get(hit.rawId);
@@ -251,16 +251,16 @@ export const searchKnowledgeTool: Tool = {
         };
       }
 
-      async function hydrateSpecialist(hit: CapabilityHit): Promise<any | null> {
-        const entry = await specialistsCol.get(hit.rawId);
-        const specialist = entry?.doc;
-        if (!specialist?.active) return null;
+      async function hydrateAgent(hit: CapabilityHit): Promise<any | null> {
+        const entry = await agentsCol.get(hit.rawId);
+        const agent = entry?.doc;
+        if (!agent || agent.source !== "catalog" || !agent.enabled) return null;
         return {
-          id: specialist.id,
-          name: specialist.name,
-          description: specialist.description,
-          default_acceptance: specialist.default_acceptance,
-          active: specialist.active,
+          id: agent.id,
+          name: agent.name,
+          description: agent.description,
+          default_acceptance: agent.default_acceptance_json ? JSON.parse(agent.default_acceptance_json) : [],
+          active: agent.enabled,
           rank: hit.score,
         };
       }
@@ -286,8 +286,8 @@ export const searchKnowledgeTool: Tool = {
             case "mcp":
               if (result.toolsmcp.length < limit) { entry = await hydrateMcp(hit); bucket = result.toolsmcp; }
               break;
-            case "specialist":
-              if (result.specialists.length < limit) { entry = await hydrateSpecialist(hit); bucket = result.specialists; }
+            case "agent":
+              if (result.agents.length < limit) { entry = await hydrateAgent(hit); bucket = result.agents; }
               break;
           }
           if (entry && bucket) {
@@ -300,8 +300,7 @@ export const searchKnowledgeTool: Tool = {
       }
 
       // ─── Pass 1: Search with original query ─────────────────────────
-      // `rank` is the raw BM25 score: positive, higher = more relevant
-      // (the old FTS5 rank was negative, lower = better).
+      // `rank` is the raw BM25 score: positive, higher = more relevant.
 
       const hits1 = await searchCapabilities(normalizedQuery, { types, k: limit * 4 });
       const totalFirst = await mergeHits(hits1);
@@ -319,7 +318,7 @@ export const searchKnowledgeTool: Tool = {
         }
       }
 
-      result.totalResults = result.tools.length + result.skills.length + result.playbook.length + result.toolsmcp.length + result.specialists.length;
+      result.totalResults = result.tools.length + result.skills.length + result.playbook.length + result.toolsmcp.length + result.agents.length;
 
       return { ok: true, ...result };
     } catch (error) {

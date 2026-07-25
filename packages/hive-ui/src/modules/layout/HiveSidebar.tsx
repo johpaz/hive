@@ -15,6 +15,7 @@ import {
   Clock,
   Video,
   Globe,
+  Hexagon,
   type LucideProps,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
@@ -45,8 +46,8 @@ const navItems = [
   { title: "Agentes", url: "/agents", icon: Bot },
   { title: "Canales", url: "/channels", icon: MessageSquare },
   { title: "Providers", url: "/providers", icon: Brain },
-  { title: "Oficina", url: "/canvas", icon: Layers },
-  { title: "A2UI", url: "/a2ui", icon: Layers },
+  { title: "Oficina 3D", url: "/office", icon: Hexagon },
+  { title: "Panel interactivo", url: "/a2ui", icon: Layers },
   { title: "Reuniones", url: "/meeting", icon: Video },
   { title: "API Client", url: "/api-client", icon: Globe },
 

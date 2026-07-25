@@ -1,52 +1,48 @@
 # Hive UI
 
-Dashboard and interaction interface for **Hive**, the personal AI agent runtime.
+Interfaz React 18, TypeScript, Vite 8 y Tailwind para operar Hive.
 
-## Overview
+## Desarrollo
 
-Hive UI provides a modern, interactive environment to manage your AI agents, monitor real-time execution flows, and track long-running projects. Built with performance and user experience in mind, it leverages the AG-UI protocol for rich, visual agent-user interactions.
-
-## Features
-
-- **Agent Management**: View status, logs, and configuration for all your local and remote agents.
-- **Real-time Canvas**: Interactive visualization of agent execution steps using the AG-UI protocol.
-- **Project Tracking**: Dedicated views for multi-step tasks, including progress bars and step-by-step history.
-- **MCP Integration**: Manage Model Context Protocol servers and their exposed tools.
-- **Theme Support**: Seamless dark and light mode transitions.
-
-## Tech Stack
-
-- **Framework**: [Vite](https://vitejs.dev/) + [React](https://react.dev/)
-- **Styling**: [Tailwind CSS](https://tailwindcss.com/) + [shadcn/ui](https://ui.shadcn.com/)
-- **State Management**: [Zustand](https://docs.pmnd.rs/zustand/getting-started/introduction)
-- **Data Fetching**: [React Query](https://tanstack.com/query/latest)
-- **Icons**: [Lucide React](https://lucide.dev/)
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js (v18+)
-- Local instance of **Hive Core** running
-
-### Installation
+Desde la raíz:
 
 ```bash
-# Install dependencies
-npm install
-
-# Start the development server
-npm run dev
+bun install
+bun --cwd=packages/hive-ui run dev
 ```
 
-The UI will be available at `http://localhost:5173`. It connects to the Hive Gateway at `http://localhost:18790` by default.
+Vite escucha en `5173` y redirige `/api`, `/health`, `/status` y `/ws` al gateway en `127.0.0.1:18790`.
 
-## Deployment
-
-To build the project for production:
+Para usar datos reales, inicia el gateway en otra terminal:
 
 ```bash
-npm run build
+bun run hive start
 ```
 
-The output will be in the `dist/` directory, which can be served by the Hive Gateway or any static host.
+## Rutas principales
+
+- `/`: dashboard.
+- `/chat`: webchat.
+- `/agents`: catálogo y agentes del usuario.
+- `/providers`, `/channels`, `/settings`: configuración.
+- `/a2ui`: Panel interactivo.
+- `/office`: Oficina 3D.
+- `/meeting`: reuniones.
+- `/logs`, `/api-client`: operación e integración.
+
+No existe una ruta `/canvas`: Office3D sustituyó la antigua oficina visual y
+A2UI es la única superficie donde los agentes renderizan interfaces.
+
+## Estado
+
+La UI usa stores Zustand y React Query. El WebSocket alimenta chat, actividad de agentes, narración y A2UI. Office3D reutiliza el modelo de actividad en vivo y se carga de forma diferida para aislar Three.js.
+
+## Validación
+
+```bash
+bun --cwd=packages/hive-ui run test
+bun --cwd=packages/hive-ui run build
+npx -y react-doctor@latest packages/hive-ui --verbose --diff
+```
+
+Las pruebas UI usan Vitest con jsdom. La suite raíz de Bun se limita a `tests/` para no ejecutar esos archivos con un entorno incompatible.

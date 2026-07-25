@@ -2,11 +2,11 @@
  * Capability Search — shared HiveDB search layer
  *
  * Single entry point for searching Hive's capability catalogs (native tools,
- * skills, playbook rules, MCP tools). Replaces the four FTS5 virtual tables
- * (tools_fts, skills_fts, playbook_fts, mcp_tools_fts) with one HiveDB index.
+ * skills, playbook rules, MCP tools): one HiveDB index for all four, with the
+ * catalog discriminated by the `type` field rather than by separate tables.
  *
  * Document convention (one index, type discrimination via filters):
- * - id:   `tool:${name}` | `skill:${id}` | `playbook:${rowid}` | `mcp:${id}` | `specialist:${id}`
+ * - id:   `tool:${name}` | `skill:${id}` | `playbook:${rowid}` | `mcp:${id}` | `agent:${id}`
  * - name: tool/skill name or rule head        (BM25 boost 4.0)
  * - tags: category + triggers + keywords      (BM25 boost 3.0)
  * - body: description / rule text / content   (BM25 boost 2.0)
@@ -24,7 +24,7 @@ import { logger } from "../utils/logger";
 
 const log = logger.child("capability-search");
 
-export type CapabilityType = "tool" | "skill" | "playbook" | "mcp" | "specialist";
+export type CapabilityType = "tool" | "skill" | "playbook" | "mcp" | "agent";
 
 export interface CapabilityHit {
   /** Namespaced id, e.g. "tool:web_search" */
@@ -47,7 +47,7 @@ export interface CapabilityDoc {
   extraFilters?: Array<{ field: string; value: string }>;
 }
 
-const TYPE_PREFIXES: CapabilityType[] = ["tool", "skill", "playbook", "mcp", "specialist"];
+const TYPE_PREFIXES: CapabilityType[] = ["tool", "skill", "playbook", "mcp", "agent"];
 
 function splitId(id: string): { type: CapabilityType; rawId: string } | null {
   const sep = id.indexOf(":");

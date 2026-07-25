@@ -10,6 +10,7 @@ import { logger } from "../../utils/logger.ts"
 import { getAgentLoop } from "../agent-loop"
 import { resolveUserId, resolveAgentId } from "../../storage/onboarding"
 import type { ContentPart } from "../../multimodal/types"
+import type { TurnSource } from "../../storage/collections"
 
 export type Provider = "openai" | "anthropic" | "gemini" | "mistral" | "kimi" | "ollama" | "openrouter" | "deepseek" | "nvidia" | "hiveagents"
 
@@ -42,6 +43,10 @@ export interface ModelOptions {
   runId?: string
   resume?: boolean
   durable?: boolean
+  turnId?: string
+  sessionId?: string
+  /** See AgentLoopOptions.historySource in agent-loop.ts. */
+  historySource?: TurnSource
 }
 
 export interface ModelResponse {
@@ -102,6 +107,9 @@ export class AgentRunner {
             run_id: options.runId,
             resume: options.resume,
             durable: options.durable,
+            turn_id: options.turnId,
+            session_id: options.sessionId,
+            history_source: options.historySource,
           },
           signal: options.signal,
           onToken: options.onToken,

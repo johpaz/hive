@@ -35,7 +35,7 @@
  *    - browser (browser automation)
  *    - memory (notes, memory operations)
  *    - code (exec, terminal)
- *    - canvas (UI rendering)
+ *    - a2ui (interactive panel rendering)
  *    - agents (agent creation/management)
  *    - core (notify, report_progress, save_note)
  */
@@ -147,7 +147,7 @@ export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
 
     // Agent/worker management
     { name: "agent_create", description: "Create specialized worker agent, spawn new agent for specific task execution. Spanish keywords: crear agente, nuevo agente, trabajador, crear worker, nuevo trabajador", category: "agents", abstractionLevel: "orchestration" },
-    { name: "agent_find", description: "Find existing worker agents, locate running or idle worker agents. Spanish keywords: buscar agente, encontrar trabajador, localizar, buscar worker, encontrar agente", category: "agents", abstractionLevel: "atomic" },
+    { name: "agent_find", description: "Discover available system catalog agents and user-owned workers. Not an execution monitor. Spanish keywords: buscar agente, encontrar trabajador, localizar, buscar worker, encontrar agente", category: "agents", abstractionLevel: "atomic" },
     { name: "agent_archive", description: "Archive unnecessary worker, terminate and archive idle or completed agents. Spanish keywords: archivar agente, terminar agente, borrar trabajador, desactivar agente", category: "agents", abstractionLevel: "atomic" },
 
     // Notes/persistence
@@ -166,24 +166,11 @@ export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
     { name: "browser_script", description: "Execute arbitrary JavaScript in the browser page context and get the result. Spanish keywords: ejecutar javascript, script, código, función, evaluar, js en página", category: "browser", abstractionLevel: "atomic" },
     { name: "browser_wait", description: "Wait for an element to appear or condition to be met on the page. Spanish keywords: esperar, wait, condición, elemento, selector, aguardar carga", category: "browser", abstractionLevel: "atomic" },
 
-    // Canvas/UI rendering tools
-    { name: "canvas_render", description: "Render component on canvas, display UI components and data visualizations. Spanish keywords: renderizar, mostrar en canvas, visualizar, mostrar componente, dibujar", category: "canvas", abstractionLevel: "atomic" },
-    { name: "canvas_ask", description: "Display form and wait for response, show interactive form and collect user input. Spanish keywords: mostrar formulario, pedir datos, solicitar información, formulario interactivo", category: "canvas", abstractionLevel: "atomic" },
-    { name: "canvas_clear", description: "Clear canvas for session, reset canvas display and start fresh. Spanish keywords: limpiar canvas, borrar pantalla, reiniciar, limpiar, borrar", category: "canvas", abstractionLevel: "atomic" },
-    { name: "canvas_show_card", description: "Display card with labeled items, show structured data in card format. Spanish keywords: mostrar tarjeta, visualizar datos, tarjeta de información, mostrar datos", category: "canvas", abstractionLevel: "atomic" },
-    { name: "canvas_show_progress", description: "Display progress bars, show progress indicators and completion status. Spanish keywords: mostrar progreso, barra de progreso, indicador de progreso, avance", category: "canvas", abstractionLevel: "atomic" },
-    { name: "canvas_show_list", description: "Display key-value list, show information in structured list format. Spanish keywords: mostrar lista, listar elementos, lista de valores, mostrar elementos", category: "canvas", abstractionLevel: "atomic" },
-    { name: "canvas_confirm", description: "Show confirmation dialog, request user confirmation for actions. Spanish keywords: confirmar, diálogo de confirmación, confirmar acción, validación", category: "canvas", abstractionLevel: "atomic" },
-
     // A2UI v0.9 rich interactive surfaces
     { name: "a2ui_create_surface", description: "Create A2UI v0.9 surface for rich interactive UIs with forms, dashboards, and workflows. Spanish keywords: crear superficie A2UI, iniciar UI interactiva, crear formulario rico, interfaz A2UI, crear surface", category: "a2ui", abstractionLevel: "orchestration" },
     { name: "a2ui_update_components", description: "Send A2UI v0.9 components to an existing surface (Text, Button, TextField, Row, Column, Card, etc.). Spanish keywords: enviar componentes A2UI, actualizar UI, renderizar componentes, A2UI componentes, update components", category: "a2ui", abstractionLevel: "atomic" },
     { name: "a2ui_update_data_model", description: "Update A2UI v0.9 surface data model with JSON Pointer for dynamic data binding. Spanish keywords: actualizar datos A2UI, poblar formulario, cambiar valores, data model A2UI, actualizar modelo de datos", category: "a2ui", abstractionLevel: "atomic" },
-    { name: "a2ui_delete_surface", description: "Delete A2UI v0.9 surface and remove it from the user's canvas. Spanish keywords: eliminar superficie A2UI, borrar UI, limpiar superficie A2UI, cerrar formulario, delete surface", category: "a2ui", abstractionLevel: "atomic" },
-
-    // Voice tools
-    { name: "voice_transcribe", description: "Transcribe audio to text, convert speech to written text from audio files. Spanish keywords: transcribir audio, voz a texto, convertir audio, transcripción", category: "voice", abstractionLevel: "atomic" },
-    { name: "voice_speak", description: "Convert text to audio and play, synthesize speech from text. Spanish keywords: hablar, sintetizar voz, texto a voz, reproducir audio, voz", category: "voice", abstractionLevel: "atomic" },
+    { name: "a2ui_delete_surface", description: "Delete A2UI v0.9 surface from the user's interactive panel. Spanish keywords: eliminar superficie A2UI, borrar UI, limpiar superficie A2UI, cerrar formulario, delete surface", category: "a2ui", abstractionLevel: "atomic" },
 
     // Filesystem tools
     { name: "fs_read", description: "Read file content from workspace. Spanish keywords: leer archivo, ver contenido, abrir archivo, leer fichero, mostrar archivo", category: "filesystem", abstractionLevel: "atomic" },
@@ -196,10 +183,34 @@ export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
 
     // Agent delegation and communication
     { name: "task_delegate", description: "Delegate general task to worker agent. Spanish keywords: delegar tarea, asignar worker, ejecutar por agente, encomendar tarea", category: "agents", abstractionLevel: "orchestration" },
-    { name: "task_delegate_code", description: "Delegate coding task to CLI subagent (Qwen, Claude Code, Gemini CLI). Spanish keywords: delegar código, subagente CLI, programación, codificar", category: "agents", abstractionLevel: "orchestration" },
+    { name: "task_list", description: "List real delegated task executions for the current user from persisted tasks and jobs. Spanish keywords: listar tareas activas, subagentes trabajando, ejecuciones reales", category: "agents", abstractionLevel: "atomic" },
     { name: "task_status", description: "Get execution status of delegated tasks. Spanish keywords: estado tarea delegada, verificar progreso, consultar tarea, progreso delegado", category: "agents", abstractionLevel: "atomic" },
     { name: "bus_publish", description: "Publish message to Agent Bus for worker-to-worker communication. Spanish keywords: publicar mensaje, comunicar workers, enviar bus, mensaje bus", category: "agents", abstractionLevel: "atomic" },
     { name: "bus_read", description: "Read unread messages from Agent Bus. Spanish keywords: leer mensajes bus, recibir mensajes, verificar bus, mensajes workers", category: "agents", abstractionLevel: "atomic" },
+
+    // Model discovery
+    { name: "get_available_models", description: "List configured providers and models with their capabilities and context windows. Spanish keywords: modelos disponibles, proveedores activos, qué modelos hay, listar modelos", category: "agents", abstractionLevel: "atomic" },
+
+    // Capability discovery
+    { name: "search_knowledge", description: "Search everything Hive knows: native tools, MCP tools, skills, catalog agents and playbook rules. Spanish keywords: buscar herramienta, descubrir capacidades, qué puedo hacer, buscar skill, buscar conocimiento", category: "core", abstractionLevel: "atomic" },
+
+    // HTTP / REST
+    { name: "api_request", description: "Perform an authorized HTTP request against a REST endpoint and validate the response. Spanish keywords: llamar api, request rest, consumir endpoint, petición http, hacer get, hacer post", category: "api", abstractionLevel: "atomic" },
+
+    // Artifacts
+    { name: "artifact_inspect", description: "Inspect a managed artifact's integrity and metadata without modifying it. Spanish keywords: inspeccionar artefacto, verificar archivo generado, metadatos artefacto, comprobar entrega", category: "web", abstractionLevel: "atomic" },
+
+    // Office documents — read
+    { name: "office_leer_pdf", description: "Read and extract text from a PDF document. Spanish keywords: leer pdf, extraer texto pdf, abrir pdf, contenido pdf", category: "office", abstractionLevel: "atomic" },
+    { name: "office_leer_docx", description: "Read and extract text from a Word document. Spanish keywords: leer word, leer docx, abrir documento word, contenido word", category: "office", abstractionLevel: "atomic" },
+    { name: "office_leer_xlsx", description: "Read rows and sheets from an Excel spreadsheet. Spanish keywords: leer excel, leer xlsx, abrir hoja de cálculo, contenido excel, leer planilla", category: "office", abstractionLevel: "atomic" },
+    { name: "office_leer_pptx", description: "Read slides and text from a PowerPoint presentation. Spanish keywords: leer powerpoint, leer pptx, abrir presentación, contenido diapositivas", category: "office", abstractionLevel: "atomic" },
+
+    // Office documents — write
+    { name: "office_escribir_pdf", description: "Generate a PDF document. Spanish keywords: crear pdf, generar pdf, escribir pdf, exportar a pdf", category: "office", abstractionLevel: "atomic" },
+    { name: "office_escribir_docx", description: "Generate a Word document. Spanish keywords: crear word, generar docx, escribir documento word, exportar a word", category: "office", abstractionLevel: "atomic" },
+    { name: "office_escribir_xlsx", description: "Generate an Excel spreadsheet. Spanish keywords: crear excel, generar xlsx, escribir hoja de cálculo, exportar a excel, armar planilla", category: "office", abstractionLevel: "atomic" },
+    { name: "office_escribir_pptx", description: "Generate a PowerPoint presentation. Spanish keywords: crear powerpoint, generar pptx, escribir presentación, armar diapositivas", category: "office", abstractionLevel: "atomic" },
 ]
 
 // ─── Helper Functions ───────────────────────────────────────────────────────-
@@ -376,7 +387,7 @@ export async function selectTools(
  *
  * @param tools - Optional array of tools to sync. If not provided, fetches from DB.
  */
-export async function syncToolCatalogToFTS(tools?: ToolDescriptor[]): Promise<void> {
+export async function syncToolCatalogToIndex(tools?: ToolDescriptor[]): Promise<void> {
     try {
         // Step 1: Build full catalog = CORE_TOOL_CATALOG + any tools in DB not already covered
         // CORE_TOOL_CATALOG has bilingual keywords; DB tools may be dynamically registered
@@ -451,10 +462,9 @@ function enrichToolDescription(tool: ToolDescriptor): string {
         browser: "navegador browser click screenshot form automation web page UI",
         memory: "recordar nota guardar memory store remember persist knowledge",
         code: "code ejecutar run script bash shell terminal command devops",
-        canvas: "canvas diagram visualization graph node edge flow chart",
-        agents: "agente worker specialist create delegate hire team manager",
+        a2ui: "A2UI interactive panel interface form dashboard visualization",
+        agents: "agente worker catalog create delegate hire team manager",
         core: "notificar message alert notify communicate progress status",
-        voice: "voz audio transcribir speech speak sintetizar audio voice transcription",
     }
 
     const extra = keywordsByCategory[tool.category] ?? ""
@@ -491,17 +501,6 @@ export function mcpToolFullName(serverName: string, toolName: string): string {
     let full = `${server}__${tool}`
     if (full.length > MAX) full = full.substring(0, MAX)
     return /^[a-zA-Z_]/.test(full) ? full : `_${full}`.substring(0, MAX)
-}
-
-/**
- * Initialize the tool selector
- *
- * DEPRECATED: syncToolCatalogToFTS() is now called from gateway/initializer.ts
- * This function is kept for backward compatibility but is no longer needed
- */
-export function initializeToolSelector(): void {
-    log.info(`[tool-selector] Initializing (deprecated - sync is done in gateway/initializer.ts)`)
-    // syncToolCatalogToFTS() - No longer needed here, done in gateway/initializer.ts
 }
 
 // ─── Debug/Test Helpers ─────────────────────────────────────────────────────

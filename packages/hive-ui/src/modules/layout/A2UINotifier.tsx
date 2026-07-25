@@ -12,8 +12,8 @@ export function A2UINotifier() {
 
   useEffect(() => {
     if (unseenA2UICount > prevCount.current && location.pathname !== "/a2ui") {
-      toast("Nueva interfaz A2UI disponible", {
-        description: "El agente generó componentes para revisar.",
+      toast("Nuevo panel interactivo disponible", {
+        description: "El agente generó contenido para revisar.",
         icon: <Layers className="h-4 w-4" />,
         action: {
           label: "Ver panel",

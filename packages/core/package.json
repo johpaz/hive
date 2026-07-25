@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-agents-core",
-  "version": "0.0.47",
+  "version": "1.0.0",
   "type": "module",
   "private": true,
   "description": "Hive Gateway — Personal AI agent runtime",
@@ -17,8 +17,8 @@
   },
   "dependencies": {
     "@ag-ui/core": "^0.0.46",
-    "@johpaz/hive-agents-mcp": "^0.0.47",
-    "@johpaz/hive-agents-skills": "^0.0.47",
+    "@johpaz/hive-agents-mcp": "^1.0.0",
+    "@johpaz/hive-agents-skills": "^1.0.0",
     "@johpaz/hive-db": "0.3.1",
     "@modelcontextprotocol/sdk": "latest",
     "@sapphire/snowflake": "latest",
@@ -77,19 +77,14 @@
     "./storage/seed": "./src/storage/seed.ts",
     "./tools": "./src/tools/index.ts",
     "./tools/agents": "./src/tools/agents/index.ts",
-    "./tools/canvas": "./src/tools/canvas/index.ts",
+    "./tools/a2ui": "./src/tools/a2ui/index.ts",
     "./tools/cli": "./src/tools/cli/index.ts",
     "./tools/core": "./src/tools/core/index.ts",
     "./tools/cron": "./src/tools/cron/index.ts",
     "./tools/filesystem": "./src/tools/filesystem/index.ts",
     "./tools/office": "./src/tools/office/index.ts",
-    "./tools/voice": "./src/tools/voice/index.ts",
     "./tools/web": "./src/tools/web/index.ts",
     "./tool-runtime": "./src/tool-runtime/index.ts",
-    "./integrations": "./src/integrations/index.ts",
-    "./integrations/catalog": "./src/integrations/catalog.ts",
-    "./integrations/env": "./src/integrations/env.ts",
-    "./voice": "./src/voice/index.ts",
-    "./scheduler/dag": "./src/scheduler/dag/index.ts"
+    "./voice": "./src/voice/index.ts"
   }
 }

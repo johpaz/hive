@@ -4,16 +4,14 @@ import { laneQueue } from "./lane-queue.ts";
 import { logger } from "../utils/logger.ts";
 
 export interface InboundMessage {
-  type: "message" | "command" | "ping" | "join" | "canvas_subscribe" | "canvas_unsubscribe" | "logs_subscribe" | "logs_unsubscribe" | "audio" | "canvas:interact" | "a2ui:action" | "stop";
+  type: "message" | "command" | "ping" | "join" | "canvas_subscribe" | "canvas_unsubscribe" | "logs_subscribe" | "logs_unsubscribe" | "audio" | "a2ui:action" | "stop";
   sessionId: string;
   content?: string;
   audio?: string;
   command?: string;
   args?: string[];
   metadata?: Record<string, unknown>;
-  componentId?: string;
   data?: Record<string, unknown>;
-  action?: string;
   image?: {
     base64: string;
     mimeType?: string;

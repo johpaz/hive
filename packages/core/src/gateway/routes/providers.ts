@@ -168,6 +168,7 @@ export async function handleSyncProviderModels(
         context_window: existing?.doc.context_window ?? 32768,
         capabilities: existing?.doc.capabilities ?? null,
         enabled: true, active: true,
+        source: existing?.doc.source ?? "discovered",
       }, existing ? { expectedVersion: existing.version } : undefined)
     }
 

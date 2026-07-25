@@ -90,7 +90,7 @@ export async function selectPlaybookRules(message: string): Promise<PlaybookRule
  * Sync active playbook rules to the HiveDB capability index.
  * Replaces all `type=playbook` documents atomically.
  */
-export async function syncPlaybookToFTS(): Promise<void> {
+export async function syncPlaybookToIndex(): Promise<void> {
     try {
         // Step 1: Get active rules
         const playbookCol = await col<PlaybookDoc>("playbook")

@@ -27,7 +27,7 @@ export interface BuildProofPacketInput {
   epoch?: RunEpoch | null;
   /** Mandatory for met=true: independent acceptance_verifier verdict id. */
   verificationId?: string | null;
-  specialistId?: string | null;
+  catalogAgentId?: string | null;
 }
 
 export async function buildProofPacket(input: BuildProofPacketInput): Promise<ProofPacketDoc> {
@@ -55,7 +55,7 @@ export async function buildProofPacket(input: BuildProofPacketInput): Promise<Pr
     known_limits: input.knownLimits ?? null,
     epoch_json: input.epoch ? JSON.stringify(input.epoch) : null,
     verification_id: toIndexable(input.verificationId),
-    specialist_id: toIndexable(input.specialistId),
+    catalog_agent_id: toIndexable(input.catalogAgentId),
     met: input.met,
     created_at: Date.now(),
   };

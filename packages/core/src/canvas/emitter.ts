@@ -1,5 +1,5 @@
 import { col, fromIndexable } from "../storage/hive"
-import type { AgentDoc, McpServerDoc, ProjectDoc, TaskDoc } from "../storage/collections"
+import type { AgentDoc, McpServerDoc } from "../storage/collections"
 
 export interface CanvasEvent {
   type: CanvasEventType
@@ -14,17 +14,26 @@ export type CanvasEventType =
   | "canvas:node_remove"
   | "canvas:edge_add"
   | "canvas:edge_remove"
-  | "canvas:render"
-  | "canvas:ask"
-  | "canvas:confirm"
-  | "canvas:clear"
   | "ag-ui:event"
 
 const subscribers = new Set<{ send: (data: string) => void }>()
 
-interface AgentLiveState { status: string; currentTool: string | null }
+interface AgentLiveState {
+  status: string
+  currentTool: string | null
+  currentTask: string | null
+  taskId: string | null
+  delegatedBy: string | null
+}
 const agentLiveState = new Map<string, AgentLiveState>()
-const canvasComponents = new Map<string, unknown>()
+
+const LIVE_DEFAULTS: AgentLiveState = {
+  status: "idle",
+  currentTool: null,
+  currentTask: null,
+  taskId: null,
+  delegatedBy: null,
+}
 
 export function subscribeCanvas(ws: { send: (data: string) => void }) {
   subscribers.add(ws)
@@ -39,20 +48,16 @@ export function unsubscribeCanvas(ws: { send: (data: string) => void }) {
 }
 
 export function emitCanvas(type: CanvasEventType, data: any) {
-  // Track canvas components for new subscribers
-  if (type === "canvas:render" && data?.component?.id) {
-    canvasComponents.set(data.component.id, data.component)
-  }
-  if (type === "canvas:clear") {
-    canvasComponents.clear()
-  }
-
   // Track live agent state for new subscribers
   if (type === "canvas:node_update" && data?.nodeId && data?.changes) {
-    const prev = agentLiveState.get(data.nodeId) ?? { status: "idle", currentTool: null }
+    const prev = agentLiveState.get(data.nodeId) ?? { ...LIVE_DEFAULTS }
+    const c = data.changes
     agentLiveState.set(data.nodeId, {
-      status: data.changes.status ?? prev.status,
-      currentTool: "currentTool" in data.changes ? data.changes.currentTool : prev.currentTool,
+      status: c.status ?? prev.status,
+      currentTool: "currentTool" in c ? c.currentTool : prev.currentTool,
+      currentTask: "currentTask" in c ? c.currentTask : prev.currentTask,
+      taskId: "taskId" in c ? c.taskId : prev.taskId,
+      delegatedBy: "delegatedBy" in c ? c.delegatedBy : prev.delegatedBy,
     })
   }
 
@@ -67,8 +72,79 @@ export function emitCanvas(type: CanvasEventType, data: any) {
   }
 }
 
-export function removeCanvasComponent(id: string) {
-  canvasComponents.delete(id);
+/**
+ * Marca visualmente el inicio de una delegación coordinador→worker:
+ * el worker muestra la tarea en curso y aparece el edge "delegates".
+ */
+export function emitDelegationStarted(opts: {
+  workerId: string
+  parentAgentId: string
+  taskRef: string
+  taskName: string
+}) {
+  emitCanvas("canvas:node_update", {
+    nodeId: opts.workerId,
+    changes: {
+      status: "thinking",
+      currentTask: opts.taskName,
+      taskId: opts.taskRef,
+      delegatedBy: opts.parentAgentId,
+    },
+  })
+  if (opts.parentAgentId) {
+    emitCanvas("canvas:edge_add", {
+      id: `deleg_${opts.taskRef}`,
+      source: opts.parentAgentId,
+      target: opts.workerId,
+      edgeType: "delegates",
+      data: { taskId: opts.taskRef, taskName: opts.taskName },
+    })
+  }
+}
+
+/** Limpia el estado visual de delegación (éxito, fallo o aborto). */
+export function emitDelegationFinished(opts: { workerId: string; taskRef: string }) {
+  emitCanvas("canvas:node_update", {
+    nodeId: opts.workerId,
+    changes: { status: "idle", currentTool: null, currentTask: null, taskId: null, delegatedBy: null },
+  })
+  emitCanvas("canvas:edge_remove", { id: `deleg_${opts.taskRef}` })
+}
+
+/**
+ * Fase de verificación del loop: el verificador independiente revisa la
+ * entrega del worker. Se visualiza como un eslabón worker → verificador.
+ */
+export function emitVerificationStarted(opts: {
+  verifierId: string
+  workerId: string
+  taskRef: string
+  taskName: string
+}) {
+  emitCanvas("canvas:node_update", {
+    nodeId: opts.verifierId,
+    changes: {
+      status: "thinking",
+      currentTask: `Verificar: ${opts.taskName}`,
+      taskId: opts.taskRef,
+      delegatedBy: opts.workerId,
+    },
+  })
+  emitCanvas("canvas:edge_add", {
+    id: `review_${opts.taskRef}`,
+    source: opts.workerId,
+    target: opts.verifierId,
+    edgeType: "reviews",
+    data: { taskId: opts.taskRef, taskName: opts.taskName },
+  })
+}
+
+export function emitVerificationFinished(opts: { verifierId: string; taskRef: string }) {
+  emitCanvas("canvas:node_update", {
+    nodeId: opts.verifierId,
+    changes: { status: "idle", currentTool: null, currentTask: null, taskId: null, delegatedBy: null },
+  })
+  emitCanvas("canvas:edge_remove", { id: `review_${opts.taskRef}` })
 }
 
 export async function getCanvasSnapshot() {
@@ -83,7 +159,14 @@ export async function getCanvasSnapshot() {
         description: a.description,
         status: live?.status ?? a.status,
         type: "agent",
-        data: { role: a.role, currentTool: live?.currentTool ?? null, specialistId: a.specialist_id ?? null },
+        data: {
+          role: a.role,
+          currentTool: live?.currentTool ?? null,
+          currentTask: live?.currentTask ?? null,
+          taskId: live?.taskId ?? null,
+          delegatedBy: live?.delegatedBy ?? null,
+          source: a.source ?? null,
+        },
       }
     })
 
@@ -98,55 +181,19 @@ export async function getCanvasSnapshot() {
       type: "mcp",
     }))
 
-  // Proyectos activos
-  const activeStatuses = new Set(["active", "pending", "paused"])
-  const projectsCol = await col<ProjectDoc>("projects")
-  const activeProjects = (await projectsCol.scan({}))
-    .map(e => e.doc)
-    .filter(p => activeStatuses.has(p.status))
-  const projectNodes = activeProjects.map((p) => ({
-    id: `project_${p.id}`,
-    name: p.name,
-    status: p.status,
-    type: "project",
-    data: { progress: p.progress, projectType: p.type, agentId: fromIndexable(p.agent_id) },
-  }))
-
-  // Tareas de proyectos activos
-  const activeProjectIds = new Set(activeProjects.map(p => p.id))
-  const tasksCol = await col<TaskDoc>("tasks")
-  const taskNodes = (await tasksCol.scan({}))
-    .map(e => e.doc)
-    .filter(t => activeProjectIds.has(t.project_id))
-    .map((t) => ({
-      id: `task_${t.id}`,
-      name: t.name,
-      status: t.status,
-      type: "task",
-      data: { progress: t.progress, agentId: fromIndexable(t.agent_id), projectId: t.project_id },
-    }))
-
-  // Edges: proyecto → tarea
-  const projectTaskEdges = taskNodes.map((t: any) => ({
-    id: `edge_proj_task_${t.id.replace("task_", "")}`,
-    source: `project_${t.data.projectId}`,
-    target: t.id,
-    edgeType: "contains",
-  }))
-
-  // Edges: tarea → agente asignado
-  const taskAgentEdges = taskNodes
-    .filter((t: any) => t.data.agentId)
-    .map((t: any) => ({
-      id: `edge_task_agent_${t.id.replace("task_", "")}`,
-      source: t.id,
-      target: t.data.agentId,
-      edgeType: "assigned_to",
+  // Edges: delegaciones activas coordinador → worker (sobreviven reconexiones)
+  const delegationEdges = Array.from(agentLiveState.entries())
+    .filter(([, s]) => s.delegatedBy && s.taskId)
+    .map(([workerId, s]) => ({
+      id: `deleg_${s.taskId}`,
+      source: s.delegatedBy as string,
+      target: workerId,
+      edgeType: "delegates",
+      data: { taskId: s.taskId, taskName: s.currentTask },
     }))
 
   return {
-    nodes: [...agentNodes, ...mcpNodes, ...projectNodes, ...taskNodes],
-    edges: [...projectTaskEdges, ...taskAgentEdges],
-    components: Array.from(canvasComponents.values()),
+    nodes: [...agentNodes, ...mcpNodes],
+    edges: [...delegationEdges],
   }
 }

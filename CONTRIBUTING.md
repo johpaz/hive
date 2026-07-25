@@ -1,75 +1,66 @@
 # Contribuir a Hive
 
-¡Gracias por tu interés en contribuir a Hive! Este documento te ayuda a saber dónde hacer tu cambio.
-
-## ¿Dónde hacer cambios?
-
-| Tipo de cambio | Carpeta |
-|---------------|---------|
-| Canal nuevo (Telegram, Discord, WhatsApp, etc.) | `packages/core/src/channels` |
-| Tool nueva (navegador, filesystem, etc.) | `packages/core/src/tools` |
-| Skill nuevo (web_search, shell, memory, etc.) | `packages/core/src/skills` |
-| MCP nuevo | `packages/core/src/mcp` |
-| Mejora al CLI | `packages/cli/src` |
-| Bug fix | Donde corresponda según el error |
-
-## Proceso de Pull Request
-
-1. **Fork** el repositorio
-2. Crea una rama: `git checkout -b feature/mi-nueva-feature`
-3. Haz tus cambios con pruebas si es posible
-4. Asegúrate de que pasa el lint: `bun run lint`
-5. Abre un PR describiendo tu cambio
-
-Todos los cambios se revisan en un solo lugar. Un PR. Una revisión. Un merge.
-
-## Ejecutar en desarrollo
+## Preparación
 
 ```bash
+git clone https://github.com/johpaz/hive.git
+cd hive
 bun install
-bun run dev
 ```
 
-## Commands disponibles
+Usa Bun 1.3.x. Para ejecutar una instancia aislada:
 
 ```bash
-bun run dev        # Modo desarrollo
-bun run start      # Iniciar gateway
-bun run test       # Ejecutar tests
-bun run lint       # Verificar tipos
+HIVE_HOME=/tmp/hive-dev bun run hive onboard
+HIVE_HOME=/tmp/hive-dev bun run hive start
 ```
 
-## Instalar el binario en macOS
+No uses un directorio de datos personal para tests destructivos.
 
-Los binarios de Hive (`hive-v*.x-macos`) son ejecutables de terminal, no aplicaciones `.app`. No se pueden abrir con doble clic.
+## Estructura
 
-### Pasos
+- `packages/core`: gateway y runtime.
+- `packages/cli`: CLI y distribución.
+- `packages/hive-ui`: React/Vite.
+- `packages/mcp`: cliente y transportes MCP.
+- `packages/skills`: skills incluidas.
+- `tests`: suite Bun del runtime.
+- `docs`: documentación canónica.
+
+## Flujo de cambios
+
+1. Lee el código y los tests del subsistema.
+2. Conserva cambios locales no relacionados.
+3. Añade una reproducción para bugs o tests de comportamiento para funciones nuevas.
+4. Haz el cambio mínimo en la fuente del problema.
+5. Actualiza documentación y changelog cuando cambie una interfaz.
+6. Ejecuta las validaciones relevantes.
 
 ```bash
-# 1. Dale permisos de ejecución
-chmod +x hive-v*-macos
-
-# 2. Quita la cuarentena de Gatekeeper (necesario la primera vez)
-xattr -d com.apple.quarantine hive-v*-macos
-
-# 3. Ejecútalo
-./hive-v*-macos
+bun run lint
+bun run test
+bun run test:ui
+bun run docs:check
+bun run build
 ```
 
-### Si macOS sigue bloqueando el binario
-
-Ve a **Ajustes del Sistema → Privacidad y Seguridad** y busca el mensaje sobre el binario bloqueado. Haz clic en **"Abrir de todas formas"**.
-
-### Agregar al PATH (opcional)
-
-Para ejecutarlo desde cualquier lugar sin `./`:
+Después de cambios React ejecuta:
 
 ```bash
-mv hive-v*-macos /usr/local/bin/hive
-# Desde cualquier carpeta:
-hive
+npx -y react-doctor@latest packages/hive-ui --verbose --diff
 ```
 
----
+## Documentación
 
-¿Dudas? Únete a nuestro [Discord](https://discord.gg/hive) o abre un issue.
+No copies inventarios manualmente. Modifica la fuente correspondiente y ejecuta:
+
+```bash
+bun run docs:generate
+bun run docs:check
+```
+
+Los `SKILL.md` solo pueden declarar tools existentes y agentes preferidos del catálogo. Mantén ejemplos en español o bilingües cuando la skill ya lo sea.
+
+## Commits y releases
+
+No ejecutes `scripts/bump-version.ts` para preparar cambios locales: ese script también añade, crea commit, tag y hace push. Las versiones deben sincronizarse en manifests y lockfile, y la publicación debe realizarse únicamente desde el flujo autorizado de release.

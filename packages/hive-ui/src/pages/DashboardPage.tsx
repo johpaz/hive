@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import {
   Bot,
   Layers,
-  Cable,
   Activity,
   ArrowUpRight,
   type LucideProps
@@ -23,6 +22,8 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useAgents } from "@/hooks/useAgents";
+import { useCanvasStore } from "@/stores/canvasStore";
+import { useOfficeModel } from "@/modules/office3d/state/useOfficeModel";
 import { SystemMonitor } from "@/components/SystemMonitor";
 import { UsageStatsPanel } from "@/components/UsageStatsPanel";
 import { UpdateChecker } from "@/components/UpdateChecker";
@@ -41,18 +42,38 @@ interface ActivityData {
 }
 
 interface SystemStats {
-  rss?: string;
-  heap?: string;
-  uptime?: number;
   cpu?: number;
-  memory?: { used: number; total: number; percentage: number };
+  memory?: { rss: number; heapUsed: number; heapTotal: number; heapPercent: number; external: number };
+  uptime?: string;
   connections?: number;
   cores?: number;
+  recentMessages?: number;
+}
+
+interface AgentProposal {
+  id: string;
+  agentId: string;
+  agentName: string;
+  reason: string | null;
+  confidence: number;
+  createdAt: number;
+}
+
+// Known curator.ts reason codes (disable_agent proposals) translated for display.
+// Anything not listed here falls back to the raw string it sent.
+const PROPOSAL_REASONS: Record<string, string> = {
+  "harmful_count exceeded helpful_count": "más resultados dañinos que útiles en sus verificaciones",
+};
+
+function describeProposalReason(reason: string | null): string {
+  if (!reason) return "revisión pendiente";
+  return PROPOSAL_REASONS[reason] ?? reason;
 }
 
 export function DashboardPage() {
   const { status: wsStatus } = useWebSocket();
   const { allAgents } = useAgents();
+  const graphNodes = useCanvasStore((s) => s.graphNodes);
 
   const { data: systemStats } = useQuery<SystemStats>({
     queryKey: ["system-stats"],
@@ -66,32 +87,40 @@ export function DashboardPage() {
     refetchInterval: 60000,
   });
 
+  // Pending curator review queue (curator.ts raises a "disable_agent"
+  // proposal instead of silently disabling a misbehaving catalog agent).
+  const { data: proposals = [] } = useQuery<AgentProposal[]>({
+    queryKey: ["agent-proposals"],
+    queryFn: () => apiClient<{ proposals: AgentProposal[] }>("/api/agents/proposals").then(r => r.proposals),
+    refetchInterval: 30000,
+  });
+
   const agents = useMemo(() => allAgents || [], [allAgents]);
+  // Live status (idle/thinking/tool_call/stuck) lives only in the WS canvas
+  // graph, not on the agent's DB row — same source the 3D office uses.
+  const catalogAgents = useMemo(() => agents.filter((a) => a.source === "catalog"), [agents]);
+  const { desks } = useOfficeModel(catalogAgents, graphNodes);
+  const workingCount = desks.filter(d => d.state === "thinking" || d.state === "tool_call").length;
 
   const statsCards = [
-    { label: "Agentes Activos", value: agents.length, icon: Bot, color: "text-blue-500", trend: `${agents.filter(a => a.status === "active" || a.status === "thinking").length} en uso` },
+    { label: "Agentes Activos", value: agents.length, icon: Bot, color: "text-blue-500", trend: `${workingCount} trabajando` },
     { label: "Sesiones Canvas", value: systemStats?.connections ?? 0, icon: Layers, color: "text-orange-500", trend: "Live" },
-    { label: "Procesos Bridge", value: agents.filter(a => a.status === "thinking").length, icon: Cable, color: "text-purple-500", trend: "Estable" },
     { label: "Mensajes / 1h", value: activityData.at(-1)?.count ?? 0, icon: Activity, color: "text-green-500", trend: "Última hora" },
   ];
 
   const agentStatusData = useMemo(() => {
-    const idle = agents.filter(a => a.status === "idle" || a.status === "hibernated").length;
-    const active = agents.filter(a => a.status === "active").length;
-    const thinking = agents.filter(a => a.status === "thinking").length;
-    const error = agents.filter(a => a.status === "error").length;
+    const idle = desks.filter(d => d.state === "idle").length;
+    const stuck = desks.filter(d => d.state === "stuck").length;
+    const disabled = desks.filter(d => d.state === "disabled").length;
     return [
-      { name: "Idle", value: idle || 0, color: "hsl(var(--muted))" },
-      { name: "Active", value: active || 0, color: "hsl(var(--primary))" },
-      { name: "Thinking", value: thinking || 0, color: "hsl(var(--accent))" },
-      ...(error > 0 ? [{ name: "Error", value: error, color: "#ef4444" }] : []),
+      { name: "Idle", value: idle, color: "hsl(var(--muted))" },
+      { name: "Trabajando", value: workingCount, color: "hsl(var(--primary))" },
+      ...(stuck > 0 ? [{ name: "Atascado", value: stuck, color: "#ef4444" }] : []),
+      ...(disabled > 0 ? [{ name: "Deshabilitado", value: disabled, color: "hsl(var(--muted-foreground))" }] : []),
     ].filter(d => d.value > 0 || d.name === "Idle");
-  }, [agents]);
+  }, [desks, workingCount]);
 
   const totalMessages = activityData.reduce((sum, d) => sum + d.count, 0);
-  const systemHealth = systemStats?.memory?.percentage
-    ? Math.max(0, Math.round(100 - systemStats.memory.percentage * 0.3 - (systemStats.cpu || 0) * 0.2))
-    : 100;
 
   return (
     <div className="hive-page-container">
@@ -126,7 +155,7 @@ export function DashboardPage() {
       </div>
 
       {/* Grilla de Estadísticas */}
-      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 mb-8">
         {statsCards.map((card) => (
           <div key={card.label} className="hive-card hive-card--active group">
             <div className="hive-card-body">
@@ -223,10 +252,10 @@ export function DashboardPage() {
           </div>
         </div>
 
-        {/* Distribución */}
+        {/* Salud del Enjambre */}
         <div className="hive-card">
           <div className="hive-card-body">
-            <h3 className="hive-title-section mb-6">Distribución de Agentes</h3>
+            <h3 className="hive-title-section mb-6">Salud del Enjambre</h3>
             <div className="h-[210px]">
               {agentStatusData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
@@ -257,14 +286,31 @@ export function DashboardPage() {
 
             <div className="mt-4 pt-4 border-t border-white/5 grid grid-cols-2 gap-4">
               <div className="hive-stat">
-                <span className="hive-stat__label">Salud Monitor</span>
-                <span className="hive-stat__value hive-stat__value--active">Óptima</span>
+                <span className="hive-stat__label">Necesitan atención</span>
+                <span
+                  className="hive-stat__value hive-stat__value--active"
+                  style={proposals.length > 0 ? { color: "#ef4444" } : undefined}
+                >
+                  {proposals.length}
+                </span>
               </div>
               <div className="hive-stat">
                 <span className="hive-stat__label">Uptime</span>
                 <span className="hive-stat__value hive-stat__value--active">{systemStats?.uptime ?? "—"}</span>
               </div>
             </div>
+
+            {proposals.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-white/5 space-y-1.5">
+                {proposals.map((p) => (
+                  <div key={p.id} className="flex items-baseline gap-1.5 text-[10px]" title={p.reason ?? undefined}>
+                    <span className="text-red-400">●</span>
+                    <span className="text-white/70 font-bold truncate">{p.agentName}</span>
+                    <span className="text-white/30 truncate">— {describeProposalReason(p.reason)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

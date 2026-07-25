@@ -1,7 +1,7 @@
 import { col, updateDoc } from "../../storage/hive"
 import type { SkillDoc } from "../../storage/collections"
 import { emitCanvas } from "../../canvas/emitter"
-import { syncSkillsToFTS } from "../../agent/skill-selector"
+import { syncSkillsToIndex } from "../../agent/skill-selector"
 
 export async function handleGetSkills(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const skillsCol = await col<SkillDoc>("skills")
@@ -40,7 +40,7 @@ export async function handleActivateSkill(req: Request, addCorsHeaders: (r: Resp
   await updateDoc<SkillDoc>("skills", skillId, { active: !!active }).catch(() => { /* not found */ })
 
   // Re-sync the HiveDB index so semantic matching respects the new active state immediately
-  syncSkillsToFTS().catch(() => {})
+  syncSkillsToIndex().catch(() => {})
 
   return addCorsHeaders(Response.json({ success: true, skillId, active }), req)
 }

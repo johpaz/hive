@@ -17,7 +17,7 @@ import { logger } from "../utils/logger"
 import { col, fromIndexable } from "../storage/hive"
 import { getHiveDb } from "../storage/hivedb"
 import type { HiveDB, EventInput } from "@johpaz/hive-db"
-import type { AgentDoc } from "../storage/collections"
+import type { AgentDoc, TurnSource } from "../storage/collections"
 import { callLLM, resolveProviderConfig, getDefaultLLM, type LLMMessage } from "./llm-client"
 import { addMessage } from "./conversation-store"
 import { saveTrace, recordLLMUsage } from "./tracer"
@@ -46,6 +46,7 @@ import {
   stopLeaseRenewal,
   type RunCheckpointState,
 } from "./run-store"
+import { publishNarration } from "../events/narration"
 
 const log = logger.child("agent-loop")
 
@@ -59,6 +60,38 @@ export class LLMCallTimeoutError extends Error {
     super(`LLM call timed out after ${ms}ms`)
     this.name = "LLMCallTimeoutError"
   }
+}
+
+export class AgentSynthesisError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options)
+    this.name = "AgentSynthesisError"
+  }
+}
+
+/**
+ * Produce a terminal response with one bounded retry. Empty model output is a
+ * failure: callers must never turn an unknown outcome into a success message.
+ */
+export async function synthesizeFinalResponse(
+  operation: () => Promise<string | null | undefined>,
+): Promise<string> {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const content = (await operation())?.trim()
+      if (content) return content
+      lastError = new Error("The model returned an empty synthesis")
+    } catch (err) {
+      lastError = err
+    }
+  }
+
+  const detail = lastError instanceof Error ? lastError.message : String(lastError)
+  throw new AgentSynthesisError(
+    `No se pudo generar la respuesta final del agente después de 2 intentos: ${detail}`,
+    { cause: lastError },
+  )
 }
 
 /** Bounds a single async operation to its own timeout window, independent of any caller. */
@@ -132,6 +165,12 @@ export interface AgentLoopOptions {
   extraTools?: any[]
   /** Run ID for an existing AgentRun — enables resume from checkpoint */
   runId?: string
+  /** Stable originating chat-turn id used to group delegated work. */
+  turnId?: string
+  /** Durable task id when executing a delegated worker. */
+  taskId?: string
+  /** External routing/session id for progress delivery. */
+  sessionId?: string
   /** Whether to resume from a previously saved checkpoint */
   resume?: boolean
   /** Run budget — overrides agent.max_iterations when set */
@@ -149,6 +188,16 @@ export interface AgentLoopOptions {
   durable?: boolean
   /** Kind of run for the AgentRun record */
   runKind?: "chat" | "worker" | "goal" | "cron" | "project"
+  /**
+   * Provenance to persist the trigger message with (default "message"). The
+   * trigger message is always persisted with role:"user" — including
+   * system-originated turns (async-delegation fan-in/fan-out notices from
+   * delegation-groups.ts and delegation-notify.ts), since AgentLoop.stream()
+   * extracts the last role:"user" message as the turn's trigger content.
+   * `historySource` records where it actually came from so history/compaction/
+   * LLM serialization can recognize and frame it without a second role.
+   */
+  historySource?: TurnSource
 }
 
 export type { StepEvent as AgentStepEvent }
@@ -243,8 +292,14 @@ export async function* runAgent(
 
   // Store the user message in conversation history
   if (!opts.isolated) {
-    // If userMessage is multimodal, addMessage extracts text for history storage
-    await addMessage(opts.threadId, "user", opts.userMessage, { channel: opts.channel })
+    // If userMessage is multimodal, addMessage extracts text for history storage.
+    // historySource records provenance; system-originated turns (delegation
+    // fan-in) persist as role:"user" like everything else and stay off the
+    // visible transcript purely because their source is internal.
+    await addMessage(opts.threadId, "user", opts.userMessage, {
+      channel: opts.channel,
+      source: opts.historySource ?? "message",
+    })
     // Run compaction if conversation history is getting large
     await maybeCompact(
       opts.threadId,
@@ -280,7 +335,12 @@ export async function* runAgent(
     }
   }
 
-  const systemPrompt = opts.systemPromptOverride || ctx.systemPrompt
+  // Compose rather than discard: an override must still carry the
+  // conversation summary context-compiler folded in, or a compacted thread
+  // silently loses it whenever a caller supplies systemPromptOverride.
+  const systemPrompt = opts.systemPromptOverride
+    ? opts.systemPromptOverride + ctx.conversationSummarySection
+    : ctx.systemPrompt
 
   // Build initial messages array for the model
   let messages: LLMMessage[] = [
@@ -391,6 +451,9 @@ export async function* runAgent(
 
     iterations++
 
+    const delegationGroupAtCall = opts.turnId && !opts.isolated
+      ? await import("../gateway/delegation-groups").then((mod) => mod.getDelegationGroup(opts.turnId!))
+      : null
     let streamedThisCall = false
     let response: Awaited<ReturnType<typeof callLLM>>
     try {
@@ -399,7 +462,7 @@ export async function* runAgent(
         messages: clearOldToolResults(messages) as LLMMessage[],
         tools: ctx.tools.length > 0 ? ctx.tools : undefined,
         signal: opts.signal,
-        onToken: opts.onToken
+        onToken: opts.onToken && !delegationGroupAtCall
           ? (token: string) => {
             streamedThisCall = true
             opts.onToken?.(token)
@@ -417,6 +480,13 @@ export async function* runAgent(
         break
       }
       throw err
+    }
+
+    if (
+      delegationGroupAtCall &&
+      (!response.tool_calls?.length || response.stop_reason !== "tool_calls")
+    ) {
+      response.content = ""
     }
 
     // Accumulate usage
@@ -495,6 +565,21 @@ export async function* runAgent(
           message: `Calling tool: \`${toolName}\``,
         })
       }
+      if (opts.turnId) {
+        await publishNarration({
+          turnId: opts.turnId,
+          threadId: opts.threadId,
+          channel: opts.channel,
+          userId: opts.userId,
+          sessionId: opts.sessionId,
+          agentId: opts.agentId,
+          agentName,
+          kind: "tool_call",
+          status: "running",
+          label: `${agentName} llamó ${toolName}`,
+          dedupeKey: `tool_call:${iterations}:${tc.id}:${toolName}`,
+        })
+      }
     }
 
     const hiveConfig = loadConfig()
@@ -529,6 +614,15 @@ export async function* runAgent(
         thread_id: opts.threadId,
         channel: opts.channel,
         workspace: agent.workspace ?? null,
+        // Tools read this to know who's calling them (task_delegate's parent
+        // lookup, agent_create's parent_id, bus_publish's sender) — was
+        // missing entirely before, so config.configurable.agent_id was always
+        // undefined inside every tool execute().
+        agent_id: opts.agentId,
+        run_id: runId ?? opts.runId,
+        turn_id: opts.turnId,
+        task_id: opts.taskId,
+        session_id: opts.sessionId,
       },
       hiveConfig,
       workerPool: hiveConfig.tools?.workerPool,
@@ -574,7 +668,7 @@ export async function* runAgent(
         errorMessage: toolResultLLM.startsWith("[Tool Error]") ? toolResultLLM : null,
         durationMs: toolMs,
         causalStreamId,
-        specialistId: agent.specialist_id,
+        catalogAgentId: agent.source === "catalog" ? agent.id : undefined,
       })
 
       // G9: record the tool call, caused by the decision that requested it.
@@ -597,10 +691,28 @@ export async function* runAgent(
       }
 
       // Emit tool chunk (TOON encoded for LLM)
-      yield { tools: { messages: [{ content: toolResultLLM, tool_call_id: tc.id }] } }
+      yield { tools: { messages: [{ content: toolResultLLM, tool_call_id: tc.id, name: toolName }] } }
 
       if (opts.onStep) {
         await opts.onStep({ type: "tool_result", message: toolResultLLM })
+      }
+      if (opts.turnId) {
+        await publishNarration({
+          turnId: opts.turnId,
+          threadId: opts.threadId,
+          channel: opts.channel,
+          userId: opts.userId,
+          sessionId: opts.sessionId,
+          agentId: opts.agentId,
+          agentName,
+          kind: "tool_result",
+          status: batchResult.ok ? "done" : "error",
+          label: batchResult.ok
+            ? `${agentName} recibió el resultado de ${toolName}`
+            : `${agentName} recibió un error de ${toolName}`,
+          detail: batchResult.ok ? null : batchResult.error?.message ?? null,
+          dedupeKey: `tool_result:${iterations}:${tc.id}:${toolName}`,
+        })
       }
 
       // Add tool result to messages for next model call (in-memory only, NOT persisted to DB)
@@ -705,8 +817,11 @@ export async function* runAgent(
                   .map(s => `## Skill: ${s.name}\n${s.body}`)
                   .join("\n\n")
 
-                // Add skill instructions to system prompt (first message)
-                const systemMsg = messages.find(m => m.role === "system")
+                // Add skill instructions to system prompt. messages[0] is
+                // always the system prompt by construction — there is
+                // exactly one system message in the array (see its
+                // construction above), so index instead of scanning.
+                const systemMsg = messages[0]?.role === "system" ? messages[0] : undefined
                 if (systemMsg && typeof systemMsg.content === "string") {
                   // Check if we already added this skill
                   const existingSkillNames = new Set(
@@ -903,12 +1018,24 @@ export async function* runAgent(
   // The agent spent all iterations on tool calls and never produced a final message.
   // Make one extra call without tools so it summarizes what it did.
   if (!finalContent) {
+    const pendingDelegation = opts.turnId && !opts.isolated
+      ? await import("../gateway/delegation-groups").then((mod) => mod.getDelegationGroup(opts.turnId!))
+      : null
+    if (pendingDelegation) {
+      log.info(`[agent-loop] Suppressing terminal synthesis while delegation group ${opts.turnId} is pending`)
+      finalContent = ""
+    } else {
     log.info(`[agent-loop] Max iterations hit with no text response — requesting synthesis (isolated=${!!opts.isolated})`)
-    try {
-      messages.push({
-        role: "user",
-        content: "Basándote en lo que hiciste hasta ahora, responde al usuario con un resumen claro de lo que completaste o del estado actual. Sé conciso.",
-      })
+    messages.push({
+      role: "user",
+      content: "Basándote en lo que hiciste hasta ahora, responde al usuario con un resumen claro y estrictamente factual de lo completado, lo pendiente o los errores. No declares éxito sin evidencia. Sé conciso.",
+    })
+    let synthesisAttempt = 0
+    finalContent = await synthesizeFinalResponse(async () => {
+      synthesisAttempt++
+      if (synthesisAttempt > 1) {
+        log.warn("[agent-loop] Retrying terminal synthesis after an empty or failed response")
+      }
       const synthesis = await callLLM({
         ...providerCfg,
         messages: clearOldToolResults(messages) as LLMMessage[],
@@ -918,18 +1045,12 @@ export async function* runAgent(
         totalInputTokens += synthesis.usage.input_tokens
         totalOutputTokens += synthesis.usage.output_tokens
       }
-      finalContent = synthesis.content?.trim() || "He completado las tareas solicitadas."
-      if (!opts.isolated) {
-        await addMessage(opts.threadId, "assistant", finalContent)
-      }
-      yield { agent: { messages: [{ content: finalContent }] } }
-    } catch (err) {
-      log.warn(`[agent-loop] Synthesis call failed: ${(err as Error).message}`)
-      finalContent = "He completado las tareas solicitadas."
-      if (!opts.isolated) {
-        await addMessage(opts.threadId, "assistant", finalContent)
-      }
-      yield { agent: { messages: [{ content: finalContent }] } }
+      return synthesis.content
+    })
+    if (!opts.isolated) {
+      await addMessage(opts.threadId, "assistant", finalContent)
+    }
+    yield { agent: { messages: [{ content: finalContent }] } }
     }
   } else if (!finalEmitted) {
     // Internal break (stall, loop detected, stuck, timeout, abort) set finalContent
@@ -980,7 +1101,7 @@ export async function* runAgent(
     durationMs,
     tokensUsed: totalInputTokens + totalOutputTokens,
     causalStreamId,
-    specialistId: agent.specialist_id,
+    catalogAgentId: agent.source === "catalog" ? agent.id : undefined,
   })
 
   log.info(
@@ -1049,7 +1170,7 @@ export async function* runAgent(
  * Passing `runId` + `durable` links the run to an existing AgentRun so the
  * worker checkpoints per round-trip and can resume mid-task after a crash.
  */
-export async function runAgentIsolated(opts: {
+export interface IsolatedAgentOptions {
   agentId: string
   taskDescription: string | ContentPart[]
   threadId: string
@@ -1058,8 +1179,18 @@ export async function runAgentIsolated(opts: {
   resume?: boolean
   durable?: boolean
   signal?: AbortSignal
-}): Promise<string> {
+  turnId?: string
+  taskId?: string
+  userId?: string
+  channel?: string
+  sessionId?: string
+}
+
+export async function runAgentIsolatedDetailed(
+  opts: IsolatedAgentOptions,
+): Promise<{ content: string; toolEvidence: string[] }> {
   let lastContent = ""
+  const toolEvidence: string[] = []
   for await (const chunk of runAgent({
     agentId: opts.agentId,
     userMessage: opts.taskDescription,
@@ -1071,12 +1202,29 @@ export async function runAgentIsolated(opts: {
     resume: opts.resume,
     durable: opts.durable,
     signal: opts.signal,
+    turnId: opts.turnId,
+    taskId: opts.taskId,
+    userId: opts.userId,
+    channel: opts.channel,
+    sessionId: opts.sessionId,
   })) {
     if (chunk.agent?.messages?.[0]?.content) {
       lastContent = chunk.agent.messages[0].content
     }
+    for (const message of chunk.tools?.messages ?? []) {
+      const raw = typeof message.content === "string" ? message.content : JSON.stringify(message.content)
+      const safe = raw
+        .replace(/data:[a-z0-9.+-]+\/[a-z0-9.+-]+;base64,[a-z0-9+/=\s]+/gi, "[REDACTED_BINARY]")
+        .replace(/[A-Za-z0-9+/]{1000,}={0,2}/g, "[REDACTED_BINARY]")
+      toolEvidence.push(`${message.name ?? "tool"}: ${safe.slice(0, 4000)}`)
+      if (toolEvidence.length > 8) toolEvidence.shift()
+    }
   }
-  return lastContent
+  return { content: lastContent, toolEvidence }
+}
+
+export async function runAgentIsolated(opts: IsolatedAgentOptions): Promise<string> {
+  return (await runAgentIsolatedDetailed(opts)).content
 }
 
 // ─── Shim: AgentLoop class with stream() compatible with providers/index.ts ──
@@ -1106,6 +1254,10 @@ export class AgentLoop {
         run_id?: string
         resume?: boolean
         durable?: boolean
+        turn_id?: string
+        session_id?: string
+        /** See AgentLoopOptions.historySource. */
+        history_source?: TurnSource
       }
       signal?: AbortSignal
       onToken?: (token: string) => void
@@ -1161,9 +1313,12 @@ export class AgentLoop {
       onReasoningToken: config.onReasoningToken,
       onStep: config.onStep,
       extraTools: config.extraTools,
+      historySource: config.configurable?.history_source,
       runId: config.configurable?.run_id,
       resume: config.configurable?.resume,
       durable: config.configurable?.durable,
+      turnId: config.configurable?.turn_id,
+      sessionId: config.configurable?.session_id,
       runKind: "chat",
     })
   }

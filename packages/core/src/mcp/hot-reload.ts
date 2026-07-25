@@ -12,7 +12,7 @@ import { col, updateDoc } from "../storage/hive";
 import type { McpServerDoc } from "../storage/collections";
 import { logger } from "../utils/logger";
 import { loadMcpHeaders } from "../storage/crypto";
-import { syncMCPToolsToDB, syncMCPToolsToFTS, clearMCPToolsFromDB } from "./tool-sync";
+import { syncMCPToolsToDB, syncMCPToolsToIndex, clearMCPToolsFromDB } from "./tool-sync";
 import type { MCPClientManager } from "@johpaz/hive-agents-mcp";
 
 const log = logger.child("mcp:hot-reload");
@@ -115,7 +115,7 @@ async function syncMCPServers(mcpManager: MCPClientManager): Promise<void> {
           // Persist MCP tool definitions to DB and the HiveDB index
           // Use server.name (human-readable) for mcpToolId consistency with context-compiler
           await syncMCPToolsToDB(server.id || server.name, server.name || serverName, tools);
-          await syncMCPToolsToFTS();
+          await syncMCPToolsToIndex();
 
           log.info(`MCP server ${serverName} connected: ${tools.length} tools available`);
         } catch (err) {

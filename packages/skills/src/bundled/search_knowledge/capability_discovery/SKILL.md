@@ -22,7 +22,7 @@ triggers:
 
 # capability_discovery — Sistema de Discovery
 
-Arrancás con solo 4 herramientas. Todo lo demás se descubre con **search_knowledge**.
+Arrancás con 7 herramientas esenciales. Todo lo demás se descubre con **search_knowledge**.
 
 ## Regla de oro: UNA PALABRA, busca TODO
 
@@ -69,6 +69,6 @@ search_knowledge(query="pdf")       → tools para leer/escribir PDFs
 search_knowledge(query="browser")   → tools de navegación web
 search_knowledge(query="github")    → tools MCP de GitHub si están configuradas
 search_knowledge(query="calendar")  → tools de Google Calendar
-search_knowledge(query="canvas")    → skills de visualización
+search_knowledge(query="A2UI")      → skills del panel interactivo
 search_knowledge(query="slack")     → tools de Slack si están configuradas
 ```

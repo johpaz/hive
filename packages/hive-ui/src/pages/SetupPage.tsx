@@ -22,7 +22,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { CheckCircle2, XCircle, Sparkles, Hexagon, Volume2, Loader2 } from "lucide-react";
+import { CheckCircle2, XCircle, Sparkles, Hexagon, Loader2 } from "lucide-react";
 import { useLoaderStore } from "@/stores/useLoaderStore";
 import { useHiveAgentsModelLoad } from "@/hooks/useHiveAgentsModelLoad";
 import { cn } from "@/lib/utils";
@@ -74,16 +74,14 @@ interface WizardData {
   // Step 4
   channels: Record<string, { enabled: boolean; config?: Record<string, string> }>;
   // Step 5
-  voiceEnabled: boolean;
-  sttProvider: string;
-  ttsProvider: string;
-  ttsVoice: string;
-  // Step 6
   ethicsRules: Record<string, boolean>;
   customRules: Array<{ text: string; category: string }>;
 }
 
 const STORAGE_KEY = "hive_setup_wizard_data";
+
+/** 1 usuario · 2 agente · 3 proveedor · 4 canales · 5 ética · 6 resumen */
+const TOTAL_STEPS = 6;
 
 function loadWizardData(): WizardData | null {
   try {
@@ -136,10 +134,6 @@ function getDefaultWizardData(): WizardData {
       whatsapp: { enabled: false },
       slack: { enabled: false },
     },
-    voiceEnabled: false,
-    sttProvider: "whisper-large-v3-turbo",
-    ttsProvider: "elevenlabs",
-    ttsVoice: "",
     ethicsRules: {},
     customRules: [],
   };
@@ -237,7 +231,7 @@ export default function SetupPage() {
     const error = getStepError();
     if (error) { setStepError(error); return; }
     setStepError(null);
-    if (currentStep < 8) setCurrentStep(prev => prev + 1);
+    if (currentStep < TOTAL_STEPS) setCurrentStep(prev => prev + 1);
   };
 
   const handleBack = () => {
@@ -336,10 +330,8 @@ export default function SetupPage() {
       case 2: return renderStep2();
       case 3: return renderStep3();
       case 4: return renderStep4();
-      case 5: return renderStep5();
-      case 6: return renderStep6();
-      case 7: return renderStepModules();
-      case 8: return renderStep7();
+      case 5: return renderStepEthics();
+      case 6: return renderStepSummary();
       default: return null;
     }
   };
@@ -874,120 +866,7 @@ export default function SetupPage() {
     </div>
   );
 
-  const renderStep5 = () => (
-    <div className="space-y-6">
-      <div className="text-center space-y-2">
-        <h2 className="text-2xl font-bold">Voz (opcional)</h2>
-        <p className="text-muted-foreground">Permite que Bee hable y escuche</p>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Activar voz</CardTitle>
-            <Switch
-              checked={wizardData.voiceEnabled}
-              onCheckedChange={(checked) => updateData({ voiceEnabled: checked })}
-            />
-          </div>
-        </CardHeader>
-        <CardContent>
-          {wizardData.voiceEnabled ? (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="sttProvider">Reconocimiento de voz (STT)</Label>
-                <Select
-                  value={wizardData.sttProvider}
-                  onValueChange={(value) => updateData({ sttProvider: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="whisper-large-v3-turbo">
-                      Groq Whisper (Recomendado)
-                    </SelectItem>
-                    <SelectItem value="whisper-1">
-                      OpenAI Whisper
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="ttsProvider">Síntesis de voz (TTS)</Label>
-                <Select
-                  value={wizardData.ttsProvider}
-                  onValueChange={(value) => updateData({ ttsProvider: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="elevenlabs">
-                      ElevenLabs (Recomendado)
-                    </SelectItem>
-                    <SelectItem value="openai">
-                      OpenAI TTS
-                    </SelectItem>
-                    <SelectItem value="gemini">
-                      Google Gemini
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="ttsVoice">Voz</Label>
-                <div className="flex gap-2">
-                  <Select
-                    value={wizardData.ttsVoice}
-                    onValueChange={(value) => updateData({ ttsVoice: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecciona una voz" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Rachel">Rachel (ElevenLabs)</SelectItem>
-                      <SelectItem value="Adam">Adam (ElevenLabs)</SelectItem>
-                      <SelectItem value="Antoni">Antoni (ElevenLabs)</SelectItem>
-                      <SelectItem value="Elli">Elli (ElevenLabs)</SelectItem>
-                      <SelectItem value="Josh">Josh (ElevenLabs)</SelectItem>
-                      <SelectItem value="alloy">Alloy (OpenAI)</SelectItem>
-                      <SelectItem value="echo">Echo (OpenAI)</SelectItem>
-                      <SelectItem value="fable">Fable (OpenAI)</SelectItem>
-                      <SelectItem value="onyx">Onyx (OpenAI)</SelectItem>
-                      <SelectItem value="nova">Nova (OpenAI)</SelectItem>
-                      <SelectItem value="shimmer">Shimmer (OpenAI)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button variant="outline" size="icon">
-                    <Volume2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-
-              <Alert>
-                <AlertDescription className="text-sm">
-                  {wizardData.provider === wizardData.ttsProvider && (
-                    <span className="text-green-600 flex items-center gap-1">
-                      <CheckCircle2 className="w-4 h-4" /> Ya tienes la API key configurada
-                    </span>
-                  )}
-                </AlertDescription>
-              </Alert>
-            </div>
-          ) : (
-            <p className="text-muted-foreground text-center py-4">
-              Puedes activar la voz más tarde en la configuración
-            </p>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-
-  const renderStep6 = () => (
+  const renderStepEthics = () => (
     <div className="space-y-6">
       <div className="text-center space-y-2">
         <h2 className="text-2xl font-bold">Reglas éticas</h2>
@@ -1101,22 +980,7 @@ export default function SetupPage() {
     </div>
   );
 
-  const renderStepModules = () => (
-    <div className="space-y-6">
-      <div className="text-center space-y-2">
-        <h2 className="text-2xl font-bold">Módulos opcionales</h2>
-        <p className="text-muted-foreground">Activa las funcionalidades adicionales que quieras usar</p>
-      </div>
-
-      <Card className="border-border">
-        <CardContent className="p-8 text-center">
-          <p className="text-muted-foreground">No hay módulos opcionales disponibles en este momento.</p>
-        </CardContent>
-      </Card>
-    </div>
-  );
-
-  const renderStep7 = () => (
+  const renderStepSummary = () => (
     <div className="space-y-6">
       <div className="text-center space-y-2">
         <h2 className="text-2xl font-bold">¡Todo listo!</h2>
@@ -1174,16 +1038,6 @@ export default function SetupPage() {
                 </div>
               </div>
 
-              {wizardData.voiceEnabled && (
-                <div>
-                  <Label className="text-sm text-muted-foreground">Voz</Label>
-                  <p className="font-medium">
-                    STT: {wizardData.sttProvider} | TTS: {wizardData.ttsProvider}
-                    {wizardData.ttsVoice && ` (${wizardData.ttsVoice})`}
-                  </p>
-                </div>
-              )}
-
               <div>
                 <Label className="text-sm text-muted-foreground">Reglas éticas activas</Label>
                 <div className="flex gap-2 flex-wrap mt-1">
@@ -1230,7 +1084,7 @@ export default function SetupPage() {
         {/* Progress */}
         <div className="mb-8 space-y-2">
           <div className="flex justify-between text-sm text-muted-foreground">
-            <span>Paso {currentStep} de 8</span>
+            <span>Paso {currentStep} de {TOTAL_STEPS}</span>
             <button
               onClick={handleReset}
               className="text-xs text-muted-foreground hover:text-foreground"
@@ -1238,7 +1092,7 @@ export default function SetupPage() {
               Reiniciar configuración
             </button>
           </div>
-          <Progress value={(currentStep / 8) * 100} className="h-2" />
+          <Progress value={(currentStep / TOTAL_STEPS) * 100} className="h-2" />
         </div>
 
         {/* Step content */}
@@ -1261,7 +1115,7 @@ export default function SetupPage() {
             >
               ← Anterior
             </Button>
-            {currentStep < 8 ? (
+            {currentStep < TOTAL_STEPS ? (
               <Button
                 onClick={handleNext}
                 className="bg-amber-500 hover:bg-amber-600"

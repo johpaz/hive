@@ -11,10 +11,10 @@ import type { Config } from "../config/loader.ts";
 // Filesystem (7)
 import * as filesystem from "./filesystem/index.ts";
 
-// Web (9)
+// Web (10)
 import * as web from "./web/index.ts";
 
-// Cron (7) - Croner-based scheduler tools
+// Cron (8) - Croner-based scheduler tools
 import * as cron from "./cron/index.ts";
 
 // CLI (1)
@@ -23,11 +23,8 @@ import * as cli from "./cli/index.ts";
 // Agents (14)
 import * as agents from "./agents/index.ts";
 
-// Canvas (7)
-import * as canvas from "./canvas/index.ts";
-
-// Voice (2)
-import * as voice from "./voice/index.ts";
+// A2UI (4)
+import * as a2ui from "./a2ui/index.ts";
 
 // Core (4)
 import * as core from "./core/index.ts";
@@ -35,14 +32,8 @@ import * as core from "./core/index.ts";
 // Office (8)
 import * as office from "./office/index.ts";
 
-// Meeting (4)
-import * as meeting from "./meeting/index.ts";
-
 // API (1) - HTTP client for REST APIs
 import * as api from "./api/index.ts";
-
-// Projects (3) - project/task management
-import * as projects from "./projects/index.ts";
 
 /**
  * Creates all tools with proper configuration
@@ -52,10 +43,10 @@ export function createAllTools(config: Config): Tool[] {
     // FILESYSTEM (7)
     ...filesystem.createTools(),
 
-    // WEB (9)
+    // WEB (10)
     ...web.createTools(),
 
-    // CRON (7)
+    // CRON (8)
     ...cron.createTools(),
 
     // CLI (1)
@@ -64,11 +55,8 @@ export function createAllTools(config: Config): Tool[] {
     // AGENTS (14)
     ...agents.createTools(),
 
-    // CANVAS (7 + A2UI 4)
-    ...canvas.createTools(config),
-
-    // VOICE (2)
-    ...voice.createTools(),
+    // A2UI (4)
+    ...a2ui.createTools(config),
 
     // CORE (4)
     ...core.createTools(),
@@ -76,14 +64,9 @@ export function createAllTools(config: Config): Tool[] {
     // OFFICE (8)
     ...office.createTools(),
 
-    // MEETING (4)
-    ...meeting.createTools(),
-
     // API (1)
     ...api.createTools(),
 
-    // PROJECTS (3)
-    ...projects.createProjectTools(),
   ];
 }
 
@@ -102,16 +85,12 @@ export function createToolsByCategory(category: string, config: Config): Tool[] 
       return cli.createTools();
     case "agents":
       return agents.createTools();
-    case "canvas":
-      return canvas.createTools(config);
-    case "voice":
-      return voice.createTools();
+    case "a2ui":
+      return a2ui.createTools(config);
     case "core":
       return core.createTools();
     case "office":
       return office.createTools();
-    case "meeting":
-      return meeting.createTools();
     case "api":
       return api.createTools();
     default:
@@ -144,6 +123,7 @@ export {
   browserExtractTool,
   browserScriptTool,
   browserWaitTool,
+  artifactInspectTool,
 } from "./web/index.ts";
 
 export {
@@ -171,26 +151,18 @@ export {
   agentFindTool,
   agentArchiveTool,
   taskDelegateTool,
-  taskDelegateCodeTool,
+  taskListTool,
   taskStatusTool,
   busPublishTool,
   busReadTool,
 } from "./agents/index.ts";
 
 export {
-  canvasRenderTool,
-  canvasAskTool,
-  canvasConfirmTool,
-  canvasShowCardTool,
-  canvasShowProgressTool,
-  canvasShowListTool,
-  canvasClearTool,
-} from "./canvas/index.ts";
-
-export {
-  voiceTranscribeTool,
-  voiceSpeakTool,
-} from "./voice/index.ts";
+  createA2UISurfaceTool,
+  createA2UIUpdateComponentsTool,
+  createA2UIUpdateDataModelTool,
+  createA2UIDeleteSurfaceTool,
+} from "./a2ui/index.ts";
 
 export {
   searchKnowledgeTool,

@@ -40,7 +40,7 @@ export function A2UIPage() {
                   <Layers className="h-5 w-5" />
                 </div>
                 <div>
-                  <h2 className="hive-title-page !text-lg">A2UI</h2>
+                  <h2 className="hive-title-page !text-lg">Panel interactivo</h2>
                   <div className="flex items-center gap-2 text-xs text-white/40 mt-0.5">
                     <UserIcon className="h-3 w-3" />
                     <span className="font-mono">{sessionId}</span>

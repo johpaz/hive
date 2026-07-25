@@ -10,6 +10,7 @@ import { logger } from "../utils/logger";
 import { notifyTaskCompletion } from "./integration";
 import { col, toIndexable, fromIndexable } from "../storage/hive";
 import type { CronJobDoc, TaskRunDoc } from "../storage/collections";
+import { expireArtifacts } from "../artifacts/store";
 import type {
   CronJob,
   TaskRun,
@@ -707,7 +708,8 @@ export class CronScheduler {
       }
     }
 
-    log.info("[runCleanup] Cleanup completed");
+    const artifacts = await expireArtifacts();
+    log.info(`[runCleanup] Cleanup completed (expired artifacts=${artifacts.expired})`);
   }
 
   /**

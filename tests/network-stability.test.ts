@@ -7,6 +7,11 @@ import {
   beforeAll,
 } from "bun:test";
 
+// Prueba de integración: requiere un gateway real y queda fuera de la suite
+// determinista. Ejecutar con:
+// NETWORK_TESTS=1 bun test tests/network-stability.test.ts --timeout 30000
+const NETWORK_TESTS = process.env.NETWORK_TESTS === "1";
+
 const WS_URL = "ws://127.0.0.1:18790/ws";
 const CANVAS_WS_URL = "ws://127.0.0.1:18790/canvas";
 const HTTP_URL = "http://127.0.0.1:18790";
@@ -270,7 +275,7 @@ async function waitForServer(maxAttempts = 10): Promise<boolean> {
   return false;
 }
 
-describe("🌐 Network Stability Test Suite", () => {
+describe.skipIf(!NETWORK_TESTS)("🌐 Network Stability Test Suite", () => {
   let serverAvailable = false;
 
   beforeAll(async () => {
@@ -664,7 +669,7 @@ describe("🌐 Network Stability Test Suite", () => {
   });
 });
 
-describe("🎯 Network Stability Score", () => {
+describe.skipIf(!NETWORK_TESTS)("🎯 Network Stability Score", () => {
   it("should calculate overall stability score", async () => {
     console.log("\n📌 Calculating network stability score...");
 

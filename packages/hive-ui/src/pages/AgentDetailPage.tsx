@@ -1,6 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { AgentDetailsEditor } from "@/modules/agent-config/details/AgentDetailsEditor";
 import { AgentInternalCard } from "@/modules/agents/AgentInternalCard";
+import { AgentToolsPanel } from "@/modules/agents/AgentToolsPanel";
 import { useAgents } from "@/stores/useGlobalConfigStore";
 import { ChevronLeft, LayoutGrid, Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ export function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const agentId = id ?? "unknown";
-  const { agents, fetchAgents, isLoading } = useAgents();
+  const { agents, fetchAgents } = useAgents();
 
   useEffect(() => {
     fetchAgents();
@@ -20,14 +21,14 @@ export function AgentDetailPage() {
 
   return (
     <div className="min-h-screen bg-transparent pb-20">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
 
         {/* Navigation Header */}
         <div className="flex items-center justify-between mb-8">
           <Button
             variant="ghost"
             onClick={() => navigate("/agents")}
-            className="group flex items-center gap-2 text-white/40 hover:text-white hover:bg-white/5 px-4 py-2 rounded-xl transition-all"
+            className="group flex items-center gap-2 text-white/40 hover:text-white hover:bg-white/5 px-4 py-2 rounded-xl transition-colors"
           >
             <ChevronLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
             <span className="text-sm font-bold uppercase tracking-widest">Volver a la Colmena</span>
@@ -50,6 +51,7 @@ export function AgentDetailPage() {
         {agent ? (
           <>
             <AgentInternalCard agent={agent} />
+            <AgentToolsPanel agent={agent} />
             <div className="grid grid-cols-1 gap-8">
               <AgentDetailsEditor agentId={agentId} />
             </div>

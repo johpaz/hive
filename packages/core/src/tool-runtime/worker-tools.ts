@@ -1,7 +1,8 @@
 import type { Config } from "../config/loader.ts"
 import type { Tool } from "../tools/types.ts"
 import * as filesystem from "../tools/filesystem/index.ts"
-import * as web from "../tools/web/index.ts"
+import { webSearchTool } from "../tools/web/web-search.ts"
+import { webFetchTool } from "../tools/web/web-fetch.ts"
 import * as cli from "../tools/cli/index.ts"
 import * as office from "../tools/office/index.ts"
 import * as api from "../tools/api/index.ts"
@@ -17,7 +18,8 @@ import * as api from "../tools/api/index.ts"
 export function createWorkerTools(_config: Config): Tool[] {
   return [
     ...filesystem.createTools(),
-    ...web.createTools(),
+    webSearchTool,
+    webFetchTool,
     ...cli.createTools(),
     ...office.createTools(),
     ...api.createTools(),

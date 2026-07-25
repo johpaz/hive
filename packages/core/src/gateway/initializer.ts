@@ -6,9 +6,9 @@ import type { AgentDoc, ProviderDoc, McpServerDoc } from "../storage/collections
 import { buildAgentLoop } from "../agent/agent-loop";
 import { AgentRunner } from "../agent/providers/index";
 import { ChannelManager } from "../channels/manager";
-import { syncToolsToFTS, syncSkillsToFTS, syncPlaybookToFTS } from "../agent/context-compiler";
-import { syncMCPToolsToFTS } from "../mcp/tool-sync";
-import { syncSpecialistsToIndex } from "../agent/specialist-selector";
+import { syncToolsToIndex, syncSkillsToIndex, syncPlaybookToIndex } from "../agent/context-compiler";
+import { syncMCPToolsToIndex } from "../mcp/tool-sync";
+import { syncCatalogAgentsToIndex } from "../agent/catalog-selector";
 import { AgentService, createAgentService } from "../agent/service";
 import { mkdirSync } from "node:fs";
 import * as path from "node:path";
@@ -243,16 +243,16 @@ export async function initializeGateway(
       const { getHiveDb } = await import("../storage/hivedb");
       const searchDb = await getHiveDb();
       await Promise.all([
-        syncToolsToFTS(),
-        syncSkillsToFTS(),
-        syncPlaybookToFTS(),
-        syncMCPToolsToFTS(),
-        syncSpecialistsToIndex()
+        syncToolsToIndex(),
+        syncSkillsToIndex(),
+        syncPlaybookToIndex(),
+        syncMCPToolsToIndex(),
+        syncCatalogAgentsToIndex()
       ]);
       // Warmup query: the first search pays reader initialization; do it here
       // so selector latency stays under budget on the first real message.
       await searchDb.queryHybrid({ text: "warmup", k: 1 });
-      log.info("[initialize] ✅ HiveDB capability index synced (tools, skills, playbook, mcp_tools, specialists)")
+      log.info("[initialize] ✅ HiveDB capability index synced (tools, skills, playbook, mcp_tools, catalog agents)")
     } catch (err) {
       log.error(`[initialize] HiveDB index sync failed during startup: ${(err as Error).message}`);
       // Consider if we should throw or continue. For now, continue but log error.

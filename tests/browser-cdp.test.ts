@@ -532,16 +532,16 @@ describe.skipIf(!RUN)("Herramientas del agente — integración real", () => {
     expect(result.text).toBe("Hive Agent");
   });
 
-  it("browser_screenshot — retorna base64 PNG", async () => {
+  it("browser_screenshot — retorna artefacto administrado", async () => {
     const { browserScreenshotTool } = await import(
       "../packages/core/src/tools/web/browser-screenshot.ts"
     );
     await client.navigate(`${BASE}/`);
     const result = await browserScreenshotTool.execute({}) as any;
     expect(result.ok).toBe(true);
-    expect(result.screenshot.length).toBeGreaterThan(1000);
-    expect(result.format).toBe("png");
-    expect(result.encoding).toBe("base64");
+    expect(result.artifact_id).toBeString();
+    expect(result.size).toBeGreaterThan(1000);
+    expect(result.screenshot).toBeUndefined();
   });
 
   it("browser_screenshot — captura elemento por selector", async () => {
@@ -550,7 +550,8 @@ describe.skipIf(!RUN)("Herramientas del agente — integración real", () => {
     );
     const result = await browserScreenshotTool.execute({ selector: "#hero" }) as any;
     expect(result.ok).toBe(true);
-    expect(result.screenshot.length).toBeGreaterThan(100);
+    expect(result.artifact_id).toBeString();
+    expect(result.size).toBeGreaterThan(100);
   });
 
   it("browser_extract — extrae texto de todos los .item", async () => {

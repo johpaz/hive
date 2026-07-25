@@ -1,6 +1,5 @@
 import { create } from "zustand";
-import type { CanvasComponent } from "@/types/canvas";
-import type { A2UISurface, A2UIServerMessage, A2UIActionMessage, ComponentDef } from "@/types/a2ui";
+import type { A2UISurface, A2UIActionMessage, ComponentDef } from "@/types/a2ui";
 import { updateDataModel } from "@/modules/canvas/a2ui/dataBinding";
 import { useWebSocketStore } from "./useWebSocketStore";
 
@@ -64,7 +63,7 @@ function collectA2UIChildIds(component: ComponentDef, referencedIds: Set<string>
 export interface GraphNode {
   id: string;
   name: string;
-  type: "agent" | "mcp" | "project" | "task";
+  type: "agent" | "mcp";
   status: string;
   data?: Record<string, unknown>;
 }
@@ -74,41 +73,26 @@ export interface GraphEdge {
   source: string;
   target: string;
   edgeType: string;
+  data?: Record<string, unknown>;
 }
 
 interface CanvasState {
-  sessionId: string | null;
-  components: CanvasComponent[];
-  selectedComponentId: string | null;
   isConnected: boolean;
   graphNodes: GraphNode[];
   graphEdges: GraphEdge[];
-  zoomLevel: number;
-  panX: number;
-  panY: number;
 
   // A2UI v0.9 surfaces
   a2uiSurfaces: Map<string, A2UISurface>;
   unseenA2UICount: number;
 
   // Actions
-  setComponents: (components: CanvasComponent[]) => void;
-  setSessionId: (sessionId: string | null) => void;
-  addComponent: (component: CanvasComponent) => void;
-  removeComponent: (id: string) => void;
-  selectComponent: (id: string | null) => void;
   setIsConnected: (connected: boolean) => void;
   setGraphSnapshot: (nodes: GraphNode[], edges: GraphEdge[]) => void;
   addGraphNode: (node: GraphNode) => void;
   updateGraphNode: (id: string, updates: Partial<GraphNode>) => void;
   removeGraphNode: (id: string) => void;
   addGraphEdge: (edge: GraphEdge) => void;
-  setZoomLevel: (zoom: number) => void;
-  zoomIn: () => void;
-  zoomOut: () => void;
-  resetView: () => void;
-  setPan: (x: number, y: number) => void;
-
+  removeGraphEdge: (id: string) => void;
   // A2UI actions
   createA2UISurface: (surface: A2UISurface) => void;
   updateA2UIComponents: (surfaceId: string, components: ComponentDef[]) => void;
@@ -119,28 +103,16 @@ interface CanvasState {
 
   // Init: subscribes to main WS events, returns cleanup fn
   init: () => () => void;
-  sendMessage: (message: any) => void;
   sendA2UIAction: (action: A2UIActionMessage) => void;
 }
 
 export const useCanvasStore = create<CanvasState>((set, get) => ({
-  sessionId: null,
-  components: [],
-  selectedComponentId: null,
   isConnected: false,
   graphNodes: [],
   graphEdges: [],
-  zoomLevel: 1,
-  panX: 0,
-  panY: 0,
   a2uiSurfaces: new Map(),
   unseenA2UICount: 0,
 
-  setSessionId: (sessionId) => set({ sessionId }),
-  setComponents: (components) => set({ components }),
-  addComponent: (component) => set((s) => ({ components: [...s.components, component] })),
-  removeComponent: (id) => set((s) => ({ components: s.components.filter((c) => c.id !== id) })),
-  selectComponent: (id) => set({ selectedComponentId: id }),
   setIsConnected: (connected) => set({ isConnected: connected }),
   setGraphSnapshot: (nodes, edges) => set({ graphNodes: nodes, graphEdges: edges }),
 
@@ -171,15 +143,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       return { graphEdges: [...s.graphEdges, edge] };
     }),
 
-  setZoomLevel: (zoom) => set({ zoomLevel: Math.max(0.25, Math.min(2, zoom)) }),
-  
-  zoomIn: () => set((s) => ({ zoomLevel: Math.max(0.25, Math.min(2, s.zoomLevel + 0.25)) })),
-  
-  zoomOut: () => set((s) => ({ zoomLevel: Math.max(0.25, Math.min(2, s.zoomLevel - 0.25)) })),
-  
-  resetView: () => set({ zoomLevel: 1, panX: 0, panY: 0 }),
-  
-  setPan: (x, y) => set({ panX: x, panY: y }),
+  removeGraphEdge: (id) =>
+    set((s) => ({ graphEdges: s.graphEdges.filter((e) => e.id !== id) })),
 
   createA2UISurface: (surface) =>
     set((s) => {
@@ -263,9 +228,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
             graphNodes: d.nodes as GraphNode[],
             graphEdges: d.edges as GraphEdge[],
           };
-          if (Array.isArray(d.components)) {
-            updates.components = d.components as CanvasComponent[];
-          }
           set(updates);
         }
       }),
@@ -308,53 +270,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         if (edge?.id) get().addGraphEdge(edge);
       }),
 
-      ws.subscribe("canvas:render", (msg) => {
-        const component = (msg.data?.component ?? msg.component) as CanvasComponent | undefined;
-        if (component) {
-          set((s) => {
-            const existing = s.components.find((c) => c.id === component.id);
-            if (existing) {
-              return { components: s.components.map((c) => (c.id === component.id ? component : c)) };
-            }
-            return { components: [...s.components, component] };
-          });
-        }
-      }),
-
-      ws.subscribe("canvas:clear", () => set({ components: [] })),
-
-      ws.subscribe("canvas:ask", (msg) => {
-        const d = (msg.data as Record<string, unknown>) ?? {};
-        const component: CanvasComponent = {
-          id: (d.id as string) || `ask_${Date.now()}`,
-          type: "form",
-          props: { question: d.question, fields: d.fields ?? [], raw: d },
-          position: { x: 0, y: 0 },
-          size: { width: 400, height: 300 },
-          agentId: (d.agentId as string) || "",
-        };
-        set((s) => {
-          const existing = s.components.find((c) => c.id === component.id);
-          if (existing) return { components: s.components.map((c) => (c.id === component.id ? component : c)) };
-          return { components: [...s.components, component] };
-        });
-      }),
-
-      ws.subscribe("canvas:confirm", (msg) => {
-        const d = (msg.data as Record<string, unknown>) ?? {};
-        const component: CanvasComponent = {
-          id: (d.id as string) || `confirm_${Date.now()}`,
-          type: "alert-dialog",
-          props: { message: d.message, confirmLabel: d.confirmLabel ?? "Confirmar", cancelLabel: d.cancelLabel ?? "Cancelar", raw: d },
-          position: { x: 0, y: 0 },
-          size: { width: 400, height: 200 },
-          agentId: (d.agentId as string) || "",
-        };
-        set((s) => {
-          const existing = s.components.find((c) => c.id === component.id);
-          if (existing) return { components: s.components.map((c) => (c.id === component.id ? component : c)) };
-          return { components: [...s.components, component] };
-        });
+      ws.subscribe("canvas:edge_remove", (msg) => {
+        const d = msg.data;
+        if (d?.id) get().removeGraphEdge(d.id as string);
       }),
 
       // ─── A2UI v0.9 handlers ───────────────────────────────────────────────
@@ -408,10 +326,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     ];
 
     return () => unsubs.forEach((u) => u());
-  },
-
-  sendMessage: (message) => {
-    useWebSocketStore.getState().send(message);
   },
 
   sendA2UIAction: (action) => {

@@ -280,6 +280,50 @@ export async function doctor(): Promise<void> {
     });
   }
 
+  // Agentes — propuestas pendientes del curador ACE (agentProposals). El
+  // curador nunca deshabilita un agente de catálogo por su cuenta: cuando
+  // harmful_count supera a helpful_count, deja una propuesta "disable_agent"
+  // para que una persona decida. Nada la resuelve automáticamente, así que
+  // se acumulan hasta que alguien las revisa — doctor las saca a la luz.
+  try {
+    const { ensureHiveDb } = await import("@johpaz/hive-agents-core/storage/bootstrap");
+    const { col } = await import("@johpaz/hive-agents-core/storage/hive");
+    await ensureHiveDb();
+
+    const proposalsCol = await col<{ status: string; type: string; agent_id: string }>("agentProposals");
+    const pending = (await proposalsCol.scan({})).filter(
+      (entry) => entry.doc.status === "proposed" && entry.doc.type === "disable_agent"
+    );
+
+    if (pending.length > 0) {
+      const agentsCol = await col<{ name: string }>("agents");
+      const names = await Promise.all(
+        pending.map(async (entry) => (await agentsCol.get(entry.doc.agent_id))?.doc.name ?? entry.doc.agent_id)
+      );
+      checks.push({
+        category: "Agentes",
+        name: "Propuestas del curador",
+        status: "warn",
+        message: `${pending.length} agente(s) marcado(s) para revisión: ${names.join(", ")}`,
+        hint: "Revisá el panel 'Salud del Enjambre' en el Dashboard — no hay todavía un comando para aprobar/descartar propuestas.",
+      });
+    } else {
+      checks.push({
+        category: "Agentes",
+        name: "Propuestas del curador",
+        status: "ok",
+        message: "sin propuestas pendientes",
+      });
+    }
+  } catch {
+    checks.push({
+      category: "Agentes",
+      name: "Propuestas del curador",
+      status: "warn",
+      message: "No se pudo verificar (BD no disponible)",
+    });
+  }
+
   // Gateway
   const running = isGatewayRunning();
   checks.push({ category: "Gateway", name: "Estado", status: running ? "ok" : "warn", message: running ? "corriendo" : "detenido" });

@@ -85,11 +85,13 @@ async function seedAgentWithSmallContextWindow() {
   });
 }
 
+// KEEP_LAST_N_MESSAGES in context-compiler.ts is 30 — insert enough messages
+// that the recent-messages window is a strict suffix starting AFTER the
+// summary's last_message_id. That's what makes a summary "apply": the window
+// no longer reaches back far enough to cover what the summary already does.
 async function forceCompaction(threadId: string) {
-  // ~400 chars each, well over compactThreshold (800 tokens) once summed.
-  const filler = "x".repeat(400);
-  for (let i = 0; i < 10; i++) {
-    await addMessage(threadId, i % 2 === 0 ? "user" : "assistant", `${filler}-${i}`);
+  for (let i = 0; i < 35; i++) {
+    await addMessage(threadId, i % 2 === 0 ? "user" : "assistant", `msg-${i}`);
   }
   await saveSummary(threadId, "Resumen de la conversación previa.", 5, 5);
 }
@@ -199,5 +201,69 @@ describe("context-compiler: G9 causal context window", () => {
     });
 
     expect(ctx.systemPrompt).not.toContain("# CAUSAL CONTEXT");
+  });
+});
+
+describe("context-compiler: conversation summary + internal events", () => {
+  test("folds the summary into systemPrompt as # RESUMEN DE LA CONVERSACIÓN when it applies", async () => {
+    await forceCompaction("thread-summary-1");
+
+    const ctx = await compileContext({
+      agentId: "test-agent",
+      threadId: "thread-summary-1",
+      userMessage: "Continuemos",
+    });
+
+    expect(ctx.systemPrompt).toContain("# RESUMEN DE LA CONVERSACIÓN");
+    expect(ctx.systemPrompt).toContain("Resumen de la conversación previa.");
+    expect(ctx.conversationSummarySection).not.toBe("");
+  });
+
+  test("does not include a summary section when none applies", async () => {
+    await addMessage("thread-summary-2", "user", "Hola");
+
+    const ctx = await compileContext({
+      agentId: "test-agent",
+      threadId: "thread-summary-2",
+      userMessage: "Hola de nuevo",
+    });
+
+    expect(ctx.systemPrompt).not.toContain("# RESUMEN DE LA CONVERSACIÓN");
+    expect(ctx.conversationSummarySection).toBe("");
+  });
+
+  test("never emits a second role:system message in ctx.messages, even when a summary applies", async () => {
+    await forceCompaction("thread-summary-3");
+
+    const ctx = await compileContext({
+      agentId: "test-agent",
+      threadId: "thread-summary-3",
+      userMessage: "Continuemos",
+    });
+
+    expect(ctx.messages.every((m) => m.role !== "system")).toBe(true);
+  });
+
+  test("an internal event keeps its chronological position and role:user in ctx.messages", async () => {
+    const threadId = "thread-internal-1";
+    await addMessage(threadId, "user", "Delegá esto a un worker");
+    await addMessage(threadId, "assistant", "Listo, delegado.");
+    await addMessage(threadId, "user", "El agente completó la tarea X.", { source: "task_complete" });
+    await addMessage(threadId, "assistant", "El worker terminó la tarea X exitosamente.");
+
+    const ctx = await compileContext({
+      agentId: "test-agent",
+      threadId,
+      userMessage: "¿Cómo va todo?",
+    });
+
+    expect(ctx.messages.every((m) => m.role !== "system")).toBe(true);
+
+    const idx = ctx.messages.findIndex(
+      (m) => typeof m.content === "string" && m.content.includes("hive:internal_event")
+    );
+    expect(idx).toBeGreaterThan(0);
+    expect(idx).toBeLessThan(ctx.messages.length - 1);
+    expect(ctx.messages[idx].role).toBe("user");
   });
 });

@@ -8,7 +8,7 @@ export function createA2UISurfaceTool(_config: Config): Tool {
 
   return {
     name: "a2ui_create_surface",
-    description: "Create an A2UI v0.9 surface on the user's canvas for rendering rich interactive UIs",
+    description: "Create an A2UI v0.9 surface in the user's interactive panel",
     parameters: {
       type: "object",
       properties: {
@@ -58,7 +58,7 @@ export function createA2UISurfaceTool(_config: Config): Tool {
 
       if (!canvasManager.isSessionConnected(sessionId)) {
         const connected = canvasManager.getConnectedSessions();
-        log.warn(`No canvas sessions connected. Rendering to ${sessionId} anyway. Available: ${connected.join(", ")}`);
+        log.warn(`No visual sessions connected. Rendering to ${sessionId} anyway. Available: ${connected.join(", ")}`);
       }
 
       await canvasManager.sendA2UIMessage(sessionId, "a2ui:createSurface", {
@@ -219,7 +219,7 @@ export function createA2UIDeleteSurfaceTool(_config: Config): Tool {
 
   return {
     name: "a2ui_delete_surface",
-    description: "Delete an A2UI v0.9 surface and remove it from the user's canvas",
+    description: "Delete an A2UI v0.9 surface from the user's interactive panel",
     parameters: {
       type: "object",
       properties: {
@@ -252,4 +252,13 @@ export function createA2UIDeleteSurfaceTool(_config: Config): Tool {
       });
     },
   };
+}
+
+export function createTools(config: Config): Tool[] {
+  return [
+    createA2UISurfaceTool(config),
+    createA2UIUpdateComponentsTool(config),
+    createA2UIUpdateDataModelTool(config),
+    createA2UIDeleteSurfaceTool(config),
+  ];
 }
