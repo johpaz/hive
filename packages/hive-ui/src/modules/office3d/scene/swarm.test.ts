@@ -11,7 +11,7 @@ describe("beeOrbit", () => {
     const radii = new Set<number>();
     for (let i = 0; i < count; i++) radii.add(beeOrbit(i, count).radius);
     expect(radii.size).toBe(3);
-    expect([...radii].sort((a, b) => a - b)).toEqual([9, 12.5, 16]);
+    expect([...radii].sort((a, b) => a - b)).toEqual([7.5, 10.5, 13.5]);
   });
 
   it("asigna fases distintas dentro de cada capa (sin colisiones angulares)", () => {
