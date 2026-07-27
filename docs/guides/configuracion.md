@@ -43,6 +43,12 @@ hive config show
 
 `hive config edit` está deshabilitado. Usa el onboarding, la UI, variables de entorno o las APIs administrativas.
 
+El onboarding solicita un correo propio y lo guarda en el perfil del usuario. El coordinador lo usa como destinatario predeterminado cuando el usuario dice «envíame», «mándame» o «a mi correo» sin indicar otra dirección. Puede modificarse después desde **Configuración → Perfil**.
+
+Guardar el correo no activa autenticación por contraseña. Si el usuario decide habilitarla más adelante, puede hacerlo desde **Configuración → Perfil → Acceso y seguridad**: Hive reutiliza ese mismo correo y solo solicita crear una contraseña.
+
+Los especialistas MCP se crean desde la conversación únicamente después de la confirmación del usuario. La asignación queda visible en el loadout del agente y se reutiliza en tareas futuras. Cada especialista conserva un solo servidor; habilitarlo, deshabilitarlo o archivarlo sigue siendo una acción manual.
+
 ## Workspace
 
 Cada agente puede tener un workspace y un scope de lectura/escritura. Las herramientas `fs_*` resuelven los paths contra ese scope. Los agentes de catálogo reciben scopes por tipo de trabajo: ninguno, workspace completo o recursos concretos como una superficie A2UI.

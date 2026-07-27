@@ -86,7 +86,8 @@ export class CanvasManager {
     }
   }
 
-  unregisterSession(sessionId: string): void {
+  unregisterSession(sessionId: string, ws?: WebSocketLike): void {
+    if (ws && this.sessions.get(sessionId) !== ws) return;
     this.sessions.delete(sessionId);
     this.log.info(`Canvas session disconnected: ${sessionId}`);
   }

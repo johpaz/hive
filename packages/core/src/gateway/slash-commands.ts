@@ -4,7 +4,7 @@ import { laneQueue } from "./lane-queue.ts";
 import { logger } from "../utils/logger.ts";
 
 export interface InboundMessage {
-  type: "message" | "command" | "ping" | "join" | "canvas_subscribe" | "canvas_unsubscribe" | "logs_subscribe" | "logs_unsubscribe" | "audio" | "a2ui:action" | "stop";
+  type: "message" | "command" | "ping" | "join" | "canvas_subscribe" | "canvas_unsubscribe" | "logs_subscribe" | "logs_unsubscribe" | "audio" | "a2ui:action" | "stop" | "notification_sync" | "notification_ack";
   sessionId: string;
   content?: string;
   audio?: string;
@@ -12,6 +12,7 @@ export interface InboundMessage {
   args?: string[];
   metadata?: Record<string, unknown>;
   data?: Record<string, unknown>;
+  notificationId?: string;
   image?: {
     base64: string;
     mimeType?: string;
@@ -25,11 +26,13 @@ export interface InboundMessage {
 }
 
 export interface OutboundMessage {
-  type: "message" | "stream" | "status" | "error" | "pong" | "command_result" | "joined" | "typing" | "audio" | "welcome" | "progress" | "process" | "reasoning";
+  type: "message" | "stream" | "status" | "error" | "pong" | "command_result" | "joined" | "typing" | "audio" | "welcome" | "progress" | "process" | "reasoning" | "notification";
   sessionId: string;
   id?: string; // Message ID for streaming
   messageId?: string;
   content?: string;
+  notificationId?: string;
+  createdAt?: number;
   chunk?: string;
   isChunk?: boolean; // True if this is a streaming chunk
   isLast?: boolean;

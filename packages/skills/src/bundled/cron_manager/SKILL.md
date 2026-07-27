@@ -1,6 +1,6 @@
 ---
 name: cron_manager
-description: "Complete management of cron jobs with cron expressions. Create, list, update, pause, resume, delete, trigger, and view history. Use for reminders, automated reports, periodic checks."
+description: "Manage Hive scheduled automations. Create, list, update, pause, resume, delete, trigger, and inspect recurring or one-shot jobs."
 version: 2.0.0
 author: Hive Team
 icon: "⏰"

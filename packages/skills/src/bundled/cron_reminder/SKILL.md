@@ -44,8 +44,8 @@ steps:
     action: cron.create
     instruction: "Create one_shot cron job"
     params:
-      name: "Short name (e.g., 'meeting-reminder')"
-      task: "REQUIRED - The reminder message (e.g., 'Meeting starts in 5 minutes')"
+      name: "Short name (e.g., 'follow-up-reminder')"
+      task: "REQUIRED - The reminder message (e.g., 'Review the pending report')"
       task_type: "one_shot"
       fire_at: "ISO datetime (e.g., '2026-04-20T14:00:00')"
       channel: "telegram, discord, webchat, whatsapp"
@@ -67,14 +67,14 @@ output_format:
   max_length: "Short confirmation"
 
 examples:
-  - user_input: "recordame la reunion a las 3pm"
-    expected_behavior: "cron.create({ name: 'meeting-reminder', task: 'La reunión empieza en 5 minutos', task_type: 'one_shot', fire_at: '2026-04-20T15:00:00', channel: 'telegram' })"
+  - user_input: "recordame revisar el informe a las 3pm"
+    expected_behavior: "cron.create({ name: 'report-reminder', task: 'Revisar el informe pendiente', task_type: 'one_shot', fire_at: '2026-04-20T15:00:00', channel: 'telegram' })"
 
   - user_input: "avísame en 30 minutos"
     expected_behavior: "cron.create({ name: 'quick-reminder', task: 'Revisa el email', task_type: 'one_shot', fire_at: '<30-min-from-now>', channel: 'telegram' })"
 
-  - user_input: "recordame mañana a las 9am"
-    expected_behavior: "cron.create({ name: 'morning-reminder', task: 'Buenos días! Revisa tu agenda', task_type: 'one_shot', fire_at: '<tomorrow-9am>', channel: 'telegram' })"
+  - user_input: "recordame mañana a las 9am revisar las métricas"
+    expected_behavior: "cron.create({ name: 'metrics-reminder', task: 'Revisar las métricas', task_type: 'one_shot', fire_at: '<tomorrow-9am>', channel: 'telegram' })"
 ---
 
 # Cron Reminder Skill

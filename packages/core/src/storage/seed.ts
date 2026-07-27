@@ -49,7 +49,7 @@ export const SEED_DATA: SeedData = {
     // ─────────────────────────────────────────
     // 3. CRON — Tareas programadas (Croner-based)
     // ─────────────────────────────────────────
-    { id: "cron.create", name: "cron.create", category: "cron", description: "Crear tarea programada: recurrente (expresión cron) o única (fire_at). Requiere campo 'task' con instrucción para el agente. Sinónimos: programar tarea, crear recordatorio, agendar, automatizar horario, tarea recurrente, una vez" },
+    { id: "cron.create", name: "cron.create", category: "cron", description: "Crear una automatización de Hive programada: recurrente (expresión cron) o ejecución futura única (fire_at). Requiere 'task'. Sinónimos: programar tarea, crear automatización, ejecutar después, tarea recurrente, una vez" },
     { id: "cron.list", name: "cron.list", category: "cron", description: "Listar todas las tareas programadas con próximos horarios de ejecución. Sinónimos: ver tareas programadas, listar cronograma, próximas ejecuciones" },
     { id: "cron.update", name: "cron.update", category: "cron", description: "Actualizar tarea programada existente: cambiar expresión, instrucción, canal, ventana temporal. Sinónimos: modificar cron, editar recordatorio, cambiar horario, actualizar tarea" },
     { id: "cron.pause", name: "cron.pause", category: "cron", description: "Pausar temporalmente una tarea programada sin eliminarla. Sinónimos: pausar tarea programada, detener temporalmente, suspender recordatorio" },
@@ -72,7 +72,7 @@ export const SEED_DATA: SeedData = {
     { id: "memory_search", name: "memory_search", category: "agents", description: "Buscar memorias por palabra clave. Sinónimos: buscar memoria, encontrar recuerdo, buscar dato guardado" },
     { id: "memory_delete", name: "memory_delete", category: "agents", description: "Eliminar una entrada de memoria específica. Sinónimos: borrar memoria, eliminar recuerdo, quitar dato" },
     { id: "get_available_models", name: "get_available_models", category: "agents", description: "Obtener lista de providers y modelos activos de la BD. Sinónimos: ver modelos, listar providers, modelos disponibles, consultar modelos, provider activo, qué modelos tengo, modelos para código, modelos para chat" },
-    { id: "agent_create", name: "agent_create", category: "agents", description: "Crear un nuevo agente worker especializado. Sinónimos: crear agente, nuevo worker, nuevo trabajador" },
+    { id: "agent_create", name: "agent_create", category: "agents", description: "Crear un nuevo agente worker especializado; puede asignar un servidor MCP persistente después de la confirmación del usuario. Sinónimos: crear agente, nuevo worker, nuevo trabajador" },
     { id: "agent_find", name: "agent_find", category: "agents", description: "Descubrir agentes worker disponibles: catálogo global del sistema y workers privados del usuario. No indica ejecución; para eso usar task_list. Sinónimos: buscar agente, encontrar worker, localizar agente" },
     { id: "agent_archive", name: "agent_archive", category: "agents", description: "Archivar o terminar un agente worker. Sinónimos: archivar agente, terminar worker, desactivar agente" },
     { id: "task_delegate", name: "task_delegate", category: "agents", description: "Delegar una tarea general a un agente worker específico. Sinónimos: delegar tarea, asignar worker, ejecutar por agente" },
@@ -428,9 +428,60 @@ const RETIRED_SKILL_IDS = [
   "canvas_report",
   "canvas_dashboard",
   "canvas_interact",
+  "mcp_lazy_operator",
 ];
 
-const RETIRED_CATALOG_AGENT_IDS = ["canvas_presenter"];
+const RETIRED_CATALOG_AGENT_IDS = [
+  "canvas_presenter",
+  // Kept only as an upgrade tombstone so existing installations remove the
+  // former generic MCP worker. New MCP specialists are user-owned and scoped
+  // persistently to one server.
+  "mcp_integration_operator",
+];
+
+const LEGACY_CRON_PERSONA = {
+  id: "schedule_automation_agent",
+  name: "Operador de agenda",
+  description: "Crea y administra recordatorios y automatizaciones temporales con zona horaria correcta.",
+  role: "Tu dominio es recordatorios, cron recurrente, ventanas temporales y zonas horarias.",
+  receives: "Acción temporal, horario expresado por el usuario, timezone, canal y comportamiento esperado.",
+  routingExamples: JSON.stringify(["recordarme mañana", "programar un reporte semanal", "pausar una tarea"]),
+  calendarProhibition: "No creás, consultás ni modificás eventos, citas, reuniones, asistentes o disponibilidad de un calendario externo.",
+} as const;
+
+function migrateLegacyCatalogPersona(existing: AgentDoc, current: AgentDoc): AgentDoc {
+  if (existing.id !== LEGACY_CRON_PERSONA.id || existing.source !== "catalog") return existing;
+
+  let systemPrompt = existing.system_prompt;
+  const hasLegacyStockPrompt = systemPrompt.includes(LEGACY_CRON_PERSONA.role)
+    && systemPrompt.includes(LEGACY_CRON_PERSONA.receives);
+  if (hasLegacyStockPrompt) {
+    systemPrompt = systemPrompt
+      .replace(LEGACY_CRON_PERSONA.role, current.system_prompt.match(/# ROL\n([^\n]+)/)?.[1] ?? LEGACY_CRON_PERSONA.role)
+      .replace(LEGACY_CRON_PERSONA.receives, current.system_prompt.match(/# QUÉ RECIBES\n([^\n]+)/)?.[1] ?? LEGACY_CRON_PERSONA.receives);
+    if (!systemPrompt.includes(LEGACY_CRON_PERSONA.calendarProhibition)) {
+      systemPrompt = systemPrompt.replace(
+        "- No hablás con el usuario",
+        `- ${LEGACY_CRON_PERSONA.calendarProhibition}\n- No hablás con el usuario`,
+      );
+    }
+  }
+
+  return {
+    ...existing,
+    name: existing.name === LEGACY_CRON_PERSONA.name ? current.name : existing.name,
+    description: existing.description === LEGACY_CRON_PERSONA.description
+      ? current.description
+      : existing.description,
+    system_prompt: systemPrompt,
+    routing_examples_json: existing.routing_examples_json === LEGACY_CRON_PERSONA.routingExamples
+      ? current.routing_examples_json
+      : existing.routing_examples_json,
+    routing_exclusions_json: !existing.routing_exclusions_json || existing.routing_exclusions_json === "[]"
+      ? current.routing_exclusions_json
+      : existing.routing_exclusions_json,
+  };
+}
 
 async function pruneRetired(): Promise<void> {
   const toolsCol = await col<ToolDoc>("tools");
@@ -628,12 +679,33 @@ export async function seedAllData(): Promise<void> {
     }
     log.info(`[seed] ✅ ${mcpCount} MCP servers procesados`);
 
-    // Catalog agents (the curated personas) are seeded directly as
-    // `agents` rows, insert-only — user/ACE customizations (prompt edits,
-    // enabled toggle, ACE counters) are never overwritten by a later boot.
+    // Catalog agents (the curated personas) are seeded directly as `agents`
+    // rows. Existing user choices remain untouched; narrowly identified
+    // factory values from older releases are migrated in place.
     let catalogAgentCount = 0;
     for (const catalogAgent of createSeedCatalogAgents()) {
       await putIfAbsent(agentsCol, catalogAgent.id, catalogAgent);
+      const existing = await agentsCol.get(catalogAgent.id);
+      if (!existing || existing.doc.source !== "catalog") {
+        catalogAgentCount++;
+        continue;
+      }
+
+      let reconciled = migrateLegacyCatalogPersona(existing.doc, catalogAgent);
+      // Older releases could mark permanent catalog capabilities as archived.
+      // Archiving is no longer automatic, and catalog rows are never valid
+      // archive targets, so repair only that stale status on every boot while
+      // preserving the user's enabled/disabled choice.
+      if (reconciled.status === "archived") {
+        reconciled = { ...reconciled, status: "idle" };
+      }
+      if (JSON.stringify(reconciled) !== JSON.stringify(existing.doc)) {
+        await agentsCol.put(
+          existing.id,
+          { ...reconciled, updated_at: now },
+          { expectedVersion: existing.version },
+        );
+      }
       catalogAgentCount++;
     }
     log.info(`[seed] ✅ ${catalogAgentCount} catalog agents ensured`);

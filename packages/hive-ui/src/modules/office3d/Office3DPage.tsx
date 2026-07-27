@@ -9,19 +9,29 @@ import "./office3d.css";
  * Ruta perezosa (/office): three.js viaja en su propio chunk.
  */
 export default function Office3DPage() {
-  const { coordinator, desks, isConnected } = useLiveOffice();
+  const { coordinator, desks, interactions, workEvents, isConnected } = useLiveOffice();
   const selectedAgentId = useOffice3DStore((s) => s.selectedAgentId);
 
   const selectedDesk = desks.find((d) => d.agent.id === selectedAgentId) ?? null;
+  const coordinatorSelected = !!coordinator && selectedAgentId === coordinator.id;
   const coordinatorName = coordinator?.name ?? "Coordinador";
 
   return (
     <div className="office3d-root">
-      <HoloScene desks={desks} coordinatorId={coordinator?.id ?? null} coordinatorStatus={coordinator?.status ?? null} />
+      <HoloScene
+        desks={desks}
+        coordinator={coordinator ?? null}
+        interactions={interactions}
+        workEvents={workEvents}
+      />
       <OfficeHUD
         desks={desks}
+        coordinator={coordinator ?? null}
+        interactions={interactions}
+        workEvents={workEvents}
         isConnected={isConnected}
         selectedDesk={selectedDesk}
+        coordinatorSelected={coordinatorSelected}
         coordinatorName={coordinatorName}
       />
     </div>

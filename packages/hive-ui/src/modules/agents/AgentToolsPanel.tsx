@@ -119,6 +119,13 @@ export function AgentToolsPanel({ agent }: AgentToolsPanelProps) {
   }, [baseSkills, explicitSkills, registrySkills]);
 
   const categories = new Set(resolvedTools.map((tool) => tool.category)).size;
+  const assignedMcpServers = agent.mcpServers ?? (agent.mcpServerIds ?? []).map((id) => ({
+    id,
+    name: id,
+    status: "unknown",
+    enabled: true,
+    toolsCount: 0,
+  }));
   const loading = (toolsLoading && registryTools.length === 0) || (skillsLoading && registrySkills.length === 0);
 
   return (
@@ -142,6 +149,12 @@ export function AgentToolsPanel({ agent }: AgentToolsPanelProps) {
           <CapabilitySummary value={resolvedTools.length} label="tools" color="text-emerald-400" />
           <div className="h-7 w-px bg-white/[0.08]" />
           <CapabilitySummary value={resolvedSkills.length} label="skills" color="text-amber-400" />
+          {assignedMcpServers.length > 0 && (
+            <>
+              <div className="h-7 w-px bg-white/[0.08]" />
+              <CapabilitySummary value={assignedMcpServers.length} label="MCP" color="text-violet-400" />
+            </>
+          )}
           <div className="hidden h-7 w-px bg-white/[0.08] sm:block" />
           <div className="hidden sm:block">
             <CapabilitySummary value={categories} label="categorías" color="text-blue-400" />
@@ -149,12 +162,12 @@ export function AgentToolsPanel({ agent }: AgentToolsPanelProps) {
         </div>
       </div>
 
-      {loading && resolvedTools.length === 0 && resolvedSkills.length === 0 ? (
+      {loading && resolvedTools.length === 0 && resolvedSkills.length === 0 && assignedMcpServers.length === 0 ? (
         <div className="flex items-center justify-center gap-2 py-14 text-xs text-white/35">
           <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
           Sincronizando loadout…
         </div>
-      ) : resolvedTools.length === 0 && resolvedSkills.length === 0 ? (
+      ) : resolvedTools.length === 0 && resolvedSkills.length === 0 && assignedMcpServers.length === 0 ? (
         <div className="flex flex-col items-center justify-center px-5 py-14 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.025]">
             <PackageOpen className="h-5 w-5 text-white/20" />
@@ -164,7 +177,7 @@ export function AgentToolsPanel({ agent }: AgentToolsPanelProps) {
         </div>
       ) : (
         <>
-          <div className="p-4">
+          {resolvedTools.length > 0 && <div className="p-4">
             <div className="mb-3 flex items-center gap-2">
               <Wrench className="h-3.5 w-3.5 text-emerald-400" />
               <h3 className="text-[10px] font-black uppercase tracking-[0.16em] text-white/50">Tools disponibles</h3>
@@ -201,7 +214,44 @@ export function AgentToolsPanel({ agent }: AgentToolsPanelProps) {
                 );
               })}
             </div>
-          </div>
+          </div>}
+
+          {assignedMcpServers.length > 0 && (
+            <div className="border-t border-white/[0.07] p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <Network className="h-3.5 w-3.5 text-violet-400" />
+                <h3 className="text-[10px] font-black uppercase tracking-[0.16em] text-white/50">Integraciones MCP asignadas</h3>
+              </div>
+              <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+                {assignedMcpServers.map((server) => (
+                  <article key={server.id} className="rounded-xl border border-violet-500/15 bg-violet-500/[0.035] p-3.5">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-violet-500/20 bg-violet-500/[0.08]">
+                        <Network className="h-3.5 w-3.5 text-violet-300" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <h4 className="truncate text-xs font-bold text-white/80" title={server.name}>{server.name}</h4>
+                          <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${server.enabled ? "bg-emerald-400" : "bg-white/20"}`} />
+                        </div>
+                        <p className="mt-1 text-[10px] leading-4 text-white/30">
+                          Servidor completo · {server.toolsCount} tools sincronizadas
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between border-t border-white/[0.05] pt-2">
+                      <span className="text-[8px] font-bold uppercase tracking-[0.14em] text-violet-300/70">
+                        {server.status}
+                      </span>
+                      <span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-[7px] font-black uppercase tracking-wider text-violet-200/70">
+                        Persistente
+                      </span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          )}
 
           {resolvedSkills.length > 0 && (
             <div className="border-t border-white/[0.07] p-4">

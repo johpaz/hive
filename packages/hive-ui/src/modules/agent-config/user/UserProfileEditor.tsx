@@ -1,5 +1,5 @@
 import {
-  User, Loader2, Globe, Clock, Briefcase,
+  User, Loader2, Globe, Clock, Briefcase, Mail,
   Bell, Pencil, X, Check, Hexagon, Bot, Zap,
 } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { Toast } from "@/lib/swal";
 import { loader } from "@/stores/useLoaderStore";
+import { SecurityPanel } from "@/components/SecurityPanel";
 
 /* ─── Honeycomb SVG pattern ──────────────────────────────────────────── */
 const HoneycombBg = () => (
@@ -116,7 +117,7 @@ const FieldWrap = ({
 );
 
 type FormData = {
-  name: string; occupation: string; language: string;
+  name: string; email: string; occupation: string; language: string;
   timezone: string; preferred_cron_channel: string; notes: string;
 };
 
@@ -132,7 +133,7 @@ export function UserProfileEditor() {
   const { cronChannels, fetchCronChannels } = useNotesAndCronsStore();
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState<FormData>({
-    name: "", occupation: "", language: "",
+    name: "", email: "", occupation: "", language: "",
     timezone: "", preferred_cron_channel: "auto", notes: "",
   });
   const [saved, setSaved] = useState<FormData | null>(null);
@@ -142,6 +143,7 @@ export function UserProfileEditor() {
       if (!user) return;
       const data: FormData = {
         name:                   user.name                   || "",
+        email:                  user.email                  || "",
         occupation:             user.occupation             || "",
         language:               user.language               || "",
         timezone:               user.timezone               || "",
@@ -159,10 +161,17 @@ export function UserProfileEditor() {
   const handleCancel = () => { if (saved) setFormData(saved); setEditing(false); };
 
   const handleSave = async () => {
+    const email = formData.email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      Toast.fire({ icon: "error", title: "Ingresa un correo válido" });
+      return;
+    }
     loader.show("Guardando perfil...");
     try {
-      const msg = await saveUser(formData);
-      setSaved(formData);
+      const normalizedData = { ...formData, email };
+      const msg = await saveUser(normalizedData);
+      setFormData(normalizedData);
+      setSaved(normalizedData);
       Toast.fire({ icon: "success", title: msg });
       setEditing(false);
     } catch (err) {
@@ -362,7 +371,33 @@ export function UserProfileEditor() {
                   onChange={e => update("occupation", e.target.value)}
                   className="hive-input h-9 text-sm rounded-lg disabled:opacity-50 disabled:cursor-default" />
               </FieldWrap>
+              <div className="sm:col-span-2">
+                <FieldWrap label="Correo propio" icon={Mail} editing={editing}>
+                  <Input
+                    type="email"
+                    autoComplete="email"
+                    placeholder="tu@correo.com"
+                    maxLength={254}
+                    required
+                    value={formData.email}
+                    disabled={!editing}
+                    onChange={e => update("email", e.target.value)}
+                    className="hive-input h-9 text-sm rounded-lg disabled:opacity-50 disabled:cursor-default"
+                  />
+                </FieldWrap>
+                <p className="mt-1.5 text-[10px]" style={{ color: "hsl(var(--hive-text-placeholder))" }}>
+                  El coordinador lo usa como destinatario cuando dices «envíame».
+                </p>
+              </div>
             </div>
+          </section>
+
+          <Divider />
+
+          {/* ACCESO */}
+          <section>
+            <SectionLabel>Acceso y seguridad</SectionLabel>
+            <SecurityPanel email={formData.email} profileEditing={editing} />
           </section>
 
           <Divider />

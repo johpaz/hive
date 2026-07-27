@@ -51,7 +51,8 @@ export class WebChatChannel extends BaseChannel {
     this.log.debug(`WebChat connection registered: ${data.sessionId}`);
   }
 
-  unregisterConnection(sessionId: string): void {
+  unregisterConnection(sessionId: string, ws?: ServerWebSocket<WebSocketData>): void {
+    if (ws && this.connections.get(sessionId) !== ws) return;
     this.connections.delete(sessionId);
     this.log.debug(`WebChat connection unregistered: ${sessionId}`);
   }
@@ -91,15 +92,10 @@ export class WebChatChannel extends BaseChannel {
     const ws = this.connections.get(sessionId);
 
     if (!ws) {
-      this.log.warn(`No WebChat connection for session: ${sessionId}`);
-      return;
+      throw new Error(`No WebChat connection for session: ${sessionId}`);
     }
 
-    try {
-      ws.send(JSON.stringify(message));
-    } catch (error) {
-      this.log.error(`Failed to send WebChat message: ${(error as Error).message}`);
-    }
+    ws.send(JSON.stringify(message));
   }
 
   async sendAudio(sessionId: string, audio: Buffer, mimeType: string): Promise<void> {

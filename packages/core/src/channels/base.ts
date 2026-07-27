@@ -1,5 +1,5 @@
 export interface OutboundMessage {
-  type: "message" | "stream" | "status" | "error" | "pong" | "command_result" | "log" | "typing" | "audio" | "process";
+  type: "message" | "stream" | "status" | "error" | "pong" | "command_result" | "log" | "typing" | "audio" | "process" | "progress" | "notification";
   sessionId: string;
   id?: string; // Message ID for streaming
   messageId?: string;
@@ -26,6 +26,8 @@ export interface OutboundMessage {
   };
   error?: string;
   result?: unknown;
+  notificationId?: string;
+  createdAt?: number;
   logEntry?: {
     timestamp: string;
     level: string;

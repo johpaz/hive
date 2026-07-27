@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { A2UISurface, A2UIActionMessage, ComponentDef } from "@/types/a2ui";
 import { updateDataModel } from "@/modules/canvas/a2ui/dataBinding";
 import { useWebSocketStore } from "./useWebSocketStore";
+import { appendCanvasWorkEvent } from "./canvasWorkEvents";
 
 function normalizeA2UIComponent(component: ComponentDef): ComponentDef {
   const rawComponent = component.component as unknown;
@@ -63,6 +64,7 @@ function collectA2UIChildIds(component: ComponentDef, referencedIds: Set<string>
 export interface GraphNode {
   id: string;
   name: string;
+  description?: string;
   type: "agent" | "mcp";
   status: string;
   data?: Record<string, unknown>;
@@ -76,10 +78,33 @@ export interface GraphEdge {
   data?: Record<string, unknown>;
 }
 
+export type CanvasWorkPhase =
+  | "delegated"
+  | "review_started"
+  | "review_passed"
+  | "review_failed"
+  | "completed"
+  | "failed"
+  | "aborted"
+  | "blocked";
+
+export interface CanvasWorkEvent {
+  eventId: string;
+  phase: CanvasWorkPhase;
+  taskRef: string;
+  taskName: string;
+  actorId: string;
+  targetId: string | null;
+  toolName?: string | null;
+  detail?: string | null;
+  timestamp: number;
+}
+
 interface CanvasState {
   isConnected: boolean;
   graphNodes: GraphNode[];
   graphEdges: GraphEdge[];
+  workEvents: CanvasWorkEvent[];
 
   // A2UI v0.9 surfaces
   a2uiSurfaces: Map<string, A2UISurface>;
@@ -93,6 +118,7 @@ interface CanvasState {
   removeGraphNode: (id: string) => void;
   addGraphEdge: (edge: GraphEdge) => void;
   removeGraphEdge: (id: string) => void;
+  addWorkEvent: (event: CanvasWorkEvent) => void;
   // A2UI actions
   createA2UISurface: (surface: A2UISurface) => void;
   updateA2UIComponents: (surfaceId: string, components: ComponentDef[]) => void;
@@ -110,6 +136,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   isConnected: false,
   graphNodes: [],
   graphEdges: [],
+  workEvents: [],
   a2uiSurfaces: new Map(),
   unseenA2UICount: 0,
 
@@ -145,6 +172,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   removeGraphEdge: (id) =>
     set((s) => ({ graphEdges: s.graphEdges.filter((e) => e.id !== id) })),
+
+  addWorkEvent: (event) =>
+    set((s) => ({ workEvents: appendCanvasWorkEvent(s.workEvents, event) })),
 
   createA2UISurface: (surface) =>
     set((s) => {
@@ -273,6 +303,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       ws.subscribe("canvas:edge_remove", (msg) => {
         const d = msg.data;
         if (d?.id) get().removeGraphEdge(d.id as string);
+      }),
+
+      ws.subscribe("canvas:work_event", (msg) => {
+        const data = msg.data as Omit<CanvasWorkEvent, "timestamp"> | undefined;
+        if (!data?.eventId || !data.phase || !data.actorId) return;
+        get().addWorkEvent({
+          ...data,
+          timestamp: typeof msg.timestamp === "number" ? msg.timestamp : Date.now(),
+        });
       }),
 
       // ─── A2UI v0.9 handlers ───────────────────────────────────────────────

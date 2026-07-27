@@ -6,7 +6,7 @@ Hive 1.0 consolida el runtime local-first alrededor de agentes de catálogo, des
 
 ## Añadido
 
-- 10 agentes de catálogo persistentes con routing, scopes, criterios de aceptación y overrides de modelo.
+- 9 agentes de catálogo persistentes con routing, scopes, criterios de aceptación y overrides de modelo.
 - Carga mínima de siete herramientas y descubrimiento dinámico mediante `search_knowledge`.
 - Grupos de delegación paralela con fan-in y síntesis posterior.
 - Verificador independiente, criterios de aceptación y proof packets.
@@ -16,6 +16,7 @@ Hive 1.0 consolida el runtime local-first alrededor de agentes de catálogo, des
 - Office3D orbital con posiciones vivas, haces de delegación, cámara y estallidos de actividad.
 - Recuperación de jobs por leases, reintentos y reconciliación durante el arranque.
 - Generación y validación automática del inventario documental.
+- Correo propio único en onboarding y perfil para resolver «envíame» y reutilizarlo si después se activa una contraseña.
 
 ## Cambiado
 
@@ -24,8 +25,10 @@ Hive 1.0 consolida el runtime local-first alrededor de agentes de catálogo, des
 - Las allowlists se expanden contra el registro de herramientas vigente al delegar.
 - Los agentes heredan el modelo del coordinador salvo override explícito.
 - Los servidores MCP se asignan mediante leases durante la ejecución.
+- El agente de cron se distingue de la agenda: solo programa ejecuciones de Hive; los eventos de calendario se enrutan al especialista MCP correspondiente.
 - Canvas conserva renders desconectados y los reproduce al reconectar.
 - Las capturas del navegador devuelven artefactos administrados en vez de depender de archivos temporales.
+- La protección con contraseña se integra en Perfil mediante un modal y deja de ocupar un submenú independiente.
 - La documentación canónica pasa a español y se organiza por audiencia.
 
 ## Eliminado
@@ -33,6 +36,7 @@ Hive 1.0 consolida el runtime local-first alrededor de agentes de catálogo, des
 - Runtime, rutas, tipos y UI de especialistas.
 - Scheduler DAG, task driver, proyectos y tools `project_*`.
 - CodeBridge y su delegador.
+- El agente genérico de MCP; las integraciones ahora crean especialistas persistentes por servidor con autorización del usuario.
 - Detección y resolución automática de CAPTCHA.
 - Tools y skills de voz y reuniones. La voz y las reuniones continúan como funciones de la UI y APIs del gateway.
 - Exports públicos que apuntaban a voz-tools, DAG e integraciones inexistentes.
@@ -60,7 +64,7 @@ hive start
 Después del arranque:
 
 1. Confirma proveedor y modelo del coordinador.
-2. Revisa los 10 agentes de catálogo y sus overrides.
+2. Revisa los 9 agentes de catálogo y sus overrides.
 3. Verifica canales y servidores MCP.
 4. Sustituye nombres de tools retiradas en skills administradas.
 5. Ejecuta una delegación y comprueba su evidencia.

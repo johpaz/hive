@@ -138,6 +138,7 @@ function fromAgentDoc(doc: AgentDoc) {
     tool_allowlist_json: doc.tool_allowlist_json,
     skills_json: doc.skills_json,
     active_mcp_json: doc.active_mcp_json,
+    mcp_server_ids_json: doc.mcp_server_ids_json,
     source: doc.source,
     max_iterations: doc.max_iterations,
     workspace: doc.workspace,
@@ -201,6 +202,7 @@ export async function compileContext(opts: {
   }
 
   const isWorker = agent.role === 'worker' || !!isolated
+  const canDiscoverAllMcp = agent.role === "coordinator" && !isolated
   // A catalog-seeded agent (agent-catalog.ts) has its loadout fully
   // curated (tool_allowlist_json/skills_json/mcp scope) — plain agent_create
   // workers and the coordinator get the open/minimal defaults below instead.
@@ -235,12 +237,13 @@ export async function compileContext(opts: {
   if (effectiveMcpManager) {
     try {
       const mcpServersCol = await col<import("../storage/collections").McpServerDoc>("mcpServers")
-      const activeMcpIds = new Set<string>(
-        agent.active_mcp_json ? JSON.parse(agent.active_mcp_json) : [],
-      )
+      const assignedMcpIds = new Set<string>([
+        ...(agent.mcp_server_ids_json ? JSON.parse(agent.mcp_server_ids_json) : []),
+        ...(agent.active_mcp_json ? JSON.parse(agent.active_mcp_json) : []),
+      ])
       const dbServers = (await mcpServersCol.scan({}))
         .map(e => e.doc)
-        .filter(s => s.enabled && (!isCatalogAgent || activeMcpIds.has(s.id)))
+        .filter(s => s.enabled && (canDiscoverAllMcp || assignedMcpIds.has(s.id)))
 
       for (const server of dbServers) {
         // Try ID first (normalized), then name
@@ -372,7 +375,11 @@ export async function compileContext(opts: {
   }))
 
   let toolsForLLM: LLMToolDef[] = nativeToolsForLLM
-  if (isCatalogAgent && mcpToolExecutors.length > 0) {
+  // Workers receive MCP tools directly only when prepareDelegation has
+  // activated a persistent assignment (or the verifier's internal readback
+  // scope). The coordinator keeps every enabled MCP executor discoverable,
+  // but out of its initial prompt.
+  if (!canDiscoverAllMcp && mcpToolExecutors.length > 0) {
     toolsForLLM = [
       ...toolsForLLM,
       ...mcpToolExecutors.map((tool) => ({
@@ -387,7 +394,11 @@ export async function compileContext(opts: {
   }
 
   log.info(`[context-compiler] [STEP-4] Minimal native tool set: ${filteredNativeTools.length} tools`)
-  log.info(`[context-compiler] [STEP-4b] MCP tools available via search_knowledge: ${mcpToolExecutors.length} (not injected)`)
+  log.info(
+    canDiscoverAllMcp
+      ? `[context-compiler] [STEP-4b] MCP tools discoverable by coordinator: ${mcpToolExecutors.length}`
+      : `[context-compiler] [STEP-4b] MCP tools assigned directly to worker: ${mcpToolExecutors.length}`,
+  )
   log.info(`[context-compiler] [STEP-8] ✅ Combined tools: ${allTools.length} total executors, ${toolsForLLM.length} in LLM context`)
 
   // [STEP-8b] STRATEGY 2: SELECT — Skill Loadout (minimal + discovered)

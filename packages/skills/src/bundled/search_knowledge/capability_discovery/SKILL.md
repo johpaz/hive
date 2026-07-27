@@ -57,8 +57,9 @@ Por defecto type="all" — no hace falta especificarlo.
 
 1. Identificá la palabra clave de lo que necesitás
 2. `search_knowledge(query="<palabra>")` → resultados de todos los tipos
-3. Las tools encontradas se inyectan automáticamente en tu contexto
-4. Usás las tools en el siguiente paso
+3. Cada resultado MCP incluye `server_id`; usalo para identificar la integración y buscar un especialista existente
+4. Antes del primer uso de un servidor sin especialista, seguí el flujo de consentimiento del system prompt
+5. Las tools encontradas se inyectan automáticamente en tu contexto para una ejecución directa solo cuando corresponda
 
 ---
 

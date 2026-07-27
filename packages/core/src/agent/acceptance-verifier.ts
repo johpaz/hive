@@ -181,6 +181,7 @@ export async function verifyAgentDelivery(input: VerifyAgentDeliveryInput): Prom
   const parentEntry = await agents.get(parentAgentId);
   const awake = await prepareDelegation(VERIFIER_AGENT_ID, {
     workspace: executorEntry.doc.workspace,
+    taskScopedMcpServerIds: input.mcpServerIds,
     parentProviderId: fromIndexable(parentEntry?.doc.provider_id ?? "") || fromIndexable(executorEntry.doc.provider_id),
     parentModelId: fromIndexable(parentEntry?.doc.model_id ?? "") || fromIndexable(executorEntry.doc.model_id),
     executorModelId: fromIndexable(executorEntry.doc.model_id),

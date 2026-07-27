@@ -10,7 +10,9 @@ Las rutas protegidas y el WebSocket aceptan:
 Authorization: Bearer <token>
 ```
 
-La UI permite configurar correo y contraseña después de autenticarse con el token. La clave de recuperación es el propio token, por lo que debe guardarse fuera del equipo. Cambiar la contraseña no sustituye esa clave.
+El correo se configura durante el onboarding y forma parte del perfil del usuario, pero por sí solo no habilita el inicio de sesión. Después de autenticarse con el token, **Configuración → Perfil → Acceso y seguridad** permite activar la protección desde un modal; Hive reutiliza el mismo correo del perfil como identidad de acceso. La clave de recuperación es el propio token, por lo que debe guardarse fuera del equipo. Cambiar la contraseña no sustituye esa clave.
+
+Mientras no exista una contraseña, el endpoint público de estado no expone el correo guardado. El correo propio solo se incorpora al contexto del coordinador para resolver solicitudes como «envíame»; los agentes trabajadores no lo reciben automáticamente.
 
 ## Exposición de red
 
@@ -28,7 +30,7 @@ La UI permite configurar correo y contraseña después de autenticarse con el to
 
 ## Herramientas y agentes
 
-El coordinador no entrega todas las tools a cada agente. La delegación expande una allowlist, aplica el scope del workspace y adquiere leases para servidores MCP. Los agentes de catálogo no pueden delegar de nuevo ni ampliar su propio alcance.
+El coordinador no entrega todas las tools a cada agente. La delegación expande una allowlist y aplica el scope del workspace. Un especialista MCP es la excepción explícita: después de la autorización del usuario recibe todas las tools de un único servidor persistido, adquiere su lease durante la tarea y no puede acceder a otros servidores. Los agentes de catálogo no pueden delegar de nuevo ni ampliar su propio alcance.
 
 Las acciones destructivas o externas deben estar autorizadas por la solicitud original. El verificador comprueba el estado final, pero nunca repara ni repite una mutación.
 

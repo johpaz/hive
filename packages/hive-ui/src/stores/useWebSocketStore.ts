@@ -40,8 +40,10 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
     let watchdogInterval: ReturnType<typeof setInterval> | null = null;
+    let visibilityProbeTimeout: ReturnType<typeof setTimeout> | null = null;
     let lastActivity = 0;
     let currentSessionId: string | undefined;
+    let connectionGeneration = 0;
 
     const ZOMBIE_MS = 75_000;   // sin mensajes (ni ping/pong) → socket zombi
     const STALE_MS = 45_000;    // al volver a la pestaña, actividad más vieja → reconectar
@@ -49,14 +51,28 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
     /** Reconexión inmediata (pestaña visible de nuevo / red recuperada). */
     const reconnectNow = () => {
         const state = get();
-        if (state.status === "disconnected" && !state.ws && !reconnectTimeout) return; // nunca conectó
+        if (!currentSessionId) return;
         if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
         set({ retryCount: 0 });
-        try { state.ws?.close(4000); } catch { /* ignore */ }
-        // Si el close no dispara onclose (socket ya muerto), forzamos connect
-        if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
-            get().connect(currentSessionId);
+        if (state.ws?.readyState === WebSocket.CONNECTING) return;
+        if (state.ws?.readyState === WebSocket.OPEN) {
+            const activityBeforeProbe = lastActivity;
+            try { state.ws.send(JSON.stringify({ type: "ping", sessionId: currentSessionId })); } catch { /* watchdog handles it */ }
+            try { state.ws.send(JSON.stringify({ type: "notification_sync", sessionId: currentSessionId })); } catch { /* reconnect handles it */ }
+            if (Date.now() - lastActivity > STALE_MS) {
+                if (visibilityProbeTimeout) clearTimeout(visibilityProbeTimeout);
+                const probedSocket = state.ws;
+                visibilityProbeTimeout = setTimeout(() => {
+                    visibilityProbeTimeout = null;
+                    if (get().ws === probedSocket && lastActivity <= activityBeforeProbe) {
+                        try { probedSocket.close(4000, "visibility probe timeout"); } catch { /* ignore */ }
+                    }
+                }, 6000);
+            }
+            return;
         }
+        try { state.ws?.close(4000); } catch { /* ignore */ }
+        get().connect(currentSessionId);
     };
 
     // Listeners de visibilidad/red: en pestañas en segundo plano los timers se
@@ -67,11 +83,8 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
             const { ws } = get();
             if (!ws || ws.readyState !== WebSocket.OPEN) {
                 reconnectNow();
-            } else if (Date.now() - lastActivity > STALE_MS) {
-                reconnectNow();
             } else {
-                // Señal de vida inmediata al despertar
-                try { ws.send(JSON.stringify({ type: "ping", sessionId: currentSessionId })); } catch { /* ignore */ }
+                reconnectNow();
             }
         });
     }
@@ -95,6 +108,10 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
         connect: (sessionId?: string) => {
             currentSessionId = sessionId ?? currentSessionId;
             const state = get();
+            const socketGeneration = ++connectionGeneration;
+            if (visibilityProbeTimeout) { clearTimeout(visibilityProbeTimeout); visibilityProbeTimeout = null; }
+            if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+            if (watchdogInterval) { clearInterval(watchdogInterval); watchdogInterval = null; }
             if (state.ws) {
                 state.ws.close();
             }
@@ -119,15 +136,20 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
                 const ws = new WebSocket(wsUrl);
 
                 ws.onopen = () => {
+                    if (socketGeneration !== connectionGeneration) {
+                        ws.close(1000, "superseded");
+                        return;
+                    }
                     lastActivity = Date.now();
                     set({ status: "connected", retryCount: 0, ws });
 
                     ws.send(JSON.stringify({ type: "canvas_subscribe" }));
+                    ws.send(JSON.stringify({ type: "notification_sync", sessionId: currentSessionId }));
 
                     if (heartbeatInterval) clearInterval(heartbeatInterval);
                     heartbeatInterval = setInterval(() => {
                         if (ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({ type: "ping", sessionId }));
+                            ws.send(JSON.stringify({ type: "ping", sessionId: currentSessionId }));
                         }
                     }, 30000);
 
@@ -142,8 +164,10 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
                 };
 
                 ws.onclose = (event) => {
+                    if (socketGeneration !== connectionGeneration) return;
                     if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
                     if (watchdogInterval) { clearInterval(watchdogInterval); watchdogInterval = null; }
+                    if (visibilityProbeTimeout) { clearTimeout(visibilityProbeTimeout); visibilityProbeTimeout = null; }
                     set({ status: "disconnected", ws: null });
 
                     if (event.code !== 1000 && event.code !== 1001) {
@@ -151,17 +175,21 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
                         const delay = getBackoffDelay(currentRetryCount);
                         set((s) => ({ retryCount: s.retryCount + 1 }));
                         reconnectTimeout = setTimeout(() => {
-                            get().connect(sessionId);
+                            reconnectTimeout = null;
+                            get().connect(currentSessionId);
                         }, delay);
                     }
                 };
 
                 ws.onerror = () => {
+                    if (socketGeneration !== connectionGeneration) return;
                     set({ status: "error" });
                 };
 
                 ws.onmessage = (event) => {
+                    if (socketGeneration !== connectionGeneration) return;
                     lastActivity = Date.now();
+                    if (visibilityProbeTimeout) { clearTimeout(visibilityProbeTimeout); visibilityProbeTimeout = null; }
                     set({ lastPing: new Date().toISOString() });
                     try {
                         const data = JSON.parse(event.data);
@@ -194,9 +222,11 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
 
         disconnect: () => {
             const { ws } = get();
+            connectionGeneration++;
             if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
             if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
             if (watchdogInterval) { clearInterval(watchdogInterval); watchdogInterval = null; }
+            if (visibilityProbeTimeout) { clearTimeout(visibilityProbeTimeout); visibilityProbeTimeout = null; }
             ws?.close(1000);
             set({ ws: null, status: "disconnected", retryCount: 0 });
         },

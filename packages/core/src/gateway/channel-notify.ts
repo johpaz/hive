@@ -8,10 +8,19 @@
 import { logger } from "../utils/logger"
 import { col } from "../storage/hive"
 import type { UserIdentityDoc } from "../storage/collections"
+import {
+  createNotification,
+  markNotificationDelivered,
+} from "./notification-inbox"
 
 const log = logger.child("channel-notify")
 
-type SendFn = (channel: string, sessionId: string, message: string) => Promise<void>
+type SendFn = (
+  channel: string,
+  sessionId: string,
+  message: string,
+  metadata?: { notificationId?: string },
+) => Promise<void>
 
 let _sendFn: SendFn | null = null
 
@@ -44,9 +53,25 @@ export async function sendToUserChannel(
   channel: string,
   userId: string,
   message: string
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; queued?: boolean; notificationId?: string; error?: string }> {
+  let notificationId: string | undefined
+  if (channel === "webchat") {
+    try {
+      const notification = await createNotification({ userId, channel, message })
+      notificationId = notification.id
+    } catch (err) {
+      const error = `Could not persist WebChat notification: ${(err as Error).message}`
+      log.warn(`[channel-notify] ${error}`)
+      return { ok: false, error }
+    }
+  }
+
   if (!_sendFn) {
-    log.warn("[channel-notify] No send function registered — message dropped")
+    if (notificationId) {
+      log.info(`[channel-notify] WebChat offline — notification ${notificationId} queued`)
+      return { ok: true, queued: true, notificationId }
+    }
+    log.warn("[channel-notify] No send function registered")
     return { ok: false, error: "Channel send not initialized" }
   }
 
@@ -54,10 +79,14 @@ export async function sendToUserChannel(
   log.info(`[channel-notify] Sending to ${channel}/${sessionId}: ${message.substring(0, 80)}`)
 
   try {
-    await _sendFn(channel, sessionId, message)
-    return { ok: true }
+    await _sendFn(channel, sessionId, message, { notificationId })
+    if (notificationId) await markNotificationDelivered(notificationId, userId)
+    return { ok: true, queued: false, notificationId }
   } catch (err) {
     log.warn(`[channel-notify] Failed to send: ${(err as Error).message}`)
+    if (notificationId) {
+      return { ok: true, queued: true, notificationId }
+    }
     return { ok: false, error: (err as Error).message }
   }
 }

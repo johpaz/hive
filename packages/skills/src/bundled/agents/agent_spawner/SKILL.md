@@ -65,21 +65,22 @@ steps:
 
   - step: 5
     action: agent_archive (if needed)
-    instruction: "Archive workers that are no longer needed or inactive >14 days"
+    instruction: "Archive a worker only after an explicit user request"
     params:
       agent_id: "agent to archive"
       reason: "no longer needed"
     output: archived
 
 rules:
-  - "The COLMENA DE AGENTES catalog workers already cover web, browser, files, code, Office, A2UI, cron, APIs and MCP — creating a new worker is a LAST RESORT, not the default path"
+  - "The COLMENA DE AGENTES catalog workers already cover web, browser, files, code, Office, A2UI, cron and APIs — creating a new worker is normally a LAST RESORT"
+  - "MCP is the explicit exception: after user confirmation, create one persistent specialist per server with mcp_server_id"
   - "ALWAYS use agent_find BEFORE agent_create — never duplicate workers"
   - "ALWAYS use get_available_models BEFORE agent_create — providerId y modelId son OBLIGATORIOS"
   - "Workers have role='worker', coordinator has role='coordinator'"
   - "Assign MINIMUM required tools (principle of least privilege)"
   - "system_prompt must be specific and focused on specialty"
   - "Use descriptive names that indicate agent's purpose"
-  - "Archive agents inactive >14 days (Curator does this automatically)"
+  - "Never archive agents automatically; only do it after an explicit user request"
 
 output_format:
   structure: markdown
@@ -99,7 +100,7 @@ examples:
     expected_behavior: "agent_find({ search: 'writer' }) → return existing writer agents"
 
   - user_input: "archivá los agentes inactivos"
-    expected_behavior: "agent_find({ status: 'idle' }) → agent_archive for those inactive >14 days"
+    expected_behavior: "Confirm the exact user-selected workers → agent_archive only those IDs"
 ---
 
 # Agent Spawner Skill
@@ -108,7 +109,7 @@ examples:
 
 Para crear nuevos workers especializados o gestionar el ciclo de vida de agents existentes.
 
-> **Antes de crear nada**: la sección COLMENA DE AGENTES del system prompt ya lista workers listos para recibir trabajo (web, browser, archivos, código, Office, A2UI, cron, APIs, MCP). Crear un worker es el último recurso, cuando ninguno de ellos cubre la especialidad pedida.
+> **Antes de crear nada**: la sección COLMENA DE AGENTES del system prompt ya lista workers listos para recibir trabajo (web, browser, archivos, código, Office, A2UI, cron y APIs). Crear un worker es el último recurso, excepto para MCP: si no existe un especialista del servidor, primero se pide autorización al usuario y luego se crea uno persistente.
 
 ## Herramientas Disponibles
 
@@ -126,6 +127,8 @@ Para crear nuevos workers especializados o gestionar el ciclo de vida de agents 
 2. **Si existe** → Reutilizar
 3. **Si no existe** → `get_available_models({ capabilities })` — seleccionar modelo óptimo
 4. **Crear** → `agent_create({...})` con providerId y modelId seleccionados
+
+Para MCP, incluí `mcp_server_id` y creá un agente por servidor. La tool rechaza duplicados y nunca debe llamarse antes de la confirmación del usuario.
 
 ### Create Agent Config
 ```javascript

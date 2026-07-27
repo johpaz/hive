@@ -1,5 +1,6 @@
 import { col, updateDoc } from "../../storage/hive"
 import type { UserDoc, AgentDoc } from "../../storage/collections"
+import { normalizeUserEmail } from "../../storage/user-email"
 
 export async function handleGetUsers(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const usersCol = await col<UserDoc>("users")
@@ -18,6 +19,7 @@ export async function handleGetUsers(req: Request, addCorsHeaders: (r: Response,
     users: sorted.map(u => ({
       id: u.doc.id,
       name: u.doc.name,
+      email: u.doc.email,
       language: u.doc.language,
       timezone: u.doc.timezone,
       occupation: u.doc.occupation,
@@ -32,6 +34,17 @@ export async function handleGetUsers(req: Request, addCorsHeaders: (r: Response,
 export async function handleCreateUser(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const body = await req.json().catch(() => ({}))
   const usersCol = await col<UserDoc>("users")
+  let email: string | null = null
+  if (body.email !== undefined && body.email !== null) {
+    try {
+      email = normalizeUserEmail(body.email)
+    } catch (error) {
+      return addCorsHeaders(Response.json({
+        ok: false,
+        error: (error as Error).message,
+      }, { status: 400 }), req)
+    }
+  }
 
   const id = crypto.randomUUID().replace(/-/g, "")
   await usersCol.put(id, {
@@ -42,7 +55,7 @@ export async function handleCreateUser(req: Request, addCorsHeaders: (r: Respons
     occupation: body.occupation || "",
     notes: body.notes || "",
     master_key_hash: null,
-    email: null,
+    email,
     password_hash: null,
     preferred_cron_channel: "auto",
     created_at: Date.now(),
@@ -61,6 +74,16 @@ export async function handleUpdateUserSettings(req: Request, addCorsHeaders: (r:
 
   const patch: Partial<UserDoc> = {}
   if (body.name !== undefined) patch.name = body.name
+  if (body.email !== undefined) {
+    try {
+      patch.email = normalizeUserEmail(body.email)
+    } catch (error) {
+      return addCorsHeaders(Response.json({
+        ok: false,
+        error: (error as Error).message,
+      }, { status: 400 }), req)
+    }
+  }
   if (body.language !== undefined) patch.language = body.language
   if (body.timezone !== undefined) patch.timezone = body.timezone
   if (body.occupation !== undefined) patch.occupation = body.occupation

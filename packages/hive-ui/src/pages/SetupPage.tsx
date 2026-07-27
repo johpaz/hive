@@ -58,6 +58,7 @@ const CHANNELS = [
 interface WizardData {
   // Step 1
   userName: string;
+  userEmail: string;
   userLanguage: string;
   userTimezone: string;
   userOccupation: string;
@@ -116,6 +117,7 @@ function clearWizardData(): void {
 function getDefaultWizardData(): WizardData {
   return {
     userName: "",
+    userEmail: "",
     userLanguage: "es",
     userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
     userOccupation: "",
@@ -209,6 +211,8 @@ export default function SetupPage() {
       case 1:
         if (!wizardData.userName.trim()) return "El nombre es obligatorio.";
         if (wizardData.userName.trim().length < 2) return "El nombre debe tener al menos 2 caracteres.";
+        if (!wizardData.userEmail.trim()) return "El correo es obligatorio.";
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(wizardData.userEmail.trim())) return "Ingresa un correo válido.";
         return null;
       case 2:
         if (!wizardData.agentName.trim()) return "El nombre del agente es obligatorio.";
@@ -366,6 +370,23 @@ export default function SetupPage() {
               value={wizardData.userName}
               onChange={(e) => updateData({ userName: e.target.value })}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="userEmail">Tu correo</Label>
+            <Input
+              id="userEmail"
+              type="email"
+              autoComplete="email"
+              placeholder="tu@correo.com"
+              maxLength={254}
+              required
+              value={wizardData.userEmail}
+              onChange={(e) => updateData({ userEmail: e.target.value })}
+            />
+            <p className="text-xs text-muted-foreground">
+              Hive lo usará cuando digas «envíame». También será tu usuario de acceso si después activas una contraseña.
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -1015,6 +1036,11 @@ export default function SetupPage() {
               <CardDescription>{wizardData.agentDescription || "Sin descripción"}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div>
+                <Label className="text-sm text-muted-foreground">Tu correo</Label>
+                <p className="font-medium">{wizardData.userEmail.trim().toLowerCase()}</p>
+              </div>
+
               <div>
                 <Label className="text-sm text-muted-foreground">Proveedor</Label>
                 <p className="font-medium">

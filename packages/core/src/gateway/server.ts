@@ -51,6 +51,11 @@ import { handleGetEthics, handleActivateEthics, handleDeleteEthics } from "./rou
 import { handleGetTools, handleActivateTool, handleUpdateTool } from "./routes/tools";
 import { handleGetTasks, handleUpdateTask } from "./routes/tasks";
 import { setChannelSendFn } from "./channel-notify";
+import {
+  acknowledgeNotification,
+  listPendingNotifications,
+  markNotificationDelivered,
+} from "./notification-inbox";
 import { setNarrationDelivery } from "../events/narration";
 import { CronScheduler } from "../scheduler/CronScheduler";
 import { createTaskHandler, setSchedulerForCleanup } from "../scheduler/integration";
@@ -203,8 +208,13 @@ export async function startGateway(
     await initializeLocalTTS();
 
     // Conectar channel-notify singleton para que las tools (notify, report_progress) puedan enviar mensajes
-    setChannelSendFn(async (channel, sessionId, content) => {
-      await channelManager.send(channel, sessionId, { content, type: "progress" });
+    setChannelSendFn(async (channel, sessionId, content, metadata) => {
+      await channelManager.send(channel, sessionId, {
+        content,
+        type: metadata?.notificationId ? "notification" : "progress",
+        sessionId,
+        notificationId: metadata?.notificationId,
+      });
     });
     setNarrationDelivery(async (event) => {
       if (event.channel === "webchat" && event.session_id) {
@@ -2099,6 +2109,28 @@ export async function startGateway(
           return;
         }
 
+        if (msg.type === "notification_sync") {
+          const pending = await listPendingNotifications(data.sessionId, "webchat");
+          for (const notification of pending) {
+            ws.send(JSON.stringify({
+              type: "notification",
+              sessionId: data.sessionId,
+              notificationId: notification.id,
+              content: notification.message,
+              createdAt: notification.created_at,
+            } as OutboundMessage));
+            await markNotificationDelivered(notification.id, data.sessionId);
+          }
+          return;
+        }
+
+        if (msg.type === "notification_ack") {
+          if (msg.notificationId) {
+            await acknowledgeNotification(msg.notificationId, data.sessionId);
+          }
+          return;
+        }
+
         // Canvas subscribe
         if (msg.type === "canvas_subscribe") {
           subscribeCanvas(ws);
@@ -2113,7 +2145,7 @@ export async function startGateway(
         // Canvas unsubscribe
         if (msg.type === "canvas_unsubscribe") {
           unsubscribeCanvas(ws);
-          canvasManager.unregisterSession(`canvas:${data.sessionId}`);
+          canvasManager.unregisterSession(`canvas:${data.sessionId}`, ws);
           return;
         }
 
@@ -2335,14 +2367,13 @@ export async function startGateway(
         }
 
         log.debug(`WebSocket disconnected: ${data.sessionId}`);
-        logSubscribers.delete(data.sessionId);
-        sessionManager.delete(data.sessionId);
-        getDurableQueue().cancelLane(data.sessionId).catch(() => {});
+        const wasCurrentSession = sessionManager.deleteIfOwner(data.sessionId, ws);
+        if (wasCurrentSession) logSubscribers.delete(data.sessionId);
         unsubscribeCanvas(ws);
-        canvasManager.unregisterSession(`canvas:${data.sessionId}`);
+        canvasManager.unregisterSession(`canvas:${data.sessionId}`, ws);
 
         const channel = channelManager?.getChannel("webchat") as any;
-        if (channel?.unregisterConnection) channel.unregisterConnection(data.sessionId);
+        if (channel?.unregisterConnection) channel.unregisterConnection(data.sessionId, ws);
       },
     },
   });

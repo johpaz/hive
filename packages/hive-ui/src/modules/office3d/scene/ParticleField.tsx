@@ -3,7 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { AdditiveBlending, BufferGeometry, Color, Float32BufferAttribute, ShaderMaterial } from "three";
 import { pointsVertex, pointsFragment } from "../shaders/particles.glsl";
 
-const COUNT = 4200;
+const COUNT = 780;
 const RADIUS = 42;
 const HEIGHT = 22;
 
@@ -33,7 +33,7 @@ export function ParticleField() {
     () => ({
       uTime: { value: 0 },
       uColor: { value: new Color("#6aa9ff") },
-      uOpacity: { value: 0.55 },
+      uOpacity: { value: 0.16 },
       uPixelRatio: { value: dpr },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

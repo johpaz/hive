@@ -6,8 +6,7 @@ Ejecuta `hive --help` o, desde el repositorio, `bun run hive --help`.
 
 | Comando | Descripción |
 |---|---|
-| `hive onboard` | Configuración inicial |
-| `hive start [--daemon]` | Inicia gateway y UI |
+| `hive start [--daemon]` | Inicia gateway y UI — abre el asistente de configuración en el navegador si es la primera vez |
 | `hive dev` | Desarrollo con `.hive-dev` |
 | `hive stop` | Detiene el gateway |
 | `hive reload` | Recarga la configuración |
@@ -43,7 +42,7 @@ hive agents terminate <id> [--cascade]
 hive agents tree
 ```
 
-Los 10 agentes del sistema usan `source: catalog`; no deben eliminarse como mecanismo de desinstalación. Deshabilítalos o ajusta su modelo desde la UI.
+Los 9 agentes del sistema usan `source: catalog`; no deben eliminarse como mecanismo de desinstalación. Deshabilítalos o ajusta su modelo desde la UI.
 
 ## Automatizaciones
 

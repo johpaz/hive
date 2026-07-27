@@ -51,6 +51,8 @@ const INDEXES: IndexSpec[] = [
   { collection: "userChannels", field: "channel" },
   { collection: "refreshTokens", field: "token_hash", unique: true },
   { collection: "refreshTokens", field: "user_id" },
+  { collection: "notifications", field: "user_id" },
+  { collection: "notifications", field: "channel" },
   // Stage 4 — chat/ACE
   { collection: "traces", field: "thread_id" },
   { collection: "traces", field: "agent_id" },

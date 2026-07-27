@@ -6,14 +6,11 @@
  *   - Repeated patterns → increment helpful_count
  *   - Contradicted rules → increment harmful_count or deactivate
  *   - Deactivate rules where harmful_count > helpful_count
- *   - Archive unused workers
  *
  * Never rewrites the whole playbook — only incremental edits.
  *
  * "Last processed reflection" is tracked via a `cursors` collection doc
  * (id="curator:lastReflection") instead of SQL's MAX(source_reflection_id).
- * Stale-worker detection uses the denormalized `agents.lastTraceAt` field
- * (set by tracer.ts) instead of a correlated MAX(t.created_at) subquery.
  */
 
 import { logger } from "../utils/logger"
@@ -29,7 +26,6 @@ import type {
 
 const log = logger.child("curator")
 
-const DAYS_BEFORE_ARCHIVE = 14   // archive workers not used in N days
 const MAX_HARMFUL_BEFORE_PRUNE = 3
 const CURSOR_ID = "curator:lastReflection"
 
@@ -39,8 +35,6 @@ export async function runCurator(): Promise<void> {
     const cursorsCol = await col<CursorDoc>("cursors")
     const playbookCol = await col<PlaybookDoc>("playbook")
     const reflectionsCol = await col<ReflectionDoc>("reflections")
-    const agentsCol = await col<AgentDoc>("agents")
-
     // Process unprocessed reflections (those newer than last run)
     const cursorEntry = await cursorsCol.get(CURSOR_ID)
     const lastProcessed = cursorEntry?.doc.value ?? null
@@ -68,36 +62,6 @@ export async function runCurator(): Promise<void> {
       if (entry.doc.harmful_count > entry.doc.helpful_count && entry.doc.harmful_count >= MAX_HARMFUL_BEFORE_PRUNE) {
         await playbookCol.put(entry.id, { ...entry.doc, active: false, updated_at: Date.now() }, { expectedVersion: entry.version })
       }
-    }
-
-    // Archive unused workers — uses the denormalized lastTraceAt field
-    // (set by tracer.ts) instead of a correlated MAX(created_at) subquery.
-    const cutoff = Date.now() - (DAYS_BEFORE_ARCHIVE * 86400 * 1000)
-    const allAgents = await agentsCol.scan({})
-    // Catalog personas are excluded: they are permanent capabilities, and they
-    // are seeded with lastTraceAt=null (which reads as epoch 0), so inactivity
-    // archiving would file every unused one away on its first run.
-    const staleWorkers = allAgents.filter(e =>
-      e.doc.role === "worker" &&
-      e.doc.source !== "catalog" &&
-      e.doc.status !== "archived" &&
-      e.doc.enabled &&
-      (e.doc.lastTraceAt ?? 0) < cutoff
-    )
-
-    for (const worker of staleWorkers) {
-      await agentsCol.put(worker.id, { ...worker.doc, status: "archived", enabled: false, updated_at: Date.now() }, { expectedVersion: worker.version })
-
-      // Add playbook note about archival
-      const currentPlaybook = await playbookCol.scan({})
-      await addOrUpdateRule(playbookCol, currentPlaybook, {
-        rule: `Worker '${worker.doc.name}' was archived due to inactivity (>${DAYS_BEFORE_ARCHIVE} days unused).`,
-        category: "agent_creation",
-        applicable_to: null,
-        sourceReflectionId: null,
-      })
-
-      log.info(`[curator] Archived inactive worker: ${worker.doc.name} (${worker.id})`)
     }
 
     await curateAgentStructure()

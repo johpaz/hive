@@ -160,6 +160,98 @@
   box-shadow: 0 0 16px oklch(0.8 0.16 85 / 0.3);
 }
 
+/* ---------- Narrador del hito actual ---------- */
+.office3d-now {
+  position: absolute;
+  top: 5.35rem;
+  left: 50%;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  width: min(25rem, calc(100vw - 44rem));
+  min-width: 18rem;
+  padding: 0.72rem 0.85rem;
+  border-radius: 0.8rem;
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: office3d-now-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes office3d-now-in {
+  from { opacity: 0; transform: translate(-50%, -10px) scale(0.97); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+.office3d-now-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.6rem;
+  color: oklch(0.9 0.14 85);
+  background: oklch(0.82 0.16 85 / 0.13);
+  box-shadow: inset 0 0 14px oklch(0.82 0.16 85 / 0.16);
+}
+.office3d-now-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.12rem;
+}
+.office3d-now-copy > span {
+  color: oklch(0.62 0.08 85);
+  font-size: 0.48rem;
+  font-weight: 850;
+  letter-spacing: 0.2em;
+}
+.office3d-now-copy strong {
+  color: oklch(0.96 0.03 85);
+  font-size: 0.78rem;
+}
+.office3d-now-copy p {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.08rem 0 0;
+  overflow: hidden;
+  color: oklch(0.76 0.04 264);
+  font-size: 0.62rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.office3d-now-copy p b {
+  color: oklch(0.82 0.15 85);
+}
+.office3d-now-copy small,
+.office3d-now-copy em {
+  overflow: hidden;
+  color: oklch(0.65 0.035 264);
+  font-size: 0.55rem;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.office3d-now-copy em {
+  color: oklch(0.78 0.12 25);
+}
+.office3d-now.is-review .office3d-now-icon {
+  color: oklch(0.87 0.12 210);
+  background: oklch(0.75 0.14 210 / 0.14);
+}
+.office3d-now.is-done {
+  border-color: oklch(0.76 0.16 150 / 0.32);
+}
+.office3d-now.is-done .office3d-now-icon {
+  color: oklch(0.88 0.15 150);
+  background: oklch(0.75 0.16 150 / 0.14);
+}
+.office3d-now.is-alert {
+  border-color: oklch(0.7 0.2 25 / 0.48);
+  box-shadow: 0 8px 40px oklch(0.35 0.12 25 / 0.24);
+}
+.office3d-now.is-alert .office3d-now-icon {
+  color: oklch(0.82 0.18 25);
+  background: oklch(0.65 0.2 25 / 0.16);
+}
+
 /* ---------- Cinta de eventos ---------- */
 .office3d-bottom-left {
   position: absolute;
@@ -338,6 +430,7 @@
 .office3d-state-chip--tool_call { color: oklch(0.88 0.16 85); background: oklch(0.8 0.16 85 / 0.16); }
 .office3d-state-chip--stuck { color: oklch(0.8 0.2 25); background: oklch(0.65 0.22 25 / 0.18); }
 .office3d-state-chip--disabled { color: oklch(0.55 0.02 264); background: oklch(1 0 0 / 0.04); }
+.office3d-state-chip--archived { color: oklch(0.7 0.09 70); background: oklch(0.65 0.12 70 / 0.12); }
 
 /* ---------- Etiquetas dentro de la escena (drei Html) ---------- */
 .office3d-core-label {
@@ -419,6 +512,78 @@
   box-shadow: 0 4px 18px oklch(0.05 0.02 264 / 0.55);
   opacity: 0.92;
 }
+.office3d-beam-label strong {
+  display: block;
+  margin-bottom: 0.16rem;
+  color: var(--chip-color, oklch(0.8 0.16 85));
+  font-size: 0.52rem;
+  letter-spacing: 0.13em;
+}
+.office3d-beam-label span {
+  display: block;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Evento WS puntual: quién llama, qué entrega y a quién. */
+.office3d-transfer-label {
+  min-width: 12rem;
+  max-width: 17rem;
+  padding: 0.48rem 0.7rem;
+  border-radius: 0.65rem;
+  color: oklch(0.96 0.02 264);
+  background: oklch(0.09 0.035 264 / 0.9);
+  border: 1px solid color-mix(in oklch, var(--chip-color) 62%, transparent);
+  box-shadow:
+    0 0 24px color-mix(in oklch, var(--chip-color) 28%, transparent),
+    0 6px 24px oklch(0.03 0.02 264 / 0.7);
+  text-align: center;
+  animation: office3d-ticker-in 0.24s ease both;
+}
+.office3d-transfer-label span,
+.office3d-transfer-label strong,
+.office3d-transfer-label small {
+  display: block;
+}
+.office3d-transfer-label.is-compact {
+  min-width: 0;
+  max-width: 12rem;
+  padding: 0.32rem 0.55rem;
+}
+.office3d-transfer-label.is-compact span {
+  margin-bottom: 0.12rem;
+  font-size: 0.54rem;
+}
+.office3d-transfer-label.is-compact strong {
+  font-size: 0.49rem;
+}
+.office3d-transfer-label.is-alert {
+  border-color: oklch(0.7 0.2 25 / 0.78);
+}
+.office3d-transfer-label.is-done {
+  border-color: oklch(0.76 0.16 150 / 0.7);
+}
+.office3d-transfer-label span {
+  margin-bottom: 0.22rem;
+  font-size: 0.62rem;
+  font-weight: 650;
+}
+.office3d-transfer-label strong {
+  color: var(--chip-color, oklch(0.85 0.16 85));
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  text-shadow: 0 0 9px var(--chip-color, oklch(0.85 0.16 85));
+}
+.office3d-transfer-label small {
+  max-width: 15rem;
+  margin-top: 0.24rem;
+  overflow: hidden;
+  color: oklch(0.77 0.025 264);
+  font-size: 0.52rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* Placa de nombre permanente bajo cada podio */
 .office3d-name-plate {
@@ -437,6 +602,29 @@
   border-bottom: 2px solid var(--chip-color, oklch(0.7 0.2 230));
   opacity: 0.82;
   transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.office3d-name-plate > span:last-child {
+  display: grid;
+  gap: 0.08rem;
+  min-width: 7.5rem;
+  max-width: 12rem;
+  text-align: left;
+}
+.office3d-name-plate strong {
+  display: block;
+  overflow: hidden;
+  color: oklch(0.96 0.02 264);
+  font-size: 0.64rem;
+  text-overflow: ellipsis;
+}
+.office3d-name-plate small {
+  display: block;
+  overflow: hidden;
+  color: oklch(0.66 0.04 264);
+  font-size: 0.48rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
 }
 .office3d-name-plate.is-active {
   opacity: 1;
@@ -469,6 +657,7 @@
   animation: office3d-pulse 0.7s ease-in-out infinite;
 }
 .office3d-name-dot--disabled { background: oklch(0.4 0.02 264); }
+.office3d-name-dot--archived { background: oklch(0.55 0.08 70); }
 
 /* Tarea en el inspector */
 .office3d-inspector-task {
@@ -478,4 +667,405 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---------- Coordinador reconocible ---------- */
+.office3d-coordinator-plate {
+  display: grid;
+  min-width: 11rem;
+  gap: 0.12rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid oklch(0.8 0.16 85 / 0.45);
+  border-radius: 0.65rem;
+  color: oklch(0.97 0.02 85);
+  background: oklch(0.12 0.035 264 / 0.88);
+  box-shadow: 0 8px 28px oklch(0.04 0.02 264 / 0.7), 0 0 22px oklch(0.8 0.16 85 / 0.18);
+  text-align: center;
+}
+.office3d-coordinator-plate.is-active {
+  border-color: oklch(0.88 0.17 85);
+  box-shadow: 0 0 30px oklch(0.8 0.16 85 / 0.38);
+}
+.office3d-coordinator-kicker,
+.office3d-inspector-eyebrow {
+  color: oklch(0.82 0.15 85);
+  font-size: 0.48rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+}
+.office3d-coordinator-plate strong {
+  font-size: 0.82rem;
+}
+.office3d-coordinator-role {
+  color: oklch(0.7 0.04 264);
+  font-size: 0.55rem;
+}
+
+/* ---------- Panel operativo ---------- */
+.office3d-roster {
+  position: absolute;
+  top: 5.25rem;
+  right: 1rem;
+  bottom: 1rem;
+  width: min(20.5rem, 28vw);
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 0.9rem;
+  overflow: hidden;
+  border-radius: 0.9rem;
+  pointer-events: auto;
+  animation: office3d-roster-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition: width 180ms ease, bottom 180ms ease, padding 180ms ease;
+}
+.office3d-roster.is-collapsed {
+  bottom: auto;
+  width: 3rem;
+  padding: 0.55rem;
+}
+.office3d-roster-content {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+.office3d-roster.is-collapsed .office3d-roster-content,
+.office3d-roster.is-collapsed .office3d-roster-title,
+.office3d-roster.is-collapsed .office3d-roster-live {
+  display: none;
+}
+@keyframes office3d-roster-in {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.office3d-roster-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.office3d-roster-title {
+  min-width: 0;
+  flex: 1;
+}
+.office3d-roster-heading h2 {
+  margin: 0.2rem 0 0;
+  color: oklch(0.95 0.02 264);
+  font-size: 0.92rem;
+}
+.office3d-roster-live {
+  display: inline-flex;
+}
+.office3d-roster-live svg {
+  color: oklch(0.48 0.04 264);
+}
+.office3d-roster-live svg.is-active {
+  color: oklch(0.78 0.17 145);
+  filter: drop-shadow(0 0 6px oklch(0.72 0.17 145));
+}
+.office3d-roster-toggle {
+  display: grid;
+  width: 1.85rem;
+  height: 1.85rem;
+  flex: none;
+  place-items: center;
+  color: oklch(0.78 0.04 264);
+  border: 1px solid oklch(1 0 0 / 0.1);
+  border-radius: 0.48rem;
+  background: oklch(1 0 0 / 0.04);
+  cursor: pointer;
+}
+.office3d-roster-toggle:hover {
+  color: oklch(0.92 0.12 85);
+  border-color: oklch(0.8 0.16 85 / 0.35);
+}
+.office3d-roster.is-collapsed .office3d-roster-heading {
+  justify-content: center;
+}
+.office3d-section-kicker,
+.office3d-section-title {
+  color: oklch(0.58 0.05 264);
+  font-size: 0.53rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+.office3d-section-title {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 0.15rem;
+  text-transform: uppercase;
+}
+.office3d-section-title span {
+  color: oklch(0.8 0.12 85);
+}
+.office3d-roster button {
+  font: inherit;
+}
+.office3d-roster-coordinator {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.7rem;
+  color: oklch(0.91 0.03 264);
+  text-align: left;
+  border: 1px solid oklch(0.8 0.16 85 / 0.25);
+  border-radius: 0.7rem;
+  background: linear-gradient(105deg, oklch(0.8 0.16 85 / 0.12), transparent 62%);
+  cursor: pointer;
+}
+.office3d-roster-coordinator:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.office3d-roster-coordinator.is-selected {
+  border-color: oklch(0.84 0.16 85 / 0.72);
+  box-shadow: inset 3px 0 oklch(0.8 0.16 85);
+}
+.office3d-roster-coordinator > svg {
+  flex: none;
+  color: oklch(0.84 0.16 85);
+}
+.office3d-roster-coordinator > span {
+  display: grid;
+  min-width: 0;
+  gap: 0.08rem;
+}
+.office3d-roster-coordinator small,
+.office3d-roster-coordinator em {
+  color: oklch(0.61 0.05 264);
+  font-size: 0.52rem;
+  font-style: normal;
+  letter-spacing: 0.08em;
+}
+.office3d-roster-coordinator strong {
+  overflow: hidden;
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.office3d-flow {
+  display: grid;
+  gap: 0.42rem;
+}
+.office3d-flow-empty {
+  margin: 0;
+  padding: 0.55rem;
+  color: oklch(0.56 0.04 264);
+  font-size: 0.61rem;
+  line-height: 1.45;
+  border: 1px dashed oklch(1 0 0 / 0.09);
+  border-radius: 0.55rem;
+}
+.office3d-flow-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  color: oklch(0.78 0.04 264);
+  font-size: 0.58rem;
+  border-left: 2px solid oklch(0.8 0.16 85);
+  border-radius: 0.4rem;
+  background: oklch(1 0 0 / 0.035);
+}
+.office3d-flow-item > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.office3d-flow-item strong,
+.office3d-flow-item small {
+  grid-column: 1 / -1;
+}
+.office3d-flow-item.is-failed {
+  border-left-color: oklch(0.68 0.22 25);
+}
+.office3d-flow-steps {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.2rem;
+  margin-top: 0.2rem;
+}
+.office3d-flow-steps span {
+  padding-top: 0.22rem;
+  overflow: hidden;
+  color: oklch(0.45 0.03 264);
+  font-size: 0.43rem;
+  letter-spacing: 0.02em;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-top: 2px solid oklch(1 0 0 / 0.08);
+}
+.office3d-flow-steps span.is-done {
+  color: oklch(0.66 0.09 150);
+  border-top-color: oklch(0.68 0.15 150 / 0.55);
+}
+.office3d-flow-steps span.is-current {
+  color: oklch(0.88 0.14 85);
+  border-top-color: oklch(0.82 0.16 85);
+  text-shadow: 0 0 8px oklch(0.82 0.16 85 / 0.45);
+}
+.office3d-flow-item.is-failed .office3d-flow-steps span.is-current {
+  color: oklch(0.82 0.18 25);
+  border-top-color: oklch(0.68 0.22 25);
+}
+.office3d-flow-item strong {
+  color: oklch(0.83 0.14 85);
+  font-size: 0.5rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.office3d-flow-item small {
+  overflow: hidden;
+  color: oklch(0.65 0.04 264);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.office3d-agents-list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.3rem;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.office3d-agent-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.48rem;
+  width: 100%;
+  padding: 0.46rem 0.52rem;
+  color: oklch(0.82 0.03 264);
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  background: transparent;
+  cursor: pointer;
+}
+.office3d-agent-row:hover,
+.office3d-agent-row.is-selected {
+  border-color: color-mix(in oklab, var(--agent-color) 45%, transparent);
+  background: color-mix(in oklab, var(--agent-color) 9%, transparent);
+}
+.office3d-agent-status {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+}
+.office3d-agent-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.08rem;
+}
+.office3d-agent-copy strong,
+.office3d-agent-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.office3d-agent-copy strong {
+  font-size: 0.64rem;
+}
+.office3d-agent-copy small {
+  color: oklch(0.57 0.04 264);
+  font-size: 0.52rem;
+}
+.office3d-agent-row em {
+  color: oklch(0.58 0.04 264);
+  font-size: 0.48rem;
+  font-style: normal;
+}
+
+/* Inspector a la izquierda para no cubrir el panel de operaciones. */
+.office3d-inspector {
+  right: auto;
+  left: 1rem;
+}
+
+@media (max-width: 900px) {
+  .office3d-now {
+    top: 5rem;
+    width: min(24rem, calc(100vw - 2rem));
+    min-width: 0;
+  }
+  .office3d-roster {
+    top: auto;
+    left: 0.65rem;
+    right: 0.65rem;
+    bottom: 0.65rem;
+    width: auto;
+    max-height: 12.5rem;
+  }
+  .office3d-roster.is-collapsed {
+    left: auto;
+    width: 3rem;
+  }
+  .office3d-roster-coordinator,
+  .office3d-flow {
+    display: none;
+  }
+  .office3d-agents-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .office3d-bottom-left {
+    display: none;
+  }
+  .office3d-inspector {
+    top: 5.1rem;
+    left: 0.65rem;
+    width: min(19rem, calc(100vw - 1.3rem));
+  }
+}
+
+@media (max-width: 620px) {
+  .office3d-topbar {
+    top: 0.5rem;
+    left: 0.5rem;
+    right: 0.5rem;
+    padding: 0.55rem 0.65rem;
+  }
+  .office3d-title {
+    font-size: 0.78rem;
+  }
+  .office3d-subtitle {
+    font-size: 0.56rem;
+  }
+  .office3d-now {
+    top: 4.65rem;
+    width: calc(100vw - 1rem);
+    padding: 0.58rem 0.68rem;
+  }
+  .office3d-now-copy em,
+  .office3d-now-copy small {
+    max-width: calc(100vw - 5rem);
+  }
+  .office3d-live-badge,
+  .office3d-hud-btn {
+    padding: 0.3rem 0.42rem;
+    font-size: 0;
+  }
+  .office3d-live-badge svg,
+  .office3d-hud-btn svg {
+    width: 13px;
+    height: 13px;
+  }
+  .office3d-agents-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .office3d-root *,
+  .office3d-root *::before,
+  .office3d-root *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
 }

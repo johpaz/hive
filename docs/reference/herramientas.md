@@ -6,7 +6,7 @@ El número, nombre y descripción exactos de las herramientas nativas se generan
 
 - `filesystem`: leer, escribir, editar, eliminar, listar, buscar y comprobar paths autorizados.
 - `web`: búsqueda/fetch, navegador renderizado, capturas y artefactos visuales.
-- `cron`: crear, consultar, modificar y ejecutar automatizaciones.
+- `cron`: crear, consultar, modificar y ejecutar automatizaciones programadas de Hive; no administra eventos de calendario.
 - `cli`: ejecutar comandos con timeout y captura de salida.
 - `agents`: memoria, catálogo, delegación, tareas y bus interno.
 - `a2ui`: superficies del Panel interactivo mediante A2UI v0.9.

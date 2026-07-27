@@ -14,9 +14,32 @@ export type CanvasEventType =
   | "canvas:node_remove"
   | "canvas:edge_add"
   | "canvas:edge_remove"
+  | "canvas:work_event"
   | "ag-ui:event"
 
+export type CanvasWorkPhase =
+  | "delegated"
+  | "review_started"
+  | "review_passed"
+  | "review_failed"
+  | "completed"
+  | "failed"
+  | "aborted"
+  | "blocked"
+
+export interface CanvasWorkEvent {
+  eventId: string
+  phase: CanvasWorkPhase
+  taskRef: string
+  taskName: string
+  actorId: string
+  targetId: string | null
+  toolName?: string | null
+  detail?: string | null
+}
+
 const subscribers = new Set<{ send: (data: string) => void }>()
+let workEventSequence = 0
 
 interface AgentLiveState {
   status: string
@@ -68,6 +91,18 @@ export function emitCanvas(type: CanvasEventType, data: any) {
   }
 }
 
+/** Evento semántico y transitorio para presentar el trabajo sin inferir resultados. */
+export function emitWorkEvent(event: Omit<CanvasWorkEvent, "eventId">): CanvasWorkEvent {
+  const emitted: CanvasWorkEvent = {
+    eventId: `work:${event.taskRef}:${event.phase}:${Date.now().toString(36)}:${++workEventSequence}`,
+    ...event,
+    taskName: event.taskName.slice(0, 120),
+    detail: event.detail?.slice(0, 180) ?? null,
+  }
+  emitCanvas("canvas:work_event", emitted)
+  return emitted
+}
+
 /**
  * Marca visualmente el inicio de una delegación coordinador→worker:
  * el worker muestra la tarea en curso y aparece el edge "delegates".
@@ -78,6 +113,13 @@ export function emitDelegationStarted(opts: {
   taskRef: string
   taskName: string
 }) {
+  emitWorkEvent({
+    phase: "delegated",
+    taskRef: opts.taskRef,
+    taskName: opts.taskName,
+    actorId: opts.parentAgentId,
+    targetId: opts.workerId,
+  })
   emitCanvas("canvas:node_update", {
     nodeId: opts.workerId,
     changes: {
@@ -117,6 +159,13 @@ export function emitVerificationStarted(opts: {
   taskRef: string
   taskName: string
 }) {
+  emitWorkEvent({
+    phase: "review_started",
+    taskRef: opts.taskRef,
+    taskName: opts.taskName,
+    actorId: opts.workerId,
+    targetId: opts.verifierId,
+  })
   emitCanvas("canvas:node_update", {
     nodeId: opts.verifierId,
     changes: {

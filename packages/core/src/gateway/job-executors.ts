@@ -29,7 +29,13 @@ import { agentBus } from "../events/agent-bus";
 import { resolveContext } from "./resolver";
 import type { MCPClientManager } from "@johpaz/hive-agents-mcp";
 import { publishNarration } from "../events/narration";
-import { emitDelegationStarted, emitDelegationFinished, emitVerificationStarted, emitVerificationFinished } from "../canvas/emitter";
+import {
+  emitDelegationStarted,
+  emitDelegationFinished,
+  emitVerificationStarted,
+  emitVerificationFinished,
+  emitWorkEvent,
+} from "../canvas/emitter";
 import { VERIFIER_AGENT_ID } from "../agent/acceptance-verifier";
 
 const log = logger.child("job-executors");
@@ -71,7 +77,6 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
   const taskName = payload.taskName as string;
   const taskId = payload.taskId as string | undefined;
   const acceptance = (payload.acceptance ?? null) as import("../agent/run-store").AcceptanceCriterion[] | null;
-  const mcpServerIds = (payload.mcpServerIds ?? []) as string[];
   const runId = job.run_id;
   const turnId = payload.turnId as string | undefined;
   const parentAgentId = (payload.parentAgentId as string | undefined) ?? "";
@@ -123,7 +128,6 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
   try {
     prepared = await prepareDelegation(workerId, {
       workspace: payload.workspace ?? workerEntry.doc.workspace ?? null,
-      mcpServerIds,
       parentProviderId: payload.parentProviderId ?? null,
       parentModelId: payload.parentModelId ?? null,
       mcpManager,
@@ -152,6 +156,14 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
 
     if (signal.aborted) {
       agentBus.notifyTaskFailed(workerId, workerName, 0, taskName, "", "Aborted");
+      emitWorkEvent({
+        phase: "aborted",
+        taskRef: delegationRef,
+        taskName,
+        actorId: workerId,
+        targetId: parentAgentId || null,
+        detail: "Trabajo interrumpido",
+      });
       if (taskId) {
         await updateDoc<TaskDoc>("tasks", taskId, {
           status: "pending",
@@ -193,6 +205,14 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
     const verdict = JSON.parse(verification.verdict_json);
     emitVerificationFinished({ verifierId: VERIFIER_AGENT_ID, taskRef: delegationRef });
     if (verification.status !== "verified") {
+      emitWorkEvent({
+        phase: "review_failed",
+        taskRef: delegationRef,
+        taskName,
+        actorId: VERIFIER_AGENT_ID,
+        targetId: workerId,
+        detail: verdict.summary || "La entrega no superó la verificación",
+      });
       if (turnId && originThreadId) {
         await publishNarration({
           turnId,
@@ -222,6 +242,13 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
         retryable: false,
       };
     }
+    emitWorkEvent({
+      phase: "review_passed",
+      taskRef: delegationRef,
+      taskName,
+      actorId: VERIFIER_AGENT_ID,
+      targetId: workerId,
+    });
     if (turnId && originThreadId) {
       await publishNarration({
         turnId,
@@ -264,6 +291,14 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
       catalogAgentId: isCatalogAgent ? workerId : null,
     });
 
+    emitWorkEvent({
+      phase: "completed",
+      taskRef: delegationRef,
+      taskName,
+      actorId: workerId,
+      targetId: parentAgentId || null,
+    });
+
     return {
       ok: true,
       result: {
@@ -275,6 +310,14 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
   } catch (err) {
     const errorMsg = (err as Error).message;
     agentBus.notifyTaskFailed(workerId, workerName, 0, taskName, "", errorMsg);
+    emitWorkEvent({
+      phase: signal.aborted ? "aborted" : "failed",
+      taskRef: delegationRef,
+      taskName,
+      actorId: workerId,
+      targetId: parentAgentId || null,
+      detail: signal.aborted ? "Trabajo interrumpido" : errorMsg,
+    });
     if (turnId && originThreadId) {
       await publishNarration({
         turnId,

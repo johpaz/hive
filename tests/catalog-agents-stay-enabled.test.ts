@@ -69,14 +69,29 @@ describe("curator", () => {
     }
   });
 
-  test("still archives an inactive worker the user's agent created", async () => {
+  test("repairs a catalog agent archived by an older release on boot", async () => {
+    const agentsCol = await col<AgentDoc>("agents");
+    const existing = (await agentsCol.get(VICTIM))!;
+    await agentsCol.put(
+      VICTIM,
+      { ...existing.doc, status: "archived" },
+      { expectedVersion: existing.version },
+    );
+
+    await ensureHiveDb();
+
+    expect((await agent(VICTIM)).status).toBe("idle");
+  });
+
+  test("does not archive an inactive worker automatically", async () => {
     const agentsCol = await col<AgentDoc>("agents");
     const stale = { ...(await agent(VICTIM)), id: "stale-worker", source: "user" as const, lastTraceAt: 1 };
     await agentsCol.put(stale.id, stale);
 
     await runCurator();
 
-    expect((await agent("stale-worker")).status).toBe("archived");
+    expect((await agent("stale-worker")).status).not.toBe("archived");
+    expect((await agent("stale-worker")).enabled).toBe(true);
   });
 });
 

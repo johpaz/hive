@@ -20,6 +20,7 @@ import { col } from "../storage/hive"
 import type { SkillDoc } from "../storage/collections"
 import { logger } from "../utils/logger"
 import { isMinimalSkill } from "./minimal-loadout"
+import { isCalendarOperation } from "./routing-intent"
 import {
     searchCapabilities,
     applyRelativeCutoff,
@@ -205,7 +206,10 @@ export async function selectSkills(userMessage: string): Promise<SkillDescriptor
 
     // Step 2: Check explicit triggers first (high priority)
     const skillsCol = await col<SkillDoc>("skills")
-    const allSkills = (await skillsCol.scan({})).filter(e => e.doc.active).map(e => toSkillDescriptor(e.doc))
+    const calendarOperation = isCalendarOperation(userMessage)
+    const allSkills = (await skillsCol.scan({}))
+        .filter(e => e.doc.active && !(calendarOperation && e.doc.category === "cron"))
+        .map(e => toSkillDescriptor(e.doc))
 
     // Check trigger match - if found, return immediately with high confidence
     for (const skill of allSkills) {

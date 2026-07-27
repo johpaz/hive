@@ -49,6 +49,7 @@ import {
     replaceCapabilityDocs,
     type CapabilityDoc,
 } from "./capability-search"
+import { isCalendarOperation } from "./routing-intent"
 
 const log = logger.child("tool-selector")
 
@@ -122,7 +123,7 @@ const CONVERSATIONAL_PATTERNS = [
 
 export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
     // Cron tools (cron.*)
-    { name: "cron.create", description: "Create new cron job: recurring (cron expression) or one-shot (fire_at). Requires 'task' field with instruction for the agent. Spanish keywords: programar tarea, crear recordatorio, agendar, automatizar horario, tarea recurrente, recordatorio diario, una vez", category: "scheduling", abstractionLevel: "atomic" },
+    { name: "cron.create", description: "Create a Hive scheduled automation: recurring (cron expression) or one-shot (fire_at). Requires a task instruction. Spanish keywords: programar tarea, crear automatización, ejecutar después, tarea recurrente, recordatorio automático, una vez", category: "scheduling", abstractionLevel: "atomic" },
     { name: "cron.list", description: "List all cron jobs with next execution times and status. Spanish keywords: ver tareas programadas, listar cronograma, próximas ejecuciones, tareas activas, recordatorios pendientes", category: "scheduling", abstractionLevel: "atomic" },
     { name: "cron.update", description: "Update an existing cron job: change expression, task instruction, channel, time window, etc. Use cron.list first to get task_id. Spanish keywords: actualizar tarea, modificar cron, editar recordatorio, cambiar horario, actualizar programación", category: "scheduling", abstractionLevel: "atomic" },
     { name: "cron.pause", description: "Pause a cron job temporarily without deleting it. Spanish keywords: pausar tarea programada, detener temporalmente, suspender recordatorio", category: "scheduling", abstractionLevel: "atomic" },
@@ -146,7 +147,7 @@ export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
     { name: "memory_delete", description: "Delete memory entry, remove saved memory from long-term storage. Spanish keywords: borrar memoria, eliminar información guardada, borrar dato, eliminar memoria", category: "memory", abstractionLevel: "atomic" },
 
     // Agent/worker management
-    { name: "agent_create", description: "Create specialized worker agent, spawn new agent for specific task execution. Spanish keywords: crear agente, nuevo agente, trabajador, crear worker, nuevo trabajador", category: "agents", abstractionLevel: "orchestration" },
+    { name: "agent_create", description: "Create a specialized worker, including one persistent MCP server after user confirmation. Spanish keywords: crear agente, nuevo agente, trabajador, crear worker, especialista MCP", category: "agents", abstractionLevel: "orchestration" },
     { name: "agent_find", description: "Discover available system catalog agents and user-owned workers. Not an execution monitor. Spanish keywords: buscar agente, encontrar trabajador, localizar, buscar worker, encontrar agente", category: "agents", abstractionLevel: "atomic" },
     { name: "agent_archive", description: "Archive unnecessary worker, terminate and archive idle or completed agents. Spanish keywords: archivar agente, terminar agente, borrar trabajador, desactivar agente", category: "agents", abstractionLevel: "atomic" },
 
@@ -321,11 +322,12 @@ export async function selectTools(
 
     // Step 4: Map to tool descriptors with additional metadata
     const toolMap = new Map(fullToolList.map(t => [t.name, t]))
+    const calendarOperation = isCalendarOperation(userMessage)
 
     const scoredTools: SelectedTool[] = []
     for (const hit of relevantHits) {
         const tool = toolMap.get(hit.rawId)
-        if (tool) {
+        if (tool && !(calendarOperation && tool.category === "scheduling")) {
             scoredTools.push({
                 name: tool.name,
                 score: hit.score,

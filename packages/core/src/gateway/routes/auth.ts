@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { getHiveDir } from "../../config/loader";
 import * as path from "node:path";
 import jwt from "jsonwebtoken";
+import { normalizeUserEmail } from "../../storage/user-email";
 
 type CorsHelper = (res: Response, req: Request) => Response;
 
@@ -68,7 +69,7 @@ export async function handleAuthStatus(
   const user = (await getSingleUser())?.doc;
 
   const hasCredentials = !!(user?.email && user?.password_hash);
-  return cors(Response.json({ hasCredentials, email: user?.email ?? null }), req);
+  return cors(Response.json({ hasCredentials, email: hasCredentials ? user?.email ?? null : null }), req);
 }
 
 /** GET /api/auth/recovery-key — requires auth
@@ -115,8 +116,8 @@ export async function handleLogin(
 }
 
 /** POST /api/auth/setup-credentials — requires existing auth token
- *  Sets email + password for the first time (or updates them).
- *  body: { email, password }
+ *  Enables password access for the profile's existing email.
+ *  body: { password }
  */
 export async function handleSetupCredentials(
   req: Request,
@@ -124,22 +125,31 @@ export async function handleSetupCredentials(
 ): Promise<Response> {
   const body = await req.json().catch(() => ({})) as { email?: string; password?: string };
 
-  if (!body.email || !body.password) {
-    return cors(Response.json({ error: "Email y contraseña requeridos" }, { status: 400 }), req);
+  if (!body.password) {
+    return cors(Response.json({ error: "Contraseña requerida" }, { status: 400 }), req);
   }
 
   if (body.password.length < 8) {
     return cors(Response.json({ error: "La contraseña debe tener al menos 8 caracteres" }, { status: 400 }), req);
   }
 
-  const passwordHash = await Bun.password.hash(body.password, { algorithm: "bcrypt", cost: 10 });
-  const email = body.email.toLowerCase().trim();
-
   const usersCol = await col<UserDoc>("users");
   const entry = await getSingleUser();
-  if (entry) {
-    await usersCol.put(entry.id, { ...entry.doc, email, password_hash: passwordHash }, { expectedVersion: entry.version });
+  if (!entry) {
+    return cors(Response.json({ error: "Perfil de usuario no encontrado" }, { status: 404 }), req);
   }
+
+  let email: string;
+  try {
+    email = normalizeUserEmail(entry.doc.email);
+  } catch {
+    return cors(Response.json({
+      error: "Configura un correo válido en tu perfil antes de activar la contraseña",
+    }, { status: 400 }), req);
+  }
+
+  const passwordHash = await Bun.password.hash(body.password, { algorithm: "bcrypt", cost: 10 });
+  await usersCol.put(entry.id, { ...entry.doc, email, password_hash: passwordHash }, { expectedVersion: entry.version });
 
   return cors(Response.json({ success: true }), req);
 }

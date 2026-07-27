@@ -8,7 +8,6 @@ Para usar el repositorio se requiere Bun 1.3.x y Git. Docker o los binarios de r
 
 ```bash
 bun add --global @johpaz/hive-agents@1.0.0
-hive onboard
 hive start
 ```
 
@@ -18,7 +17,6 @@ hive start
 git clone https://github.com/johpaz/hive.git
 cd hive
 bun install
-bun run hive onboard
 bun run hive start
 ```
 
@@ -51,7 +49,7 @@ Los artefactos de una release 1.0.0 siguen estos nombres:
 - `hive-v1.0.0-macos-arm64`
 - `hive-v1.0.0-windows-x64.exe`
 
-Descárgalos desde la release correspondiente, concede permiso de ejecución en Linux/macOS y ejecuta `hive onboard`.
+Descárgalos desde la release correspondiente, concede permiso de ejecución en Linux/macOS y ejecuta `hive start` — abre el asistente de configuración en el navegador la primera vez.
 
 ## Migrar desde 0.0.x
 

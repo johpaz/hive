@@ -245,7 +245,7 @@ export const searchKnowledgeTool: Tool = {
         const t = entry?.doc;
         if (!t || !t.active) return null;
         return {
-          id: t.id, full_name: t.id, server_name: t.server_name, tool_name: t.tool_name,
+          id: t.id, full_name: t.id, server_id: t.server_id, server_name: t.server_name, tool_name: t.tool_name,
           description: t.description, category: t.category,
           active: t.active, rank: hit.score,
         };

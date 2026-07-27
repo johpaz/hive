@@ -20,7 +20,7 @@ export interface Session {
   ws?: ServerWebSocket<unknown>;
 }
 
-class SessionManager {
+export class SessionManager {
   private sessions: Map<string, Session> = new Map();
 
   create(sessionId: string, ws?: ServerWebSocket<unknown>): Session {
@@ -66,6 +66,12 @@ class SessionManager {
   }
 
   delete(sessionId: string): boolean {
+    return this.sessions.delete(sessionId);
+  }
+
+  deleteIfOwner(sessionId: string, ws: ServerWebSocket<unknown>): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.ws !== ws) return false;
     return this.sessions.delete(sessionId);
   }
 

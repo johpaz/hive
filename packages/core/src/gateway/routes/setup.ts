@@ -10,6 +10,7 @@ import {
   activateChannel,
   activateEthics,
 } from "../../storage/onboarding"
+import { normalizeUserEmail } from "../../storage/user-email"
 import { getHiveDir } from "../../config/loader"
 import type { Config } from "../../config/loader"
 
@@ -325,6 +326,15 @@ export async function handleCompleteSetup(
   }
 
   const body = await req.json().catch(() => ({}))
+  let userEmail: string
+  try {
+    userEmail = normalizeUserEmail(body.userEmail)
+  } catch (error) {
+    return addCorsHeaders(Response.json({
+      success: false,
+      error: (error as Error).message,
+    }, { status: 400 }), req)
+  }
 
   // Re-check after the async boundary — a concurrent request may have
   // completed setup while we were awaiting the request body.
@@ -379,6 +389,7 @@ export async function handleCompleteSetup(
     // Let DB auto-generate userId via randomblob(16) — same as CLI onboarding
     const userId = await saveUserProfile({
       userName: body.userName || "User",
+      userEmail,
       userLanguage: body.userLanguage || "es",
       userTimezone: body.userTimezone || "UTC",
       userOccupation: body.userOccupation || "",

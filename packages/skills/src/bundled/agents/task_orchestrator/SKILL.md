@@ -84,6 +84,8 @@ agent_create({
 })
 ```
 
+Para una integración MCP sin especialista, pedí autorización primero. Si el usuario acepta, creá un worker con `mcp_server_id`; si participan varios servidores, creá o reutilizá uno por servidor. Nunca pases servidores MCP dinámicos a `task_delegate`.
+
 ## Errores a evitar
 
 - ❌ Serializar tareas independientes en vez de fan-out paralelo

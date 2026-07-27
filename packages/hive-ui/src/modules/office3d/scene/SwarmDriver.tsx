@@ -1,7 +1,8 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Vector3 } from "three";
 import type { DeskModel } from "@/modules/office3d/state/useOfficeModel";
+import type { MotionMode } from "../state/office3dStore";
 import {
   beeOrbit,
   orbitPosition,
@@ -15,6 +16,7 @@ import {
 interface SwarmDriverProps {
   desks: DeskModel[];
   swarmRef: SwarmRef;
+  motion: MotionMode;
 }
 
 const _pos = new Vector3();
@@ -25,14 +27,16 @@ const _pos = new Vector3();
  * consumidores (abejas, beams, suelo, estallidos, cámara) solo leen.
  * Cero re-renders de React por frame.
  */
-export function SwarmDriver({ desks, swarmRef }: SwarmDriverProps) {
+export function SwarmDriver({ desks, swarmRef, motion }: SwarmDriverProps) {
   // Órbitas hogar estables por agente (orden de llegada de desks)
   const orbits = useMemo(
     () => new Map(desks.map((d, i) => [d.agent.id, beeOrbit(i, desks.length)])),
     [desks],
   );
   const deskRef = useRef(desks);
-  deskRef.current = desks;
+  useEffect(() => {
+    deskRef.current = desks;
+  }, [desks]);
 
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime;
@@ -60,7 +64,7 @@ export function SwarmDriver({ desks, swarmRef }: SwarmDriverProps) {
       const hasTask = !!desk.currentTask;
       const wantRadius = targetRadius(desk.state, hasTask, spec.radius);
       const wantY = targetY(desk.state, hasTask, spec.yBase);
-      const wantSpeed = speedFactor(desk.state, hasTask);
+      const wantSpeed = motion === "off" ? 0 : speedFactor(desk.state, hasTask);
 
       // Transiciones suaves exponenciales (framerate-independientes)
       const k = 1 - Math.pow(0.12, delta);
@@ -75,7 +79,7 @@ export function SwarmDriver({ desks, swarmRef }: SwarmDriverProps) {
       _pos.set(x, y, z);
 
       // stuck: jitter errático
-      if (desk.state === "stuck") {
+      if (motion === "calm" && desk.state === "stuck") {
         _pos.x += Math.sin(t * 31 + spec.phase * 7) * 0.22;
         _pos.y += Math.cos(t * 41 + spec.phase * 3) * 0.15;
         _pos.z += Math.sin(t * 37 + spec.phase * 5) * 0.22;

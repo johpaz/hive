@@ -71,7 +71,7 @@ export interface AgentDoc {
   model_id: string
   tools_json: string | null
   skills_json: string | null
-  /** Task-scoped MCP server ids currently leased by this agent. */
+  /** MCP server ids currently leased for this execution. */
   active_mcp_json?: string | null
   /** `toIndexable`-encoded — `NO_PARENT` for the coordinator. */
   parent_id: string
@@ -90,7 +90,7 @@ export interface AgentDoc {
   routing_exclusions_json?: string | null
   /** Glob patterns. When present, task_delegate re-expands against the live tool registry at delegation time instead of trusting a possibly-stale tools_json. */
   tool_allowlist_json?: string | null
-  /** Fixed MCP defaults this agent may lease. Dynamic task-scoped MCP requests are restricted to the MCP operator (see agent-catalog.ts). */
+  /** Persistent MCP server assignments. User specialists normally contain exactly one server id. */
   mcp_server_ids_json?: string | null
   workspace_scope_json?: string | null
   model_override_json?: string | null
@@ -218,6 +218,16 @@ export interface UserIdentityDoc {
   channel: string
   channel_user_id: string
   linked_at: number
+}
+
+export interface NotificationDoc {
+  id: string
+  user_id: string
+  channel: string
+  message: string
+  created_at: number
+  delivered_at: number | null
+  read_at: number | null
 }
 
 export interface UserChannelDoc {

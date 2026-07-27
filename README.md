@@ -13,9 +13,9 @@
 
 # Hive 1.0
 
-**Tu propio equipo de agentes de IA, corriendo en tu computadora o tu servidor — no alquilado a una nube ajena.** Hive coordina un enjambre de agentes especializados (investigación, archivos, código, documentos de oficina, agenda, APIs) que trabajan para vos desde WhatsApp, Telegram, Slack, Discord o el navegador, mientras los ves operar en vivo en un mapa 3D.
+**Tu propio equipo de agentes de IA, corriendo en tu computadora o tu servidor — no alquilado a una nube ajena.** Hive coordina un enjambre de agentes especializados (investigación, archivos, código, documentos de oficina, automatizaciones cron, APIs) que trabajan para vos desde WhatsApp, Telegram, Slack, Discord o el navegador, mientras los ves operar en vivo en un mapa 3D.
 
-La instalación son 3 comandos de terminal; de ahí en más un asistente visual configura todo — no hace falta tocar código para usarlo día a día. Si además programás, tenés un runtime local-first, multi-canal y open source completo para construir encima.
+La instalación son 2 comandos de terminal; de ahí en más un asistente visual configura todo — no hace falta tocar código para usarlo día a día. Si además programás, tenés un runtime local-first, multi-canal y open source completo para construir encima.
 
 <p align="center">
   <img src="docs/assets/office3d-screenshot.jpg" alt="Oficina 3D de Hive mostrando el enjambre de agentes en vivo" width="100%">
@@ -26,7 +26,7 @@ Hive reemplaza el patrón de "un agente gigante con 80 herramientas cargadas de 
 
 ## ✨ Por qué Hive
 
-- **Catálogo persistente, no plantillas desechables.** 10 agentes especializados (investigación web, navegador, archivos, ingeniería de software, Office, agenda, APIs, MCP, A2UI y verificación) enrutan el trabajo según el objetivo.
+- **Catálogo persistente, no plantillas desechables.** 9 agentes especializados (investigación web, navegador, archivos, ingeniería de software, Office, automatizaciones cron, APIs, A2UI y verificación) enrutan el trabajo según el objetivo. Para MCP, el coordinador pide autorización y crea especialistas persistentes por servidor.
 - **Carga mínima + descubrimiento bajo demanda.** Cada turno arranca con 7 herramientas esenciales; `search_knowledge` incorpora el resto (57 herramientas, 25 skills) solo cuando la tarea lo necesita.
 - **Verificación, no confianza ciega.** Las tareas efectuales pasan por un verificador independiente que inspecciona la evidencia antes de reportar éxito.
 - **Ejecución durable.** Jobs, leases y reintentos con backoff sobreviven caídas y reinicios del gateway — nada se pierde a mitad de camino.
@@ -75,7 +75,7 @@ Profundiza en la [arquitectura](docs/architecture/overview.md) y el [ciclo de ej
 
 ## 🚀 Capacidades
 
-- Agentes de catálogo para investigación, navegación, archivos, software, Office, A2UI, agenda, APIs, MCP y verificación.
+- Agentes de catálogo para investigación, navegación, archivos, software, Office, A2UI, automatizaciones cron, APIs y verificación; calendario y otras integraciones MCP usan especialistas persistentes aprobados por el usuario.
 - Herramientas nativas para filesystem, web, cron, CLI, agentes, A2UI, Office y APIs.
 - 25 skills incluidas y descubrimiento bajo demanda con `search_knowledge`.
 - Proveedores locales y remotos, selección de modelo por agente y herencia desde el coordinador.
@@ -107,17 +107,15 @@ Requisitos para desarrollar desde el repositorio: Bun 1.3.x y Git.
 git clone https://github.com/johpaz/hive.git
 cd hive
 bun install
-bun run hive onboard
 bun run hive start
 ```
 
-El gateway escucha por defecto en `127.0.0.1:18790`. El onboarding crea la configuración, registra el modelo principal y abre la interfaz web.
+El gateway escucha por defecto en `127.0.0.1:18790`. En el primer arranque, `hive start` abre el asistente de configuración en el navegador: ahí se registra el modelo principal y el resto de la configuración inicial.
 
 ### Instalación global
 
 ```bash
 bun add --global @johpaz/hive-agents@1.0.0
-hive onboard
 hive start
 ```
 
@@ -135,7 +133,6 @@ Consulta la [guía de instalación](docs/guides/instalacion.md) para binarios, a
 ## 🧭 Comandos esenciales
 
 ```bash
-hive onboard
 hive start
 hive status
 hive chat

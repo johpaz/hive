@@ -1,6 +1,8 @@
 import { Suspense, useRef } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import type { DeskModel } from "@/modules/office3d/state/useOfficeModel";
+import { Canvas } from "@react-three/fiber";
+import { PerformanceMonitor } from "@react-three/drei";
+import type { CanvasWorkEvent, GraphNode } from "@/stores/canvasStore";
+import type { DeskModel, OfficeInteraction } from "@/modules/office3d/state/useOfficeModel";
 import { useOffice3DStore } from "../state/office3dStore";
 import { CameraRig } from "./CameraRig";
 import { HexFloor } from "./HexFloor";
@@ -11,42 +13,27 @@ import { ActivityBursts } from "./ActivityBursts";
 import { Effects } from "./Effects";
 import { SwarmDriver } from "./SwarmDriver";
 import { LightBee } from "./LightBee";
-import { ReturnPackets } from "./ReturnPackets";
+import { WorkTransfers } from "./WorkTransfers";
+import { SceneDirector } from "./SceneDirector";
 import type { BeeState } from "./swarm";
 
 interface HoloSceneProps {
   desks: DeskModel[];
-  coordinatorId: string | null;
-  coordinatorStatus: string | null;
+  coordinator: GraphNode | null;
+  interactions: OfficeInteraction[];
+  workEvents: CanvasWorkEvent[];
 }
 
-/** Degrada calidad automáticamente si el FPS cae (<38 durante ~3s). */
-function QualityGuard() {
+export function HoloScene({ desks, coordinator, interactions, workEvents }: HoloSceneProps) {
   const quality = useOffice3DStore((s) => s.quality);
   const setQuality = useOffice3DStore((s) => s.setQuality);
-  const frames = useRef(0);
-  const lastCheck = useRef(0);
-
-  useFrame((state) => {
-    frames.current += 1;
-    const now = state.clock.elapsedTime;
-    if (now - lastCheck.current >= 3) {
-      const fps = frames.current / (now - lastCheck.current);
-      frames.current = 0;
-      lastCheck.current = now;
-      if (fps < 38 && quality === "high") setQuality("low");
-    }
-  });
-  return null;
-}
-
-export function HoloScene({ desks, coordinatorId, coordinatorStatus }: HoloSceneProps) {
-  const quality = useOffice3DStore((s) => s.quality);
+  const motion = useOffice3DStore((s) => s.motion);
+  const reducedMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const effectiveMotion = reducedMotion ? "off" : motion;
   const selectedAgentId = useOffice3DStore((s) => s.selectedAgentId);
   const select = useOffice3DStore((s) => s.select);
   const swarmRef = useRef<Map<string, BeeState>>(new Map());
   const anyActive = desks.some((d) => d.state === "thinking" || d.state === "tool_call" || d.state === "stuck");
-  const delegatedCount = desks.filter((d) => d.currentTask).length;
 
   return (
     <Canvas
@@ -61,19 +48,51 @@ export function HoloScene({ desks, coordinatorId, coordinatorStatus }: HoloScene
       <directionalLight position={[12, 24, 8]} intensity={0.35} color="#9db8ff" />
 
       <Suspense fallback={null}>
-        <SwarmDriver desks={desks} swarmRef={swarmRef} />
-        <CameraRig selectedAgentId={selectedAgentId} swarmRef={swarmRef} />
-        <HexFloor desks={desks} swarmRef={swarmRef} />
-        <HiveCore active={anyActive} tasks={delegatedCount} status={coordinatorStatus} />
+        <SceneDirector
+          events={workEvents}
+          desks={desks}
+          coordinatorId={coordinator?.id ?? null}
+        />
+        <SwarmDriver desks={desks} swarmRef={swarmRef} motion={effectiveMotion} />
+        <CameraRig
+          coordinatorId={coordinator?.id ?? null}
+          selectedAgentId={selectedAgentId}
+          swarmRef={swarmRef}
+          motion={effectiveMotion}
+        />
+        <HexFloor />
+        <HiveCore
+          coordinator={coordinator}
+          active={anyActive}
+          swarmRef={swarmRef}
+        />
         {desks.map((desk) => (
           <LightBee key={desk.agent.id} desk={desk} swarmRef={swarmRef} />
         ))}
-        <DelegationBeams desks={desks} swarmRef={swarmRef} coordinatorId={coordinatorId} />
-        <ActivityBursts desks={desks} swarmRef={swarmRef} />
-        <ReturnPackets desks={desks} swarmRef={swarmRef} />
-        <ParticleField />
+        <DelegationBeams
+          desks={desks}
+          interactions={interactions}
+          swarmRef={swarmRef}
+          coordinatorId={coordinator?.id ?? null}
+        />
+        {effectiveMotion === "calm" && (
+          <WorkTransfers
+            desks={desks}
+            events={workEvents}
+            swarmRef={swarmRef}
+            coordinatorId={coordinator?.id ?? null}
+            coordinatorName={coordinator?.name ?? "Coordinador"}
+          />
+        )}
+        {effectiveMotion === "calm" && quality === "high" && <ActivityBursts desks={desks} swarmRef={swarmRef} />}
+        {effectiveMotion === "calm" && quality === "high" && <ParticleField />}
         <Effects quality={quality} />
-        <QualityGuard />
+        <PerformanceMonitor
+          bounds={(refreshRate) => [Math.min(42, refreshRate * 0.68), refreshRate * 0.92]}
+          onDecline={() => {
+            if (quality === "high") setQuality("low");
+          }}
+        />
       </Suspense>
     </Canvas>
   );

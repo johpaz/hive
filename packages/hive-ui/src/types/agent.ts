@@ -39,6 +39,14 @@ export interface Agent {
     category?: string;
     tools?: string;
   }>;
+  mcpServerIds?: string[];
+  mcpServers?: Array<{
+    id: string;
+    name: string;
+    status: string;
+    enabled: boolean;
+    toolsCount: number;
+  }>;
 
   // Hierarchy
   parentId?: string;

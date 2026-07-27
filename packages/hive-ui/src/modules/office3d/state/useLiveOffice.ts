@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useAgents } from "@/stores/useGlobalConfigStore";
 import { useOfficeModel } from "./useOfficeModel";
@@ -10,14 +10,15 @@ import { useOfficeModel } from "./useOfficeModel";
 export function useLiveOffice() {
   const { agents, fetchAgents } = useAgents();
   const graphNodes = useCanvasStore((s) => s.graphNodes);
+  const graphEdges = useCanvasStore((s) => s.graphEdges);
+  const workEvents = useCanvasStore((s) => s.workEvents);
   const isConnected = useCanvasStore((s) => s.isConnected);
 
   useEffect(() => {
     fetchAgents();
   }, [fetchAgents]);
 
-  const catalogAgents = useMemo(() => agents.filter((a) => a.source === "catalog"), [agents]);
-  const { coordinator, desks } = useOfficeModel(catalogAgents, graphNodes);
+  const { coordinator, desks, interactions } = useOfficeModel(agents, graphNodes, graphEdges);
 
-  return { coordinator, desks, isConnected };
+  return { coordinator, desks, interactions, workEvents, isConnected };
 }

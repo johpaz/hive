@@ -126,6 +126,7 @@ export async function buildSystemPrompt(opts: BuildSystemPromptOpts): Promise<st
     const userData: Record<string, string | null> = {}
 
     if (user.name) userData.Nombre = user.name
+    if (agent.role === "coordinator" && user.email) userData.CorreoPropio = user.email
     if (user.language) userData.Idioma = user.language
     if (user.timezone) userData.ZonaHoraria = user.timezone
     if (user.occupation) userData.Ocupación = user.occupation
@@ -134,6 +135,9 @@ export async function buildSystemPrompt(opts: BuildSystemPromptOpts): Promise<st
     // Usar TOON para comprimir datos del usuario
     if (Object.keys(userData).length > 0) {
       userSection += formatContext(userData) + "\n\n"
+      if (agent.role === "coordinator" && user.email) {
+        userSection += `Cuando el usuario diga "envíame", "mándame" o "a mi correo" sin indicar otro destinatario, usá CorreoPropio. Para terceras personas, resolvé su dirección por separado.\n\n`
+      }
     } else {
       userSection += `Usuario ID: ${userId}\n\n`
     }

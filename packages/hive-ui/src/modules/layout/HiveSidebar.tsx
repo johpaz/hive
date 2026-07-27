@@ -67,7 +67,6 @@ const configGroups = [
     label: "Usuario",
     items: [
       { id: "perfil", label: "Perfil", icon: User },
-      { id: "seguridad", label: "Seguridad", icon: ShieldAlert },
     ],
   },
 ];

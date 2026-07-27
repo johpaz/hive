@@ -131,6 +131,40 @@ describe("reseed on an already-configured install (boot, no setup)", () => {
     expect((await agent(CATALOG_AGENT_IDS[1])).enabled).toBe(false);
   });
 
+  test("migrates the legacy cron persona stored in the database", async () => {
+    await configuredInstall();
+    const agentsCol = await col<AgentDoc>("agents");
+    const cronId = "schedule_automation_agent";
+    const current = (await agentsCol.get(cronId))!;
+    await agentsCol.put(cronId, {
+      ...current.doc,
+      name: "Operador de agenda",
+      description: "Crea y administra recordatorios y automatizaciones temporales con zona horaria correcta.",
+      system_prompt: current.doc.system_prompt
+        .replace(
+          "Tu dominio son los jobs técnicos programados de Hive, su recurrencia, ventanas temporales y zonas horarias.",
+          "Tu dominio es recordatorios, cron recurrente, ventanas temporales y zonas horarias.",
+        )
+        .replace(
+          "Una automatización que Hive debe ejecutar después, su horario o recurrencia, timezone, canal y comportamiento esperado.",
+          "Acción temporal, horario expresado por el usuario, timezone, canal y comportamiento esperado.",
+        ),
+      enabled: false,
+      helpful_count: 7,
+    }, { expectedVersion: current.version });
+
+    await seedAllData();
+
+    const migrated = await agent(cronId);
+    expect(migrated.name).toBe("Operador de cron");
+    expect(migrated.description).toContain("jobs programados");
+    expect(migrated.system_prompt).toContain("jobs técnicos programados");
+    expect(migrated.system_prompt).not.toContain("Tu dominio es recordatorios");
+    expect(migrated.enabled).toBe(false);
+    expect(migrated.helpful_count).toBe(7);
+    expect(fromIndexable(migrated.model_id)).toBe("gemini-2.5-flash");
+  });
+
   test("configures a persona added by an upgrade", async () => {
     await configuredInstall();
     const agentsCol = await col<AgentDoc>("agents");

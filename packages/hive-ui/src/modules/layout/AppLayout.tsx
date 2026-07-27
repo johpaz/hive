@@ -3,6 +3,7 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Header } from "./Header";
 import { AppSidebar } from "./HiveSidebar";
 import { A2UINotifier } from "./A2UINotifier";
+import { WebChatNotifications } from "./WebChatNotifications";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useUserStore } from "@/stores/userStore";
 import { useCanvasStore } from "@/stores/canvasStore";
@@ -36,6 +37,7 @@ export function AppLayout() {
     <SidebarProvider>
       <AppSidebar />
       <A2UINotifier />
+      <WebChatNotifications />
       <SidebarInset className="bg-background relative overflow-hidden">
         {/* Ambient Glows Globales */}
         <div className="hive-glow-blob hive-glow-blob--blue -top-20 -left-20 h-[500px] w-[500px] opacity-20" />

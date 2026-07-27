@@ -11,7 +11,6 @@ bun install
 Usa Bun 1.3.x. Para ejecutar una instancia aislada:
 
 ```bash
-HIVE_HOME=/tmp/hive-dev bun run hive onboard
 HIVE_HOME=/tmp/hive-dev bun run hive start
 ```
 

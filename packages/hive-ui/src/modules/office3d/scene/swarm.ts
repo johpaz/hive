@@ -60,33 +60,33 @@ export function orbitPosition(
   radius: number,
   yBase: number,
   angle: number,
-  t: number,
+  _t: number,
 ): [number, number, number] {
   return [
     Math.cos(angle) * radius,
-    yBase + Math.sin(angle) * spec.inclination + Math.sin(t * 0.7 + spec.phase) * 0.25,
+    yBase + Math.sin(angle) * spec.inclination,
     Math.sin(angle) * radius,
   ];
 }
 
 /** Multiplicador de velocidad angular según estado. */
 export function speedFactor(state: DeskState, hasTask: boolean): number {
-  if (state === "disabled") return 0.15;
-  if (state === "tool_call") return 5.5;
-  if (state === "thinking") return hasTask ? 3.2 : 2.0;
-  if (state === "stuck") return 0.8;
-  return 1.0;
+  if (state === "disabled" || state === "archived") return 0;
+  if (state === "tool_call") return 0.65;
+  if (state === "thinking") return hasTask ? 0.42 : 0.2;
+  if (state === "stuck") return 0.08;
+  return 0;
 }
 
 /** Radio objetivo según estado: delegada → anillo de trabajo; si no, su capa. */
 export function targetRadius(state: DeskState, hasTask: boolean, homeRadius: number): number {
-  if (state === "disabled") return DOCK_RADIUS;
+  if (state === "disabled" || state === "archived") return DOCK_RADIUS;
   return hasTask ? WORK_RING_RADIUS : homeRadius;
 }
 
 /** Altura objetivo según estado. */
 export function targetY(state: DeskState, hasTask: boolean, homeY: number): number {
-  if (state === "disabled") return 1.4;
+  if (state === "disabled" || state === "archived") return 1.4;
   return hasTask ? WORK_RING_Y : homeY;
 }
 

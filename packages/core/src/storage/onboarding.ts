@@ -13,6 +13,7 @@ import type {
   UserDoc, ProviderDoc, ModelDoc, AgentDoc, ChannelDoc, McpServerDoc,
   UserIdentityDoc, OnboardingProgressDoc, EthicsDoc, SkillDoc, ToolDoc,
 } from "./collections";
+import { normalizeUserEmail } from "./user-email";
 
 export interface OnboardingSection {
   step: "user" | "skills" | "ethics" | "tools" | "provider" | "model" | "channel" | "mcp" | "agent" | "complete";
@@ -52,8 +53,21 @@ Separá el pedido en partes y clasificá cada una:
 
 1. **¿Encaja un agente de la colmena?** → \`task_delegate\`. Este es el camino por defecto.
 2. **¿Ninguno encaja?** → \`agent_find\` por si existe un worker propio para esa especialidad.
-3. **¿Tampoco hay?** → recién ahí \`search_knowledge\` para encontrar las herramientas, y **lo resolvés vos directamente**. Preferí siempre herramientas nativas sobre MCP.
-4. **¿Es algo recurrente que vas a necesitar seguido?** → \`get_available_models\` + \`agent_create\`, y delegale.
+3. **¿Tampoco hay?** → recién ahí \`search_knowledge\` para encontrar las herramientas. Preferí siempre herramientas nativas sobre MCP.
+4. **Si encontraste una tool nativa** → resolvelo vos directamente.
+5. **Si al menos una parte requiere MCP**:
+   - Agrupá las tools por \`server_id\` y usá \`agent_find\` para buscar un especialista del usuario que ya tenga ese servidor.
+   - Si existe y está habilitado, delegale la parte correspondiente. No preguntes ni crees otro.
+   - Si no existe, **antes de ejecutar cualquier tool de ese servidor**, preguntale al usuario si quiere crear un agente persistente para esa integración.
+   - Si acepta: usá \`get_available_models\`, descubrí \`agent_create\`, creá un worker con \`mcp_server_id\` y delegale la tarea actual. El agente recibe todas las tools actuales y futuras de ese servidor.
+   - Si rechaza: ejecutá vos directamente las tools MCP necesarias solo para esta solicitud.
+   - Si intervienen varios servidores sin especialista, tratá cada servidor por separado: un agente por servidor, nunca uno combinado.
+
+### CALENDARIO NO ES CRON
+
+- \`schedule_automation_agent\` administra jobs que Hive ejecutará después: tareas recurrentes, reportes automáticos, monitoreos y recordatorios de una sola ejecución.
+- Crear, consultar o modificar eventos, citas o reuniones; invitar asistentes; o revisar disponibilidad pertenece al servidor de calendario y a su especialista MCP.
+- Una frase como “agenda una reunión” significa calendario, no \`cron.create\`. Solo usá cron cuando el usuario quiere que Hive ejecute una instrucción en el futuro.
 
 Si \`search_knowledge\` no devuelve nada y el pedido es corto o ambiguo, **preguntale al usuario** en vez de adivinar y encadenar más búsquedas. Una pregunta cuesta un turno; adivinar mal cuesta varios.
 
@@ -87,8 +101,9 @@ Guardá lo que vaya a servir después: \`save_note\` para esta conversación, \`
 2. **Verdad de ejecución** — \`TaskDoc\`/\`JobDoc\` son la fuente de verdad. \`agent_find\` solo descubre workers; nunca prueba si algo está corriendo: para eso están \`task_list\` y \`task_status\`. Si \`task_delegate\` devuelve \`ok=true\` con \`task_id\`, \`job_id\` y \`run_id\`, la tarea se persistió de verdad y no es una simulación. Si una herramienta falla, reportá su resultado exacto: no inventes IDs, estados ni ejecuciones.
 3. **La verificación es automática** — toda entrega pasa por el verificador independiente antes de que \`task_delegate\` devuelva \`ok=true\`. Nunca delegues a \`acceptance_verifier\` vos mismo. Si un worker devuelve \`needs_input\`, vos formulás la pregunta al usuario con contexto.
 4. **Buscá antes de crear** — nunca crees un worker si el catálogo ya cubre la tarea.
-5. **Mínimo privilegio** — solo las herramientas necesarias a cada worker.
+5. **Mínimo privilegio** — solo las herramientas necesarias a cada worker. La única excepción explícita es un especialista MCP aprobado por el usuario: recibe el servidor completo que figura en \`mcp_server_ids_json\`, nunca otros servidores.
 6. **Nunca \`cli_exec\` para cron** — usá \`cron.create\`, y preguntá al usuario cada cuánto ejecutar.
+7. **Calendario ≠ cron** — los eventos y reuniones van al especialista MCP de calendario; cron solo programa futuras ejecuciones de Hive.
 
 ## QUÉ HAY EN TU CONTEXTO
 
@@ -155,6 +170,7 @@ export async function initOnboardingDb(): Promise<void> {
 export async function saveUserProfile(data: {
   userId?: string;
   userName?: string;
+  userEmail?: string;
   userLanguage?: string;
   userTimezone?: string;
   userOccupation?: string;
@@ -168,6 +184,9 @@ export async function saveUserProfile(data: {
   try {
     const usersCol = await col<UserDoc>("users");
     let finalUserId = data.userId;
+    const normalizedEmail = data.userEmail !== undefined
+      ? normalizeUserEmail(data.userEmail)
+      : undefined;
 
     if (!finalUserId) {
       finalUserId = genId();
@@ -179,7 +198,7 @@ export async function saveUserProfile(data: {
         occupation: data.userOccupation || null,
         notes: data.userNotes || null,
         master_key_hash: null,
-        email: null,
+        email: normalizedEmail ?? null,
         password_hash: null,
         preferred_cron_channel: "auto",
         created_at: Date.now(),
@@ -195,7 +214,7 @@ export async function saveUserProfile(data: {
         occupation: data.userOccupation ?? existing?.doc.occupation ?? null,
         notes: data.userNotes ?? existing?.doc.notes ?? null,
         master_key_hash: existing?.doc.master_key_hash ?? null,
-        email: existing?.doc.email ?? null,
+        email: normalizedEmail ?? existing?.doc.email ?? null,
         password_hash: existing?.doc.password_hash ?? null,
         preferred_cron_channel: existing?.doc.preferred_cron_channel ?? "auto",
         created_at: existing?.doc.created_at ?? Date.now(),

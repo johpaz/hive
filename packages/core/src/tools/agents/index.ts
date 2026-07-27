@@ -6,12 +6,18 @@
 
 import type { Tool } from "../types.ts";
 import { col, toIndexable, fromIndexable, BROADCAST } from "../../storage/hive.ts";
-import type { MemoryDoc, AgentDoc, ProviderDoc, ModelDoc, TaskDoc, AgentBusMessageDoc, AgentAcceptanceCriterion } from "../../storage/collections.ts";
+import type { MemoryDoc, AgentDoc, ProviderDoc, ModelDoc, McpServerDoc, TaskDoc, AgentBusMessageDoc, AgentAcceptanceCriterion } from "../../storage/collections.ts";
 import type { AcceptanceCriterion } from "../../agent/run-store.ts";
 import type { PreparedDelegation } from "../../agent/delegation-runtime.ts";
 import { logger } from "../../utils/logger.ts";
 import { agentBus } from "../../events/agent-bus.ts";
-import { emitDelegationStarted, emitDelegationFinished, emitVerificationStarted, emitVerificationFinished } from "../../canvas/emitter.ts";
+import {
+  emitDelegationStarted,
+  emitDelegationFinished,
+  emitVerificationStarted,
+  emitVerificationFinished,
+  emitWorkEvent,
+} from "../../canvas/emitter.ts";
 import { VERIFIER_AGENT_ID } from "../../agent/acceptance-verifier.ts";
 
 const log = logger.child("agents");
@@ -188,7 +194,7 @@ export const memoryDeleteTool: Tool = {
 
 export const agentCreateTool: Tool = {
   name: "agent_create",
-  description: "Crear un nuevo agente worker especializado. Requiere consultar get_available_models primero para seleccionar provider/model óptimos. Sinónimos: crear agente, nuevo worker, nuevo trabajador",
+  description: "Crear un nuevo agente worker especializado. Requiere consultar get_available_models; para un especialista MCP confirmado por el usuario, acepta mcp_server_id. Sinónimos: crear agente, nuevo worker, nuevo trabajador",
   parameters: {
     type: "object",
     properties: {
@@ -198,6 +204,10 @@ export const agentCreateTool: Tool = {
       tools_json: { type: "array", description: "Lista de IDs de herramientas", items: { type: "string" } },
       providerId: { type: "string", description: "ID del provider (openai, anthropic, ollama, etc.) - Obtener de get_available_models" },
       modelId: { type: "string", description: "ID del modelo (gpt-4o, claude-sonnet, etc.) - Obtener de get_available_models" },
+      mcp_server_id: {
+        type: "string",
+        description: "Servidor MCP persistente para un especialista. Requiere confirmación previa del usuario y asigna todas las tools actuales y futuras de ese servidor.",
+      },
       tone: { type: "string", description: "Tono del agente (friendly, professional, direct, etc.)" },
       max_iterations: { type: "number", description: "Límite de iteraciones del agente (default: 10)" },
     },
@@ -212,6 +222,7 @@ export const agentCreateTool: Tool = {
     const toolsJson = params.tools_json ? JSON.stringify(params.tools_json) : null;
     const providerId = params.providerId as string;
     const modelId = params.modelId as string;
+    const mcpServerId = params.mcp_server_id as string | undefined;
     const tone = (params.tone as string) ?? "friendly";
     const maxIterations = (params.max_iterations as number) ?? 10;
     const parentWorkspace = config?.configurable?.workspace ?? null;
@@ -269,6 +280,42 @@ export const agentCreateTool: Tool = {
       };
     }
 
+    if (mcpServerId) {
+      if (!userId) {
+        return { ok: false, error: "No se puede asignar un servidor MCP sin contexto de usuario." };
+      }
+      const serverEntry = await (await col<McpServerDoc>("mcpServers")).get(mcpServerId);
+      if (!serverEntry?.doc.enabled) {
+        return { ok: false, error: `El servidor MCP '${mcpServerId}' no existe o está deshabilitado.` };
+      }
+      if (serverEntry.doc.user_id && serverEntry.doc.user_id !== userId) {
+        return { ok: false, error: `El servidor MCP '${mcpServerId}' pertenece a otro usuario.` };
+      }
+
+      const existingSpecialist = (await (await col<AgentDoc>("agents")).scan({}))
+        .map((entry) => entry.doc)
+        .find((agent) => {
+          if (agent.role !== "worker" || agent.user_id !== userId) return false;
+          try {
+            return agent.mcp_server_ids_json
+              ? (JSON.parse(agent.mcp_server_ids_json) as string[]).includes(mcpServerId)
+              : false;
+          } catch {
+            return false;
+          }
+        });
+      if (existingSpecialist) {
+        const action = existingSpecialist.enabled
+          ? "Reutilizalo con task_delegate."
+          : "Está deshabilitado; el usuario debe reactivarlo desde Agentes.";
+        return {
+          ok: false,
+          existingAgentId: existingSpecialist.id,
+          error: `Ya existe el especialista '${existingSpecialist.name}' para ese servidor. ${action}`,
+        };
+      }
+    }
+
     try {
       const agentId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
       const now = Date.now();
@@ -276,7 +323,7 @@ export const agentCreateTool: Tool = {
       const agentsCol = await col<AgentDoc>("agents");
       await agentsCol.put(agentId, {
         id: agentId,
-        user_id: userId,
+        user_id: userId ?? "",
         name,
         description,
         system_prompt: systemPrompt,
@@ -288,12 +335,15 @@ export const agentCreateTool: Tool = {
         model_id: toIndexable(modelId),
         tools_json: toolsJson,
         skills_json: null,
+        active_mcp_json: null,
         parent_id: toIndexable(parentId),
         max_iterations: maxIterations,
         workspace: parentWorkspace,
         lastTraceAt: null,
         created_at: now,
         updated_at: now,
+        source: "user",
+        mcp_server_ids_json: mcpServerId ? JSON.stringify([mcpServerId]) : null,
       }, { expectedVersion: 0 });
 
       return {
@@ -302,6 +352,7 @@ export const agentCreateTool: Tool = {
         name,
         providerId,
         modelId,
+        mcpServerId: mcpServerId ?? null,
         workspace: parentWorkspace,
         message: "Agente creado exitosamente."
       };
@@ -333,6 +384,10 @@ export const agentFindTool: Tool = {
 
     try {
       const agentsCol = await col<AgentDoc>("agents");
+      const mcpServersCol = await col<McpServerDoc>("mcpServers");
+      const serverNames = new Map(
+        (await mcpServersCol.scan({})).map((entry) => [entry.doc.id, entry.doc.name]),
+      );
       let agents = (await agentsCol.scan({}))
         .map(e => e.doc)
         .filter(a =>
@@ -342,9 +397,20 @@ export const agentFindTool: Tool = {
 
       if (search) {
         const needle = search.toLowerCase();
-        agents = agents.filter(a =>
-          a.name.toLowerCase().includes(needle) || (a.description ?? "").toLowerCase().includes(needle)
-        );
+        agents = agents.filter((a) => {
+          let assignedServerIds: string[] = [];
+          try {
+            assignedServerIds = a.mcp_server_ids_json ? JSON.parse(a.mcp_server_ids_json) : [];
+          } catch {
+            assignedServerIds = [];
+          }
+          return a.name.toLowerCase().includes(needle)
+            || (a.description ?? "").toLowerCase().includes(needle)
+            || assignedServerIds.some((id) =>
+              id.toLowerCase().includes(needle)
+              || (serverNames.get(id) ?? "").toLowerCase().includes(needle),
+            );
+        });
       }
 
       if (availability !== "any") {
@@ -356,15 +422,25 @@ export const agentFindTool: Tool = {
         count: agents.length,
         execution_source: "Use task_list or task_status for real execution state.",
         ...(legacyStatus ? { warning: "The status filter is deprecated and cannot prove whether a task is running." } : {}),
-        agents: agents.map((a) => ({
-          id: a.id,
-          name: a.name,
-          description: a.description,
-          role: a.role,
-          source: a.source ?? "user",
-          enabled: a.enabled,
-          availability: a.enabled ? "enabled" : "disabled",
-        })),
+        agents: agents.map((a) => {
+          let mcpServerIds: string[] = [];
+          try {
+            mcpServerIds = a.mcp_server_ids_json ? JSON.parse(a.mcp_server_ids_json) : [];
+          } catch {
+            mcpServerIds = [];
+          }
+          return {
+            id: a.id,
+            name: a.name,
+            description: a.description,
+            role: a.role,
+            source: a.source ?? "user",
+            enabled: a.enabled,
+            availability: a.enabled ? "enabled" : "disabled",
+            mcpServerIds,
+            mcpServers: mcpServerIds.map((id) => ({ id, name: serverNames.get(id) ?? id })),
+          };
+        }),
       };
     } catch (error) {
       return { ok: false, error: `Failed to find agents: ${(error as Error).message}` };
@@ -436,7 +512,6 @@ export const taskDelegateTool: Tool = {
           required: ["id", "description"],
         },
       },
-      mcp_server_ids: { type: "array", items: { type: "string" }, description: "Task-scoped MCP servers selected by capability search." },
       mode: { type: "string", enum: ["sync", "async"], description: "sync (default, blocking, 2min timeout — only for very short delegations) or async (enqueued, frees the conversation instantly; outcome is relayed back to the user automatically). Prefer async for anything non-trivial." },
     },
     required: ["task_description"],
@@ -444,7 +519,6 @@ export const taskDelegateTool: Tool = {
   execute: async (params: Record<string, unknown>, config?: any) => {
     const agentId = params.worker_id as string | undefined;
     const taskDescription = params.task_description as string;
-    const mcpServerIds = (params.mcp_server_ids as string[] | undefined) ?? [];
     const mode = (params.mode as string) ?? "sync";
     const turnId = config?.configurable?.turn_id as string | undefined;
 
@@ -547,7 +621,6 @@ export const taskDelegateTool: Tool = {
             taskName,
             taskId,
             acceptance,
-            mcpServerIds,
             parentAgentId,
             parentProviderId,
             parentModelId,
@@ -611,7 +684,6 @@ export const taskDelegateTool: Tool = {
     try {
       prepared = await prepareDelegation(agentId, {
         workspace: config?.configurable?.workspace ?? null,
-        mcpServerIds,
         parentProviderId,
         parentModelId,
         mcpManager,
@@ -665,6 +737,14 @@ export const taskDelegateTool: Tool = {
       const verdict = JSON.parse(verification.verdict_json);
       emitVerificationFinished({ verifierId: VERIFIER_AGENT_ID, taskRef: syncDelegationRef });
       if (verification.status !== "verified") {
+        emitWorkEvent({
+          phase: "review_failed",
+          taskRef: syncDelegationRef,
+          taskName,
+          actorId: VERIFIER_AGENT_ID,
+          targetId: agentId,
+          detail: verdict.summary || "La entrega no superó la verificación",
+        });
         return {
           ok: false,
           status: verification.status,
@@ -673,6 +753,20 @@ export const taskDelegateTool: Tool = {
           retry_guidance: verdict.retry_guidance,
         };
       }
+      emitWorkEvent({
+        phase: "review_passed",
+        taskRef: syncDelegationRef,
+        taskName,
+        actorId: VERIFIER_AGENT_ID,
+        targetId: agentId,
+      });
+      emitWorkEvent({
+        phase: "completed",
+        taskRef: syncDelegationRef,
+        taskName,
+        actorId: agentId,
+        targetId: parentAgentId || null,
+      });
       return {
         ok: true,
         worker_id: agentId,
@@ -681,12 +775,22 @@ export const taskDelegateTool: Tool = {
         result,
       };
     } catch (err) {
-      agentBus.notifyTaskFailed(agentId, worker.name, 0, taskName, "", (err as Error).message);
+      const errorMessage = (err as Error).message;
+      const wasAborted = (config?.signal as AbortSignal | undefined)?.aborted === true;
+      agentBus.notifyTaskFailed(agentId, worker.name, 0, taskName, "", errorMessage);
+      emitWorkEvent({
+        phase: wasAborted ? "aborted" : "failed",
+        taskRef: syncDelegationRef,
+        taskName,
+        actorId: agentId,
+        targetId: parentAgentId || null,
+        detail: wasAborted ? "Trabajo interrumpido" : errorMessage,
+      });
 
       return {
         ok: false,
         worker_id: agentId,
-        error: (err as Error).message,
+        error: errorMessage,
       };
     } finally {
       emitVerificationFinished({ verifierId: VERIFIER_AGENT_ID, taskRef: syncDelegationRef });

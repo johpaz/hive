@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-import { onboard } from "./commands/onboard";
 import { start, stop, status, reload } from "./commands/gateway";
 import { dev } from "./commands/dev";
 import { agents } from "./commands/agents";
@@ -33,7 +32,6 @@ Gateway:
   stop                       Detener el Gateway
   reload                     Recargar config sin reiniciar
   status                     Estado del Gateway y agentes
-  onboard                    Asistente de configuración inicial paso a paso
 
 Chat y mensajes:
   chat [--agent <id>]        Chat directo en terminal
@@ -99,8 +97,8 @@ Options:
   --version, -v              Mostrar versión
 
 Examples:
-  hive start                 Arrancar Hive (el browser se abre automáticamente)
-  hive onboard               Configurar Hive por primera vez
+  hive start                 Arrancar Hive (el browser se abre automáticamente,
+                             y abre el asistente de configuración si es la primera vez)
   hive chat                  Chatear con el agente en terminal
   hive message send --to 123 --content "Hola"
   hive agent run --message "Analiza README.md" --wait
@@ -124,9 +122,6 @@ async function main(): Promise<void> {
   const flags = normalizedArgs.filter((a) => a.startsWith("--"));
 
   switch (command) {
-    case "onboard":
-      await onboard();
-      break;
     case "dev":
       await dev();
       break;

@@ -10,6 +10,11 @@ import { describe, test, expect, beforeEach } from "bun:test";
 import { closeHiveDb } from "../packages/core/src/storage/hivedb";
 import { col, nextId, updateDoc, updateManyByIndex, findByAny, bumpRollup } from "../packages/core/src/storage/hive";
 import { ensureHiveDb, isBootstrapped } from "../packages/core/src/storage/bootstrap";
+import {
+  acknowledgeNotification,
+  createNotification,
+  listPendingNotifications,
+} from "../packages/core/src/gateway/notification-inbox";
 
 beforeEach(() => {
   closeHiveDb();
@@ -87,6 +92,25 @@ describe("storage/hive.ts helpers", () => {
     expect(doc.costUsd).toBeCloseTo(0.8);
     expect(doc.byProvider.openai.inputTokens).toBe(150);
     expect(doc.byProvider.anthropic.inputTokens).toBe(10);
+  });
+});
+
+describe("durable WebChat notification inbox", () => {
+  test("keeps a notification pending until its owner acknowledges it", async () => {
+    const notifications = await col("notifications");
+    await notifications.createIndex("user_id");
+    const notification = await createNotification({
+      userId: "user-a",
+      channel: "webchat",
+      message: "Trabajo terminado",
+    });
+
+    expect(await listPendingNotifications("user-a", "webchat")).toHaveLength(1);
+    expect(await acknowledgeNotification(notification.id, "user-b")).toBe(false);
+    expect(await listPendingNotifications("user-a", "webchat")).toHaveLength(1);
+
+    expect(await acknowledgeNotification(notification.id, "user-a")).toBe(true);
+    expect(await listPendingNotifications("user-a", "webchat")).toHaveLength(0);
   });
 });
 

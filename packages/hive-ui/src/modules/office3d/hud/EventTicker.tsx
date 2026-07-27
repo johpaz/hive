@@ -4,7 +4,7 @@ export function EventTicker({ events }: { events: TickerEvent[] }) {
   return (
     <div className="office3d-ticker">
       <div className="office3d-ticker-title">Actividad</div>
-      <div className="office3d-ticker-list">
+      <div className="office3d-ticker-list" role="log" aria-live="polite" aria-relevant="additions">
         {events.length === 0 && <div className="office3d-ticker-empty">Sin eventos todavía…</div>}
         {events.slice(0, 6).map((e) => (
           <div key={e.id} className={`office3d-ticker-item office3d-ticker-item--${e.kind}`}>

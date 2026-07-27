@@ -100,7 +100,7 @@ export async function resolveBestChannel(userId: string, explicitChannel?: strin
 
 export const cronCreateTool: Tool = {
   name: "cron.create",
-  description: "Create a new cron job. Use for recurring reminders, daily reports, automated checks. Spanish: crear tarea programada, agendar recordatorio, programar reporte",
+  description: "Create a Hive scheduled automation: a recurring cron job or one-shot future execution. Spanish: crear automatización programada, programar tarea recurrente, ejecutar después, programar reporte",
   parameters: {
     type: "object",
     properties: {

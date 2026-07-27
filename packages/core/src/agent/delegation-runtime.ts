@@ -17,7 +17,8 @@ const MCP_IDLE_TTL_MS = 2 * 60_000;
 
 export interface PrepareDelegationOptions {
   workspace: string | null;
-  mcpServerIds?: string[];
+  /** Internal-only transient scope used by the independent verifier for readback. */
+  taskScopedMcpServerIds?: string[];
   /** Fallback provider/model when the target row has none of its own (catalog agents are seeded without one — inherits the parent/coordinator's). */
   parentProviderId?: string | null;
   parentModelId?: string | null;
@@ -159,6 +160,7 @@ async function releaseMcpLease(serverId: string, manager: MCPClientManager): Pro
       .catch((err) => log.warn(`[delegation-runtime] MCP disconnect failed: ${(err as Error).message}`))
       .finally(() => mcpLeases.delete(serverId));
   }, MCP_IDLE_TTL_MS);
+  lease.timer.unref?.();
 }
 
 /**
@@ -188,12 +190,12 @@ export async function prepareDelegation(agentId: string, opts: PrepareDelegation
 
   const skillIds = agentDoc.skills_json ? await validateSkillIds(JSON.parse(agentDoc.skills_json)) : [];
 
-  const dynamicMcpIds = opts.mcpServerIds ?? [];
-  if (dynamicMcpIds.length > 0 && agentId !== "mcp_integration_operator") {
-    throw new Error(`Agent ${agentId} does not allow task-scoped MCP servers`);
+  const taskScopedMcpIds = opts.taskScopedMcpServerIds ?? [];
+  if (taskScopedMcpIds.length > 0 && agentId !== "acceptance_verifier") {
+    throw new Error(`Agent ${agentId} does not allow transient MCP servers`);
   }
   const fixedMcpIds: string[] = agentDoc.mcp_server_ids_json ? JSON.parse(agentDoc.mcp_server_ids_json) : [];
-  const requestedMcp = [...new Set([...fixedMcpIds, ...dynamicMcpIds])];
+  const requestedMcp = [...new Set([...fixedMcpIds, ...taskScopedMcpIds])];
   if (requestedMcp.length > 0 && !opts.mcpManager) throw new Error("MCP servers requested but MCP manager is unavailable");
 
   const acquired: string[] = [];

@@ -7,10 +7,10 @@ import { UserProfileEditor } from "@/modules/agent-config/user/UserProfileEditor
 import { SkillsTab } from "@/modules/agent-config/skills/SkillsTab";
 import { NotesPanel } from "@/components/NotesPanel";
 import { CronJobsPanel } from "@/components/CronJobsPanel";
-import { SecurityPanel } from "@/components/SecurityPanel";
 import { useSkills, useTools, useMCPServers } from "@/hooks/useProviders";
+import { splitPanelTitle } from "./settingsTitle";
 
-type PanelId = "etica" | "herramientas" | "mcp" | "skills" | "perfil" | "notas" | "cron-jobs" | "seguridad";
+type PanelId = "etica" | "herramientas" | "mcp" | "skills" | "perfil" | "notas" | "cron-jobs";
 
 function PanelContent({ panel }: { panel: PanelId }) {
   switch (panel) {
@@ -56,18 +56,12 @@ function PanelContent({ panel }: { panel: PanelId }) {
           <CronJobsPanel />
         </div>
       );
-  case "seguridad":
-    return (
-      <div className="p-4">
-        <SecurityPanel />
-      </div>
-    );
   default:
       return null;
   }
 }
 
-const VALID_PANELS: PanelId[] = ["etica", "herramientas", "mcp", "skills", "perfil", "notas", "cron-jobs", "seguridad"];
+const VALID_PANELS: PanelId[] = ["etica", "herramientas", "mcp", "skills", "perfil", "notas", "cron-jobs"];
 
 export function SettingsPage({ forcePanel }: { forcePanel?: PanelId }) {
   const { panel } = useParams<{ panel: string }>();
@@ -81,8 +75,9 @@ export function SettingsPage({ forcePanel }: { forcePanel?: PanelId }) {
     fetchMCPServers();
   }, [fetchSkills, fetchTools, fetchMCPServers]);
 
-  const activePanel: PanelId = forcePanel || (VALID_PANELS.includes(panel as PanelId)
-    ? (panel as PanelId)
+  const requestedPanel = panel === "seguridad" ? "perfil" : panel;
+  const activePanel: PanelId = forcePanel || (VALID_PANELS.includes(requestedPanel as PanelId)
+    ? (requestedPanel as PanelId)
     : "herramientas");
 
   const panelTitles: Record<PanelId, { title: string; subtitle: string; eyebrow: string }> = {
@@ -120,15 +115,11 @@ export function SettingsPage({ forcePanel }: { forcePanel?: PanelId }) {
       eyebrow: "AUTOMATIZACIÓN TEMPORAL",
       title: "Tareas Programadas",
       subtitle: "Gestión de ejecuciones recurrentes y disparadores cron."
-    },
-  seguridad: {
-    eyebrow: "CONTROL DE ACCESO",
-    title: "Seguridad",
-    subtitle: "Protege tu instancia con email y contraseña. Esencial si despliegas Hive en un servidor público."
-  }
+    }
 };
 
   const { title, subtitle, eyebrow } = panelTitles[activePanel];
+  const titleParts = splitPanelTitle(title);
 
   return (
     <div className="hive-page-container">
@@ -139,13 +130,8 @@ export function SettingsPage({ forcePanel }: { forcePanel?: PanelId }) {
             <span className="hive-page-header__label">{eyebrow}</span>
           </div>
           <h2 className="hive-title-page">
-            {title.split(' & ')[0]} {title.includes(' & ') && <span className="hive-title-page__accent">& {title.split(' & ')[1]}</span>}
-            {title.includes(' ') && !title.includes(' & ') && (
-              <>
-                {title.split(' ')[0]} <span className="hive-title-page__accent">{title.split(' ').slice(1).join(' ')}</span>
-              </>
-            )}
-            {!title.includes(' ') && title}
+            {titleParts.lead}
+            {titleParts.accent && <> <span className="hive-title-page__accent">{titleParts.accent}</span></>}
           </h2>
           <p className="hive-subtitle">{subtitle}</p>
         </div>

@@ -1,5 +1,5 @@
 import { col, updateDoc, toIndexable, fromIndexable } from "../../storage/hive"
-import type { AgentDoc, AgentProposalDoc, SkillDoc, UserDoc, VerificationDoc } from "../../storage/collections"
+import type { AgentDoc, AgentProposalDoc, McpServerDoc, SkillDoc, UserDoc, VerificationDoc } from "../../storage/collections"
 import { emitCanvas } from "../../canvas/emitter"
 import { storeAgentHeaders, deleteAgentSecrets } from "../../storage/crypto"
 import { getDefaultLLM } from "../../agent/llm-client"
@@ -13,6 +13,10 @@ export async function handleGetAgents(req: Request, addCorsHeaders: (r: Response
   const usersCol = await col<UserDoc>("users")
   const verificationsCol = await col<VerificationDoc>("verifications")
   const skillsCol = await col<SkillDoc>("skills")
+  const mcpServersCol = await col<McpServerDoc>("mcpServers")
+  const mcpServers = new Map(
+    (await mcpServersCol.scan({})).map((entry) => [entry.doc.id, entry.doc]),
+  )
 
   const rows = typeFilter
     ? await agentsCol.findBy("status", typeFilter)
@@ -36,6 +40,12 @@ export async function handleGetAgents(req: Request, addCorsHeaders: (r: Response
   const agents = await Promise.all(sorted.map(async (row) => {
     const user = await usersCol.get(row.doc.user_id)
     const isCatalog = row.doc.source === "catalog"
+    let mcpServerIds: string[] = []
+    try {
+      mcpServerIds = row.doc.mcp_server_ids_json ? JSON.parse(row.doc.mcp_server_ids_json) : []
+    } catch {
+      mcpServerIds = []
+    }
 
     let lastVerification: { status: string; taskId: string; createdAt: number } | null = null
     if (isCatalog) {
@@ -69,6 +79,17 @@ export async function handleGetAgents(req: Request, addCorsHeaders: (r: Response
       skillsJson: row.doc.skills_json,
       minimalTools: row.doc.role === "coordinator" ? [...MINIMAL_TOOLS] : [],
       minimalSkills: row.doc.role === "coordinator" ? minimalSkills : [],
+      mcpServerIds,
+      mcpServers: mcpServerIds.map((id) => {
+        const server = mcpServers.get(id)
+        return {
+          id,
+          name: server?.name ?? id,
+          status: server?.status ?? "missing",
+          enabled: server?.enabled ?? false,
+          toolsCount: server?.tools_count ?? 0,
+        }
+      }),
 
       // Hierarchy
       parentId: fromIndexable(row.doc.parent_id),
@@ -161,6 +182,8 @@ export async function handleCreateAgent(req: Request, addCorsHeaders: (r: Respon
     model_id: toIndexable(modelId),
     tools_json: existing?.doc.tools_json ?? null,
     skills_json: existing?.doc.skills_json ?? null,
+    active_mcp_json: existing?.doc.active_mcp_json ?? null,
+    mcp_server_ids_json: existing?.doc.mcp_server_ids_json ?? null,
     parent_id: existing?.doc.parent_id ?? toIndexable(null),
     max_iterations: existing?.doc.max_iterations ?? 10,
     workspace: body.workspace || null,

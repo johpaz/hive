@@ -135,7 +135,7 @@ export async function doctor(): Promise<void> {
   if (fs.existsSync(getHiveDirConst())) {
     checks.push({ category: "Sistema", name: "Directorio Hive", status: "ok", message: getHiveDirConst() });
   } else {
-    checks.push({ category: "Sistema", name: "Directorio Hive", status: "error", message: "no existe", hint: "Ejecuta 'hive onboard'" });
+    checks.push({ category: "Sistema", name: "Directorio Hive", status: "error", message: "no existe", hint: "Ejecuta 'hive start' — abre el asistente de configuración si es la primera vez" });
   }
 
   // Base de Datos

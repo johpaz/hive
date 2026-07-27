@@ -1,9 +1,11 @@
 import { X } from "lucide-react";
+import type { GraphNode } from "@/stores/canvasStore";
 import type { DeskModel } from "@/modules/office3d/state/useOfficeModel";
 import { humanizeTool } from "@/modules/office3d/state/toolLabels";
 import { useOffice3DStore } from "../state/office3dStore";
 
 const STATE_LABEL: Record<DeskModel["state"], string> = {
+  archived: "Archivado manualmente",
   disabled: "Desactivado",
   idle: "En espera",
   thinking: "Pensando",
@@ -18,7 +20,7 @@ export function AgentInspector({ desk, delegatorName }: { desk: DeskModel | null
   const { agent } = desk;
   return (
     <aside className="office3d-inspector" style={{ ["--agent-color" as string]: desk.color }}>
-      <button className="office3d-inspector-close" onClick={() => select(null)} aria-label="Cerrar">
+      <button type="button" className="office3d-inspector-close" onClick={() => select(null)} aria-label="Cerrar">
         <X size={14} />
       </button>
 
@@ -63,6 +65,39 @@ export function AgentInspector({ desk, delegatorName }: { desk: DeskModel | null
         <span className="font-mono">{desk.workerCount}</span>
       </div>
       {agent.description && <p className="office3d-inspector-desc">{agent.description}</p>}
+    </aside>
+  );
+}
+
+export function CoordinatorInspector({ coordinator }: { coordinator: GraphNode | null }) {
+  const select = useOffice3DStore((s) => s.select);
+  if (!coordinator) return null;
+
+  return (
+    <aside className="office3d-inspector office3d-inspector--coordinator" style={{ ["--agent-color" as string]: "#f59e0b" }}>
+      <button type="button" className="office3d-inspector-close" onClick={() => select(null)} aria-label="Cerrar">
+        <X size={14} />
+      </button>
+      <div className="office3d-inspector-head">
+        <span className="office3d-inspector-orb" />
+        <div>
+          <span className="office3d-inspector-eyebrow">Coordinador principal</span>
+          <h3 className="office3d-inspector-name">{coordinator.name}</h3>
+        </div>
+      </div>
+      <div className="office3d-inspector-row">
+        <span className="office3d-inspector-label">Función</span>
+        <span>Asigna y supervisa</span>
+      </div>
+      <div className="office3d-inspector-row">
+        <span className="office3d-inspector-label">Estado</span>
+        <span className={`office3d-state-chip office3d-state-chip--${coordinator.status}`}>
+          {coordinator.status === "tool_call" ? "Ejecutando herramienta" : coordinator.status === "thinking" ? "Pensando" : "En espera"}
+        </span>
+      </div>
+      {typeof coordinator.description === "string" && (
+        <p className="office3d-inspector-desc">{coordinator.description}</p>
+      )}
     </aside>
   );
 }
