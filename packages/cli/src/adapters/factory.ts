@@ -114,55 +114,10 @@ export async function detectAllAdapters(options?: { hiveDir?: string }): Promise
 }
 
 /**
- * Get the primary installation type
- */
-export async function getInstallationType(options?: { hiveDir?: string }): Promise<InstallationType> {
-  const adapter = await detectAdapter({ hiveDir: options?.hiveDir });
-  return adapter.type;
-}
-
-/**
- * Check if a specific installation type is available
- */
-export async function isInstallationTypeAvailable(
-  type: InstallationType,
-  options?: { hiveDir?: string }
-): Promise<boolean> {
-  const adapters = createAllAdapters({ hiveDir: options?.hiveDir });
-  const adapter = adapters[type];
-  
-  try {
-    return await adapter.detect();
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Get adapter by type
- */
-export function getAdapterByType(
-  type: InstallationType,
-  options?: { hiveDir?: string }
-): InstallationAdapter {
-  const adapters = createAllAdapters({ hiveDir: options?.hiveDir });
-  return adapters[type];
-}
-
-/**
  * Installation type display names
  */
 export const INSTALLATION_TYPE_NAMES: Record<InstallationType, string> = {
   "docker": "Docker Compose",
   "bun-global": "Bun Global (npm-style)",
   "binary": "Standalone Binary",
-};
-
-/**
- * Installation type descriptions
- */
-export const INSTALLATION_TYPE_DESCRIPTIONS: Record<InstallationType, string> = {
-  "docker": "Standard Docker Compose installation with named volumes",
-  "bun-global": "Global installation via `bun install -g @johpaz/hive-agents`",
-  "binary": "Standalone compiled binary with embedded UI (or Docker container)",
 };

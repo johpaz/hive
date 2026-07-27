@@ -12,7 +12,7 @@ import { getHiveDir } from "../config/loader";
 import { col, updateDoc } from "../storage/hive";
 import type { ArtifactDoc } from "../storage/collections";
 
-export const ARTIFACT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const ARTIFACT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 function extensionFor(mimeType: string): string {
   if (mimeType === "image/png") return "png";

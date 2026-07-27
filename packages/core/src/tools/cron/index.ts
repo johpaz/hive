@@ -621,8 +621,3 @@ export function createTools(): Tool[] {
     cronHistoryTool,
   ];
 }
-
-/**
- * Alias for backward compatibility
- */
-export const createCronTools = createTools;

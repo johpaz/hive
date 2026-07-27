@@ -5,7 +5,7 @@ import type { DeskState } from "@/modules/office3d/state/useOfficeModel";
 export const CORE_POSITION: [number, number, number] = [0, 0, 0];
 /** Altura del anillo de trabajo, donde las abejas delegadas orbitan el núcleo. */
 export const WORK_RING_RADIUS = 4.2;
-export const WORK_RING_Y = 4.4;
+const WORK_RING_Y = 4.4;
 /** Radio de aparcamiento de agentes desactivados. */
 export const DOCK_RADIUS = 20;
 

@@ -16,6 +16,3 @@ export function getMCPManager(): MCPClientManager | null {
   return _mcpManager;
 }
 
-export function hasMCPManager(): boolean {
-  return _mcpManager !== null;
-}

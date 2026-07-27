@@ -2,7 +2,7 @@ import type { DynamicString, DynamicNumber, DynamicBoolean, DynamicStringList, F
 
 // ─── JSON Pointer Resolution ────────────────────────────────────────────────
 
-export function getAtPath(obj: Record<string, unknown>, path: string): unknown {
+function getAtPath(obj: Record<string, unknown>, path: string): unknown {
   if (!path || path === "/") return obj;
   const parts = path.replace(/^\//, "").split("/");
   let cur: unknown = obj;
@@ -13,7 +13,7 @@ export function getAtPath(obj: Record<string, unknown>, path: string): unknown {
   return cur;
 }
 
-export function setAtPath(obj: Record<string, unknown>, path: string, value: unknown): Record<string, unknown> {
+function setAtPath(obj: Record<string, unknown>, path: string, value: unknown): Record<string, unknown> {
   if (!path || path === "/") return value as Record<string, unknown>;
   const parts = path.replace(/^\//, "").split("/");
   const result = structuredClone(obj);

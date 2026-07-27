@@ -208,7 +208,7 @@ export interface A2UISurface {
 
 // ─── Icon Catalog ────────────────────────────────────────────────────────────
 
-export const A2UI_ICONS = [
+const A2UI_ICONS = [
   "accountCircle", "add", "arrowBack", "arrowForward", "attachFile",
   "calendarToday", "call", "camera", "check", "close", "delete",
   "download", "edit", "event", "error", "favorite", "favoriteOff",

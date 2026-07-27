@@ -8,6 +8,7 @@ const statusConfig: Record<AgentStatus, { label: string; className: string }> = 
   hibernated: { label: "Hibernado", className: "bg-secondary text-secondary-foreground border-border" },
   error: { label: "Error", className: "bg-destructive/15 text-destructive border-destructive/30" },
   thinking: { label: "Pensando", className: "bg-hive-thinking/15 text-hive-thinking border-hive-thinking/30 animate-pulse-slow" },
+  archived: { label: "Archivado", className: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
 };
 
 interface AgentStatusBadgeProps {

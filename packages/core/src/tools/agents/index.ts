@@ -404,7 +404,7 @@ export const agentArchiveTool: Tool = {
         };
       }
 
-      await agentsCol.put(agentId, { ...existing.doc, enabled: false, updated_at: Date.now() }, { expectedVersion: existing.version });
+      await agentsCol.put(agentId, { ...existing.doc, enabled: false, status: "archived", updated_at: Date.now() }, { expectedVersion: existing.version });
 
       return { ok: true, agentId, message: "Agent archived." };
     } catch (error) {

@@ -36,8 +36,7 @@ Este comando construye la UI y usa un `HIVE_HOME` de desarrollo separado.
 docker run --name hive \
   -p 18790:18790 \
   -v hive-data:/root/.hive \
-  -e HIVE_HOST=0.0.0.0 \
-  johpaz/hive:1.0.0
+  johpaz/hive-agents:1.0.0
 ```
 
 El volumen conserva HiveDB, configuración, credenciales de canales y artefactos. No expongas el puerto directamente a Internet; usa un proxy TLS y conserva la autenticación.

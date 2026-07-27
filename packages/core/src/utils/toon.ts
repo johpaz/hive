@@ -226,26 +226,6 @@ export async function withToonFormat<T>(
 }
 
 /**
- * Print compression report to console for debugging/analysis
- * Note: This prints directly to console, does not return a string
- */
-export function reportCompression(data: any): void {
-  // Import dynamically to avoid issues if function doesn't exist
-  import('toon-format-parser')
-    .then(({ printCompressionReport }) => {
-      printCompressionReport(data)
-    })
-    .catch(() => {
-      // Fallback: manual report
-      const analysis = analyzeCompression(data)
-      console.log(`\nTOON Compression Report:`)
-      console.log(`  JSON: ${analysis.jsonBytes} bytes, ~${analysis.jsonTokens} tokens`)
-      console.log(`  TOON: ${analysis.toonBytes} bytes, ~${analysis.toonTokens} tokens`)
-      console.log(`  Saved: ${analysis.savedBytes} bytes, ${analysis.savedTokens} tokens (${analysis.savedPercent.toFixed(1)}%)`)
-    })
-}
-
-/**
  * Get compression analysis as an object (for programmatic use)
  */
 export function getCompressionAnalysis(data: any): ReturnType<typeof analyzeCompression> {

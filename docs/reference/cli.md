@@ -43,7 +43,7 @@ hive agents terminate <id> [--cascade]
 hive agents tree
 ```
 
-Los 11 agentes del sistema usan `source: catalog`; no deben eliminarse como mecanismo de desinstalación. Deshabilítalos o ajusta su modelo desde la UI.
+Los 10 agentes del sistema usan `source: catalog`; no deben eliminarse como mecanismo de desinstalación. Deshabilítalos o ajusta su modelo desde la UI.
 
 ## Automatizaciones
 

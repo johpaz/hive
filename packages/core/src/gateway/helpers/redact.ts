@@ -5,7 +5,7 @@ import type { Config } from "../../config/loader.ts";
  * @param value - The value to redact
  * @returns The redacted value or a string of bullets if too short
  */
-export function redactValue(value: string): string {
+function redactValue(value: string): string {
   if (!value || value.length < 8) return "••••••••";
   return `${value.slice(0, 4)}••••••••`;
 }

@@ -339,7 +339,7 @@ export abstract class OpenAICompatBase implements LLMProvider {
  * Extracts tool_calls from text when the model fails to emit native tool_calls.
  * Supports common formats used by Gemma, Qwen, and other local models.
  */
-export function extractToolCallsFromText(
+function extractToolCallsFromText(
   content: string,
   toolNameMap: Map<string, string>,
   knownToolNames?: Set<string>,

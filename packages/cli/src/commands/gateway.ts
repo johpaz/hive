@@ -47,13 +47,6 @@ async function getAdapter(): Promise<InstallationAdapter> {
 }
 
 /**
- * Reset the cached adapter (for testing or forced re-detection)
- */
-export function resetAdapter(): void {
-  _adapter = null;
-}
-
-/**
  * Start UI server with embedded or filesystem assets
  */
 function startUIServer(

@@ -115,7 +115,7 @@ export function renderTranscript(rows: StoredMessage[], maxMsgChars = MAX_MSG_CH
 /**
  * Compress a thread's history into a summary.
  */
-export async function compactThread(
+async function compactThread(
   threadId: string,
   notify?: { channel: string; userId: string }
 ): Promise<void> {
@@ -227,25 +227,3 @@ export function clearOldToolResults<T extends { role: string; content: string | 
   })
 }
 
-/**
- * Summarize a tool result to a single line
- * Used for very old tool results (> 10 turns)
- */
-export function summarizeToolResult(content: string, toolName?: string): string {
-  // Try to extract success/failure status
-  const isError = content.includes('error') || content.includes('failed') || content.startsWith('[Tool Error]')
-  const isSuccess = content.includes('ok') || content.includes('success') || content.includes('true')
-  
-  // Try to extract key result field from JSON/TOON
-  let keyInfo = ""
-  try {
-    // Simple extraction of first key value
-    const firstLine = content.split('\n')[0].substring(0, 80)
-    keyInfo = firstLine
-  } catch {
-    keyInfo = content.substring(0, 80)
-  }
-  
-  const status = isError ? "failed" : isSuccess ? "success" : "completed"
-  return `[${toolName || 'Tool'} ${status}: ${keyInfo}...]`
-}

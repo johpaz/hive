@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { EthicsConfig, EthicsTemplate, EthicsConflict } from "@/types";
+import type { EthicsConfig } from "@/types";
 import { apiClient } from "@/lib/api";
 import { generateId } from "@/lib/utils";
 
@@ -7,15 +7,10 @@ interface EthicsState {
     isLoading: boolean;
     error: string | null;
     configs: EthicsConfig[];
-    conflicts: EthicsConflict[];
-    templates: EthicsTemplate[];
     setLoading: (loading: boolean) => void;
     setError: (error: string | null) => void;
     fetchEthics: () => Promise<string>;
     saveEthics: (content: string) => Promise<string>;
-    fetchConfigs: () => Promise<void>;
-    fetchConflicts: () => Promise<void>;
-    fetchTemplates: () => Promise<void>;
     updateConfig: (id: string, updates: Partial<EthicsConfig>) => void;
     addConfig: (config: Omit<EthicsConfig, "id" | "createdAt" | "updatedAt" | "version">) => void;
     removeConfig: (id: string) => void;
@@ -25,8 +20,6 @@ export const useEthicsStore = create<EthicsState>((set, get) => ({
     isLoading: false,
     error: null,
     configs: [],
-    conflicts: [],
-    templates: [],
 
     setLoading: (loading) => set({ isLoading: loading }),
     setError: (error) => set({ error }),
@@ -75,45 +68,6 @@ export const useEthicsStore = create<EthicsState>((set, get) => ({
                 error: error instanceof Error ? error.message : "Failed to save ethics"
             });
             throw error;
-        }
-    },
-
-    fetchConfigs: async () => {
-        set({ isLoading: true, error: null });
-        try {
-            const configs = await apiClient<EthicsConfig[]>("/api/workspace/ethics/configs");
-            set({ configs, isLoading: false });
-        } catch (error) {
-            set({
-                isLoading: false,
-                error: error instanceof Error ? error.message : "Failed to fetch configs"
-            });
-        }
-    },
-
-    fetchConflicts: async () => {
-        set({ isLoading: true, error: null });
-        try {
-            const conflicts = await apiClient<EthicsConflict[]>("/api/workspace/ethics/conflicts");
-            set({ conflicts, isLoading: false });
-        } catch (error) {
-            set({
-                isLoading: false,
-                error: error instanceof Error ? error.message : "Failed to fetch conflicts"
-            });
-        }
-    },
-
-    fetchTemplates: async () => {
-        set({ isLoading: true, error: null });
-        try {
-            const templates = await apiClient<EthicsTemplate[]>("/api/workspace/ethics/templates");
-            set({ templates, isLoading: false });
-        } catch (error) {
-            set({
-                isLoading: false,
-                error: error instanceof Error ? error.message : "Failed to fetch templates"
-            });
         }
     },
 

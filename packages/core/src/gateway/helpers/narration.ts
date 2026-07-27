@@ -1,7 +1,7 @@
 // ─── Tool narration map ───────────────────────────────────────────────────────
 // Maps tool name prefixes/exact names to human-readable Spanish narrations.
 // Shown to the user while the agent executes a tool.
-export const TOOL_NARRATIONS: Record<string, string> = {
+const TOOL_NARRATIONS: Record<string, string> = {
   // Web
   web_search: "Buscando en la web...",
   web_fetch: "Leyendo página web...",

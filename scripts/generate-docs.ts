@@ -81,13 +81,12 @@ function validateContracts(tools: ReturnType<typeof createAllTools>, skills: Ret
   if (errors.length) throw new Error(`Contratos documentales inválidos:\n- ${errors.join("\n- ")}`);
 }
 
-function validateLocalLinks() {
+function markdownFiles(): string[] {
   const roots = ["README.md", "CONTRIBUTING.md", "CHANGELOG_v1.0.0.md", "docs", "packages/hive-ui/README.md"];
   const files: string[] = [];
   for (const item of roots) {
     const absolute = resolve(root, item);
     if (!existsSync(absolute)) continue;
-    const stat = Bun.file(absolute);
     if (item.endsWith(".md")) {
       files.push(absolute);
       continue;
@@ -96,9 +95,12 @@ function validateLocalLinks() {
       if (String(entry).endsWith(".md")) files.push(resolve(absolute, String(entry)));
     }
   }
+  return files;
+}
 
+function validateLocalLinks() {
   const broken: string[] = [];
-  for (const file of files) {
+  for (const file of markdownFiles()) {
     const content = readFileSync(file, "utf8");
     for (const match of content.matchAll(/!?\[[^\]]*]\(([^)]+)\)/g)) {
       let target = match[1]!.trim().replace(/^<|>$/g, "");
@@ -112,11 +114,31 @@ function validateLocalLinks() {
   if (broken.length) throw new Error(`Enlaces locales rotos:\n- ${broken.join("\n- ")}`);
 }
 
+// Catches prose drift like "11 agentes de catálogo" surviving a catalog change
+// (found during the 1.0 release audit: several docs still said 11 after a
+// persona was dropped to 10). Matches phrasings actually used in the docs;
+// widen the pattern if a new one shows up.
+function validateAgentCountProse(realCount: number) {
+  const pattern = /(\d+)\s+agentes?\s+(?:de\s+cat[aá]logo|del\s+sistema|especializados)/gi;
+  const mismatches: string[] = [];
+  for (const file of markdownFiles()) {
+    const content = readFileSync(file, "utf8");
+    for (const match of content.matchAll(pattern)) {
+      const claimed = Number(match[1]);
+      if (claimed !== realCount) {
+        mismatches.push(`${relative(root, file)}: dice "${match[0]}", pero hay ${realCount} agentes de catálogo`);
+      }
+    }
+  }
+  if (mismatches.length) throw new Error(`Conteo de agentes desactualizado:\n- ${mismatches.join("\n- ")}`);
+}
+
 function renderInventory(): string {
   const tools = createAllTools({} as never);
   const skills = loadSkills();
   const agents = createSeedCatalogAgents(0);
   validateContracts(tools, skills);
+  validateAgentCountProse(agents.length);
 
   const categoryByTool = new Map<string, string>();
   for (const category of categories) {

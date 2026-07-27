@@ -34,7 +34,7 @@ export function setSchedulerForCleanup(scheduler: { runCleanup(): Promise<void> 
  * 4. Executes the tool if tool_name is specified
  * 5. Returns the agent response
  */
-export async function executeScheduledTask(job: CronJob): Promise<CronJobExecutionResult> {
+async function executeScheduledTask(job: CronJob): Promise<CronJobExecutionResult> {
   log.info(`[execute] Processing job "${job.name}" (${job.id})`);
 
   try {

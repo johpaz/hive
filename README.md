@@ -13,7 +13,14 @@
 
 # Hive 1.0
 
-**Tu colmena de agentes IA.** Local-first, multi-canal y open source: un runtime para coordinar agentes especializados desde la web, la terminal o tu app de mensajería favorita — construido desde Colombia para el mundo.
+**Tu propio equipo de agentes de IA, corriendo en tu computadora o tu servidor — no alquilado a una nube ajena.** Hive coordina un enjambre de agentes especializados (investigación, archivos, código, documentos de oficina, agenda, APIs) que trabajan para vos desde WhatsApp, Telegram, Slack, Discord o el navegador, mientras los ves operar en vivo en un mapa 3D.
+
+La instalación son 3 comandos de terminal; de ahí en más un asistente visual configura todo — no hace falta tocar código para usarlo día a día. Si además programás, tenés un runtime local-first, multi-canal y open source completo para construir encima.
+
+<p align="center">
+  <img src="docs/assets/office3d-screenshot.jpg" alt="Oficina 3D de Hive mostrando el enjambre de agentes en vivo" width="100%">
+</p>
+<p align="center"><sub>La Oficina 3D en <code>/office</code>: cada hexágono es un agente real, en vivo, no una animación de marketing.</sub></p>
 
 Hive reemplaza el patrón de "un agente gigante con 80 herramientas cargadas de memoria" por un coordinador liviano que descubre capacidades bajo demanda, delega en un catálogo de agentes persistentes y verifica el resultado antes de darlo por bueno. Cada delegación queda respaldada por criterios de aceptación, un verificador independiente y evidencia auditable (proof packets): no confíes en el LLM a ciegas, compruébalo.
 
@@ -120,8 +127,7 @@ hive start
 docker run --name hive \
   -p 18790:18790 \
   -v hive-data:/root/.hive \
-  -e HIVE_HOST=0.0.0.0 \
-  johpaz/hive:1.0.0
+  johpaz/hive-agents:1.0.0
 ```
 
 Consulta la [guía de instalación](docs/guides/instalacion.md) para binarios, actualización y migración.

@@ -337,15 +337,6 @@ export async function getUsageStats(hours: number = 24): Promise<UsageSummary> {
   };
 }
 
-export function getProviderPricing(provider: string, model: string): { inputPer1M: number; outputPer1M: number } {
-  return MODEL_PRICING[model] || { inputPer1M: 0, outputPer1M: 0 };
-}
-
-export function estimateCostForTokens(model: string, tokens: number): number {
-  const pricing = MODEL_PRICING[model] || { inputPer1M: 0, outputPer1M: 0 };
-  return (tokens / 1_000_000) * pricing.inputPer1M;
-}
-
 /**
  * Get average cost per token for a model (input + output average)
  */

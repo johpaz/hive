@@ -25,7 +25,7 @@ const log = logger.child("gateway:init");
 /**
  * Verifica que exista al menos un usuario en la base de datos
  */
-export async function verifyDatabaseUsers(): Promise<void> {
+async function verifyDatabaseUsers(): Promise<void> {
   try {
     await ensureHiveDb();
 
@@ -49,7 +49,7 @@ export async function verifyDatabaseUsers(): Promise<void> {
 /**
  * Escribe el archivo PID del proceso
  */
-export async function writePidFile(pidFile: string): Promise<void> {
+async function writePidFile(pidFile: string): Promise<void> {
   try {
     const dir = path.dirname(pidFile);
     mkdirSync(dir, { recursive: true });
@@ -65,7 +65,7 @@ export async function writePidFile(pidFile: string): Promise<void> {
  * Carga la configuración del agente desde la base de datos
  * @returns Provider y modelo configurados
  */
-export async function loadAgentConfigFromDB(
+async function loadAgentConfigFromDB(
   config: Config
 ): Promise<{ provider: string; model: string }> {
   // Último recurso cuando la BD aún no tiene providers/modelos activos (setup inicial)
@@ -144,7 +144,7 @@ export async function loadAgentConfigFromDB(
 /**
  * Inicializa el agent loop
  */
-export async function initializeAgentLoop(mcpManager?: any): Promise<void> {
+async function initializeAgentLoop(mcpManager?: any): Promise<void> {
   try {
     await buildAgentLoop({ mcpManager });
     log.info("Agent loop initialized");
@@ -157,7 +157,7 @@ export async function initializeAgentLoop(mcpManager?: any): Promise<void> {
 /**
  * Inicializa el runner de LLM
  */
-export async function initializeLLMRunner(
+async function initializeLLMRunner(
   config: Config,
   provider: string,
   model: string
@@ -175,7 +175,7 @@ export async function initializeLLMRunner(
 /**
  * Inicializa el manager de canales
  */
-export async function initializeChannelManager(
+async function initializeChannelManager(
   config: Config
 ): Promise<ChannelManager> {
   try {

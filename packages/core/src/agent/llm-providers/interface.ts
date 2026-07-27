@@ -17,7 +17,7 @@ export interface LLMProvider {
 // ─── Shared constants ─────────────────────────────────────────────────────────
 
 // Models that only accept temperature=1 (reasoning/thinking models).
-export const FIXED_TEMPERATURE_1_MODELS = new Set(["kimi-k2.5", "kimi-k2", "kimi-k2-5"])
+const FIXED_TEMPERATURE_1_MODELS = new Set(["kimi-k2.5", "kimi-k2", "kimi-k2-5"])
 
 export const OPENAI_COMPAT_BASE_URLS: Record<string, string> = {
   groq: "https://api.groq.com/openai/v1",
@@ -58,7 +58,7 @@ const DEFAULT_PROFILE: ProviderProfile = {
   retryWithoutToolsOnCodes: [],
 }
 
-export const PROVIDER_PROFILES: Record<string, ProviderProfile> = {
+const PROVIDER_PROFILES: Record<string, ProviderProfile> = {
   openai: { ...DEFAULT_PROFILE, normalizeToolNames: true },
   kimi: { ...DEFAULT_PROFILE, normalizeToolNames: true, disableParallelToolCalls: true, retryWithoutToolsOnCodes: [422] },
   deepseek: { ...DEFAULT_PROFILE, normalizeToolNames: true },
@@ -78,7 +78,7 @@ export function getProviderProfile(provider: string): ProviderProfile {
 
 // ─── Models that don't support tool calling ───────────────────────────────────
 
-export const NO_TOOL_MODELS = new Set([
+const NO_TOOL_MODELS = new Set([
   "deepseek-reasoner",
   "deepseek/deepseek-r1:free",
 ])

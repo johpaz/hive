@@ -232,7 +232,3 @@ export class SSETransport implements Transport {
     }
   }
 }
-
-export function createSSETransport(config: SSETransportConfig): Transport {
-  return new SSETransport(config) as unknown as Transport;
-}

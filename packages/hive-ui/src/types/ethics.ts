@@ -21,21 +21,3 @@ export interface EthicsConfig {
   createdAt: string;
   updatedAt: string;
 }
-
-export interface EthicsTemplate {
-  id: string;
-  name: string;
-  description: string;
-  level: EthicsLevel;
-  rules: EthicsRule[];
-  content: string;
-}
-
-export interface EthicsConflict {
-  id: string;
-  soulRule: string;
-  ethicsRule: string;
-  description: string;
-  severity: "high" | "medium" | "low";
-  suggestion: string;
-}

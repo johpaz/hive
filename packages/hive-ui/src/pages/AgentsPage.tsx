@@ -259,13 +259,19 @@ function AgentInspector({
           </div>
           <span
             className={`flex items-center gap-1.5 rounded-full border px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${
-              agent.enabled
+              agent.status === "archived"
+                ? "border-amber-500/20 bg-amber-500/10 text-amber-400"
+                : agent.enabled
                 ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
                 : "border-white/10 bg-white/5 text-white/35"
             }`}
           >
-            <span className={`h-1.5 w-1.5 rounded-full ${agent.enabled ? "bg-emerald-400" : "bg-white/30"}`} />
-            {agent.enabled ? "Activo" : "Inactivo"}
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                agent.status === "archived" ? "bg-amber-400" : agent.enabled ? "bg-emerald-400" : "bg-white/30"
+              }`}
+            />
+            {agent.status === "archived" ? "Archivado" : agent.enabled ? "Activo" : "Inactivo"}
           </span>
         </div>
 

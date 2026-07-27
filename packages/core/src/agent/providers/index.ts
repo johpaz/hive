@@ -216,6 +216,3 @@ export class AgentRunner {
   }
 }
 
-export function createAgentRunner(config: Config): AgentRunner {
-  return new AgentRunner(config)
-}

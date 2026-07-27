@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { ShieldAlert, Save, Loader2, Plus, Check, Zap, Shield, Unlock, AlertTriangle } from "lucide-react";
+import { ShieldAlert, Loader2, Shield, AlertTriangle } from "lucide-react";
 import { useEthicsStore } from "@/stores/ethicsStore";
 import { Textarea } from "@/components/ui/textarea";
 import { Toast } from "@/lib/swal";
@@ -115,12 +115,6 @@ export function EthicsTemplateGallery() {
     }
   };
 
-  const handleApplyTemplate = (templateContent: string) => {
-    setEditForm(p => ({ ...p, content: templateContent }));
-    Toast.fire({ icon: "info", title: "Plantilla aplicada — guarda para confirmar" });
-  };
-
-
 
   if (isLoading && configs.length === 0) {
     return (
@@ -164,7 +158,7 @@ export function EthicsTemplateGallery() {
             <div className="text-center">
               <p className="hive-title-section text-center mb-2">Sin Protocolos Base</p>
               <p className="text-xs text-white/40 mb-8 max-w-[300px] mx-auto leading-relaxed">
-                No se han detectado lineamientos éticos en el sistema. Selecciona una de las plantillas inferiores para comenzar.
+                No se detectaron lineamientos éticos en el sistema. Esto no debería ocurrir en una instalación completa — verifica la conexión con el gateway o ejecuta <code>hive doctor</code>.
               </p>
             </div>
           </div>

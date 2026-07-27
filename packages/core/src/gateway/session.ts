@@ -11,10 +11,6 @@ export function parseSessionId(sessionId: string): SessionId | null {
   return { userId: sessionId };
 }
 
-export function formatSessionId(session: SessionId): string {
-  return session.userId;
-}
-
 export interface Session {
   id: string;
   parsed: SessionId;
@@ -24,7 +20,7 @@ export interface Session {
   ws?: ServerWebSocket<unknown>;
 }
 
-export class SessionManager {
+class SessionManager {
   private sessions: Map<string, Session> = new Map();
 
   create(sessionId: string, ws?: ServerWebSocket<unknown>): Session {

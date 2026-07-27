@@ -13,20 +13,6 @@ import {
 import { getHiveDir } from "../../config/loader"
 import type { Config } from "../../config/loader"
 
-export async function isSetupMode(): Promise<boolean> {
-  try {
-    const usersCol = await col<import("../../storage/collections").UserDoc>("users")
-    const userCount = await usersCol.count()
-    if (userCount === 0) return true
-    // Also require a coordinator agent — setup may have failed mid-way after creating the user
-    const agentsCol = await col<import("../../storage/collections").AgentDoc>("agents")
-    const coordinatorCount = (await agentsCol.findBy("role", "coordinator")).length
-    return coordinatorCount === 0
-  } catch {
-    return true
-  }
-}
-
 export async function handleSetupProviders(
   addCorsHeaders: (response: Response, request: Request) => Response,
   req: Request
@@ -117,6 +103,20 @@ export async function handleSetupOllamaModels(
     return addCorsHeaders(Response.json({ models }), req)
   } catch {
     return addCorsHeaders(Response.json({ models: [], error: "Ollama no disponible en localhost:11434" }), req)
+  }
+}
+
+async function isSetupMode(): Promise<boolean> {
+  try {
+    const usersCol = await col<import("../../storage/collections").UserDoc>("users")
+    const userCount = await usersCol.count()
+    if (userCount === 0) return true
+    // Also require a coordinator agent — setup may have failed mid-way after creating the user
+    const agentsCol = await col<import("../../storage/collections").AgentDoc>("agents")
+    const coordinatorCount = (await agentsCol.findBy("role", "coordinator")).length
+    return coordinatorCount === 0
+  } catch {
+    return true
   }
 }
 

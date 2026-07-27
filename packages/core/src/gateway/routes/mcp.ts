@@ -200,33 +200,6 @@ export async function handleUpdateMcpServer(req: Request, addCorsHeaders: (r: Re
   return addCorsHeaders(Response.json({ success: true }), req)
 }
 
-export async function handleStartMcpServer(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
-  const url = new URL(req.url)
-  const serverId = url.pathname.split("/").pop()
-
-  if (!serverId) {
-    return addCorsHeaders(Response.json({ success: false, error: "serverId required" }), req)
-  }
-
-  await updateDoc<McpServerDoc>("mcpServers", serverId, { enabled: true }).catch(() => { /* not found */ })
-
-  return addCorsHeaders(Response.json({ success: true, serverId, enabled: true }), req)
-}
-
-export async function handleGetMcpServerTools(
-  req: Request,
-  addCorsHeaders: (r: Response, req: Request) => Response,
-  serverName: string,
-  mcpManager?: any
-): Promise<Response> {
-  if (!mcpManager) {
-    return addCorsHeaders(Response.json([]), req)
-  }
-
-  const tools = mcpManager.getServerTools(serverName)
-  return addCorsHeaders(Response.json(tools), req)
-}
-
 export async function handleToggleMcpServer(
   req: Request,
   addCorsHeaders: (r: Response, req: Request) => Response,
@@ -242,42 +215,6 @@ export async function handleToggleMcpServer(
   await updateDoc<McpServerDoc>("mcpServers", mcpId, { active: !!active, enabled: !!active }).catch(() => { /* not found */ })
 
   return addCorsHeaders(Response.json({ success: true, active, message: active ? "Servidor MCP activado" : "Servidor MCP desactivado" }), req)
-}
-
-export async function handleMcpServerAction(
-  req: Request,
-  addCorsHeaders: (r: Response, req: Request) => Response,
-  serverName: string,
-  action: "connect" | "disconnect",
-  mcpManager?: any
-): Promise<Response> {
-  if (!mcpManager) {
-    return addCorsHeaders(new Response("MCP is disabled", { status: 404 }), req)
-  }
-
-  if (action === "connect") {
-    // Check if server exists and is enabled in DB
-    const entry = await findMcpServer(serverName)
-    if (!entry || !entry.doc.enabled) {
-      return new Response("Server not found or disabled", { status: 400 })
-    }
-
-    await mcpManager.connectServer(serverName)
-
-    // Update tools count after connection
-    const tools = mcpManager.getServerTools(serverName) || []
-    const mcpCol = await col<McpServerDoc>("mcpServers")
-    await mcpCol.put(entry.id, { ...entry.doc, status: "connected", tools_count: tools.length }, { expectedVersion: entry.version })
-
-    return addCorsHeaders(Response.json({ success: true, tools_count: tools.length }), req)
-  }
-
-  if (action === "disconnect") {
-    await mcpManager.disconnectServer(serverName)
-    return addCorsHeaders(Response.json({ success: true }), req)
-  }
-
-  return addCorsHeaders(new Response("Invalid action", { status: 400 }), req)
 }
 
 /**

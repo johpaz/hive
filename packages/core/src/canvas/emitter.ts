@@ -39,10 +39,6 @@ export function subscribeCanvas(ws: { send: (data: string) => void }) {
   subscribers.add(ws)
 }
 
-export function getAgentLiveState(id: string): AgentLiveState | undefined {
-  return agentLiveState.get(id)
-}
-
 export function unsubscribeCanvas(ws: { send: (data: string) => void }) {
   subscribers.delete(ws)
 }

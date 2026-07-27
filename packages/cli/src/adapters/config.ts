@@ -5,12 +5,10 @@
  * across different installation methods.
  */
 
-import { z } from "zod";
 import * as path from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync } from "node:fs";
-import type { GatewayConfig, InstallationConfig, InstallationPaths } from "./types";
-import { DEFAULT_GATEWAY_CONFIG, PORTS, gatewayConfigSchema, installationConfigSchema } from "./types";
+import type { InstallationPaths } from "./types";
 
 /**
  * Get the base Hive directory from environment or default
@@ -102,42 +100,6 @@ export function mergeEnv(...envs: Array<Record<string, string>>): Record<string,
 }
 
 /**
- * Validate and normalize gateway configuration
- */
-export function validateGatewayConfig(
-  config: Partial<GatewayConfig>
-): GatewayConfig {
-  const merged = { ...DEFAULT_GATEWAY_CONFIG, ...config };
-  
-  try {
-    return gatewayConfigSchema.parse(merged);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      const messages = error.issues.map((e) => `${e.path.join(".")}: ${e.message}`);
-      throw new Error(`Invalid gateway configuration:\n${messages.join("\n")}`);
-    }
-    throw error;
-  }
-}
-
-/**
- * Validate complete installation configuration
- */
-export function validateInstallationConfig(
-  config: unknown
-): InstallationConfig {
-  try {
-    return installationConfigSchema.parse(config);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      const messages = error.issues.map((e) => `${e.path.join(".")}: ${e.message}`);
-      throw new Error(`Invalid installation configuration:\n${messages.join("\n")}`);
-    }
-    throw error;
-  }
-}
-
-/**
  * Find a free port starting from the given port
  */
 export async function findFreePort(startPort: number, maxAttempts: number = 100): Promise<number> {
@@ -172,26 +134,6 @@ export async function isPortAvailable(port: number): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-/**
- * Wait for a port to become available
- */
-export async function waitForPort(
-  port: number,
-  timeout: number = 30000,
-  interval: number = 500
-): Promise<boolean> {
-  const start = Date.now();
-  
-  while (Date.now() - start < timeout) {
-    if (await isPortAvailable(port)) {
-      return true;
-    }
-    await new Promise((resolve) => setTimeout(resolve, interval));
-  }
-  
-  return false;
 }
 
 /**
@@ -292,24 +234,3 @@ export function isChildProcess(): boolean {
   return process.env.HIVE_GATEWAY_CHILD === "1";
 }
 
-/**
- * Get platform-specific information
- */
-export function getPlatformInfo(): {
-  platform: string;
-  arch: string;
-  isLinux: boolean;
-  isMac: boolean;
-  isWindows: boolean;
-} {
-  const platform = process.platform;
-  const arch = process.arch;
-  
-  return {
-    platform,
-    arch,
-    isLinux: platform === "linux",
-    isMac: platform === "darwin",
-    isWindows: platform === "win32",
-  };
-}

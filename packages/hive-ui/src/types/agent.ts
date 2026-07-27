@@ -1,4 +1,4 @@
-export type AgentStatus = "active" | "idle" | "hibernated" | "error" | "thinking";
+export type AgentStatus = "active" | "idle" | "hibernated" | "error" | "thinking" | "archived";
 
 export interface AgentConfig {
   model: string;

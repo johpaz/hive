@@ -26,7 +26,7 @@ export function runChecks(
   return { valid: errors.length === 0, errors };
 }
 
-export function evaluateCondition(
+function evaluateCondition(
   check: CheckDef,
   dataModel: Record<string, unknown>,
   scopeData?: Record<string, unknown>,

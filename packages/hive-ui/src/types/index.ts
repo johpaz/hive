@@ -2,7 +2,7 @@ export type { Agent, AgentConfig, AgentStatus, AgentActivity } from "./agent";
 export type { BridgeProcess, BridgeLog, CLIAdapter, BridgeProcessStatus } from "./bridge";
 export type { Message, Conversation, MessageType, MessageProcess, MessageProcessItem, MessageProcessKind, MessageProcessStatus } from "./chat";
 export type { WebSocketMessage, WebSocketStatus, WebSocketConfig } from "./websocket";
-export type { EthicsConfig, EthicsRule, EthicsLevel, EthicsTemplate, EthicsConflict } from "./ethics";
+export type { EthicsConfig, EthicsRule, EthicsLevel } from "./ethics";
 export type { UserConfig, UserPreference, UserMemory } from "./user";
 export type { Skill, SkillSource } from "./skill";
 export type { Tool, ToolConfig, ToolParameter, ToolPermission, ToolUsageStat } from "./tool";

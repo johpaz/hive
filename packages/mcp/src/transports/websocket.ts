@@ -151,9 +151,3 @@ export class WebSocketTransport implements Transport {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
   }
 }
-
-export function createWebSocketTransport(
-  config: WebSocketTransportConfig
-): Transport {
-  return new WebSocketTransport(config) as unknown as Transport;
-}

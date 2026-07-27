@@ -50,17 +50,13 @@ export {
   getDefaultPaths,
   loadEnvFile,
   mergeEnv,
-  validateGatewayConfig,
-  validateInstallationConfig,
   findFreePort,
   isPortAvailable,
-  waitForPort,
   waitForHttpPort,
   expandPath,
   getDistDir,
   isDevMode,
   isChildProcess,
-  getPlatformInfo,
 } from "./config";
 
 // Adapters
@@ -72,9 +68,5 @@ export { BinaryAdapter } from "./binary";
 export {
   detectAdapter,
   detectAllAdapters,
-  getInstallationType,
-  isInstallationTypeAvailable,
-  getAdapterByType,
   INSTALLATION_TYPE_NAMES,
-  INSTALLATION_TYPE_DESCRIPTIONS,
 } from "./factory";

@@ -38,7 +38,7 @@ export interface MCPToolDefinition {
  * resolves search results against executors by this exact string — so it
  * delegates to mcpToolFullName instead of duplicating the algorithm.
  */
-export function mcpToolId(serverName: string, toolName: string): string {
+function mcpToolId(serverName: string, toolName: string): string {
     return mcpToolFullName(serverName, toolName)
 }
 

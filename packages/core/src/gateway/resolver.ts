@@ -1,4 +1,4 @@
-import { col, updateDoc } from "../storage/hive"
+import { col } from "../storage/hive"
 import type { UserIdentityDoc, UserDoc, AgentDoc } from "../storage/collections"
 
 export interface ResolveContextResult {
@@ -56,25 +56,3 @@ export async function resolveContext(options: ResolveContextOptions): Promise<Re
   return { userId, threadId, agentId, isNewUser }
 }
 
-export async function getDefaultAgentId(): Promise<string> {
-  const agentsCol = await col<AgentDoc>("agents")
-  const coordinators = await agentsCol.findBy("role", "coordinator", { limit: 1 })
-  return coordinators[0]?.id || "bee"
-}
-
-export async function getUserById(userId: string): Promise<UserDoc | undefined> {
-  const usersCol = await col<UserDoc>("users")
-  return (await usersCol.get(userId))?.doc
-}
-
-export async function updateUserProfile(userId: string, updates: {
-  name?: string
-  language?: string
-  timezone?: string
-  occupation?: string
-  notes?: string
-}): Promise<void> {
-  if (Object.keys(updates).length > 0) {
-    await updateDoc<UserDoc>("users", userId, updates).catch(() => { /* not found */ })
-  }
-}

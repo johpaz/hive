@@ -63,7 +63,11 @@ export function useOfficeModel(catalogAgents: Agent[], graphNodes: GraphNode[]) 
   return useMemo(() => {
     const coordinator = graphNodes.find((n) => n.type === "agent" && n.data?.role === "coordinator");
 
-    const desks: DeskModel[] = catalogAgents.map((agent, index) => {
+    // Archived workers (curator: 14+ days unused, or agent_archive) keep their
+    // row for auditability but never occupy a desk in the live office.
+    const visibleAgents = catalogAgents.filter((agent) => agent.status !== "archived");
+
+    const desks: DeskModel[] = visibleAgents.map((agent, index) => {
       // Catalog agents keep their own fixed id everywhere (agents table,
       // canvas snapshot, WS status updates) — direct id match, no indirection.
       const liveNodes = graphNodes.filter((n) => n.type === "agent" && n.id === agent.id);

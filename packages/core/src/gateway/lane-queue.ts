@@ -19,7 +19,7 @@ export interface LaneQueueOptions {
 
 type TaskHandler<T> = (task: Task, signal: AbortSignal) => Promise<T>;
 
-export class LaneQueue {
+class LaneQueue {
   private queues: Map<string, Task[]> = new Map();
   private running: Map<string, Task> = new Map();
   private handlers: Map<string, TaskHandler<unknown>> = new Map();

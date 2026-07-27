@@ -16,10 +16,6 @@ export function setSchedulerInstance(scheduler: CronScheduler): void {
   _scheduler = scheduler;
 }
 
-export function getSchedulerInstance(): CronScheduler | null {
-  return _scheduler;
-}
-
 /**
  * GET /api/cron
  * List all scheduled tasks

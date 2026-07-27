@@ -7,7 +7,7 @@ const log = logger.child("llm-client")
 const DEFAULT_BASE = "https://llm.hiveagents.io"
 
 /** Contexto por defecto que se solicita al backend de HiveAgents al cargar un modelo. */
-export const HIVEAGENTS_DEFAULT_LOAD_CTX = 50000
+const HIVEAGENTS_DEFAULT_LOAD_CTX = 50000
 
 // Cloudflare blocks requests with the OpenAI SDK User-Agent and x-stainless-* fingerprint headers.
 const BLOCKED_HEADERS = [

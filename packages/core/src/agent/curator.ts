@@ -86,7 +86,7 @@ export async function runCurator(): Promise<void> {
     )
 
     for (const worker of staleWorkers) {
-      await agentsCol.put(worker.id, { ...worker.doc, status: "archived", updated_at: Date.now() }, { expectedVersion: worker.version })
+      await agentsCol.put(worker.id, { ...worker.doc, status: "archived", enabled: false, updated_at: Date.now() }, { expectedVersion: worker.version })
 
       // Add playbook note about archival
       const currentPlaybook = await playbookCol.scan({})

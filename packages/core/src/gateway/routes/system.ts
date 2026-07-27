@@ -270,7 +270,7 @@ const numCores = cpus().length || 1
 let lastCpuSample = process.cpuUsage()
 let lastCpuSampleTime = Date.now()
 
-export function getSystemStats(startTime: number) {
+function getSystemStats(startTime: number) {
   const mem = process.memoryUsage()
   const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000)
   const uptimeStr = new Date(uptimeSeconds * 1000).toISOString().substr(11, 8)

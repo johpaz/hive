@@ -78,7 +78,7 @@ export interface SlashCommand {
 
 const slashCommands = new Map<string, SlashCommand>();
 
-export function registerSlashCommand(command: SlashCommand): void {
+function registerSlashCommand(command: SlashCommand): void {
   slashCommands.set(command.name, command);
 }
 
@@ -86,7 +86,7 @@ export function isSlashCommand(content: string): boolean {
   return content.startsWith("/") && content.length > 1;
 }
 
-export function parseSlashCommand(content: string): { name: string; args: string[] } | null {
+function parseSlashCommand(content: string): { name: string; args: string[] } | null {
   if (!isSlashCommand(content)) return null;
 
   const parts = content.slice(1).split(/\s+/);

@@ -29,7 +29,7 @@ async function getSingleUser(): Promise<{ id: string; version: number; doc: User
   return (await usersCol.scan({ limit: 1 }))[0];
 }
 
-export async function generateTokens(userId: string): Promise<AuthTokens> {
+async function generateTokens(userId: string): Promise<AuthTokens> {
   const accessToken = jwt.sign({ userId, type: "access" }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
   const refreshToken = jwt.sign({ userId, type: "refresh", jti: crypto.randomUUID() }, JWT_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
 
@@ -46,37 +46,6 @@ export async function generateTokens(userId: string): Promise<AuthTokens> {
     expiresIn: ACCESS_TOKEN_EXPIRY_SECONDS,
     tokenType: "Bearer"
   };
-}
-
-export async function refreshAccessToken(refreshToken: string): Promise<AuthTokens | null> {
-  try {
-    const decoded = jwt.verify(refreshToken, JWT_SECRET) as { userId: string; type: string; jti: string };
-    if (decoded.type !== "refresh") return null;
-
-    const tokenHash = hashToken(refreshToken);
-    const tokensCol = await col<RefreshTokenDoc>("refreshTokens");
-    const matches = await tokensCol.findBy("token_hash", tokenHash);
-    const now = Math.floor(Date.now() / 1000);
-    const stored = matches.find(e => !e.doc.revoked && e.doc.expires_at > now);
-
-    if (!stored) return null;
-
-    await tokensCol.delete(stored.id);
-
-    return generateTokens(stored.doc.user_id);
-  } catch {
-    return null;
-  }
-}
-
-export async function validateAccessToken(token: string): Promise<{ userId: string } | null> {
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; type: string };
-    if (decoded.type !== "access") return null;
-    return { userId: decoded.userId };
-  } catch {
-    return null;
-  }
 }
 
 function getAuthTokenFromFile(): string {
