@@ -15,7 +15,7 @@ Generado desde el código fuente para Hive **1.0.0**.
 | `@johpaz/hive-agents-mcp` | `1.0.0` |
 | `@johpaz/hive-agents-skills` | `1.0.0` |
 
-## Herramientas (57)
+## Herramientas (58)
 
 | Herramienta | Categoría | Descripción |
 |---|---|---|
@@ -71,20 +71,20 @@ Generado desde el código fuente para Hive **1.0.0**.
 | `report_progress` | core | Report progress of an ongoing task to the user. Sends a real-time update to the active channel. Use frequently during long operations so the user knows what's happening. |
 | `save_note` | core | Save a note to the scratchpad (survives context compression). |
 | `search_knowledge` | core | Busca en TODO el conocimiento de Hive: tools nativas, MCP, skills, agentes de catálogo y playbook. |
-| `task_delegate` | agents | Delegate a bounded task to an existing worker_id (any `agents` row: catalog-seeded or agent_create-made). The delivery is independently verified before success is returned. mode=sync blocks the conversation until done; mode=async enqueues and frees the conversation immediately — the user is notified automatically in this same chat when the worker finishes. Prefer async unless you expect the result in a few seconds. |
+| `task_delegate` | agents | Delegate a bounded task to an existing worker_id (any `agents` row: catalog-seeded or agent_create-made). The delivery goes through deterministic acceptance checks (no LLM); you judge anything they don't cover in your closing turn, and use task_revise to send it back with feedback if it doesn't meet its criteria. mode=sync blocks the conversation until done; mode=async enqueues and frees the conversation immediately — the user is notified automatically in this same chat when the worker finishes. Prefer async unless you expect the result in a few seconds. |
 | `task_list` | agents | List real delegated task executions for the current user. TaskDoc and JobDoc are the source of truth. Use this instead of agent_find to determine whether work is pending, running, completed, failed, or blocked. |
+| `task_revise` | agents | Send a completed or blocked delegated task back to its worker with concrete feedback, instead of reporting it as done. The worker resumes on the SAME thread — it keeps its prior context, so the feedback only needs to describe what's missing. Use this when a delivery doesn't meet its acceptance criteria and you can't fix it yourself. |
 | `task_status` | agents | Get execution status of one or more delegated tasks. Accepts string or numeric IDs. Spanish: estado tarea delegada, verificar progreso, consultar tarea |
 | `web_fetch` | web | Fetch plain content from a URL (lightweight, no JS). Spanish: obtener página, descargar contenido, extraer texto de url |
 | `web_search` | web | Search the web for current information and research. Spanish: buscar en internet, búsqueda web, noticias, información |
 
-## Skills incluidas (24)
+## Skills incluidas (23)
 
 | Skill | Categoría | Versión | Herramientas | Agentes preferidos |
 |---|---|---:|---|---|
 | `a2ui_dashboard` | a2ui | 1.0.0 | `a2ui_create_surface`, `a2ui_update_components`, `a2ui_update_data_model`, `a2ui_delete_surface` | — |
 | `a2ui_form` | a2ui | 1.0.0 | `a2ui_create_surface`, `a2ui_update_components`, `a2ui_update_data_model`, `a2ui_delete_surface` | — |
 | `a2ui_interactive` | a2ui | 1.0.0 | `a2ui_create_surface`, `a2ui_update_components`, `a2ui_update_data_model`, `a2ui_delete_surface` | — |
-| `acceptance_verification` | agents | 1.0.0 | `fs_read`, `fs_exists`, `fs_list`, `web_fetch`, `browser_navigate`, `browser_extract`, `browser_screenshot`, `office_leer_pdf`, `office_leer_docx`, `office_leer_xlsx`, `office_leer_pptx`, `cron.list`, `cron.history`, `task_status` | `acceptance_verifier` |
 | `agent_spawner` | agents | 1.1.0 | `get_available_models`, `agent_find`, `agent_create`, `agent_archive` | — |
 | `api_client` | api | 1.0.0 | `api_request` | — |
 | `browser_automate` | web | 1.0.0 | `browser_navigate`, `browser_click`, `browser_type`, `browser_screenshot` | — |
@@ -106,7 +106,7 @@ Generado desde el código fuente para Hive **1.0.0**.
 | `web_research` | web | 1.0.0 | `web_search`, `web_fetch` | — |
 | `workspace_file_operator` | filesystem | 1.0.0 | `fs_read`, `fs_write`, `fs_edit`, `fs_delete`, `fs_list`, `fs_glob`, `fs_exists` | `workspace_file_operator` |
 
-## Agentes de catálogo (9)
+## Agentes de catálogo (8)
 
 | ID | Nombre | Propósito | Herramientas autorizadas | Skills |
 |---|---|---|---|---|
@@ -118,7 +118,6 @@ Generado desde el código fuente para Hive **1.0.0**.
 | `a2ui_builder` | Constructor A2UI | Construye formularios, dashboards y flujos interactivos compatibles con A2UI v0.9. | `a2ui_*` | `a2ui_form`, `a2ui_dashboard`, `a2ui_interactive` |
 | `schedule_automation_agent` | Operador de cron | Crea y administra jobs programados de Hive: automatizaciones recurrentes o ejecuciones únicas mediante cron.*. | `cron.*` | `cron_manager`, `cron_reminder` |
 | `api_operator` | Operador de APIs | Ejecuta y verifica operaciones contra APIs REST expresamente autorizadas. | `api_request` | `api_client` |
-| `acceptance_verifier` | Verificador de cumplimiento | Verifica de forma independiente que una tarea cumplió todos sus criterios antes de autorizar que el principal reporte éxito. | `fs_read`, `fs_exists`, `fs_list`, `web_fetch`, `browser_navigate`, `browser_extract`, `browser_screenshot`, `artifact_inspect`, `office_leer_*`, `cron.list`, `cron.history`, `task_status` | `acceptance_verification` |
 
 ## Exports públicos
 

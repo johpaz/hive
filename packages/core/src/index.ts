@@ -13,7 +13,7 @@ export * from "./agent/skill-selector.ts";
 export * from "./agent/playbook-selector.ts";
 export * from "./agent/catalog-selector.ts";
 export * from "./agent/delegation-runtime.ts";
-export * from "./agent/acceptance-verifier.ts";
+export * from "./agent/acceptance-checks.ts";
 export * from "./agent/llm-client.ts";
 
 // Channels

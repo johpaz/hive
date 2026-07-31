@@ -1,5 +1,5 @@
 import { col, updateDoc, toIndexable, fromIndexable } from "../../storage/hive"
-import type { AgentDoc, AgentProposalDoc, McpServerDoc, SkillDoc, UserDoc, VerificationDoc } from "../../storage/collections"
+import type { AgentDoc, AgentProposalDoc, McpServerDoc, SkillDoc, TaskDoc, UserDoc } from "../../storage/collections"
 import { emitCanvas } from "../../canvas/emitter"
 import { storeAgentHeaders, deleteAgentSecrets } from "../../storage/crypto"
 import { getDefaultLLM } from "../../agent/llm-client"
@@ -11,7 +11,7 @@ export async function handleGetAgents(req: Request, addCorsHeaders: (r: Response
 
   const agentsCol = await col<AgentDoc>("agents")
   const usersCol = await col<UserDoc>("users")
-  const verificationsCol = await col<VerificationDoc>("verifications")
+  const tasksCol = await col<TaskDoc>("tasks")
   const skillsCol = await col<SkillDoc>("skills")
   const mcpServersCol = await col<McpServerDoc>("mcpServers")
   const mcpServers = new Map(
@@ -49,11 +49,11 @@ export async function handleGetAgents(req: Request, addCorsHeaders: (r: Response
 
     let lastVerification: { status: string; taskId: string; createdAt: number } | null = null
     if (isCatalog) {
-      const verificationRows = await verificationsCol.findBy("executor_agent_id", row.doc.id)
-      const latest = verificationRows.length
-        ? verificationRows.map(e => e.doc).sort((a, b) => b.created_at - a.created_at)[0]
+      const taskRows = await tasksCol.findBy("agent_id", row.doc.id)
+      const latest = taskRows.length
+        ? taskRows.map(e => e.doc).sort((a, b) => b.updated_at - a.updated_at)[0]
         : null
-      lastVerification = latest ? { status: latest.status, taskId: latest.task_id, createdAt: latest.created_at } : null
+      lastVerification = latest ? { status: latest.status, taskId: latest.id, createdAt: latest.updated_at } : null
     }
 
     return {

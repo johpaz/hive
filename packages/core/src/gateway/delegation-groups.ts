@@ -106,22 +106,35 @@ function isComplete(group: DelegationGroupDoc): boolean {
   return expected.size > 0 && [...expected].every((id) => completed.has(id));
 }
 
+function summarize(value: unknown, maxLen = 800): unknown {
+  if (typeof value !== "string") return value;
+  return value.length > maxLen ? `${value.slice(0, maxLen)}…` : value;
+}
+
 function summaryPrompt(group: DelegationGroupDoc): string {
-  const factual = outcomes(group).map((outcome) => ({
-    task_id: outcome.task_id,
-    worker_id: outcome.worker_id,
-    task: outcome.task_name,
-    ok: outcome.ok,
-    result: outcome.result,
-    error: outcome.error,
-  }));
+  const factual = outcomes(group).map((outcome) => {
+    const result = outcome.result as { content?: unknown; acceptance?: unknown; checks?: { status?: string; summary?: string } } | null;
+    return {
+      task_id: outcome.task_id,
+      worker_id: outcome.worker_id,
+      task: outcome.task_name,
+      ok: outcome.ok,
+      content: summarize(result?.content ?? outcome.result),
+      acceptance: result?.acceptance ?? null,
+      checks: result?.checks ? { status: result.checks.status, summary: summarize(result.checks.summary) } : null,
+      error: outcome.error,
+    };
+  });
   // No manual framing here — persisted with source:"delegation_summary" and
   // framed at serialization time by formatInternalEvent (conversation-store.ts).
   return [
     "Todas las tareas delegadas de este turno alcanzaron estado terminal.",
-    "Sintetiza UNA sola respuesta final para el usuario basándote exclusivamente en estos resultados y sus verificaciones.",
-    "No declares éxito para resultados con ok=false y no inventes trabajo ni evidencia.",
-    "Escribí en lenguaje natural para un humano: nunca expongas task_id, worker_id, verification_id, nombres de tools ni JSON crudo.",
+    "Para cada una, comprobá la entrega contra sus criterios de aceptación (`acceptance`):",
+    '- checks.status="passed" → verificado determinísticamente, aceptá.',
+    '- checks.status="failed" → NO cumplió (ok=false). No lo reportes como éxito.',
+    '- checks.status="unchecked" o ausente → juzgalo vos con el contenido y la evidencia adjunta.',
+    "Si una entrega no cumple sus criterios: usá `task_revise` con el task_id y un feedback concreto, o arreglala vos si es trivial y tenés las tools. No inventes trabajo ni evidencia, y no declares éxito para ok=false.",
+    "Si todas cumplen, escribí UNA sola respuesta final para el usuario, en lenguaje natural: nunca expongas task_id, worker_id, nombres de tools ni JSON crudo.",
     JSON.stringify(factual),
   ].join("\n\n");
 }

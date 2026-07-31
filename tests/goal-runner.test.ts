@@ -27,7 +27,6 @@ let executeToolBatchSpy: ReturnType<typeof spyOn>;
 let queue: DurableLaneQueue | null = null;
 
 const VERIFIER_MARKER = "Evaluá si el siguiente objetivo";
-const INDEPENDENT_VERIFIER_MARKER = "Auditá independientemente esta entrega";
 
 async function seedTestAgent() {
   const usersCol = await col<UserDoc>("users");
@@ -163,31 +162,10 @@ afterEach(() => {
 describe("goal-runner: verify → continue → complete/fail", () => {
   test("verifier fails twice then passes → run completed with goal_attempts=3", async () => {
     let verifierCalls = 0;
-    let independentVerifierCalls = 0;
     callLLMSpy.mockImplementation(async (opts: any) => {
       const msgs = opts.messages ?? [];
       const last = msgs[msgs.length - 1];
       const text = typeof last?.content === "string" ? last.content : "";
-      if (text.includes(INDEPENDENT_VERIFIER_MARKER)) {
-        independentVerifierCalls++;
-        return {
-          content: JSON.stringify({
-            status: "verified",
-            criterion_results: [{
-              criterion_id: "objective",
-              met: true,
-              evidence: ["El verificador preliminar confirmó la meta."],
-              check_used: "independent_review",
-              confidence: 0.9,
-            }],
-            summary: "Entrega verificada independientemente.",
-            retry_guidance: null,
-            risks: [],
-          }),
-          stop_reason: "stop" as const,
-          usage: { input_tokens: 20, output_tokens: 10 },
-        };
-      }
       if (text.includes(VERIFIER_MARKER)) {
         verifierCalls++;
         const met = verifierCalls >= 3;
@@ -219,7 +197,6 @@ describe("goal-runner: verify → continue → complete/fail", () => {
     expect(run.goal_attempts).toBe(3);
     expect(run.turns_used).toBe(3);
     expect(verifierCalls).toBe(3);
-    expect(independentVerifierCalls).toBe(1);
     // Checkpoint state cleared on completion
     expect(run.state_json).toBe("");
   });

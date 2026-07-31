@@ -25,20 +25,12 @@ export interface BuildProofPacketInput {
   evidence: string[];
   knownLimits?: string | null;
   epoch?: RunEpoch | null;
-  /** Mandatory for met=true: independent acceptance_verifier verdict id. */
-  verificationId?: string | null;
   catalogAgentId?: string | null;
 }
 
 export async function buildProofPacket(input: BuildProofPacketInput): Promise<ProofPacketDoc> {
-  if (input.met) {
-    if (!input.verificationId) {
-      throw new Error("A successful proof packet requires an independent verification_id");
-    }
-    const { getVerifiedVerification } = await import("./acceptance-verifier");
-    if (!(await getVerifiedVerification(input.verificationId, input.runId))) {
-      throw new Error(`Verification ${input.verificationId} is missing, rejected, or belongs to another run`);
-    }
+  if (input.met && (input.checksRun.length === 0 || input.evidence.length === 0)) {
+    throw new Error("A successful proof packet requires at least one check run and non-empty evidence");
   }
   const id = await nextId("proofPackets");
   const acceptanceResults: AcceptanceResult[] =
@@ -54,7 +46,6 @@ export async function buildProofPacket(input: BuildProofPacketInput): Promise<Pr
     evidence_json: JSON.stringify(input.evidence),
     known_limits: input.knownLimits ?? null,
     epoch_json: input.epoch ? JSON.stringify(input.epoch) : null,
-    verification_id: toIndexable(input.verificationId),
     catalog_agent_id: toIndexable(input.catalogAgentId),
     met: input.met,
     created_at: Date.now(),

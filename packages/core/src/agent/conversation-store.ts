@@ -53,7 +53,7 @@ export function isInternalSource(source: string | null | undefined): boolean {
 
 export function formatInternalEvent(source: string, content: string): string {
   return `<hive:internal_event source="${source}">\n` +
-    `Evento interno del sistema — NO es un mensaje del usuario. No lo cites literalmente, no expongas IDs internos (task_id, worker_id, verification_id) ni JSON crudo. Respondé al usuario de forma natural y breve.\n\n` +
+    `Evento interno del sistema — NO es un mensaje del usuario. No lo cites literalmente, no expongas IDs internos (task_id, worker_id) ni JSON crudo. Respondé al usuario de forma natural y breve.\n\n` +
     `${content}\n` +
     `</hive:internal_event>`
 }

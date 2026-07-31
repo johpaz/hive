@@ -1,6 +1,6 @@
 # Agentes y delegación
 
-Hive siembra 9 agentes de catálogo como filas normales de la colección `agents`. Sus IDs y contratos están en el [inventario generado](inventario.md).
+Hive siembra 8 agentes de catálogo como filas normales de la colección `agents`. Sus IDs y contratos están en el [inventario generado](inventario.md).
 
 ## Modelo
 
@@ -36,15 +36,15 @@ consultar disponibilidad corresponde al especialista MCP del servidor de
 calendario. La frase «agenda una reunión» se interpreta como calendario, no
 como `cron.create`.
 
-## Verificación
+## Aceptación
 
-`acceptance_verifier` usa un modelo que, cuando es posible, pertenece a una familia diferente. Comprueba cada criterio con readback, inspección o evidencia trazada. Devuelve:
+No hay un agente verificador separado: cada entrega pasa por `runAcceptanceChecks` (sin LLM) antes de llegar al coordinador. Por criterio, ejecuta su `checkTool` si lo declara, inspecciona artefactos referenciados (`artifact_inspect`) y aplica gates baratos (entrega no vacía, el worker no declaró `status: failed`). El resultado es:
 
-- `verified`: todos los criterios están demostrados.
-- `needs_evidence`: falta evidencia que podría obtenerse.
-- `rejected`: el resultado contradice el objetivo.
+- `passed`: al menos un check determinístico confirmó la entrega y ninguno falló.
+- `failed`: algún check determinístico falló — la tarea queda `blocked` sin llegar al coordinador.
+- `unchecked`: ningún criterio tenía check determinístico — el coordinador la juzga con el contenido y la evidencia adjunta, en el mismo turno de cierre que ya sintetiza la respuesta.
 
-El verificador no corrige la tarea. El coordinador decide si delega una reparación o informa el límite.
+El coordinador nunca repara la tarea a ciegas: si no cumple sus criterios, usa `task_revise` para devolverla al mismo worker (mismo `thread_id`, conserva su contexto) con feedback concreto, o la corrige él mismo si es trivial.
 
 ## Administración
 

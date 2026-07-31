@@ -95,7 +95,7 @@ export interface AgentDoc {
   workspace_scope_json?: string | null
   model_override_json?: string | null
   default_acceptance_json?: string | null
-  /** ACE learning counters — updated by independent verifier verdicts (acceptance-verifier.ts), not by loop completion. */
+  /** ACE learning counters — updated by deterministic acceptance checks and the coordinator's own accept/revise judgment (acceptance-checks.ts), not by loop completion. */
   helpful_count?: number
   harmful_count?: number
   seed_version?: number
@@ -459,8 +459,6 @@ export interface ProofPacketDoc {
   known_limits: string | null
   /** Fixed-worker epoch this run executed under — copied from AgentRunDoc.epoch_json. */
   epoch_json: string | null
-  /** Required when met=true. Points at an independent verified verdict. */
-  verification_id: string
   /** `toIndexable`-encoded catalog agent id, or `NO_PARENT`. */
   catalog_agent_id: string
   met: boolean
@@ -484,48 +482,6 @@ export interface ArtifactDoc {
   created_at: number
   expires_at: number
   expired_at: number | null
-}
-
-export interface VerificationCriterionResult {
-  criterion_id: string
-  met: boolean
-  evidence: string[]
-  check_used: string
-  confidence: number
-}
-
-export interface VerificationVerdict {
-  status: "verified" | "rejected" | "needs_evidence"
-  criterion_results: VerificationCriterionResult[]
-  summary: string
-  retry_guidance: string | null
-  risks: string[]
-}
-
-/** Independent acceptance-gate record. Executors cannot write a verified proof packet without one. */
-export interface VerificationDoc {
-  id: string
-  run_id: string
-  task_id: string
-  /** Any AgentDoc id (catalog-seeded or not). */
-  executor_agent_id: string
-  verifier_agent_id: "acceptance_verifier"
-  objective: string
-  acceptance_json: string
-  verdict_json: string
-  status: VerificationVerdict["status"]
-  attempt: number
-  executor_epoch_json: string
-  verifier_epoch_json: string
-  /** Diagnostic classification when the verifier could not produce a usable verdict. */
-  failure_code?: "invalid_output" | "verifier_error" | null
-  /** Sanitized diagnostic detail; never used to authorize success. */
-  failure_detail?: string | null
-  /** Bounded and sanitized preview of the verifier output. */
-  raw_output_preview?: string | null
-  verifier_provider?: string | null
-  verifier_model?: string | null
-  created_at: number
 }
 
 export interface AgentProposalDoc {
@@ -639,7 +595,7 @@ export interface NarrationEventDoc {
   session_id: string
   agent_id: string
   agent_name: string
-  kind: "delegated" | "worker_started" | "tool_call" | "tool_result" | "verifying" | "verified" | "failed" | "group_ready"
+  kind: "delegated" | "worker_started" | "tool_call" | "tool_result" | "verified" | "failed" | "group_ready"
   status: "queued" | "running" | "done" | "error"
   label: string
   detail: string | null

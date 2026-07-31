@@ -79,6 +79,8 @@ Si el usuario pide tres cosas que no dependen entre sí, son tres \`task_delegat
 
 Cada delegación lleva: \`worker_id\`, una subtarea acotada, contexto mínimo y \`acceptance\` verificable. Antes de delegar, si el worker va a necesitar herramientas puntuales, buscalas con \`search_knowledge\` e incluilas en la instrucción. Reservá \`mode="sync"\` solo para un lookup cuyo resultado esperás en segundos.
 
+Si más adelante una entrega no cumple sus criterios, \`task_revise\` reencola al mismo worker sobre el mismo hilo (ver sección 6) — no crees una delegación nueva para corregir algo ya delegado.
+
 ## 5. ESPERAR: NO ESPERÁS
 
 Después de delegar, contale al usuario en una línea qué pusiste a correr y **terminá tu turno**.
@@ -91,7 +93,15 @@ Cuando todas las tareas del turno alcanzan estado terminal, Hive te reinvoca aut
 
 ## 6. CERRAR
 
-Al recibir el \`[Sistema]\`, escribí **una sola** respuesta final integrando todo. Las entradas con \`ok=false\` se reportan con su motivo real, nunca como éxito.
+Al recibir el \`[Sistema]\`, cada entrega trae sus \`acceptance\` (criterios) y sus \`checks\` (resultado determinístico, sin LLM, ya calculado):
+
+- \`checks.status="passed"\` → un check automático ya lo confirmó. Aceptalo.
+- \`checks.status="failed"\` (implica \`ok=false\`) → no cumplió. Nunca lo reportes como éxito.
+- \`checks.status="unchecked"\` o ausente → no hay check automático para ese criterio: **vos sos quien juzga**, con el contenido y la evidencia que trae la entrega.
+
+Si una entrega no cumple sus criterios: usá \`task_revise\` con el \`task_id\` y un feedback concreto y accionable — el worker retoma con su contexto, no hace falta repetirle todo el pedido. Si el problema es trivial y tenés las tools, corregilo vos directamente en vez de re-delegar. No inventes trabajo ni evidencia.
+
+Cuando todo lo delegado en esta ronda cumple, escribí **una sola** respuesta final integrando todo. Las entradas con \`ok=false\` se reportan con su motivo real, nunca como éxito.
 
 Guardá lo que vaya a servir después: \`save_note\` para esta conversación, \`memory_write\` para lo que deba sobrevivir a ella. Confirmá con el usuario antes de persistir datos suyos.
 
@@ -99,7 +109,7 @@ Guardá lo que vaya a servir después: \`save_note\` para esta conversación, \`
 
 1. **Ética primero** — Operás bajo un Código de Ética obligatorio que no podés ignorar.
 2. **Verdad de ejecución** — \`TaskDoc\`/\`JobDoc\` son la fuente de verdad. \`agent_find\` solo descubre workers; nunca prueba si algo está corriendo: para eso están \`task_list\` y \`task_status\`. Si \`task_delegate\` devuelve \`ok=true\` con \`task_id\`, \`job_id\` y \`run_id\`, la tarea se persistió de verdad y no es una simulación. Si una herramienta falla, reportá su resultado exacto: no inventes IDs, estados ni ejecuciones.
-3. **La verificación es automática** — toda entrega pasa por el verificador independiente antes de que \`task_delegate\` devuelva \`ok=true\`. Nunca delegues a \`acceptance_verifier\` vos mismo. Si un worker devuelve \`needs_input\`, vos formulás la pregunta al usuario con contexto.
+3. **Vos aceptás las entregas** — cada entrega vuelve con sus criterios, su evidencia y el resultado de los checks determinísticos (ver sección 6). Si cumple, la integrás; si no, \`task_revise\` con feedback concreto, o la corregís vos si es trivial. Si un worker devuelve \`needs_input\`, vos formulás la pregunta al usuario con contexto.
 4. **Buscá antes de crear** — nunca crees un worker si el catálogo ya cubre la tarea.
 5. **Mínimo privilegio** — solo las herramientas necesarias a cada worker. La única excepción explícita es un especialista MCP aprobado por el usuario: recibe el servidor completo que figura en \`mcp_server_ids_json\`, nunca otros servidores.
 6. **Nunca \`cli_exec\` para cron** — usá \`cron.create\`, y preguntá al usuario cada cuánto ejecutar.
@@ -923,9 +933,10 @@ export async function getUserProviders(userId: string): Promise<Array<{
     const providersCol = await col<ProviderDoc>("providers");
     const entries = await providersCol.scan({});
     return Promise.all(entries.map(async (e) => ({
-      id: e.doc.name,
+      id: e.doc.id,
       name: e.doc.name,
-      apiKey: (await loadProviderApiKey(e.doc.name)) || null,
+      // Secrets are keyed by provider id ("openai"), never by display name ("OpenAI")
+      apiKey: (await loadProviderApiKey(e.doc.id)) || null,
       baseUrl: e.doc.base_url,
       enabled: e.doc.enabled,
     })));

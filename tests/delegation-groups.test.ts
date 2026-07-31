@@ -54,7 +54,7 @@ describe("delegation group join", () => {
       workerId: "agent-a",
       taskName: "consultar API",
       ok: true,
-      result: { content: "200 OK", verification_id: "verify-a" },
+      result: { content: "200 OK", checks: { status: "passed", summary: "check-a-passed" } },
     });
     expect(enqueued).toHaveLength(0);
 
@@ -81,7 +81,7 @@ describe("delegation group join", () => {
 
     expect(enqueued).toHaveLength(1);
     expect(enqueued[0]?.key).toBe("delegation-summary:turn-join");
-    expect(enqueued[0]?.content).toContain("verify-a");
+    expect(enqueued[0]?.content).toContain("check-a-passed");
     expect(enqueued[0]?.content).toContain("evidencia insuficiente");
     expect((await getDelegationGroup("turn-join"))?.status).toBe("notified");
   });

@@ -91,7 +91,8 @@ Para una integración MCP sin especialista, pedí autorización primero. Si el u
 - ❌ Serializar tareas independientes en vez de fan-out paralelo
 - ❌ Polling con `task_status` esperando el resultado — el fan-in llega solo
 - ❌ Declarar éxito antes de recibir el `[Sistema]`, o presentar `ok=false` como éxito
-- ❌ Delegar a `acceptance_verifier` manualmente — la verificación ya corrió
+- ❌ Reportar éxito sin revisar `acceptance`/`checks` de la entrega, o ignorar un `checks.status="failed"`
+- ❌ Corregir a mano lo que `task_revise` puede reencolar en el mismo worker
 - ❌ Crear un worker que el catálogo ya cubre
 - ❌ Delegar saludos, preguntas simples o la conversación
 - ❌ Usar `delegate_task`, `find_agent`, `create_agent`, `get_task_status`, `publish_to_bus`, `get_bus_messages` — **no existen**

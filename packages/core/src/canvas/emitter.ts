@@ -19,7 +19,6 @@ export type CanvasEventType =
 
 export type CanvasWorkPhase =
   | "delegated"
-  | "review_started"
   | "review_passed"
   | "review_failed"
   | "completed"
@@ -147,49 +146,6 @@ export function emitDelegationFinished(opts: { workerId: string; taskRef: string
     changes: { status: "idle", currentTool: null, currentTask: null, taskId: null, delegatedBy: null },
   })
   emitCanvas("canvas:edge_remove", { id: `deleg_${opts.taskRef}` })
-}
-
-/**
- * Fase de verificación del loop: el verificador independiente revisa la
- * entrega del worker. Se visualiza como un eslabón worker → verificador.
- */
-export function emitVerificationStarted(opts: {
-  verifierId: string
-  workerId: string
-  taskRef: string
-  taskName: string
-}) {
-  emitWorkEvent({
-    phase: "review_started",
-    taskRef: opts.taskRef,
-    taskName: opts.taskName,
-    actorId: opts.workerId,
-    targetId: opts.verifierId,
-  })
-  emitCanvas("canvas:node_update", {
-    nodeId: opts.verifierId,
-    changes: {
-      status: "thinking",
-      currentTask: `Verificar: ${opts.taskName}`,
-      taskId: opts.taskRef,
-      delegatedBy: opts.workerId,
-    },
-  })
-  emitCanvas("canvas:edge_add", {
-    id: `review_${opts.taskRef}`,
-    source: opts.workerId,
-    target: opts.verifierId,
-    edgeType: "reviews",
-    data: { taskId: opts.taskRef, taskName: opts.taskName },
-  })
-}
-
-export function emitVerificationFinished(opts: { verifierId: string; taskRef: string }) {
-  emitCanvas("canvas:node_update", {
-    nodeId: opts.verifierId,
-    changes: { status: "idle", currentTool: null, currentTask: null, taskId: null, delegatedBy: null },
-  })
-  emitCanvas("canvas:edge_remove", { id: `review_${opts.taskRef}` })
 }
 
 export async function getCanvasSnapshot() {

@@ -23,6 +23,7 @@ export const MINIMAL_TOOLS = new Set([
   "save_note",
   // Orchestration: the coordinator's own competency, not an optional capability
   "task_delegate",
+  "task_revise",
   "agent_find",
   "task_status",
 ])

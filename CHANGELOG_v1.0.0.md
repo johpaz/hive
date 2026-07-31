@@ -6,7 +6,7 @@ Hive 1.0 consolida el runtime local-first alrededor de agentes de catálogo, des
 
 ## Añadido
 
-- 9 agentes de catálogo persistentes con routing, scopes, criterios de aceptación y overrides de modelo.
+- 8 agentes de catálogo persistentes con routing, scopes, criterios de aceptación y overrides de modelo.
 - Carga mínima de siete herramientas y descubrimiento dinámico mediante `search_knowledge`.
 - Grupos de delegación paralela con fan-in y síntesis posterior.
 - Verificador independiente, criterios de aceptación y proof packets.
@@ -64,7 +64,7 @@ hive start
 Después del arranque:
 
 1. Confirma proveedor y modelo del coordinador.
-2. Revisa los 9 agentes de catálogo y sus overrides.
+2. Revisa los 8 agentes de catálogo y sus overrides.
 3. Verifica canales y servidores MCP.
 4. Sustituye nombres de tools retiradas en skills administradas.
 5. Ejecuta una delegación y comprueba su evidencia.

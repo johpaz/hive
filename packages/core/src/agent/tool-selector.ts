@@ -184,6 +184,7 @@ export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
 
     // Agent delegation and communication
     { name: "task_delegate", description: "Delegate general task to worker agent. Spanish keywords: delegar tarea, asignar worker, ejecutar por agente, encomendar tarea", category: "agents", abstractionLevel: "orchestration" },
+    { name: "task_revise", description: "Send a delegated task back to its worker with feedback when it does not meet its acceptance criteria. Spanish keywords: corregir tarea, devolver al worker, pedir correccion, reencolar tarea", category: "agents", abstractionLevel: "orchestration" },
     { name: "task_list", description: "List real delegated task executions for the current user from persisted tasks and jobs. Spanish keywords: listar tareas activas, subagentes trabajando, ejecuciones reales", category: "agents", abstractionLevel: "atomic" },
     { name: "task_status", description: "Get execution status of delegated tasks. Spanish keywords: estado tarea delegada, verificar progreso, consultar tarea, progreso delegado", category: "agents", abstractionLevel: "atomic" },
     { name: "bus_publish", description: "Publish message to Agent Bus for worker-to-worker communication. Spanish keywords: publicar mensaje, comunicar workers, enviar bus, mensaje bus", category: "agents", abstractionLevel: "atomic" },

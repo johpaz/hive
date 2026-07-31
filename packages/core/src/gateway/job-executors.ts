@@ -22,7 +22,7 @@ import { getDurableQueue } from "./durable-queue";
 import { sendToUserChannel } from "./channel-notify";
 import { verifyGoal } from "../agent/goal-runner";
 import { buildProofPacket } from "../agent/proof-packet";
-import { verifyAgentDelivery } from "../agent/acceptance-verifier";
+import { runAcceptanceChecks, recordAgentOutcome } from "../agent/acceptance-checks";
 import { prepareDelegation, type PreparedDelegation } from "../agent/delegation-runtime";
 import { runWebchatTurn, type WebchatTurnPayload } from "./webchat-turn";
 import { agentBus } from "../events/agent-bus";
@@ -32,11 +32,8 @@ import { publishNarration } from "../events/narration";
 import {
   emitDelegationStarted,
   emitDelegationFinished,
-  emitVerificationStarted,
-  emitVerificationFinished,
   emitWorkEvent,
 } from "../canvas/emitter";
-import { VERIFIER_AGENT_ID } from "../agent/acceptance-verifier";
 
 const log = logger.child("job-executors");
 
@@ -174,44 +171,24 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
     }
 
     const finishedRun = runId ? await getRun(runId) : null;
-    if (turnId && originThreadId) {
-      await publishNarration({
-        turnId,
-        threadId: originThreadId,
-        channel: originChannel,
-        userId: originUserId,
-        sessionId: originSessionId,
-        agentId: workerId,
-        agentName: workerName,
-        kind: "verifying",
-        status: "running",
-        label: `El verificador está revisando la entrega de ${workerName}`,
-        dedupeKey: `verifying:${taskId ?? job.id}`,
-      });
-    }
-    emitVerificationStarted({ verifierId: VERIFIER_AGENT_ID, workerId, taskRef: delegationRef, taskName });
-    const verification = await verifyAgentDelivery({
-      runId,
-      taskId,
-      executorAgentId: workerId,
+    const resolvedAcceptance = acceptance ?? (finishedRun ? deserializeAcceptance(finishedRun) : null);
+    const evidence = [result, ...execution.toolEvidence];
+    const checks = await runAcceptanceChecks({
       objective: taskDescription,
-      acceptance: acceptance ?? (finishedRun ? deserializeAcceptance(finishedRun) : null),
+      acceptance: resolvedAcceptance,
       delivery: result,
-      evidence: [result, ...execution.toolEvidence],
-      executorEpoch: finishedRun ? deserializeEpoch(finishedRun) : null,
-      mcpServerIds: prepared.mcpServerIds,
-      mcpManager,
+      evidence,
     });
-    const verdict = JSON.parse(verification.verdict_json);
-    emitVerificationFinished({ verifierId: VERIFIER_AGENT_ID, taskRef: delegationRef });
-    if (verification.status !== "verified") {
+
+    if (checks.status === "failed") {
+      await recordAgentOutcome(workerId, "harmful");
       emitWorkEvent({
         phase: "review_failed",
         taskRef: delegationRef,
         taskName,
-        actorId: VERIFIER_AGENT_ID,
+        actorId: parentAgentId || workerId,
         targetId: workerId,
-        detail: verdict.summary || "La entrega no superó la verificación",
+        detail: checks.summary,
       });
       if (turnId && originThreadId) {
         await publishNarration({
@@ -224,29 +201,31 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
           agentName: workerName,
           kind: "failed",
           status: "error",
-          label: `El verificador no aprobó la entrega de ${workerName}`,
-          detail: verdict.summary || "Falta evidencia independiente.",
+          label: `La entrega de ${workerName} no pasó los checks automáticos`,
+          detail: checks.summary,
           dedupeKey: `verification_failed:${taskId ?? job.id}`,
         });
       }
       if (taskId) {
         await updateDoc<TaskDoc>("tasks", taskId, {
           status: "blocked",
-          error: verdict.summary || "Independent verification did not authorize success.",
+          error: checks.summary,
           updated_at: Date.now(),
         } as Partial<TaskDoc>).catch(() => {});
       }
       return {
         ok: false,
-        error: verdict.summary || "Independent verification did not authorize success.",
+        error: checks.summary,
         retryable: false,
       };
     }
+
+    await recordAgentOutcome(workerId, "helpful");
     emitWorkEvent({
       phase: "review_passed",
       taskRef: delegationRef,
       taskName,
-      actorId: VERIFIER_AGENT_ID,
+      actorId: parentAgentId || workerId,
       targetId: workerId,
     });
     if (turnId && originThreadId) {
@@ -260,8 +239,8 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
         agentName: workerName,
         kind: "verified",
         status: "done",
-        label: `El verificador aprobó la entrega de ${workerName}`,
-        detail: `verification_id=${verification.id}`,
+        label: `${workerName} completó “${taskName}”`,
+        detail: checks.status === "passed" ? checks.summary : "El coordinador revisa el resultado.",
         dedupeKey: `verified:${taskId ?? job.id}`,
       });
     }
@@ -284,10 +263,9 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
       agentId: workerId,
       intendedOutcome: taskDescription,
       met: true,
-      checksRun: acceptance?.map((criterion) => criterion.checkTool ?? "acceptance_verifier") ?? ["acceptance_verifier"],
-      evidence: [result, ...execution.toolEvidence],
+      checksRun: checks.results.length ? checks.results.map((r) => r.check) : ["none"],
+      evidence,
       epoch: finishedRun ? deserializeEpoch(finishedRun) : null,
-      verificationId: verification.id,
       catalogAgentId: isCatalogAgent ? workerId : null,
     });
 
@@ -304,7 +282,8 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
       result: {
         content: result,
         evidence: execution.toolEvidence,
-        verification_id: verification.id,
+        acceptance: resolvedAcceptance,
+        checks,
       },
     };
   } catch (err) {
@@ -346,8 +325,6 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
 
     return { ok: false, error: errorMsg, retryable: isRetryableError(err) };
   } finally {
-    // Idempotente: cubre también el caso en que verifyAgentDelivery lance
-    emitVerificationFinished({ verifierId: VERIFIER_AGENT_ID, taskRef: delegationRef });
     emitDelegationFinished({ workerId, taskRef: delegationRef });
     await prepared?.release();
   }
@@ -355,7 +332,8 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
 
 // ─── goal_run executor ──────────────────────────────────────────────────────
 // Multi-turn orchestration: run a turn → verify the goal → continue with the
-// verifier's feedback until the goal is met or the budget runs out. The goal
+// verifier's feedback (verifyGoal, goal-runner.ts) until the goal is met or
+// the budget runs out. The goal
 // AgentRun row (job.run_id) is the orchestrator record: goal_attempts,
 // turns_used and tokens_used accumulate across turns and the budget is HARD.
 // Turns are plain (non-durable) runs on the same thread — a mid-turn crash
@@ -454,8 +432,9 @@ const goalRunExecutor: JobExecutor = async (job, signal) => {
         updated_at: Date.now(),
       } as Partial<AgentRunDoc>).catch(() => {});
 
-      // Verify: deterministic tool when configured, LLM verifier otherwise
-      // (or one check per acceptance criterion when the run has them)
+      // Verify: deterministic tool when configured, a single LLM judgment
+      // otherwise (one call total, covering every acceptance criterion —
+      // see verifyGoal in goal-runner.ts).
       const providerCfg = await resolveGoalProviderCfg(agentId);
       const verdict = await verifyGoal(goal, checkTool, [
         { role: "user", content: `Meta: ${goal}` },
@@ -463,22 +442,6 @@ const goalRunExecutor: JobExecutor = async (job, signal) => {
       ], providerCfg, acceptance);
 
       if (verdict.met) {
-        const independent = await verifyAgentDelivery({
-          runId: goalRunId,
-          executorAgentId: agentId,
-          objective: goal,
-          acceptance,
-          delivery: lastContent,
-          evidence: [verdict.reason],
-          executorEpoch: epoch,
-          mcpManager,
-        });
-        if (independent.status !== "verified") {
-          const independentVerdict = JSON.parse(independent.verdict_json);
-          lastReason = independentVerdict.summary || "La verificación independiente no autorizó el éxito.";
-          log.info(`[goal_run] Independent verifier rejected attempt ${attempts}: ${lastReason}`);
-          continue;
-        }
         await completeRun(goalRunId, lastContent);
         await notify(`✅ Meta cumplida: "${goal}". ${verdict.reason}`);
         log.info(`[goal_run] Goal met after ${attempts} attempt(s): ${verdict.reason}`);
@@ -491,7 +454,6 @@ const goalRunExecutor: JobExecutor = async (job, signal) => {
           checksRun: acceptance ? acceptance.map((a) => a.checkTool ?? "llm_verifier") : [checkTool ?? "llm_verifier"],
           evidence: [verdict.reason, lastContent].filter(Boolean),
           epoch,
-          verificationId: independent.id,
           catalogAgentId: null,
         });
         return { ok: true, result: { met: true, attempts, reason: verdict.reason, content: lastContent } };

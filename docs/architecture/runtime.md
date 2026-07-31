@@ -29,7 +29,7 @@ El tracer y el event log causal registran decisiones, tool calls y estados sin c
 - MCP leases;
 - IDs de run, turno, tarea y grupo.
 
-Las delegaciones hermanas pueden compartir un grupo. La respuesta inicial del coordinador finaliza y el gateway continúa los jobs. Al terminar todas, un turno de fan-in sintetiza resultados, fallos y evidencia.
+Las delegaciones hermanas pueden compartir un grupo. La respuesta inicial del coordinador finaliza y el gateway continúa los jobs. Al terminar todas, un turno de fan-in evalúa criterios de aceptación y checks, y sintetiza resultados, fallos y evidencia — o devuelve una tarea al worker con `task_revise` si no cumplió.
 
 ## Durabilidad
 
@@ -39,7 +39,7 @@ El cierre del gateway cancela o resuelve trabajos pendientes antes de terminar w
 
 ## Evidencia
 
-Cada worker entrega un resultado estructurado. El proof packet asocia criterios con artefactos, readbacks y eventos. Para tareas efectuales, el verificador inspecciona la evidencia de manera independiente. El coordinador solo comunica cumplimiento cuando el estado observado lo respalda.
+Cada worker entrega un resultado estructurado. El proof packet asocia criterios con artefactos, readbacks y eventos. Para tareas efectuales, checks determinísticos (sin LLM) inspeccionan la evidencia — checkTool por criterio, inspección de artefactos, gates de entrega — y lo que no tiene check determinístico lo evalúa el coordinador con la evidencia adjunta. El coordinador solo comunica cumplimiento cuando el estado observado lo respalda.
 
 ## Contexto persistente
 

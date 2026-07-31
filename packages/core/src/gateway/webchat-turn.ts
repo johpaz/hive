@@ -21,6 +21,7 @@ import { sendToUserChannel } from "./channel-notify";
 import { getNarration } from "./helpers";
 import { createRun, getRun } from "../agent/run-store";
 import { getDurableQueue } from "./durable-queue";
+import { sessionManager } from "./session";
 import type { JobDoc, TurnSource } from "../storage/collections";
 
 const log = logger.child("webchat-turn");
@@ -423,11 +424,34 @@ export async function runWebchatTurn(
         }
       }
     } else if (content && payload.source !== "api") {
-      // Rehydrated turn (crash recovery): nobody streamed this response, so
-      // deliver the final content through the user's channel.
-      await sendToUserChannel(channel, userId, content).catch((err) =>
-        log.warn(`[runWebchatTurn] Failed to deliver crash-recovered response: ${(err as Error).message}`)
-      );
+      // No live callback was attached to this job — either a genuine crash
+      // recovery, or (the common case for "delegation_summary"/"task_complete")
+      // a turn enqueued from a background job's terminal hook, which never has
+      // access to the original request's socket. Before falling back to the
+      // notification/toast path, check whether the user's browser still holds
+      // an open WS session under this exact sessionId — narration delivery
+      // (server.ts) already does this same lookup — and if so, push the
+      // response there as a normal chat message instead of a toast.
+      const liveSession = channel === "webchat" ? sessionManager.get(sessionId) : undefined;
+      const liveWs = liveSession?.ws?.readyState === 1 ? liveSession.ws : null;
+      if (liveWs) {
+        try {
+          liveWs.send(JSON.stringify({ type: "message", id: messageId, sessionId, content, isStep: false }));
+          liveWs.send(JSON.stringify({ type: "typing", isTyping: false, sessionId }));
+        } catch (err) {
+          log.warn(`[runWebchatTurn] Live push to open session failed, falling back to notification: ${(err as Error).message}`);
+          await sendToUserChannel(channel, userId, content).catch((err2) =>
+            log.warn(`[runWebchatTurn] Failed to deliver response: ${(err2 as Error).message}`)
+          );
+        }
+      } else {
+        // Rehydrated turn (crash recovery), or the user's browser isn't
+        // connected right now: deliver the final content through the user's
+        // channel (persisted notification for webchat; push API for the rest).
+        await sendToUserChannel(channel, userId, content).catch((err) =>
+          log.warn(`[runWebchatTurn] Failed to deliver crash-recovered response: ${(err as Error).message}`)
+        );
+      }
     }
 
     if (delegationGroup) {

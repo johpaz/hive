@@ -169,9 +169,7 @@ function TransferFlight({
       ? `${transfer.sourceName} llama a ${transfer.targetName}`
       : transfer.event.phase === "completed"
         ? `${transfer.sourceName} entrega a ${transfer.targetName}`
-        : transfer.event.phase === "review_started"
-          ? `${transfer.sourceName} solicita revisión`
-          : `${transfer.sourceName} informa a ${transfer.targetName}`;
+        : `${transfer.sourceName} informa a ${transfer.targetName}`;
 
   return (
     <group>

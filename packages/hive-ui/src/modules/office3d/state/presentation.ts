@@ -25,8 +25,6 @@ export function workPhaseLabel(phase: CanvasWorkPhase): string {
   switch (phase) {
     case "delegated":
       return "Delegando trabajo";
-    case "review_started":
-      return "Enviando a revisión";
     case "review_passed":
       return "Revisión aprobada";
     case "review_failed":
@@ -45,6 +43,5 @@ export function workPhaseLabel(phase: CanvasWorkPhase): string {
 export function workPhaseTone(phase: CanvasWorkPhase): "work" | "review" | "done" | "alert" {
   if (phase === "failed" || phase === "aborted" || phase === "review_failed") return "alert";
   if (phase === "completed" || phase === "review_passed") return "done";
-  if (phase === "review_started") return "review";
   return "work";
 }

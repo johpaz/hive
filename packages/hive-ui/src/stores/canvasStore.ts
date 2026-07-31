@@ -80,7 +80,6 @@ export interface GraphEdge {
 
 export type CanvasWorkPhase =
   | "delegated"
-  | "review_started"
   | "review_passed"
   | "review_failed"
   | "completed"

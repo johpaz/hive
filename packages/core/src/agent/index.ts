@@ -1,4 +1,4 @@
-export * from "./acceptance-verifier.ts";
+export * from "./acceptance-checks.ts";
 export * from "./agent-catalog.ts";
 export * from "./agent-loop.ts";
 export * from "./capability-search.ts";

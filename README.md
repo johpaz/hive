@@ -22,20 +22,20 @@ La instalación son 2 comandos de terminal; de ahí en más un asistente visual 
 </p>
 <p align="center"><sub>La Oficina 3D en <code>/office</code>: cada hexágono es un agente real, en vivo, no una animación de marketing.</sub></p>
 
-Hive reemplaza el patrón de "un agente gigante con 80 herramientas cargadas de memoria" por un coordinador liviano que descubre capacidades bajo demanda, delega en un catálogo de agentes persistentes y verifica el resultado antes de darlo por bueno. Cada delegación queda respaldada por criterios de aceptación, un verificador independiente y evidencia auditable (proof packets): no confíes en el LLM a ciegas, compruébalo.
+Hive reemplaza el patrón de "un agente gigante con 80 herramientas cargadas de memoria" por un coordinador liviano que descubre capacidades bajo demanda, delega en un catálogo de agentes persistentes y evalúa el resultado antes de darlo por bueno. Cada delegación queda respaldada por criterios de aceptación, checks determinísticos y evidencia auditable (proof packets): no confíes en el LLM a ciegas, compruébalo.
 
 ## ✨ Por qué Hive
 
-- **Catálogo persistente, no plantillas desechables.** 9 agentes especializados (investigación web, navegador, archivos, ingeniería de software, Office, automatizaciones cron, APIs, A2UI y verificación) enrutan el trabajo según el objetivo. Para MCP, el coordinador pide autorización y crea especialistas persistentes por servidor.
+- **Catálogo persistente, no plantillas desechables.** 8 agentes especializados (investigación web, navegador, archivos, ingeniería de software, Office, automatizaciones cron, APIs y A2UI) enrutan el trabajo según el objetivo. Para MCP, el coordinador pide autorización y crea especialistas persistentes por servidor.
 - **Carga mínima + descubrimiento bajo demanda.** Cada turno arranca con 7 herramientas esenciales; `search_knowledge` incorpora el resto (57 herramientas, 25 skills) solo cuando la tarea lo necesita.
-- **Verificación, no confianza ciega.** Las tareas efectuales pasan por un verificador independiente que inspecciona la evidencia antes de reportar éxito.
+- **Aceptación explícita, no confianza ciega.** Cada entrega pasa por checks determinísticos y el juicio del coordinador antes de reportar éxito; si no cumple sus criterios, vuelve al mismo worker con feedback concreto (`task_revise`) sin repetir el trabajo desde cero.
 - **Ejecución durable.** Jobs, leases y reintentos con backoff sobreviven caídas y reinicios del gateway — nada se pierde a mitad de camino.
 - **Multi-canal de verdad.** Webchat, Telegram, Discord, Slack y WhatsApp corren sobre el mismo runtime y el mismo coordinador.
 - **Local-first.** Tus datos viven en `~/.hive`. Elige proveedores locales (Ollama) o remotos, por agente.
 
 ## 🧠 Cómo funciona
 
-Cada turno comienza con siete herramientas esenciales. El coordinador busca capacidades adicionales en HiveDB, selecciona un agente adecuado y delega una subtarea con criterios de aceptación. El agente recibe únicamente sus herramientas, skills, modelo, workspace y recursos autorizados. Las tareas efectuales pasan por un verificador independiente antes de que el coordinador sintetice la respuesta.
+Cada turno comienza con siete herramientas esenciales. El coordinador busca capacidades adicionales en HiveDB, selecciona un agente adecuado y delega una subtarea con criterios de aceptación. El agente recibe únicamente sus herramientas, skills, modelo, workspace y recursos autorizados. Cada entrega pasa por checks determinísticos y el coordinador la acepta, la corrige él mismo o la devuelve al worker con `task_revise` antes de sintetizar la respuesta final.
 
 ```mermaid
 flowchart TD
@@ -44,10 +44,10 @@ flowchart TD
     CO --> DISC["search_knowledge<br/>descubrimiento bajo demanda"]
     CO --> AG["Agentes de catálogo"]
     CO --> TL["Herramientas nativas + MCP"]
-    CO --> VER["Verificador independiente<br/>+ proof packet"]
+    CO --> PP["Checks determinísticos<br/>+ proof packet"]
     AG --> DB[("HiveDB")]
     TL --> DB
-    VER --> DB
+    PP --> DB
 
     subgraph HD["Harness durable"]
         SCHED["jobs · leases · reintentos"]
@@ -75,7 +75,7 @@ Profundiza en la [arquitectura](docs/architecture/overview.md) y el [ciclo de ej
 
 ## 🚀 Capacidades
 
-- Agentes de catálogo para investigación, navegación, archivos, software, Office, A2UI, automatizaciones cron, APIs y verificación; calendario y otras integraciones MCP usan especialistas persistentes aprobados por el usuario.
+- Agentes de catálogo para investigación, navegación, archivos, software, Office, A2UI, automatizaciones cron y APIs; calendario y otras integraciones MCP usan especialistas persistentes aprobados por el usuario.
 - Herramientas nativas para filesystem, web, cron, CLI, agentes, A2UI, Office y APIs.
 - 25 skills incluidas y descubrimiento bajo demanda con `search_knowledge`.
 - Proveedores locales y remotos, selección de modelo por agente y herencia desde el coordinador.

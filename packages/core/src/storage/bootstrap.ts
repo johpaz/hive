@@ -14,6 +14,7 @@
 import { getHiveDb } from "./hivedb";
 import { col } from "./hive";
 import { seedAllData } from "./seed";
+import { ensureSecretsBackend } from "./crypto";
 
 interface IndexSpec {
   collection: string;
@@ -80,10 +81,6 @@ const INDEXES: IndexSpec[] = [
   { collection: "artifacts", field: "task_id" },
   { collection: "artifacts", field: "user_id" },
   { collection: "artifacts", field: "status" },
-  { collection: "verifications", field: "run_id" },
-  { collection: "verifications", field: "task_id" },
-  { collection: "verifications", field: "executor_agent_id" },
-  { collection: "verifications", field: "status" },
   { collection: "agentProposals", field: "agent_id" },
   { collection: "agentProposals", field: "status" },
   { collection: "agentProposals", field: "type" },
@@ -136,6 +133,10 @@ let bootstrapped = false;
 export async function ensureHiveDb(): Promise<void> {
   await getHiveDb();
   await ensureIndexes();
+  // Mint the master key before anything can save an API key, so a fresh
+  // install is durable from the first keystroke rather than after a restart
+  // has already dropped the secret.
+  ensureSecretsBackend();
   await ensureSeedData();
 
   const meta = await col<{ value: number }>("meta");

@@ -14,7 +14,6 @@ export function primeOfficeAudio(): void {
 
 const TONES: Record<CanvasWorkPhase, [number, number]> = {
   delegated: [520, 680],
-  review_started: [620, 760],
   review_passed: [720, 960],
   review_failed: [260, 190],
   completed: [660, 880],

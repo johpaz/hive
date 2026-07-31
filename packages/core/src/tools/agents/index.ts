@@ -1,6 +1,6 @@
 /**
- * Agents Tools - 14 tools
- * 
+ * Agents Tools - 15 tools
+ *
  * @category agents
  */
 
@@ -14,11 +14,8 @@ import { agentBus } from "../../events/agent-bus.ts";
 import {
   emitDelegationStarted,
   emitDelegationFinished,
-  emitVerificationStarted,
-  emitVerificationFinished,
   emitWorkEvent,
 } from "../../canvas/emitter.ts";
-import { VERIFIER_AGENT_ID } from "../../agent/acceptance-verifier.ts";
 
 const log = logger.child("agents");
 
@@ -493,7 +490,7 @@ export const agentArchiveTool: Tool = {
 
 export const taskDelegateTool: Tool = {
   name: "task_delegate",
-  description: "Delegate a bounded task to an existing worker_id (any `agents` row: catalog-seeded or agent_create-made). The delivery is independently verified before success is returned. mode=sync blocks the conversation until done; mode=async enqueues and frees the conversation immediately — the user is notified automatically in this same chat when the worker finishes. Prefer async unless you expect the result in a few seconds.",
+  description: "Delegate a bounded task to an existing worker_id (any `agents` row: catalog-seeded or agent_create-made). The delivery goes through deterministic acceptance checks (no LLM); you judge anything they don't cover in your closing turn, and use task_revise to send it back with feedback if it doesn't meet its criteria. mode=sync blocks the conversation until done; mode=async enqueues and frees the conversation immediately — the user is notified automatically in this same chat when the worker finishes. Prefer async unless you expect the result in a few seconds.",
   parameters: {
     type: "object",
     properties: {
@@ -721,43 +718,39 @@ export const taskDelegateTool: Tool = {
 
       agentBus.notifyTaskCompleted(agentId, worker.name, 0, taskName, "", result);
 
-      // Verification now always runs, closing the old gap where a plain
-      // worker_id delegation (agent_create) skipped it entirely in sync mode.
-      const { verifyAgentDelivery } = await import("../../agent/acceptance-verifier.ts");
-      emitVerificationStarted({ verifierId: VERIFIER_AGENT_ID, workerId: agentId, taskRef: syncDelegationRef, taskName });
-      const verification = await verifyAgentDelivery({
-        runId: `sync-${crypto.randomUUID()}`,
-        executorAgentId: agentId,
+      // Deterministic acceptance checks now always run, closing the old gap
+      // where a plain worker_id delegation (agent_create) skipped them
+      // entirely in sync mode. No LLM call: the calling agent (usually the
+      // coordinator) judges the delivery itself in this same tool response.
+      const { runAcceptanceChecks, recordAgentOutcome } = await import("../../agent/acceptance-checks.ts");
+      const checks = await runAcceptanceChecks({
         objective: taskDescription,
         acceptance,
         delivery: result,
-        mcpServerIds: prepared.mcpServerIds,
-        mcpManager,
+        evidence: [result],
       });
-      const verdict = JSON.parse(verification.verdict_json);
-      emitVerificationFinished({ verifierId: VERIFIER_AGENT_ID, taskRef: syncDelegationRef });
-      if (verification.status !== "verified") {
+      if (checks.status === "failed") {
+        await recordAgentOutcome(agentId, "harmful");
         emitWorkEvent({
           phase: "review_failed",
           taskRef: syncDelegationRef,
           taskName,
-          actorId: VERIFIER_AGENT_ID,
+          actorId: parentAgentId || agentId,
           targetId: agentId,
-          detail: verdict.summary || "La entrega no superó la verificación",
+          detail: checks.summary,
         });
         return {
           ok: false,
-          status: verification.status,
-          verification_id: verification.id,
-          error: verdict.summary || "Independent verification did not authorize success.",
-          retry_guidance: verdict.retry_guidance,
+          status: checks.status,
+          error: checks.summary,
         };
       }
+      await recordAgentOutcome(agentId, "helpful");
       emitWorkEvent({
         phase: "review_passed",
         taskRef: syncDelegationRef,
         taskName,
-        actorId: VERIFIER_AGENT_ID,
+        actorId: parentAgentId || agentId,
         targetId: agentId,
       });
       emitWorkEvent({
@@ -771,7 +764,8 @@ export const taskDelegateTool: Tool = {
         ok: true,
         worker_id: agentId,
         worker_name: worker.name,
-        verification_id: verification.id,
+        acceptance,
+        checks,
         result,
       };
     } catch (err) {
@@ -793,9 +787,186 @@ export const taskDelegateTool: Tool = {
         error: errorMessage,
       };
     } finally {
-      emitVerificationFinished({ verifierId: VERIFIER_AGENT_ID, taskRef: syncDelegationRef });
       emitDelegationFinished({ workerId: agentId, taskRef: syncDelegationRef });
       await prepared.release();
+    }
+  },
+};
+
+// ─── task_revise ─────────────────────────────────────────────────────────────
+
+const MAX_TASK_REVISIONS = 2;
+
+export const taskReviseTool: Tool = {
+  name: "task_revise",
+  description: "Send a completed or blocked delegated task back to its worker with concrete feedback, instead of reporting it as done. The worker resumes on the SAME thread — it keeps its prior context, so the feedback only needs to describe what's missing. Use this when a delivery doesn't meet its acceptance criteria and you can't fix it yourself.",
+  parameters: {
+    type: "object",
+    properties: {
+      task_id: { type: "string", description: "The task_id from task_delegate's result." },
+      feedback: { type: "string", description: "Concrete, actionable feedback: what's wrong and what the worker still needs to do." },
+      acceptance: {
+        type: "array",
+        description: "Updated acceptance criteria, if they need to change. Defaults to the original task's criteria.",
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            description: { type: "string" },
+            checkTool: { type: "string" },
+          },
+          required: ["id", "description"],
+        },
+      },
+    },
+    required: ["task_id", "feedback"],
+  },
+  execute: async (params: Record<string, unknown>, config?: any) => {
+    const taskId = params.task_id as string | undefined;
+    const feedback = params.feedback as string | undefined;
+    if (!taskId) return { ok: false, error: "Provide task_id." };
+    if (!feedback || !feedback.trim()) return { ok: false, error: "Provide feedback describing what's missing." };
+
+    const parentAgentId = config?.configurable?.agent_id ?? "";
+    if (!parentAgentId) {
+      return { ok: false, error: "Caller identity is missing (config.configurable.agent_id)." };
+    }
+    const agentsCol = await col<AgentDoc>("agents");
+    const parentEntry = await agentsCol.get(parentAgentId);
+    if (!parentEntry) return { ok: false, error: `Caller agent not found: ${parentAgentId}` };
+    const parentProviderId = fromIndexable(parentEntry.doc.provider_id);
+    const parentModelId = fromIndexable(parentEntry.doc.model_id);
+
+    const tasksCol = await col<TaskDoc>("tasks");
+    const taskEntry = await tasksCol.get(taskId);
+    if (!taskEntry) return { ok: false, error: `Task not found: ${taskId}` };
+    const task = taskEntry.doc;
+    if (task.status !== "completed" && task.status !== "blocked") {
+      return { ok: false, error: `Task ${taskId} is "${task.status}" — only completed or blocked tasks can be revised.` };
+    }
+    if ((task.attempts ?? 0) >= MAX_TASK_REVISIONS) {
+      return { ok: false, error: `Task ${taskId} already used its ${MAX_TASK_REVISIONS} revision attempt(s). Fix it yourself or report the limit to the user.` };
+    }
+    if (!task.thread_id) {
+      return { ok: false, error: `Task ${taskId} has no thread_id — cannot resume its worker.` };
+    }
+
+    const agentId = fromIndexable(task.agent_id);
+    const workerEntry = agentId ? await agentsCol.get(agentId) : null;
+    if (!workerEntry) return { ok: false, error: `Worker not found for task ${taskId}: ${agentId}` };
+    const worker = workerEntry.doc;
+    if (!worker.enabled) return { ok: false, error: `Worker is disabled: ${worker.name}` };
+
+    const { createRun, getRun, deserializeAcceptance } = await import("../../agent/run-store.ts");
+    const { getDurableQueue } = await import("../../gateway/durable-queue.ts");
+    const { updateDoc } = await import("../../storage/hive.ts");
+
+    const previousRun = task.run_id ? await getRun(task.run_id) : null;
+    const previousAcceptance = previousRun ? deserializeAcceptance(previousRun) : null;
+    const acceptance = (params.acceptance as AcceptanceCriterion[] | undefined) ?? previousAcceptance ?? [{ id: "objective", description: task.description ?? feedback }];
+
+    try {
+      const run = await createRun({
+        thread_id: task.thread_id,
+        agent_id: agentId!,
+        user_id: config?.configurable?.user_id ?? "",
+        channel: config?.configurable?.channel ?? null,
+        kind: "worker",
+        max_iterations: worker.max_iterations || 10,
+        resume_policy: "resume",
+        acceptance,
+        catalog_agent_id: worker.source === "catalog" ? agentId! : undefined,
+      });
+
+      const turnId = config?.configurable?.turn_id as string | undefined;
+      if (turnId) {
+        const { registerDelegatedTask } = await import("../../gateway/delegation-groups.ts");
+        await registerDelegatedTask({
+          turnId,
+          taskId,
+          threadId: config?.configurable?.thread_id ?? "",
+          channel: config?.configurable?.channel,
+          userId: config?.configurable?.user_id,
+          sessionId: config?.configurable?.session_id,
+          coordinatorAgentId: parentAgentId,
+        });
+      }
+
+      const queue = getDurableQueue();
+      const job = await queue.enqueue({
+        lane: `task:${taskId}`,
+        type: "worker_task",
+        run_id: run.id,
+        payload: {
+          workerId: agentId,
+          taskDescription: `${task.description ?? ""}\n\nCORRECCIÓN SOLICITADA: ${feedback}`,
+          taskName: task.name,
+          taskId,
+          acceptance,
+          parentAgentId,
+          parentProviderId,
+          parentModelId,
+          userId: config?.configurable?.user_id ?? "",
+          workspace: config?.configurable?.workspace ?? null,
+          originThreadId: config?.configurable?.thread_id ?? null,
+          originChannel: config?.configurable?.channel ?? null,
+          originSessionId: config?.configurable?.session_id ?? null,
+          turnId: turnId ?? null,
+          revision: true,
+        },
+      });
+
+      await updateDoc<TaskDoc>("tasks", taskId, {
+        status: "pending",
+        error: null,
+        job_id: job.id,
+        run_id: run.id,
+        attempts: (task.attempts ?? 0) + 1,
+        delegation_group_id: turnId ?? task.delegation_group_id ?? null,
+        updated_at: Date.now(),
+      } as Partial<TaskDoc>);
+
+      const { recordAgentOutcome } = await import("../../agent/acceptance-checks.ts");
+      await recordAgentOutcome(agentId, "harmful");
+
+      emitWorkEvent({
+        phase: "review_failed",
+        taskRef: taskId,
+        taskName: task.name,
+        actorId: parentAgentId,
+        targetId: agentId!,
+        detail: feedback,
+      });
+
+      if (turnId) {
+        const { publishNarration } = await import("../../events/narration.ts");
+        await publishNarration({
+          turnId,
+          threadId: config?.configurable?.thread_id ?? "",
+          channel: config?.configurable?.channel,
+          userId: config?.configurable?.user_id,
+          sessionId: config?.configurable?.session_id,
+          agentId: agentId!,
+          agentName: worker.name,
+          kind: "delegated",
+          status: "queued",
+          label: `Devolví “${task.name}” a ${worker.name} con correcciones`,
+          dedupeKey: `revised:${taskId}:${(task.attempts ?? 0) + 1}`,
+        });
+      }
+
+      return {
+        ok: true,
+        task_id: taskId,
+        job_id: job.id,
+        run_id: run.id,
+        worker_id: agentId,
+        attempts: (task.attempts ?? 0) + 1,
+        status: "queued",
+        message: `Revision enqueued (async). Use task_status with task_id="${taskId}" to check it.`,
+      };
+    } catch (err) {
+      return { ok: false, error: `Task revision failed: ${(err as Error).message}` };
     }
   },
 };
@@ -1044,6 +1215,7 @@ export function createTools(): Tool[] {
     agentFindTool,
     agentArchiveTool,
     taskDelegateTool,
+    taskReviseTool,
     taskListTool,
     taskStatusTool,
     busPublishTool,

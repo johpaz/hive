@@ -20,6 +20,7 @@ import { createRun, type AcceptanceCriterion } from "./run-store";
 import { clearOldToolResults } from "./compaction";
 import { loadConfig } from "../config/loader";
 import { getDurableQueue } from "../gateway/durable-queue";
+import { recordLLMUsage } from "./tracer";
 
 export type { AcceptanceCriterion } from "./run-store";
 
@@ -122,14 +123,86 @@ export async function runGoal(opts: GoalRunOptions): Promise<GoalRunResult> {
   };
 }
 
+/** Runs a deterministic goal_check_tool, no LLM involved. */
+async function runDeterministicCheck(checkTool: string, goal: string): Promise<{ met: boolean; reason: string } | null> {
+  try {
+    const { executeToolBatch } = await import("../tool-runtime");
+    const { createAllTools } = await import("../tools/index");
+    const allTools = createAllTools(loadConfig());
+    const toolDef = allTools.find((t) => t.name === checkTool);
+    if (!toolDef) {
+      log.warn(`[verifyGoal] Check tool "${checkTool}" not found in the tool registry — falling back to LLM verifier`);
+      return null;
+    }
+    const toolResults = await executeToolBatch({
+      toolCalls: [{
+        id: "goal-check",
+        function: { name: checkTool, arguments: JSON.stringify({ goal }) },
+      }],
+      allTools,
+      toolConfig: {},
+    });
+    const result = toolResults[0];
+    if (result?.ok) return interpretCheckResult(result.result);
+    return { met: false, reason: `Check tool failed: ${result?.error?.message ?? "unknown"}` };
+  } catch (err) {
+    log.warn(`[verifyGoal] Check tool "${checkTool}" failed: ${(err as Error).message}`);
+    return null;
+  }
+}
+
+/**
+ * Judges every criterion that has no deterministic checkTool with a SINGLE
+ * LLM call (not one call per criterion) — the model returns a verdict per
+ * criterion id in one structured response.
+ */
+async function judgeCriteriaWithLLM(
+  criteria: AcceptanceCriterion[],
+  messages: LLMMessage[],
+  providerCfg: any,
+): Promise<AcceptanceResult[]> {
+  try {
+    const verificationMessages: LLMMessage[] = [
+      ...clearOldToolResults(messages),
+      {
+        role: "user",
+        content: `Evaluá si cada uno de los siguientes criterios de aceptación se cumplió, basándote en la conversación anterior.\n\nCriterios:\n${criteria.map((c) => `- ${c.id}: ${c.description}`).join("\n")}\n\nRespondé en JSON estricto, un resultado por criterio:\n{"results":[{"id":"...","met":true/false,"reason":"explicación breve"}]}`,
+      },
+    ];
+
+    const response = await callLLM({ ...providerCfg, messages: verificationMessages, tools: undefined });
+    if (providerCfg.provider && providerCfg.model && response.usage) {
+      recordLLMUsage({
+        provider: providerCfg.provider,
+        model: providerCfg.model,
+        inputTokens: response.usage.input_tokens ?? 0,
+        outputTokens: response.usage.output_tokens ?? 0,
+      });
+    }
+
+    const content = response.content?.trim() || "";
+    const candidate = content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1);
+    const parsed = JSON.parse(candidate) as { results?: Array<{ id: string; met: boolean; reason?: string }> };
+    const byId = new Map((parsed.results ?? []).map((r) => [r.id, r]));
+    return criteria.map((c) => {
+      const r = byId.get(c.id);
+      return { id: c.id, description: c.description, met: r?.met === true, evidence: r?.reason || "El modelo no evaluó este criterio" };
+    });
+  } catch (err) {
+    log.warn(`[verifyGoal] LLM verification failed: ${(err as Error).message}`);
+    return criteria.map((c) => ({ id: c.id, description: c.description, met: false, evidence: `Verification error: ${(err as Error).message}` }));
+  }
+}
+
 /**
  * Verify whether a goal has been met using either:
  * - A deterministic tool (goal_check_tool) — executes the tool and checks the result
  * - An LLM verifier — asks the model to return JSON {met, reason}
  *
- * When `acceptance` criteria are supplied, each is verified independently
- * (its own checkTool, or an LLM judgment against its own description) and
- * the overall verdict is the conjunction of all of them — the top-level
+ * When `acceptance` criteria are supplied, each with its own checkTool is
+ * checked deterministically (no LLM), and every remaining criterion is
+ * judged together in a single LLM call — never one call per criterion. The
+ * overall verdict is the conjunction of all of them; the top-level
  * `goal`/`checkTool` are ignored in that case.
  */
 export async function verifyGoal(
@@ -141,10 +214,21 @@ export async function verifyGoal(
 ): Promise<{ met: boolean; reason: string; acceptanceResults?: AcceptanceResult[] }> {
   if (acceptance && acceptance.length > 0) {
     const results: AcceptanceResult[] = [];
+    const needsLLMJudgment: AcceptanceCriterion[] = [];
+
     for (const criterion of acceptance) {
-      const verdict = await verifyGoal(criterion.description, criterion.checkTool, messages, providerCfg);
-      results.push({ id: criterion.id, description: criterion.description, met: verdict.met, evidence: verdict.reason });
+      const deterministic = criterion.checkTool ? await runDeterministicCheck(criterion.checkTool, criterion.description) : null;
+      if (deterministic) {
+        results.push({ id: criterion.id, description: criterion.description, met: deterministic.met, evidence: deterministic.reason });
+      } else {
+        needsLLMJudgment.push(criterion);
+      }
     }
+
+    if (needsLLMJudgment.length > 0) {
+      results.push(...(await judgeCriteriaWithLLM(needsLLMJudgment, messages, providerCfg)));
+    }
+
     const met = results.every((r) => r.met);
     const reason = results.map((r) => `${r.met ? "✅" : "❌"} ${r.description}: ${r.evidence}`).join("\n");
     return { met, reason, acceptanceResults: results };
@@ -152,32 +236,9 @@ export async function verifyGoal(
 
   // If we have a deterministic check tool, execute it
   if (checkTool) {
-    try {
-      const { executeToolBatch } = await import("../tool-runtime");
-      const { createAllTools } = await import("../tools/index");
-      const allTools = createAllTools(loadConfig());
-      const toolDef = allTools.find((t) => t.name === checkTool);
-      if (!toolDef) {
-        log.warn(`[verifyGoal] Check tool "${checkTool}" not found in the tool registry — falling back to LLM verifier`);
-      } else {
-        const toolResults = await executeToolBatch({
-          toolCalls: [{
-            id: "goal-check",
-            function: { name: checkTool, arguments: JSON.stringify({ goal }) },
-          }],
-          allTools,
-          toolConfig: {},
-        });
-        const result = toolResults[0];
-        if (result?.ok) {
-          return interpretCheckResult(result.result);
-        }
-        return { met: false, reason: `Check tool failed: ${result?.error?.message ?? "unknown"}` };
-      }
-    } catch (err) {
-      log.warn(`[verifyGoal] Check tool "${checkTool}" failed: ${(err as Error).message}`);
-      // Fall through to LLM verifier
-    }
+    const deterministic = await runDeterministicCheck(checkTool, goal);
+    if (deterministic) return deterministic;
+    // Falls through to the LLM verifier when the tool is missing or errored.
   }
 
   // LLM verifier: ask the model to evaluate whether the goal is met
@@ -195,6 +256,14 @@ export async function verifyGoal(
       messages: verificationMessages,
       tools: undefined,
     });
+    if (providerCfg.provider && providerCfg.model && response.usage) {
+      recordLLMUsage({
+        provider: providerCfg.provider,
+        model: providerCfg.model,
+        inputTokens: response.usage.input_tokens ?? 0,
+        outputTokens: response.usage.output_tokens ?? 0,
+      });
+    }
 
     const content = response.content?.trim() || "";
     // Extract JSON from the response
@@ -217,7 +286,7 @@ export async function verifyGoal(
  * Interpret a check tool's result strictly: an object with a boolean `met`,
  * a bare boolean, or a JSON string with `met` — anything else is not met.
  */
-function interpretCheckResult(raw: unknown): { met: boolean; reason: string } {
+export function interpretCheckResult(raw: unknown): { met: boolean; reason: string } {
   if (typeof raw === "boolean") {
     return { met: raw, reason: raw ? "Check tool returned true" : "Check tool returned false" };
   }

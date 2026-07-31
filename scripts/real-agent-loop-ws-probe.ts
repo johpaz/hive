@@ -26,9 +26,10 @@ delegaciones independientes en paralelo usando task_delegate con mode="async":
 Para cada delegación incluí criterios de aceptación verificables. No hagas vos el
 trabajo de los workers. Informá que quedan en background solo si task_delegate
 devuelve task_id/job_id/run_id reales. No afirmes que terminaron en esta primera
-respuesta. Cuando lleguen resultados automáticos, comunicá solamente lo que haya
-sido autorizado por acceptance_verifier; si una tarea falla o es rechazada,
-decilo explícitamente. Narra de forma factual las fases y herramientas usadas.
+respuesta. Cuando lleguen resultados automáticos, comunicá solamente lo que los
+checks y tu propia revisión de la entrega respalden; si una tarea falla o no
+cumple sus criterios, decilo explícitamente. Narra de forma factual las fases y
+herramientas usadas.
 `.trim();
 
 type Task = {
@@ -184,7 +185,7 @@ ws.onmessage = (event) => {
 
   if (message.type === "canvas:node_update") {
     const nodeId = message.data?.nodeId;
-    if (nodeId === "830ef5445a52430bb422d946dffd39b4" || TARGET_AGENTS.has(nodeId) || nodeId === "acceptance_verifier") {
+    if (nodeId === "830ef5445a52430bb422d946dffd39b4" || TARGET_AGENTS.has(nodeId)) {
       emit("agent_state", { agentId: nodeId, changes: message.data?.changes });
     }
     return;

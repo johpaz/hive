@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   emitDelegationStarted,
-  emitVerificationStarted,
   emitWorkEvent,
   subscribeCanvas,
   unsubscribeCanvas,
@@ -45,20 +44,21 @@ describe("canvas work events", () => {
     expect(String(work?.data.eventId)).toContain("task-1:delegated");
   });
 
-  test("verification start identifies worker and verifier", () => {
+  test("review outcome identifies the coordinator and the worker it judged", () => {
     const events = captureCanvasEvents(() => {
-      emitVerificationStarted({
-        verifierId: "verifier",
-        workerId: "worker-1",
+      emitWorkEvent({
+        phase: "review_passed",
         taskRef: "task-2",
         taskName: "Validar cambios",
+        actorId: "queen-1",
+        targetId: "worker-1",
       });
     });
 
     expect(events.find((event) => event.type === "canvas:work_event")?.data).toMatchObject({
-      phase: "review_started",
-      actorId: "worker-1",
-      targetId: "verifier",
+      phase: "review_passed",
+      actorId: "queen-1",
+      targetId: "worker-1",
     });
   });
 

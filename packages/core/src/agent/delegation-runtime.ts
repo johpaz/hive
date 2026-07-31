@@ -17,8 +17,6 @@ const MCP_IDLE_TTL_MS = 2 * 60_000;
 
 export interface PrepareDelegationOptions {
   workspace: string | null;
-  /** Internal-only transient scope used by the independent verifier for readback. */
-  taskScopedMcpServerIds?: string[];
   /** Fallback provider/model when the target row has none of its own (catalog agents are seeded without one — inherits the parent/coordinator's). */
   parentProviderId?: string | null;
   parentModelId?: string | null;
@@ -190,12 +188,7 @@ export async function prepareDelegation(agentId: string, opts: PrepareDelegation
 
   const skillIds = agentDoc.skills_json ? await validateSkillIds(JSON.parse(agentDoc.skills_json)) : [];
 
-  const taskScopedMcpIds = opts.taskScopedMcpServerIds ?? [];
-  if (taskScopedMcpIds.length > 0 && agentId !== "acceptance_verifier") {
-    throw new Error(`Agent ${agentId} does not allow transient MCP servers`);
-  }
-  const fixedMcpIds: string[] = agentDoc.mcp_server_ids_json ? JSON.parse(agentDoc.mcp_server_ids_json) : [];
-  const requestedMcp = [...new Set([...fixedMcpIds, ...taskScopedMcpIds])];
+  const requestedMcp: string[] = agentDoc.mcp_server_ids_json ? JSON.parse(agentDoc.mcp_server_ids_json) : [];
   if (requestedMcp.length > 0 && !opts.mcpManager) throw new Error("MCP servers requested but MCP manager is unavailable");
 
   const acquired: string[] = [];

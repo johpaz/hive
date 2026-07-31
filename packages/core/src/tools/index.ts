@@ -20,7 +20,7 @@ import * as cron from "./cron/index.ts";
 // CLI (1)
 import * as cli from "./cli/index.ts";
 
-// Agents (14)
+// Agents (15)
 import * as agents from "./agents/index.ts";
 
 // A2UI (4)
@@ -151,6 +151,7 @@ export {
   agentFindTool,
   agentArchiveTool,
   taskDelegateTool,
+  taskReviseTool,
   taskListTool,
   taskStatusTool,
   busPublishTool,

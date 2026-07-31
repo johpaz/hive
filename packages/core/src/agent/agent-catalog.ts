@@ -64,12 +64,6 @@ const CODE_MODEL: AgentModelOverride = {
   fallback: "general",
 };
 
-const VERIFIER_MODEL: AgentModelOverride = {
-  required_capabilities: ["reasoning", "function_calling"],
-  fallback: "general",
-  prefer_different_family: true,
-};
-
 const CATALOG_PERSONAS: CatalogPersona[] = [
   {
     id: "web_researcher",
@@ -241,36 +235,6 @@ const CATALOG_PERSONAS: CatalogPersona[] = [
     workspaceScope: { kind: "resource", resource_types: ["http_endpoint"] },
     acceptance: [{ id: "http", description: "El status y el contrato de respuesta coinciden con lo esperado." }],
   },
-  {
-    id: "acceptance_verifier",
-    name: "Verificador de cumplimiento",
-    description: "Verifica de forma independiente que una tarea cumplió todos sus criterios antes de autorizar que el principal reporte éxito.",
-    role: "Sos la puerta independiente de aceptación de Hive. Evaluás resultados; nunca ejecutás ni reparás la tarea original.",
-    receives: "Objetivo original, criterios, resultado del ejecutor, trazas, artefactos, checks determinísticos y epochs.",
-    workflow: [
-      "Evaluá cada criterio por separado y rechazá criterios sin evidencia suficiente.",
-      "Preferí checks determinísticos y readbacks seguros a afirmaciones del ejecutor.",
-      "Identificá evidencia contradictoria, efectos no comprobados y límites.",
-      "Emití verified solo si todos los criterios están demostrados; en otro caso emití rejected o needs_evidence.",
-    ],
-    prohibitions: [
-      ...COMMON_PROHIBITIONS,
-      "No modificás artefactos, no corregís el trabajo y no aceptás la autoafirmación del ejecutor como evidencia.",
-      "No usás tools mutantes, shell, clicks, formularios, creación, eliminación ni notificaciones.",
-    ],
-    quality: "Todo veredicto es reproducible, criterio por criterio, y ningún éxito se autoriza con evidencia faltante.",
-    routingExamples: ["verificar una tarea delegada", "auditar criterios de aceptación", "autorizar proof packet"],
-    routingExclusions: ["responder una pregunta del usuario", "ejecutar o reparar la tarea"],
-    tools: [
-      "fs_read", "fs_exists", "fs_list", "web_fetch",
-      "browser_navigate", "browser_extract", "browser_screenshot", "artifact_inspect",
-      "office_leer_*", "cron.list", "cron.history", "task_status",
-    ],
-    skills: ["acceptance_verification"],
-    workspaceScope: { kind: "resource", resource_types: ["verification_evidence", "workspace_readonly"] },
-    acceptance: [{ id: "all_criteria", description: "Cada criterio tiene evidencia independiente suficiente." }],
-    modelOverride: VERIFIER_MODEL,
-  },
 ];
 
 /**
@@ -299,7 +263,7 @@ export function createSeedCatalogAgents(now = Date.now()): AgentDoc[] {
     skills_json: JSON.stringify(s.skills),
     active_mcp_json: null,
     parent_id: toIndexable(null),
-    max_iterations: s.id === "acceptance_verifier" ? 8 : 20,
+    max_iterations: 20,
     workspace: null,
     lastTraceAt: null,
     created_at: now,

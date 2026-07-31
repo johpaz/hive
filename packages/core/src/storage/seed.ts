@@ -76,6 +76,7 @@ export const SEED_DATA: SeedData = {
     { id: "agent_find", name: "agent_find", category: "agents", description: "Descubrir agentes worker disponibles: catálogo global del sistema y workers privados del usuario. No indica ejecución; para eso usar task_list. Sinónimos: buscar agente, encontrar worker, localizar agente" },
     { id: "agent_archive", name: "agent_archive", category: "agents", description: "Archivar o terminar un agente worker. Sinónimos: archivar agente, terminar worker, desactivar agente" },
     { id: "task_delegate", name: "task_delegate", category: "agents", description: "Delegar una tarea general a un agente worker específico. Sinónimos: delegar tarea, asignar worker, ejecutar por agente" },
+    { id: "task_revise", name: "task_revise", category: "agents", description: "Devolver una tarea delegada a su worker con feedback cuando no cumple sus criterios de aceptación. Sinónimos: corregir tarea, devolver al worker, pedir corrección, reencolar tarea" },
     { id: "task_list", name: "task_list", category: "agents", description: "Listar ejecuciones reales de tareas delegadas del usuario, consultando tareas y jobs persistidos. Sinónimos: listar tareas activas, ver subagentes trabajando, ejecuciones reales" },
     { id: "task_status", name: "task_status", category: "agents", description: "Obtener estado de ejecución de tareas delegadas. Sinónimos: estado tarea delegada, verificar progreso, consultar tarea" },
     { id: "bus_publish", name: "bus_publish", category: "agents", description: "Publicar mensaje en el Agent Bus para comunicación worker-to-worker. Sinónimos: publicar mensaje, comunicar workers, enviar bus" },
@@ -437,6 +438,10 @@ const RETIRED_CATALOG_AGENT_IDS = [
   // former generic MCP worker. New MCP specialists are user-owned and scoped
   // persistently to one server.
   "mcp_integration_operator",
+  // The independent verifier agent was replaced by deterministic acceptance
+  // checks (agent/acceptance-checks.ts) plus the coordinator judging the
+  // delivery itself in the closing turn — no extra agent loop per task.
+  "acceptance_verifier",
 ];
 
 const LEGACY_CRON_PERSONA = {
@@ -502,6 +507,15 @@ async function pruneRetired(): Promise<void> {
       await agentsCol.delete(id);
       removed++;
     }
+  }
+
+  // The independent-verifier agent's audit trail is gone with it — no reader
+  // exists for the `verifications` collection anymore.
+  const verificationsCol = await col<{ id: string }>("verifications");
+  const staleVerifications = await verificationsCol.scan({});
+  for (const entry of staleVerifications) {
+    await verificationsCol.delete(entry.id);
+    removed++;
   }
 
   if (removed > 0) log.info(`[seed] 🗑️  Removed ${removed} retired capability row(s)`);

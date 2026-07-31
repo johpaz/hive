@@ -16,7 +16,7 @@ describe("officeInteractionsFromEdges", () => {
       {
         id: "review_task-1",
         source: "software_engineer",
-        target: "acceptance_verifier",
+        target: "coordinator",
         edgeType: "reviews",
         data: { taskId: "task-1", taskName: "Implementar búsqueda" },
       },
@@ -41,7 +41,7 @@ describe("officeInteractionsFromEdges", () => {
         id: "review_task-1",
         kind: "reviews",
         sourceId: "software_engineer",
-        targetId: "acceptance_verifier",
+        targetId: "coordinator",
         taskId: "task-1",
         taskName: "Implementar búsqueda",
       },

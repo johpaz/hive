@@ -90,7 +90,6 @@ export async function syncCatalogAgentsToIndex(): Promise<void> {
 
 export function renderAgentRoutingCatalog(agents: AgentDoc[]): string {
   return agents
-    .filter((a) => a.id !== "acceptance_verifier")
     .map((a) => {
       const exclusions = a.routing_exclusions_json
         ? JSON.parse(a.routing_exclusions_json) as string[]

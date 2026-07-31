@@ -32,7 +32,7 @@ Mientras no exista una contraseña, el endpoint público de estado no expone el 
 
 El coordinador no entrega todas las tools a cada agente. La delegación expande una allowlist y aplica el scope del workspace. Un especialista MCP es la excepción explícita: después de la autorización del usuario recibe todas las tools de un único servidor persistido, adquiere su lease durante la tarea y no puede acceder a otros servidores. Los agentes de catálogo no pueden delegar de nuevo ni ampliar su propio alcance.
 
-Las acciones destructivas o externas deben estar autorizadas por la solicitud original. El verificador comprueba el estado final, pero nunca repara ni repite una mutación.
+Las acciones destructivas o externas deben estar autorizadas por la solicitud original. Los checks de aceptación comprueban el estado final, pero nunca reparan ni repiten una mutación; una corrección solo ocurre si el coordinador la reencola explícitamente con `task_revise`.
 
 ## Auditoría
 
