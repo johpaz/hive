@@ -255,7 +255,13 @@ export const SEED_DATA: SeedData = {
     { id: "qwen/qwen3-32b", providerId: "groq", name: "Qwen3 32B (Groq)", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "whisper-large-v3", providerId: "groq", name: "Whisper Large V3", modelType: "stt", contextWindow: 0, capabilities: JSON.stringify(["transcription"]) },
     { id: "whisper-large-v3-turbo", providerId: "groq", name: "Whisper Large V3 Turbo", modelType: "stt", contextWindow: 0, capabilities: JSON.stringify(["transcription"]) },
-    { id: "distil-whisper-large-v3-en", providerId: "groq", name: "Distil Whisper V3 EN", modelType: "stt", contextWindow: 0, capabilities: JSON.stringify(["transcription", "english"]) },
+    // Orpheus de Canopy Labs: reemplazan a playai-tts / playai-tts-arabic, que
+    // Groq deprecó en diciembre de 2025. Sólo aceptan response_format "wav".
+    { id: "canopylabs/orpheus-v1-english", providerId: "groq", name: "Orpheus V1 English (Groq)", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "expressive", "english"]) },
+    { id: "canopylabs/orpheus-arabic-saudi", providerId: "groq", name: "Orpheus Arabic Saudi (Groq)", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "arabic"]) },
+    // distil-whisper-large-v3-en salió del catálogo: Groq lo deprecó en favor de
+    // whisper-large-v3-turbo, así que la fila sólo servía para que el selector de
+    // STT del canal ofreciera un modelo que falla contra la API al transcribir.
 
     // ── Ollama: models are detected at runtime via /api/setup/ollama-models and inserted dynamically ──
 
@@ -485,6 +491,15 @@ const RETIRED_SKILL_IDS = [
   "canvas_interact",
   "mcp_lazy_operator",
 ];
+
+// Modelos de voz que salieron del catálogo, con su reemplazo. Borrar la fila del
+// seed no alcanza: el canal guarda el id del modelo en stt_provider/tts_provider,
+// así que quedaría apuntando a una fila que ya no existe y la transcripción
+// fallaría igual, sólo que con otro mensaje. Mapear a null desactiva la voz.
+const RETIRED_VOICE_MODELS: Record<string, string | null> = {
+  // Groq lo deprecó en favor de turbo, que además cubre más idiomas.
+  "groq/distil-whisper-large-v3-en": "groq/whisper-large-v3-turbo",
+};
 
 const RETIRED_CATALOG_AGENT_IDS = [
   "canvas_presenter",
@@ -743,6 +758,28 @@ export async function seedAllData(): Promise<void> {
     if (unlinkedCount > 0) {
       log.info(`[seed] 🔗 Unlinked ${unlinkedCount} agent(s) from model(s) no longer in the catalog`);
     }
+
+    // Los canales guardan el id del modelo de voz, no una FK: si el modelo salió
+    // del catálogo hay que repuntarlos a mano o la voz queda rota en silencio.
+    const voiceChannelsCol = await col<ChannelDoc>("channels");
+    let migratedVoice = 0;
+    for (const c of await voiceChannelsCol.scan({})) {
+      const patch: Partial<ChannelDoc> = {};
+      for (const field of ["stt_provider", "tts_provider"] as const) {
+        const current = c.doc[field];
+        if (current && current in RETIRED_VOICE_MODELS) {
+          patch[field] = RETIRED_VOICE_MODELS[current];
+        }
+      }
+      if (Object.keys(patch).length === 0) continue;
+      await voiceChannelsCol.put(c.id, { ...c.doc, ...patch }, { expectedVersion: c.version });
+      migratedVoice++;
+      log.info(`[seed] 🎙️  Canal ${c.id}: modelo de voz deprecado migrado ${JSON.stringify(patch)}`);
+    }
+    if (migratedVoice > 0) {
+      log.info(`[seed] 🎙️  ${migratedVoice} canal(es) repuntados a modelos de voz vigentes`);
+    }
+
     log.info(`[seed] ✅ ${modelCount} models procesados`);
 
     // 6️⃣ MCP servers

@@ -126,17 +126,26 @@ export function DashboardPage() {
     <div className="hive-page-container">
       {/* Header Sección */}
       <div className="hive-page-header">
-        <div className="relative z-10">
-          <div className="hive-page-header__eyebrow">
-            <div className="hive-page-header__dot" />
-            <span className="hive-page-header__label">SISTEMA OPERATIVO HIVE</span>
+        <div className="relative z-10 flex items-center gap-4">
+          <div className="hidden h-24 w-24 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] p-2 shadow-[0_0_30px_rgba(59,130,246,0.12)] sm:flex">
+            <img
+              src="/logocolor-dark.png"
+              alt="Logo de Hive"
+              className="h-full w-full object-contain"
+            />
           </div>
-          <h2 className="hive-title-page">
-            Centro de <span className="hive-title-page__accent">Control</span>
-          </h2>
-          <p className="hive-subtitle">
-            Monitoreo en tiempo real del enjambre y estado de los nodos cognitivos.
-          </p>
+          <div>
+            <div className="hive-page-header__eyebrow">
+              <div className="hive-page-header__dot" />
+              <span className="hive-page-header__label">SISTEMA OPERATIVO HIVE</span>
+            </div>
+            <h2 className="hive-title-page">
+              Centro de <span className="hive-title-page__accent">Control</span>
+            </h2>
+            <p className="hive-subtitle">
+              Monitoreo en tiempo real del enjambre y estado de los nodos cognitivos.
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center gap-6 relative z-10">

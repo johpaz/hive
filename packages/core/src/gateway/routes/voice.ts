@@ -103,6 +103,9 @@ export async function handleGetVoiceProviderVoices(
       case "gemini":
         voices = voiceService.getGeminiVoices()
         break
+      case "groq":
+        voices = voiceService.getGroqVoices()
+        break
       case "qwen":
         voices = voiceService.getQwenVoices()
         break

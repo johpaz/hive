@@ -1,6 +1,7 @@
 import { col } from "../storage/hive";
 import type { ChannelDoc, ModelDoc } from "../storage/collections";
 import { loadProviderApiKey } from "../storage/crypto";
+import { wireModelId } from "../storage/model-id";
 import { logger } from "../utils/logger";
 
 export interface VoiceConfig {
@@ -103,15 +104,37 @@ class VoiceService {
     };
   }
 
-  /** Provider de un modelo según la BD; acepta también un id de provider (canales antiguos). */
-  private async getModelProvider(modelId: string): Promise<string | null> {
+  /**
+   * Resuelve lo que el canal tiene guardado en `stt_provider`/`tts_provider` a un
+   * par (provider, modelo del catálogo).
+   *
+   * El campo se llama `*_provider` por historia: hoy guarda el id de un **modelo**,
+   * pero las configuraciones viejas guardaban el id del **provider**. En ese caso
+   * hay que elegir un modelo concreto acá; devolver sólo el provider hacía que su
+   * nombre terminara viajando al cable como si fuera un nombre de modelo.
+   */
+  private async resolveVoiceModel(
+    stored: string,
+    type: "stt" | "tts",
+  ): Promise<{ provider: string; modelId: string } | null> {
     try {
       const modelsCol = await col<ModelDoc>("models");
-      const model = await modelsCol.get(modelId);
-      if (model?.doc.provider_id) return model.doc.provider_id;
+      const model = await modelsCol.get(stored);
+      if (model?.doc.provider_id) return { provider: model.doc.provider_id, modelId: model.doc.id };
+
       const providersCol = await col<import("../storage/collections").ProviderDoc>("providers");
-      const provider = await providersCol.get(modelId);
-      return provider?.doc.id || null;
+      const provider = await providersCol.get(stored);
+      if (!provider?.doc.id) return null;
+
+      const candidates = (await modelsCol.findBy("model_type", type))
+        .filter((e) => e.doc.provider_id === provider.doc.id && e.doc.enabled);
+      const pick = candidates.find((e) => e.doc.active) ?? candidates[0];
+      if (!pick) return null;
+
+      log.warn(
+        `Canal con ${type}_provider="${stored}" (id de provider, formato viejo): usando ${pick.doc.id}`,
+      );
+      return { provider: provider.doc.id, modelId: pick.doc.id };
     } catch {
       return null;
     }
@@ -134,19 +157,22 @@ class VoiceService {
   }
 
   async transcribe(audio: AudioInput, modelId: string): Promise<string> {
-    let provider = await this.getModelProvider(modelId);
-    let resolvedModelId = modelId;
+    let resolved = await this.resolveVoiceModel(modelId, "stt");
 
-    if (!provider) {
+    if (!resolved) {
       const fallback = await this.getFirstActiveVoiceModel("stt");
       if (!fallback) throw new Error(`STT model "${modelId}" not found and no active STT models in the database`);
       log.warn(`STT model ${modelId} not found in DB, falling back to ${fallback.provider}/${fallback.id}`);
-      provider = fallback.provider;
-      resolvedModelId = fallback.id;
+      resolved = { provider: fallback.provider, modelId: fallback.id };
     }
+    const { provider, modelId: resolvedModelId } = resolved;
 
     switch (provider) {
-      case "groq":   return this.transcribeWithGroq(audio, resolvedModelId);
+      // groq revende modelos de terceros, así que sus filas de catálogo llevan
+      // el prefijo `groq/` y eso es lo que el canal guarda en stt_provider. El
+      // prefijo es una clave de la BD, no un nombre de modelo: mandarlo al cable
+      // hacía que la API contestara 400 para CUALQUIER whisper de Groq.
+      case "groq":   return this.transcribeWithGroq(audio, wireModelId(provider, resolvedModelId));
       case "openai": return this.transcribeWithOpenAIWhisper(audio);
       default:
         throw new Error(`STT not supported for provider "${provider}" (model ${resolvedModelId})`);
@@ -257,16 +283,17 @@ class VoiceService {
   }
 
   async speak(text: string, modelId: string, voiceId?: string): Promise<AudioOutput> {
-    let provider = modelId === "piper-local" ? "piper" : await this.getModelProvider(modelId);
-    let resolvedModelId = modelId;
+    if (modelId === "piper-local") return this.speakWithPiper(text, voiceId);
 
-    if (!provider) {
+    let resolved = await this.resolveVoiceModel(modelId, "tts");
+
+    if (!resolved) {
       const fallback = await this.getFirstActiveVoiceModel("tts");
       if (!fallback) throw new Error(`TTS model "${modelId}" not found and no active TTS models in the database`);
       log.warn(`TTS model ${modelId} not found in DB, falling back to ${fallback.provider}/${fallback.id}`);
-      provider = fallback.provider;
-      resolvedModelId = fallback.id;
+      resolved = { provider: fallback.provider, modelId: fallback.id };
     }
+    const { provider, modelId: resolvedModelId } = resolved;
 
     switch (provider) {
       case "piper":      return this.speakWithPiper(text, voiceId);
@@ -274,6 +301,9 @@ class VoiceService {
       case "openai":     return this.speakWithOpenAI(text, resolvedModelId, voiceId);
       case "gemini":     return this.speakWithGemini(text, resolvedModelId, voiceId);
       case "qwen":       return this.speakWithQwen(text, resolvedModelId, voiceId);
+      // Mismo prefijo de revendedor que en STT: la fila es `groq/canopylabs/...`
+      // y al cable va sólo `canopylabs/...`.
+      case "groq":       return this.speakWithGroq(text, wireModelId(provider, resolvedModelId), voiceId);
       default:
         throw new Error(`TTS not supported for provider "${provider}" (model ${resolvedModelId})`);
     }
@@ -373,6 +403,67 @@ class VoiceService {
       data: Buffer.from(buffer),
       mimeType: "audio/mpeg",
     };
+  }
+
+  /**
+   * Orpheus (Canopy Labs) sobre el endpoint OpenAI-compatible de Groq. Reemplazó
+   * a playai-tts, que Groq deprecó en diciembre de 2025.
+   *
+   * `wav` es el único `response_format` que Orpheus acepta hoy — no es un default
+   * elegido acá, mandar mp3 falla.
+   */
+  private async speakWithGroq(text: string, modelId: string, voiceId?: string): Promise<AudioOutput> {
+    const key = await this.getProviderApiKey("groq") || process.env.GROQ_API_KEY;
+    if (!key) {
+      throw new Error("GROQ_API_KEY not configured. Configúrala en Proveedores o en las variables de entorno.");
+    }
+
+    const isArabic = modelId.includes("arabic");
+    const voice = voiceId || (isArabic ? "abdullah" : "troy");
+
+    const response = await fetch("https://api.groq.com/openai/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model: modelId,
+        voice,
+        input: cleanTextForTTS(text),
+        response_format: "wav",
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Groq TTS failed: ${error}`);
+    }
+
+    const buffer = await response.arrayBuffer();
+    return {
+      type: "buffer",
+      data: Buffer.from(buffer),
+      mimeType: "audio/wav",
+    };
+  }
+
+  /** Las seis personas de Orpheus en inglés más las seis del modelo árabe saudí. */
+  getGroqVoices(): Array<{ id: string; name: string }> {
+    return [
+      { id: "autumn", name: "Autumn (F, inglés)" },
+      { id: "diana", name: "Diana (F, inglés)" },
+      { id: "hannah", name: "Hannah (F, inglés)" },
+      { id: "austin", name: "Austin (M, inglés)" },
+      { id: "daniel", name: "Daniel (M, inglés)" },
+      { id: "troy", name: "Troy (M, inglés)" },
+      { id: "lulwa", name: "Lulwa (F, árabe saudí)" },
+      { id: "noura", name: "Noura (F, árabe saudí)" },
+      { id: "aisha", name: "Aisha (F, árabe saudí)" },
+      { id: "abdullah", name: "Abdullah (M, árabe saudí)" },
+      { id: "fahad", name: "Fahad (M, árabe saudí)" },
+      { id: "sultan", name: "Sultan (M, árabe saudí)" },
+    ];
   }
 
   private async speakWithGemini(text: string, modelId: string, voiceId?: string): Promise<AudioOutput> {

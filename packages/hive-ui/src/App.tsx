@@ -119,7 +119,7 @@ const AppContent = () => {
   // Block rendering until gateway is ready — show the bee while waiting
   if (!gatewayReady || !setupChecked) {
     return (
-      <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-background/60 backdrop-blur-md">
+      <div className="fixed inset-0 z-9999 flex flex-col items-center justify-center bg-background/60 backdrop-blur-md">
         <div className="relative h-32 w-32 animate-bounce" style={{ animationDuration: "2000ms" }}>
           <svg viewBox="0 0 100 100" className="h-full w-full" style={{ filter: "drop-shadow(0 0 15px rgba(245,158,11,0.5))" }}>
             <ellipse cx="50" cy="55" rx="20" ry="15" fill="#F59E0B" />

@@ -15,6 +15,38 @@ import {
 import { generateAuthToken } from "../utils/token";
 import { getHiveDir } from "../../../core/src/config/loader";
 
+/**
+ * Modelos de voz que ofrece el asistente, con el id **tal como se llama la fila
+ * del catálogo**.
+ *
+ * Los `value` se guardan verbatim en `channels.stt_provider`/`tts_provider`, así
+ * que un id que no exista en `models` rompe tres cosas a la vez y en silencio:
+ * el modelo no se activa, `saveVoiceConfig` no resuelve el provider y por eso
+ * **no guarda la API key**, y el canal queda apuntando a una fila inexistente.
+ * Groq revende, así que sus filas llevan el prefijo `groq/`.
+ *
+ * `tests/voice-groq.test.ts` verifica que cada value de acá exista en el seed.
+ */
+export const ONBOARDING_STT_OPTIONS = [
+  { value: "groq/whisper-large-v3-turbo", label: "Groq Whisper Large V3 Turbo", hint: "Recomendado - rápido" },
+  { value: "groq/whisper-large-v3", label: "Groq Whisper Large V3", hint: "Máxima precisión" },
+  { value: "whisper-1", label: "OpenAI Whisper 1", hint: "Alternativa" },
+] as const;
+
+export const ONBOARDING_TTS_OPTIONS = [
+  { value: "eleven_flash_v2_5", label: "ElevenLabs Flash V2.5", hint: "Tiempo real - recomendado" },
+  { value: "eleven_turbo_v2_5", label: "ElevenLabs Turbo V2.5", hint: "Balance calidad/velocidad" },
+  { value: "eleven_multilingual_v2", label: "ElevenLabs Multilingual V2", hint: "Alta calidad" },
+  { value: "eleven_v3", label: "ElevenLabs V3", hint: "Más expresivo" },
+  { value: "groq/canopylabs/orpheus-v1-english", label: "Orpheus V1 English (Groq)", hint: "Expresivo - inglés" },
+  { value: "qwen3-tts-instruct-flash", label: "Qwen TTS Flash", hint: "Gratis - recomendado" },
+  { value: "gpt-4o-mini-tts", label: "OpenAI GPT-4o Mini TTS", hint: "Usa tu API key" },
+  { value: "tts-1", label: "OpenAI TTS-1", hint: "Estándar" },
+  { value: "tts-1-hd", label: "OpenAI TTS-1 HD", hint: "Alta calidad" },
+  { value: "gemini-2.5-flash-preview-tts", label: "Gemini 2.5 Flash TTS", hint: "Google" },
+  { value: "gemini-2.5-pro-preview-tts", label: "Gemini 2.5 Pro TTS", hint: "Google Pro" },
+] as const;
+
 // Log helper for @clack/prompts v0.5.1 (log export not available)
 const log = {
   success: (msg: string) => console.log(`\x1b[32m✔\x1b[0m ${msg}`),
@@ -1179,19 +1211,17 @@ async function runFullWizard(): Promise<void> {
           // Ask for STT provider (speech-to-text)
           const sttProvider = await p.select({
             message: "¿Qué servicio de transcripción de voz (STT)?",
-            options: [
-              { value: "whisper-large-v3-turbo", label: "Groq Whisper Large V3 Turbo", hint: "Recomendado - rápido" },
-              { value: "whisper-large-v3", label: "Groq Whisper Large V3", hint: "Máxima precisión" },
-              { value: "distil-whisper-large-v3-en", label: "Groq Distil Whisper Large V3", hint: "Solo inglés" },
-              { value: "whisper-1", label: "OpenAI Whisper 1", hint: "Alternativa" },
-            ],
-            initialValue: state.sttProvider || "whisper-large-v3-turbo",
+            options: [...ONBOARDING_STT_OPTIONS],
+            initialValue: state.sttProvider || "groq/whisper-large-v3-turbo",
           });
           if (p.isCancel(sttProvider)) { p.cancel("Onboarding cancelado."); process.exit(0); }
           state.sttProvider = sttProvider as string;
 
-          // Ask for API key based on STT provider
-          const isGroqStt = ["whisper-large-v3", "whisper-large-v3-turbo", "distil-whisper-large-v3-en"].includes(sttProvider);
+          // Ask for API key based on STT provider. Se aceptan también los ids sin
+          // prefijo y el distil-whisper que Groq deprecó, porque una config vieja
+          // los tiene guardados y igual necesita su GROQ_API_KEY.
+          const isGroqStt = sttProvider.startsWith("groq/")
+            || ["whisper-large-v3", "whisper-large-v3-turbo", "distil-whisper-large-v3-en"].includes(sttProvider);
           const isOpenAiStt = sttProvider === "whisper-1";
 
           if (isGroqStt) {
@@ -1257,30 +1287,48 @@ async function runFullWizard(): Promise<void> {
           // Ask for TTS provider (text-to-speech)
           const ttsProvider = await p.select({
             message: "¿Qué servicio de síntesis de voz (TTS)?",
-            options: [
-              { value: "eleven_flash_v2_5", label: "ElevenLabs Flash V2.5", hint: "Tiempo real - recomendado" },
-              { value: "eleven_turbo_v2_5", label: "ElevenLabs Turbo V2.5", hint: "Balance calidad/velocidad" },
-              { value: "eleven_multilingual_v2", label: "ElevenLabs Multilingual V2", hint: "Alta calidad" },
-              { value: "eleven_v3", label: "ElevenLabs V3", hint: "Más expresivo" },
-              { value: "qwen3-tts-instruct-flash", label: "Qwen TTS Flash", hint: "Gratis - recomendado" },
-              { value: "gpt-4o-mini-tts", label: "OpenAI GPT-4o Mini TTS", hint: "Usa tu API key" },
-              { value: "tts-1", label: "OpenAI TTS-1", hint: "Estándar" },
-              { value: "tts-1-hd", label: "OpenAI TTS-1 HD", hint: "Alta calidad" },
-              { value: "gemini-2.5-flash-preview-tts", label: "Gemini 2.5 Flash TTS", hint: "Google" },
-              { value: "gemini-2.5-pro-preview-tts", label: "Gemini 2.5 Pro TTS", hint: "Google Pro" },
-            ],
+            options: [...ONBOARDING_TTS_OPTIONS],
             initialValue: state.ttsProvider || "eleven_flash_v2_5",
           });
           if (p.isCancel(ttsProvider)) { p.cancel("Onboarding cancelado."); process.exit(0); }
           state.ttsProvider = ttsProvider as string;
 
           // Ask for API key based on TTS provider
+          const isGroqTts = ttsProvider.startsWith("groq/");
           const isElevenLabs = ["eleven_flash_v2_5", "eleven_turbo_v2_5", "eleven_multilingual_v2", "eleven_v3"].includes(ttsProvider);
           const isOpenAI = ["gpt-4o-mini-tts", "tts-1", "tts-1-hd"].includes(ttsProvider);
           const isGemini = ["gemini-2.5-flash-preview-tts", "gemini-2.5-pro-preview-tts"].includes(ttsProvider);
           const isQwen = ["qwen3-tts-instruct-flash", "qwen3-tts-flash", "qwen-tts"].includes(ttsProvider);
 
-          if (isElevenLabs) {
+          if (isGroqTts) {
+            // La misma clave que el STT: si ya la pidió arriba, no vuelve a pedirla.
+            const existingGroqKey = getEnvApiKey("GROQ_API_KEY");
+            let groqKey: string | null = existingGroqKey;
+
+            if (!groqKey) {
+              const groqKeyInput = await p.password({
+                message: "Ingresa tu GROQ_API_KEY:",
+                validate: (value) => {
+                  if (!value || value.length < 10) return "API key inválida";
+                },
+              });
+              if (p.isCancel(groqKeyInput)) { p.cancel("Onboarding cancelado."); process.exit(0); }
+              groqKey = groqKeyInput as string;
+
+              const hiveDir = getHiveDir();
+              const envPath = path.join(hiveDir, ".env");
+              const envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf-8") : "";
+              const newEnv = envContent.includes("GROQ_API_KEY")
+                ? envContent.replace(/GROQ_API_KEY=.*/g, `GROQ_API_KEY=${groqKey}`)
+                : envContent + `\nGROQ_API_KEY=${groqKey}`;
+              fs.writeFileSync(envPath, newEnv);
+              reloadEnvToProcess(hiveDir);
+              log.success("✅ API key de Groq guardada en .env");
+            } else {
+              log.info("✅ GROQ_API_KEY ya configurada en .env");
+            }
+            ttsApiKeyValue = groqKey;
+          } else if (isElevenLabs) {
             const existingElevenKey = getEnvApiKey("ELEVENLABS_API_KEY");
             let elevenKey: string | null = existingElevenKey;
 
