@@ -1087,11 +1087,11 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
 
     return (
         <div
-            className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center"
+            className="fixed inset-0 z-9999 bg-black/80 flex items-center justify-center"
             onClick={handleClose}
         >
             <div
-                className="relative w-full max-w-[480px] mx-4 hive-card border-white/10 overflow-hidden"
+                className="relative w-full max-w-480px mx-4 hive-card border-white/10 overflow-hidden"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Close button */}
