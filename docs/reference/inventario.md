@@ -2,18 +2,18 @@
 
 > No edites este archivo manualmente. Ejecuta `bun run docs:generate`.
 
-Generado desde el código fuente para Hive **1.0.1**.
+Generado desde el código fuente para Hive **1.0.2**.
 
 ## Versiones
 
 | Paquete | Versión |
 |---|---:|
-| `@johpaz/hive-agents` | `1.0.1` |
-| `@johpaz/hive-cli` | `1.0.1` |
-| `@johpaz/hive-agents-core` | `1.0.1` |
-| `@johpaz/hive-agents-ui` | `1.0.1` |
-| `@johpaz/hive-agents-mcp` | `1.0.1` |
-| `@johpaz/hive-agents-skills` | `1.0.1` |
+| `@johpaz/hive-agents` | `1.0.2` |
+| `@johpaz/hive-cli` | `1.0.2` |
+| `@johpaz/hive-agents-core` | `1.0.2` |
+| `@johpaz/hive-agents-ui` | `1.0.2` |
+| `@johpaz/hive-agents-mcp` | `1.0.2` |
+| `@johpaz/hive-agents-skills` | `1.0.2` |
 
 ## Herramientas (58)
 
@@ -214,6 +214,7 @@ Generado desde el código fuente para Hive **1.0.1**.
 | `@johpaz/hive-agents-core` | `./tools/filesystem` | `./src/tools/filesystem/index.ts` |
 | `@johpaz/hive-agents-core` | `./tools/office` | `./src/tools/office/index.ts` |
 | `@johpaz/hive-agents-core` | `./tools/web` | `./src/tools/web/index.ts` |
+| `@johpaz/hive-agents-core` | `./tools/web/browser-backend` | `./src/tools/web/browser-backend.ts` |
 | `@johpaz/hive-agents-core` | `./tool-runtime` | `./src/tool-runtime/index.ts` |
 | `@johpaz/hive-agents-core` | `./voice` | `./src/voice/index.ts` |
 | `@johpaz/hive-agents-mcp` | `.` | `./src/index.ts` |

@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-agents-core",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "private": true,
   "description": "Hive Gateway — Personal AI agent runtime",
@@ -17,25 +17,25 @@
   },
   "dependencies": {
     "@ag-ui/core": "^0.0.46",
-    "@johpaz/hive-agents-mcp": "^1.0.1",
-    "@johpaz/hive-agents-skills": "^1.0.1",
+    "@johpaz/hive-agents-mcp": "^1.0.2",
+    "@johpaz/hive-agents-skills": "^1.0.2",
     "@johpaz/hive-db": "0.3.1",
-    "@modelcontextprotocol/sdk": "latest",
-    "@slack/bolt": "latest",
-    "@whiskeysockets/baileys": "latest",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@slack/bolt": "^4.7.2",
+    "@whiskeysockets/baileys": "7.0.0-rc11",
     "croner": "^10.0.1",
-    "discord.js": "latest",
+    "discord.js": "^14.26.4",
     "docx": "^9.6.1",
-    "grammy": "latest",
+    "grammy": "^1.42.0",
     "jszip": "^3.10.1",
     "mammoth": "^1.12.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.6.205",
     "pptxgenjs": "^4.0.1",
-    "qrcode-terminal": "latest",
+    "qrcode-terminal": "^0.12.0",
     "toon-format-parser": "1.1.4",
     "xlsx": "^0.18.5",
-    "zod": "latest"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "typescript": "7.0.2",
@@ -83,6 +83,7 @@
     "./tools/filesystem": "./src/tools/filesystem/index.ts",
     "./tools/office": "./src/tools/office/index.ts",
     "./tools/web": "./src/tools/web/index.ts",
+    "./tools/web/browser-backend": "./src/tools/web/browser-backend.ts",
     "./tool-runtime": "./src/tool-runtime/index.ts",
     "./voice": "./src/voice/index.ts"
   }

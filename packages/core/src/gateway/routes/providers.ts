@@ -1,5 +1,6 @@
 import { col, updateDoc, updateManyByIndex } from "../../storage/hive"
 import type { ProviderDoc, ModelDoc, AgentDoc } from "../../storage/collections"
+import { catalogModelKey, wireModelId } from "../../storage/model-id"
 import {
   maskApiKey,
   loadProviderApiKey, storeProviderApiKey,
@@ -20,7 +21,7 @@ export async function handleGetProviders(req: Request, addCorsHeaders: (r: Respo
   for (const m of modelsRows) {
     const pid = m.doc.provider_id
     if (!modelsByProvider[pid]) modelsByProvider[pid] = []
-    modelsByProvider[pid].push({ ...m.doc, provider_id: pid })
+    modelsByProvider[pid].push({ ...m.doc, provider_id: pid, wire_id: wireModelId(pid, m.doc.id) })
   }
 
   const providers = await Promise.all(rawProviders.map(async (p) => {
@@ -120,6 +121,96 @@ export async function handleUpdateProvider(req: Request, addCorsHeaders: (r: Res
   return addCorsHeaders(Response.json({ ok: true }), req)
 }
 
+/**
+ * Pregunta al provider qué modelos sirve hoy. NO escribe en la BD: la usan tanto
+ * el sync como el explorador del formulario de alta.
+ *
+ * El `base_url` guardado ya incluye el segmento de versión
+ * (`.../v1`, `.../api/paas/v4`), así que sólo se le cuelga `/models`. La versión
+ * anterior recortaba `/v1` para volver a agregarlo, lo que funcionaba de casualidad
+ * en los `/v1` y armaba `/api/paas/v4/v1/models` en los demás.
+ */
+// Una sola forma en vez de una unión discriminada: el proyecto compila sin
+// `strictNullChecks`, y sin él TS no estrecha `if (!result.ok)`.
+interface DiscoveryResult {
+  names: string[]
+  error?: string
+  /** Código HTTP a devolver cuando `error` está presente. */
+  status?: number
+}
+
+export async function fetchProviderModelNames(
+  providerId: string,
+  baseUrl: string | null
+): Promise<DiscoveryResult> {
+  if (providerId === "ollama") {
+    const host = (baseUrl || "http://localhost:11434").replace(/\/+$/, "").replace(/\/(v1|api)$/, "")
+    const res = await fetch(`${host}/api/tags`, { signal: AbortSignal.timeout(10000) })
+    if (!res.ok) return { names: [], error: `Ollama responded ${res.status}`, status: 502 }
+    const data = await res.json() as { models: Array<{ name: string }> }
+    return { names: (data.models || []).map(m => m.name) }
+  }
+
+  if (!baseUrl) {
+    return { names: [], error: `El provider "${providerId}" no tiene base_url configurada.`, status: 400 }
+  }
+
+  // Se manda la key si el provider tiene una: hay endpoints cuyo listado es
+  // público (ModelScope, NVIDIA) y otros que devuelven 401 sin autenticar
+  // (DashScope), donde sin esto el explorador de modelos no servía.
+  const apiKey = await loadProviderApiKey(providerId).catch(() => null)
+  const headers: Record<string, string> = apiKey ? { Authorization: `Bearer ${apiKey}` } : {}
+
+  const res = await fetch(`${baseUrl.replace(/\/+$/, "")}/models`, {
+    headers,
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!res.ok) return { names: [], error: `${providerId} responded ${res.status}`, status: 502 }
+  const data = await res.json() as { data: Array<{ id: string }> }
+  return { names: (data.data || []).map(m => m.id) }
+}
+
+/**
+ * GET /api/providers/:id/available-models — sólo lectura.
+ * El sync persiste TODO lo que devuelve el provider (102 modelos en NVIDIA), que
+ * no es lo que querés al explorar para agregar uno: acá se devuelve la lista y el
+ * usuario elige.
+ */
+export async function handleGetProviderAvailableModels(
+  req: Request,
+  addCorsHeaders: (r: Response, req: Request) => Response,
+  providerId: string
+): Promise<Response> {
+  const providersCol = await col<ProviderDoc>("providers")
+  const providerEntry = await providersCol.get(providerId)
+  if (!providerEntry) {
+    return addCorsHeaders(Response.json({ error: "Provider not found" }, { status: 404 }), req)
+  }
+
+  try {
+    const result = await fetchProviderModelNames(providerId, providerEntry.doc.base_url)
+    if (result.error) {
+      return addCorsHeaders(Response.json({ error: result.error }, { status: result.status }), req)
+    }
+
+    // Qué ya está agregado, para que la UI lo marque en vez de duplicarlo.
+    const modelsCol = await col<ModelDoc>("models")
+    const existing = new Set((await modelsCol.findBy("provider_id", providerId)).map(m => m.id))
+
+    const models = result.names.map(name => ({
+      wire_id: name,
+      id: catalogModelKey(providerId, name),
+      already_added: existing.has(catalogModelKey(providerId, name)),
+    })).sort((a, b) => a.wire_id.localeCompare(b.wire_id))
+
+    return addCorsHeaders(Response.json({ models }), req)
+  } catch (err) {
+    return addCorsHeaders(Response.json({
+      error: `No se pudo consultar ${providerId}: ${(err as Error).message}`,
+    }, { status: 502 }), req)
+  }
+}
+
 export async function handleSyncProviderModels(
   req: Request,
   addCorsHeaders: (r: Response, req: Request) => Response,
@@ -133,56 +224,47 @@ export async function handleSyncProviderModels(
     return addCorsHeaders(new Response("Provider not found", { status: 404 }), req)
   }
 
-  const baseUrl = (providerEntry.doc.base_url || "http://localhost:11434").replace(/\/(v1|api)\/?$/, "")
-
   try {
-    let modelNames: string[] = []
-
-    // Ollama uses /api/tags, OpenAI-compatible providers use /v1/models
-    if (providerId === "ollama") {
-      const res = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(10000) })
-      if (!res.ok) {
-        return addCorsHeaders(Response.json({ error: `Ollama responded ${res.status}` }, { status: 502 }), req)
-      }
-      const data = await res.json() as { models: Array<{ name: string }> }
-      modelNames = (data.models || []).map(m => m.name)
-    } else {
-      // OpenAI-compatible: groq, mistral, etc.
-      const res = await fetch(`${baseUrl}/v1/models`, { signal: AbortSignal.timeout(10000) })
-      if (!res.ok) {
-        return addCorsHeaders(Response.json({ error: `${providerId} responded ${res.status}` }, { status: 502 }), req)
-      }
-      const data = await res.json() as { data: Array<{ id: string }> }
-      modelNames = (data.data || []).map(m => m.id)
+    const discovered = await fetchProviderModelNames(providerId, providerEntry.doc.base_url)
+    if (discovered.error) {
+      return addCorsHeaders(Response.json({ error: discovered.error }, { status: discovered.status }), req)
     }
+    const modelNames = discovered.names
 
     if (modelNames.length === 0) {
       return addCorsHeaders(Response.json({ error: "No models found from provider" }, { status: 400 }), req)
     }
 
+    // Los ids se guardan con la clave de catálogo (prefijada en los providers
+    // revendedores) para que dos servicios que sirvan el mismo modelo no se
+    // pisen la fila.
+    const discoveredKeys = new Set(modelNames.map(n => catalogModelKey(providerId, n)))
     for (const name of modelNames) {
-      const existing = await modelsCol.get(name)
-      await modelsCol.put(name, {
-        id: name, provider_id: providerId, name,
+      const key = catalogModelKey(providerId, name)
+      const existing = await modelsCol.get(key)
+      await modelsCol.put(key, {
+        id: key, provider_id: providerId, name,
         model_type: existing?.doc.model_type ?? "llm",
         context_window: existing?.doc.context_window ?? 32768,
         capabilities: existing?.doc.capabilities ?? null,
         enabled: true, active: true,
         source: existing?.doc.source ?? "discovered",
+        input_per_1m: existing?.doc.input_per_1m ?? null,
+        output_per_1m: existing?.doc.output_per_1m ?? null,
       }, existing ? { expectedVersion: existing.version } : undefined)
     }
 
     // Disable models that are no longer present
     const existingModels = await modelsCol.findBy("provider_id", providerId)
     for (const row of existingModels) {
-      if (!modelNames.includes(row.id)) {
+      if (!discoveredKeys.has(row.id)) {
         await modelsCol.put(row.id, { ...row.doc, active: false, enabled: false }, { expectedVersion: row.version })
       }
     }
 
-    const models = (await modelsCol.findBy("provider_id", providerId)).map(m => ({
-      id: m.doc.id, name: m.doc.name, provider_id: m.doc.provider_id, enabled: m.doc.enabled, active: m.doc.active,
-    }))
+    // Se devuelve el doc completo: recortar los campos dejaba a la UI sin
+    // context_window ni precio justo después de sincronizar.
+    const models = (await modelsCol.findBy("provider_id", providerId)).map(m => m.doc)
 
     return addCorsHeaders(Response.json({
       success: true,

@@ -1,6 +1,7 @@
 import type { Config } from "../config/loader";
 import { loadConfig, getHiveDir } from "../config/loader";
 import { logger, onLogEntry } from "../utils/logger";
+import { resolveUISource } from "./helpers/ui-source";
 import { sessionManager, parseSessionId } from "./session";
 import { enqueueChatTurn, initWebchatTurnRunner } from "./webchat-turn";
 import {
@@ -44,7 +45,7 @@ import { handleSetupStatus, handleVerifyProvider, handleCompleteSetup, handleSet
 import { handleAuthStatus, handleLogin, handleSetupCredentials, handleChangePassword, handleRecover, handleDisableAuth, handleRecoveryKey } from "./routes/auth";
 import { resolveUserId } from "../storage/onboarding";
 import { handleGetAgents, handleCreateAgent, handleUpdateAgent, handleDeleteAgent, handleGetAgentProposals } from "./routes/agents";
-import { handleGetProviders, handleCreateProvider, handleToggleProvider, handleUpdateProvider, handleSyncProviderModels, handleLoadHiveAgentsModel, handleGetHiveAgentsModelStatus } from "./routes/providers";
+import { handleGetProviders, handleCreateProvider, handleToggleProvider, handleUpdateProvider, handleSyncProviderModels, handleGetProviderAvailableModels, handleLoadHiveAgentsModel, handleGetHiveAgentsModelStatus } from "./routes/providers";
 import { handleGetUsers, handleCreateUser, handleUpdateUserSettings, handleGetUserChannels, handleLinkUserChannel } from "./routes/users";
 import { handleGetSkills, handleActivateSkill, handleUpdateSkill, handleDeleteSkill, handleCreateSkill } from "./routes/skills";
 import { handleGetEthics, handleActivateEthics, handleDeleteEthics } from "./routes/ethics";
@@ -57,6 +58,13 @@ import {
   markNotificationDelivered,
 } from "./notification-inbox";
 import { setNarrationDelivery } from "../events/narration";
+import {
+  resolveNarrationMode,
+  shouldDeliverToChannel,
+  formatNarrationForChannel,
+  enqueueChannelNarration,
+  awaitChannelNarration,
+} from "../events/channel-narration";
 import { CronScheduler } from "../scheduler/CronScheduler";
 import { createTaskHandler, setSchedulerForCleanup } from "../scheduler/integration";
 
@@ -214,7 +222,7 @@ export async function startGateway(
         type: metadata?.notificationId ? "notification" : "progress",
         sessionId,
         notificationId: metadata?.notificationId,
-      });
+      }, metadata?.accountId);
     });
     setNarrationDelivery(async (event) => {
       if (event.channel === "webchat" && event.session_id) {
@@ -234,12 +242,20 @@ export async function startGateway(
           return;
         }
       }
-      if (event.channel && event.session_id) {
+      if (!event.channel || !event.session_id) return;
+
+      // Messaging channels turn every event into a permanent chat message, so
+      // they get a filtered feed (see events/channel-narration.ts) delivered
+      // off the agent loop's critical path.
+      const mode = await resolveNarrationMode(event.channel);
+      if (!shouldDeliverToChannel(event, mode)) return;
+
+      enqueueChannelNarration(`${event.channel}:${event.session_id}`, async () => {
         await channelManager.send(event.channel, event.session_id, {
-          content: event.detail ? `${event.label}: ${event.detail}` : event.label,
+          content: formatNarrationForChannel(event),
           type: "progress",
         });
-      }
+      });
     });
 
     if (gatewaySetupMode) {
@@ -504,6 +520,7 @@ export async function startGateway(
     const { userId, threadId: conversationThreadId } = await resolveContext({
       channel: message.channel,
       channelUserId: message.sessionId,
+      accountId: message.accountId,
     });
 
     const telegramMeta = message.metadata?.telegram as { messageId?: number } | undefined;
@@ -595,6 +612,10 @@ export async function startGateway(
       }
       log.info(`📤 LLM response: ${responseContent.substring(0, 100)}${responseContent.length > 100 ? "..." : ""}`);
 
+      // Narration is delivered off the critical path — let it drain first so the
+      // final answer lands after the progress messages, not before them.
+      await awaitChannelNarration(`${message.channel}:${routingSessionId}`);
+
       const shouldSpeak = preferAudioResponse;
       let responseType: "text" | "audio" = "text";
       let ttsProviderUsed: string | null = null;
@@ -616,7 +637,7 @@ export async function startGateway(
               responseType = "audio";
 
               try {
-                const channel = channelManager.getChannel(message.channel);
+                const channel = channelManager.getChannel(message.channel, message.accountId);
                 if (channel?.sendAudio) {
                   await channel.sendAudio(routingSessionId, audioOutput.data as Buffer, audioOutput.mimeType);
                   log.info(`✅ Audio sent to ${routingSessionId}`);
@@ -887,16 +908,16 @@ export async function startGateway(
             return new Response("Not found", { status: 404 });
           }
 
-          // In production: serve from dist folder
-          // Priority: HIVE_UI_DIR (Docker) > ~/.hive/ui > HIVE_DIST_DIR/ui (global npm) > cwd/packages/hive-ui/dist (monorepo)
-          const uiDirFromEnv = process.env.HIVE_UI_DIR;
-          const uiDirFromHive = path.join(getHiveDir(), "ui");
-          const uiDirFromDist = process.env.HIVE_DIST_DIR ? path.join(process.env.HIVE_DIST_DIR, "ui") : null;
-          const uiDirFromCwd = path.join(process.cwd(), "packages/hive-ui/dist");
-          const uiDir = uiDirFromEnv
-            || (existsSync(path.join(uiDirFromHive, "index.html")) ? uiDirFromHive
-              : uiDirFromDist && existsSync(path.join(uiDirFromDist, "index.html")) ? uiDirFromDist
-                : uiDirFromCwd);
+          // In production: serve from dist folder, o del bundle embebido si no
+          // hay nada en disco. Ver helpers/ui-source.ts para el orden y por qué
+          // el disco le gana al embed.
+          const uiSource = resolveUISource({
+            uiDirEnv: process.env.HIVE_UI_DIR,
+            distDirEnv: process.env.HIVE_DIST_DIR,
+            hiveDir: getHiveDir(),
+            cwd: process.cwd(),
+            hasEmbedded: Boolean(embeddedUI?.size),
+          });
           let subPath = url.pathname;
 
           // En setup mode: / y /ui redirigen a /setup
@@ -927,7 +948,7 @@ export async function startGateway(
           // Standalone executables carry the UI inside the Bun binary. The CLI
           // passes that bundle into the child gateway process so both API and
           // UI continue to share a single port without extracting files.
-          if (embeddedUI?.size) {
+          if (uiSource.kind === "embedded" && embeddedUI) {
             const entry = embeddedUI.get(subPath)
               ?? (!path.extname(subPath) ? embeddedUI.get("/index.html") : undefined);
             if (entry) {
@@ -942,17 +963,18 @@ export async function startGateway(
             }
           }
 
-          const filePath = path.join(uiDir, subPath);
-          const uiFile = Bun.file(filePath);
-          if (await uiFile.exists()) {
-            return new Response(uiFile);
-          }
+          if (uiSource.kind === "disk") {
+            const uiFile = Bun.file(path.join(uiSource.dir, subPath));
+            if (await uiFile.exists()) {
+              return new Response(uiFile);
+            }
 
-          // SPA fallback: paths without a file extension are React Router routes — serve index.html
-          if (!path.extname(subPath)) {
-            const indexFile = Bun.file(path.join(uiDir, "index.html"));
-            if (await indexFile.exists()) {
-              return new Response(indexFile);
+            // SPA fallback: paths without a file extension are React Router routes — serve index.html
+            if (!path.extname(subPath)) {
+              const indexFile = Bun.file(path.join(uiSource.dir, "index.html"));
+              if (await indexFile.exists()) {
+                return new Response(indexFile);
+              }
             }
           }
 
@@ -1045,7 +1067,9 @@ export async function startGateway(
           return addCorsHeaders(new Response(
             JSON.stringify({
               status: "ok",
-              version: "0.1.7",
+              // Estaba hardcodeada en "0.1.7" mientras package.json iba por 1.0.1:
+              // /status mentía sobre qué versión estaba corriendo.
+              version: _pkgVersion,
               uptime: Math.floor((Date.now() - startTime) / 1000),
               gateway: { host, port },
               sessions: sessionManager.list().map((s) => ({
@@ -1321,6 +1345,12 @@ export async function startGateway(
         if (syncModelsMatch && req.method === "POST") {
           const providerId = syncModelsMatch[1]
           return await handleSyncProviderModels(req, addCorsHeaders, providerId)
+        }
+
+        // GET /api/providers/:id/available-models — lista lo que sirve el provider, sin persistir
+        const availableModelsMatch = url.pathname.match(/^\/api\/providers\/([^/]+)\/available-models$/)
+        if (availableModelsMatch && req.method === "GET") {
+          return await handleGetProviderAvailableModels(req, addCorsHeaders, availableModelsMatch[1])
         }
 
         // POST /api/models - Create a new model

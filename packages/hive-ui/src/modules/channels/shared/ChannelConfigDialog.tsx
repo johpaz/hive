@@ -923,18 +923,32 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                 </>
             )}
 
-            <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-right text-xs">Entrega</Label>
-                <Select value={formData.step_delivery_mode} onValueChange={v => setFormData(p => ({ ...p, step_delivery_mode: v }))}>
-                    <SelectTrigger className="col-span-3">
-                        <SelectValue placeholder="Modo de entrega" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="new_messages">Solo Mensajes Nuevos</SelectItem>
-                        <SelectItem value="all">Todo (Sincronización)</SelectItem>
-                    </SelectContent>
-                </Select>
-            </div>
+            {formData.type !== "webchat" && (
+                <div className="grid grid-cols-4 items-start gap-4">
+                    <Label className="text-right text-xs pt-2">Narración</Label>
+                    <div className="col-span-3 space-y-1">
+                        <Select
+                            /* Legacy rows stored "new_messages"; it maps to "milestones". */
+                            value={formData.step_delivery_mode === "off" || formData.step_delivery_mode === "all"
+                                ? formData.step_delivery_mode
+                                : "milestones"}
+                            onValueChange={v => setFormData(p => ({ ...p, step_delivery_mode: v }))}
+                        >
+                            <SelectTrigger>
+                                <SelectValue placeholder="Modo de narración" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="off">Sin narración</SelectItem>
+                                <SelectItem value="milestones">Solo hitos</SelectItem>
+                                <SelectItem value="all">Todo el detalle</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <p className="text-[10px] text-white/30">
+                            Cuántos mensajes de avance envía el agente mientras trabaja. "Todo el detalle" narra cada herramienta y puede generar decenas de mensajes por consulta.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             <div className="pt-4 mt-2 border-t border-white/5 space-y-4">
                 <div className="flex items-center justify-between">

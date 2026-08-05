@@ -10,6 +10,11 @@ export type ProviderType =
   | "groq"
   | "cohere"
   | "nvidia"
+  | "minimax"
+  | "qwen"
+  | "z-ai"
+  | "modelscope"
+  | "opencode-go"
   | "hiveagents";
 
 export type ProviderStatus = "active" | "fallback" | "error" | "disabled";
@@ -155,4 +160,35 @@ export interface Model {
   capabilities?: string | null;
   enabled: boolean;
   active?: boolean;
+  /**
+   * USD por millón de tokens, del catálogo del backend. `null` = tarifa
+   * desconocida, que no es lo mismo que 0 (endpoint gratuito).
+   */
+  input_per_1m?: number | null;
+  output_per_1m?: number | null;
+  inputPer1M?: number | null;
+  outputPer1M?: number | null;
+  source?: "catalog" | "discovered";
+  /**
+   * Nombre que el provider espera en el cable, derivado por el backend. En los
+   * providers revendedores `id` lleva el prefijo del provider y este no; la
+   * lista de revendedores vive en core y no se duplica en la UI.
+   */
+  wire_id?: string;
+}
+
+/**
+ * Campos editables de un modelo desde la UI. Todo es opcional para poder mandar
+ * sólo lo que cambió; en los precios `null` es un cambio explícito a
+ * "sin tarifa", distinto de omitir la clave.
+ */
+export interface ModelFormData {
+  /** Nombre que el provider espera en el cable (sin el prefijo del revendedor). */
+  id?: string;
+  name?: string;
+  model_type?: string;
+  context_window?: number;
+  input_per_1m?: number | null;
+  output_per_1m?: number | null;
+  capabilities?: string[] | null;
 }

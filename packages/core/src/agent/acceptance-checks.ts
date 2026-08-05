@@ -42,7 +42,13 @@ export interface AcceptanceChecks {
 
 export function sanitizeDiagnostic(value: string, limit = 1000): string {
   return value
-    .replace(/(api[_-]?key|token|authorization|secret)(["'=:\s]+)[^\s,}"']+/gi, "$1$2[REDACTED]")
+    .replace(
+      // El esquema de auth va aparte: sin el grupo opcional, "authorization:
+      // Bearer <token>" consumía sólo "Bearer" y dejaba el token en claro.
+      /(api[_-]?key|token|authorization|secret)(["'=:\s]+)(?:(bearer|basic)\s+)?[^\s,}"']+/gi,
+      (_match, key: string, separator: string, scheme?: string) =>
+        `${key}${separator}${scheme ? `${scheme} ` : ""}[REDACTED]`,
+    )
     .slice(0, limit);
 }
 

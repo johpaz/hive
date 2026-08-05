@@ -1,11 +1,18 @@
 /**
- * BrowserService — Browser automation via agent-browser CLI (Rust).
+ * BrowserService — automatización de navegador, con backend intercambiable.
  *
- * Flujo:
+ * `AgentBrowserBackend` (este archivo) habla con el CLI de agent-browser por
+ * subproceso: maneja Chrome de verdad y corre headless, así que es el único que
+ * sirve en Docker o en un servidor sin display. Por eso sigue siendo el default.
+ *
+ * `WebViewBackend` (webview-backend.ts) usa `Bun.WebView` in-process — sin
+ * instalación ni subprocesos, mucho más rápido — pero necesita entorno gráfico.
+ * Se elige con `tools.browser.backend` o `HIVE_BROWSER_BACKEND`.
+ *
+ * Flujo del backend por CLI:
  *  1. Detecta si agent-browser está instalado (lazy install en primer uso).
  *  2. Ejecuta comandos via CLI con --json para output estructurado.
  *  3. El daemon de agent-browser maneja Chrome internamente via CDP.
- *  4. Las herramientas de browser usan AgentBrowserView (API compatible con CDPClient).
  */
 
 import { logger } from "../../utils/logger.ts";
@@ -13,6 +20,13 @@ import type { Config } from "../../config/loader.ts";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { dirname, join, resolve } from "path";
+import {
+  resolveBackendKind,
+  type BrowserBackend,
+  type BrowserBackendKind,
+  type ScreenshotOptions,
+  type SnapshotOptions,
+} from "./browser-backend.ts";
 
 const log = logger.child("browser-service");
 
@@ -117,7 +131,7 @@ async function ensureChromeInstalled(): Promise<void> {
 
 // ─── AgentBrowserView (API compatible con CDPClient) ──────────────────────────
 
-export class AgentBrowserView {
+export class AgentBrowserView implements BrowserBackend {
   private sessionName: string;
   private _url = "";
 
@@ -162,12 +176,7 @@ export class AgentBrowserView {
     return res.data?.result as T;
   }
 
-  async screenshot(options?: {
-    encoding?: "blob" | "buffer" | "base64" | "shmem";
-    format?: "png" | "jpeg" | "webp";
-    quality?: number;
-    clip?: { x: number; y: number; width: number; height: number; scale: number };
-  }): Promise<string> {
+  async screenshot(options?: ScreenshotOptions): Promise<string> {
     // Build args
     const args: string[] = ["screenshot"];
 
@@ -264,8 +273,21 @@ export class AgentBrowserView {
     if (!res.success) throw new Error(res.error || "resize failed");
   }
 
+  /** Screenshot recortado a un elemento — agent-browser acepta el selector posicional. */
+  async screenshotElement(selector: string): Promise<string> {
+    const res = await this.run(["screenshot", selector]);
+    if (!res.success) throw new Error(res.error || `screenshot failed: ${selector}`);
+
+    const path = res.data?.path as string;
+    if (!path) throw new Error("screenshot did not return a path");
+
+    const base64 = Buffer.from(readFileSync(path)).toString("base64");
+    try { rmSync(path); } catch { /* ignore */ }
+    return base64;
+  }
+
   /** Capture accessibility tree snapshot (compact, AI-optimized). ~200-600 chars vs ~3000+ innerText. */
-  async snapshot(options?: { compact?: boolean; depth?: number; interactiveOnly?: boolean }): Promise<string> {
+  async snapshot(options?: SnapshotOptions): Promise<string> {
     const args = ["snapshot"];
     if (options?.compact !== false) args.push("-c");
     if (options?.depth) args.push("-d", String(options.depth));
@@ -326,11 +348,17 @@ export type LaunchSpec = { kind: "remote"; cdpUrl: string };
 
 // ─── BrowserService (singleton) ───────────────────────────────────────────────
 
-export type BrowserView = AgentBrowserView;
+/** Alias histórico: las tools sólo dependen del contrato, no de la implementación. */
+export type BrowserView = BrowserBackend;
 
-let _client: AgentBrowserView | null = null;
+/** Re-export para que quien importe el servicio no tenga que conocer el módulo del contrato. */
+export type { BrowserBackend, BrowserBackendKind } from "./browser-backend.ts";
+export { isWebViewSupported, resolveBackendKind } from "./browser-backend.ts";
+
+let _client: BrowserBackend | null = null;
 let _available = false;
 let _launching = false;
+let _kind: BrowserBackendKind = "agent-browser";
 
 export class BrowserService {
   private static instance: BrowserService | null = null;
@@ -355,6 +383,17 @@ export class BrowserService {
     if (b?.enabled === false) {
       _available = false;
       return false;
+    }
+
+    _kind = resolveBackendKind(b?.backend);
+
+    if (_kind === "webview") {
+      // No hay nada que instalar ni que descargar: el WebView se crea al primer
+      // uso. Si el entorno no lo soporta, ensureView() falla ahí y el servicio
+      // queda no disponible, igual que cuando agent-browser no arranca.
+      _available = true;
+      log.info("✅ Backend de navegador: Bun.WebView (in-process, sin Chrome)");
+      return true;
     }
 
     const installed = await isAgentBrowserInstalled();
@@ -392,8 +431,13 @@ export class BrowserService {
     }
     _launching = true;
     try {
-      const sessionName = this.config.tools?.browser?.sessionName ?? DEFAULT_SESSION_NAME;
-      _client = new AgentBrowserView(sessionName);
+      if (_kind === "webview") {
+        const { WebViewBackend } = await import("./webview-backend.ts");
+        _client = new WebViewBackend({ show: this.config.tools?.browser?.headless === false });
+      } else {
+        const sessionName = this.config.tools?.browser?.sessionName ?? DEFAULT_SESSION_NAME;
+        _client = new AgentBrowserView(sessionName);
+      }
       log.info("✅ Browser abierto — el usuario verá las acciones del agente");
       return true;
     } catch (err) {
@@ -406,18 +450,23 @@ export class BrowserService {
     }
   }
 
-  async getView(): Promise<AgentBrowserView | null> {
+  async getView(): Promise<BrowserBackend | null> {
     if (!_available) return null;
     await this._ensureLaunched();
     return _client;
   }
 
-  getViewSync(): AgentBrowserView | null {
+  getViewSync(): BrowserBackend | null {
     return _client;
   }
 
-  async getPage(): Promise<AgentBrowserView | null> {
+  async getPage(): Promise<BrowserBackend | null> {
     return this.getView();
+  }
+
+  /** Qué backend quedó activo — lo reporta `hive doctor` y los tests. */
+  getBackendKind(): BrowserBackendKind {
+    return _kind;
   }
 
   isAvailable(): boolean {
@@ -428,8 +477,8 @@ export class BrowserService {
     return _available && _client !== null;
   }
 
-  getInfo(): { running: boolean } {
-    return { running: this.isRunning() };
+  getInfo(): { running: boolean; backend: BrowserBackendKind } {
+    return { running: this.isRunning(), backend: _kind };
   }
 
   async stop(): Promise<void> {
@@ -462,7 +511,7 @@ export function getBrowserService(): BrowserService | null {
 // ─── Helpers (misma API que antes) ───────────────────────────────────────────
 
 export async function waitForSelector(
-  view: AgentBrowserView,
+  view: BrowserBackend,
   selector: string,
   timeout = 30000
 ): Promise<void> {
@@ -476,7 +525,7 @@ export async function waitForSelector(
 }
 
 export async function waitForCondition(
-  view: AgentBrowserView,
+  view: BrowserBackend,
   expression: string,
   timeout = 30000
 ): Promise<void> {
@@ -490,19 +539,10 @@ export async function waitForCondition(
 }
 
 export async function screenshotElement(
-  view: AgentBrowserView,
+  view: BrowserBackend,
   selector: string
 ): Promise<string> {
-  const res = await (view as any).run(["screenshot", selector]);
-  if (!res.success) throw new Error(res.error || `screenshot failed: ${selector}`);
-
-  const path = res.data?.path as string;
-  if (!path) throw new Error("screenshot did not return a path");
-
-  const data = readFileSync(path);
-  const base64 = Buffer.from(data).toString("base64");
-
-  try { rmSync(path); } catch { /* ignore */ }
-
-  return base64;
+  // Antes esto hacía `(view as any).run([...])`, atándose a la implementación por
+  // CLI: con dos backends el recorte es responsabilidad de cada uno.
+  return view.screenshotElement(selector);
 }

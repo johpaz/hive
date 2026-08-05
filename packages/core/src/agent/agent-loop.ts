@@ -26,7 +26,6 @@ import { emitCanvas } from "../canvas/emitter"
 import type { MCPClientManager } from "@johpaz/hive-agents-mcp"
 import { compileContext } from "./context-compiler"
 import { formatToolResult } from "../utils/toon"
-import { getAverageTokenCost } from "../storage/usage"
 import { resolveUserId, resolveAgentId } from "../storage/onboarding"
 import type { ContentPart } from "../multimodal/types"
 import { loadConfig } from "../config/loader"
@@ -47,6 +46,7 @@ import {
   type RunCheckpointState,
 } from "./run-store"
 import { publishNarration } from "../events/narration"
+import { getNarration } from "../events/tool-narration"
 
 const log = logger.child("agent-loop")
 
@@ -523,6 +523,17 @@ export async function* runAgent(
       await opts.onStep({ type: "text", message: response.content })
     }
 
+    // ── Provider failure → surface it, but never let it enter the history ───
+    // callLLM returns errors as a normal response whose `content` is the error
+    // text. That text is for the user's screen only: persisting it would make
+    // the next turn replay a provider outage as something the agent "said".
+    if (response.stop_reason === "error") {
+      log.error(`[agent-loop] LLM call failed at iteration ${iterations}: ${response.error?.message ?? response.content}`)
+      finalContent = response.content?.trim() || ""
+      finalEmitted = true // already yielded above as the agent chunk
+      break
+    }
+
     // ── No tool calls → final response ──────────────────────────────────
     if (!response.tool_calls?.length || response.stop_reason !== "tool_calls") {
       finalContent = response.content?.trim() || ""
@@ -576,7 +587,9 @@ export async function* runAgent(
           agentName,
           kind: "tool_call",
           status: "running",
-          label: `${agentName} llamó ${toolName}`,
+          // Human-readable text, not the raw tool id — this label is what a
+          // WhatsApp/Telegram user reads.
+          label: `${agentName}: ${getNarration(toolName)}`,
           dedupeKey: `tool_call:${iterations}:${tc.id}:${toolName}`,
         })
       }
@@ -1044,6 +1057,12 @@ export async function* runAgent(
       if (synthesis.usage) {
         totalInputTokens += synthesis.usage.input_tokens
         totalOutputTokens += synthesis.usage.output_tokens
+      }
+      // A provider failure comes back as non-empty `content`, which the
+      // empty-content check above would happily accept as a valid synthesis and
+      // persist. Raise instead so the retry/AgentSynthesisError path runs.
+      if (synthesis.stop_reason === "error") {
+        throw new Error(synthesis.error?.message ?? synthesis.content)
       }
       return synthesis.content
     })

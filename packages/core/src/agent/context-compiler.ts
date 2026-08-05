@@ -214,7 +214,9 @@ export async function compileContext(opts: {
   if (agent.model_id) {
     try {
       const modelsCol = await col<ModelDoc>("models")
-      const modelEntry = await modelsCol.get(agent.model_id.replace(/^[^/]+\//, ''))
+      // Id completo: el recorte del primer segmento fallaba para todo modelo
+      // con barra en el nombre y dejaba el context window en el default.
+      const modelEntry = await modelsCol.get(agent.model_id)
       if (modelEntry?.doc.context_window) modelContextWindow = modelEntry.doc.context_window
     } catch { /* use default */ }
   }

@@ -1,100 +1,68 @@
 import { col, nextId, bumpRollup } from "./hive";
-import type { UsageRecordDoc, UsageRollupDoc } from "./collections";
+import type { ModelDoc, UsageRecordDoc, UsageRollupDoc } from "./collections";
 import { logger } from "../utils/logger";
 
 const log = logger.child("usage");
 
-// Precios en USD por millón de tokens (input / output)
-// Fuentes: docs.anthropic.com, openrouter.ai/api/v1/models, api-docs.deepseek.com, console.groq.com
-const MODEL_PRICING: Record<string, { inputPer1M: number; outputPer1M: number }> = {
-  // ── Anthropic (fuente: docs.anthropic.com) ──
-  "claude-opus-4-6":           { inputPer1M: 5,    outputPer1M: 25   },
-  "claude-sonnet-4-6":         { inputPer1M: 3,    outputPer1M: 15   },
-  "claude-haiku-4-5-20251001": { inputPer1M: 1,    outputPer1M: 5    },
-  "anthropic/claude-opus-4-6":   { inputPer1M: 5,  outputPer1M: 25   },
-  "anthropic/claude-sonnet-4-6": { inputPer1M: 3,  outputPer1M: 15   },
+/**
+ * Costo de una llamada, en USD.
+ *
+ * El precio vive en la propia fila del modelo (`ModelDoc.input_per_1m` /
+ * `output_per_1m`), sembrada desde SEED_DATA.models. Antes había acá un mapa
+ * `MODEL_PRICING` hardcodeado en paralelo al catálogo: mantener dos listas en
+ * sincronía fallaba en silencio — un modelo sembrado sin entrada en el mapa
+ * costaba $0 sin avisar.
+ */
 
-  // ── OpenAI (fuente: openrouter.ai/api/v1/models) ──
-  "gpt-4o":         { inputPer1M: 2.5,  outputPer1M: 10    },
-  "gpt-4o-mini":    { inputPer1M: 0.15, outputPer1M: 0.6   },
-  "gpt-5.4":        { inputPer1M: 2.5,  outputPer1M: 15    },
-  "gpt-5.4-pro":    { inputPer1M: 30,   outputPer1M: 180   },
-  "gpt-5.3":        { inputPer1M: 1.75, outputPer1M: 14    },
-  "gpt-5.2":        { inputPer1M: 1.75, outputPer1M: 14    },
-  "o4-mini":        { inputPer1M: 1.1,  outputPer1M: 4.4   },
-  "openai/gpt-5.4":     { inputPer1M: 2.5,  outputPer1M: 15  },
-  "openai/gpt-5.4-pro": { inputPer1M: 30,   outputPer1M: 180 },
-  "openai/gpt-5.2":     { inputPer1M: 1.75, outputPer1M: 14  },
-  // Groq OSS (fuente: console.groq.com)
-  "openai/gpt-oss-120b": { inputPer1M: 0.15, outputPer1M: 0.6  },
-  "openai/gpt-oss-20b":  { inputPer1M: 0.075, outputPer1M: 0.3 },
+/** Precio por id de modelo. Se llena bajo demanda y lo invalida el re-seed. */
+let pricingCache: Map<string, { input: number; output: number } | null> | null = null;
 
-  // ── Google Gemini (fuente: openrouter.ai/api/v1/models) ──
-  "gemini-3.1-pro-preview":        { inputPer1M: 2,    outputPer1M: 12   },
-  "gemini-3.1-flash-lite-preview":  { inputPer1M: 0.25, outputPer1M: 1.5  },
-  "gemini-3-flash-preview":         { inputPer1M: 0.5,  outputPer1M: 3    },
-  "gemini-2.5-pro":                 { inputPer1M: 1.25, outputPer1M: 10   },
-  "gemini-2.5-flash":               { inputPer1M: 0.15, outputPer1M: 0.6  },
-  "gemini-2.0-flash":               { inputPer1M: 0.1,  outputPer1M: 0.4  },
-  "gemini-2.0-flash-lite":          { inputPer1M: 0.075, outputPer1M: 0.3 },
-  "google/gemini-3.1-pro-preview":        { inputPer1M: 2,    outputPer1M: 12  },
-  "google/gemini-3.1-flash-lite-preview": { inputPer1M: 0.25, outputPer1M: 1.5 },
-  "google/gemini-3-flash-preview":        { inputPer1M: 0.5,  outputPer1M: 3   },
-  "google/gemini-2.5-flash":              { inputPer1M: 0.15, outputPer1M: 0.6 },
+/** Llamar cuando el catálogo cambie, para que el próximo costo relea de la BD. */
+export function invalidateModelPricingCache(): void {
+  pricingCache = null;
+}
 
-  // ── Mistral (fuente: openrouter.ai/api/v1/models) ──
-  "mistral-large-2512":             { inputPer1M: 0.5,  outputPer1M: 1.5  },
-  "devstral-2512":                  { inputPer1M: 0.4,  outputPer1M: 2    },
-  "ministral-14b-2512":             { inputPer1M: 0.2,  outputPer1M: 0.2  },
-  "ministral-8b-2512":              { inputPer1M: 0.15, outputPer1M: 0.15 },
-  "codestral-2508":                 { inputPer1M: 0.2,  outputPer1M: 0.6  },
-  "mistral-small-3.2-24b-instruct": { inputPer1M: 0.1,  outputPer1M: 0.3  },
-  "mistral-large-latest":           { inputPer1M: 0.5,  outputPer1M: 1.5  },
-  "codestral-latest":               { inputPer1M: 0.2,  outputPer1M: 0.6  },
+async function loadPricing(): Promise<Map<string, { input: number; output: number } | null>> {
+  if (pricingCache) return pricingCache;
+  const cache = new Map<string, { input: number; output: number } | null>();
+  try {
+    const modelsCol = await col<ModelDoc>("models");
+    for (const row of await modelsCol.scan({})) {
+      const { input_per_1m: i, output_per_1m: o } = row.doc;
+      cache.set(row.id, i == null && o == null ? null : { input: i ?? 0, output: o ?? 0 });
+    }
+    pricingCache = cache;
+  } catch {
+    // La BD puede no estar lista todavía (arranque temprano): no cachear el
+    // resultado vacío o el costo quedaría en 0 para toda la vida del proceso.
+    return cache;
+  }
+  return cache;
+}
 
-  // ── DeepSeek (fuente: api-docs.deepseek.com/quick_start/pricing) ──
-  "deepseek-chat":     { inputPer1M: 0.28, outputPer1M: 0.42 },
-  "deepseek-reasoner": { inputPer1M: 0.28, outputPer1M: 0.42 },
-  "deepseek/deepseek-v3.2":   { inputPer1M: 0.25, outputPer1M: 0.4  },
-  "deepseek/deepseek-r1:free": { inputPer1M: 0,    outputPer1M: 0    },
+/** Modelos ya avisados, para no repetir el warning en cada llamada. */
+const unpricedModels = new Set<string>();
 
-  // ── Kimi / Moonshot (fuente: openrouter.ai/moonshotai) ──
-  "kimi-k2.5":          { inputPer1M: 0.45, outputPer1M: 2.2  },
-  "kimi-k2":            { inputPer1M: 0.45, outputPer1M: 2.2  },
-  "moonshot-v1-8k":     { inputPer1M: 1.67, outputPer1M: 1.67 },
-  "moonshot-v1-32k":    { inputPer1M: 3.33, outputPer1M: 3.33 },
-  "moonshot-v1-128k":   { inputPer1M: 8.33, outputPer1M: 8.33 },
-  "moonshotai/kimi-k2.5":            { inputPer1M: 0.45, outputPer1M: 2.2 },
-  "moonshotai/kimi-k2-instruct-0905": { inputPer1M: 0.45, outputPer1M: 2.2 },
+export async function calculateCost(
+  provider: string,
+  model: string,
+  inputTokens: number,
+  outputTokens: number
+): Promise<number> {
+  const pricing = (await loadPricing()).get(model);
 
-  // ── Meta Llama (vía OpenRouter) ──
-  "meta-llama/llama-3.3-70b-instruct": { inputPer1M: 0.88, outputPer1M: 0.88 },
-  "meta-llama/llama-4-maverick":       { inputPer1M: 0.2,  outputPer1M: 0.8  },
+  if (!pricing) {
+    // Sin esto un modelo sin tarifa aparece como $0.00 en el dashboard, que es
+    // indistinguible de un modelo realmente gratuito.
+    const key = `${provider}/${model}`;
+    if (!unpricedModels.has(key)) {
+      unpricedModels.add(key);
+      log.warn(`[usage] Sin tarifa para ${key} — su costo se contará como $0. Agregá inputPer1M/outputPer1M en SEED_DATA.models (storage/seed.ts).`);
+    }
+    return 0;
+  }
 
-  // ── Qwen (vía OpenRouter) ──
-  "qwen/qwen3.5-plus-02-15":  { inputPer1M: 0.26, outputPer1M: 1.56 },
-  "qwen/qwen3.5-flash-02-23": { inputPer1M: 0.1,  outputPer1M: 0.4  },
-  "qwen/qwen3-32b":           { inputPer1M: 0,    outputPer1M: 0    },
-
-  // ── Groq (fuente: console.groq.com/docs/models) ──
-  "llama-3.3-70b-versatile": { inputPer1M: 0.59, outputPer1M: 0.79 },
-  "llama-3.1-8b-instant":    { inputPer1M: 0.05, outputPer1M: 0.08 },
-  "groq/compound":            { inputPer1M: 0,    outputPer1M: 0    },
-  "groq/compound-mini":       { inputPer1M: 0,    outputPer1M: 0    },
-
-  // ── Ollama local = siempre free ──
-  "qwen3:4b":    { inputPer1M: 0, outputPer1M: 0 },
-  "qwen3:8b":    { inputPer1M: 0, outputPer1M: 0 },
-  "qwen3:14b":   { inputPer1M: 0, outputPer1M: 0 },
-  "llama3.2:3b": { inputPer1M: 0, outputPer1M: 0 },
-  "gemma3:9b":   { inputPer1M: 0, outputPer1M: 0 },
-};
-
-function calculateCost(model: string, inputTokens: number, outputTokens: number): number {
-  const pricing = MODEL_PRICING[model] || { inputPer1M: 0, outputPer1M: 0 };
-  const inputCost = (inputTokens / 1_000_000) * pricing.inputPer1M;
-  const outputCost = (outputTokens / 1_000_000) * pricing.outputPer1M;
-  return inputCost + outputCost;
+  return (inputTokens / 1_000_000) * pricing.input + (outputTokens / 1_000_000) * pricing.output;
 }
 
 /** Hourly bucket key ("2026-07-09T14") — lexicographic order matches chronological order. */
@@ -213,7 +181,7 @@ export function recordUsage(options: {
   // Fire-and-forget to avoid blocking the LLM call path.
   Promise.resolve().then(async () => {
     try {
-      const costUsd = calculateCost(options.model, options.inputTokens, options.outputTokens);
+      const costUsd = await calculateCost(options.provider, options.model, options.inputTokens, options.outputTokens);
       const now = Date.now();
 
       const id = await nextId("usageRecords");
@@ -335,36 +303,6 @@ export async function getUsageStats(hours: number = 24): Promise<UsageSummary> {
     byModel: modelMap,
     recentRecords
   };
-}
-
-/**
- * Get average cost per token for a model (input + output average)
- */
-export function getAverageTokenCost(model: string): number {
-  // 1. Exact match
-  let pricing = MODEL_PRICING[model];
-
-  // 2. Try stripping a single provider prefix (e.g. "openrouter/moonshotai/kimi" → "moonshotai/kimi")
-  if (!pricing) {
-    const slashIdx = model.indexOf('/');
-    if (slashIdx !== -1) {
-      pricing = MODEL_PRICING[model.slice(slashIdx + 1)];
-    }
-  }
-
-  // 3. Partial match — find any key whose name is contained in the model string
-  if (!pricing) {
-    for (const [key, p] of Object.entries(MODEL_PRICING)) {
-      if (model.includes(key) || key.includes(model)) {
-        pricing = p;
-        break;
-      }
-    }
-  }
-
-  if (!pricing) return 0;
-  // Average of input and output cost per token
-  return (pricing.inputPer1M + pricing.outputPer1M) / 2 / 1_000_000;
 }
 
 /**

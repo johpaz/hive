@@ -4,6 +4,7 @@ import { Switch } from "@/components/ui/switch";
 import { useModels } from "@/hooks/useProviders";
 import type { Model } from "@/types";
 import { ModelCapabilities } from "./ModelCapabilities";
+import { ModelPriceLine } from "./ModelPriceLine";
 
 interface ModelCardProps {
   model: Model;
@@ -20,11 +21,7 @@ export function ModelCard({ model }: ModelCardProps) {
             <p className="text-sm font-semibold">{model.name}</p>
             <Badge variant="secondary" className="text-[10px]">{model.providerId || model.provider_id}</Badge>
           </div>
-          {model.contextWindow && (
-            <p className="text-xs text-muted-foreground">
-              {(model.contextWindow / 1000).toFixed(0)}K tokens contexto
-            </p>
-          )}
+          <ModelPriceLine model={model} showContext />
           <div className="flex flex-wrap items-center gap-1 pt-1">
             <ModelCapabilities capabilities={model.capabilities} />
           </div>

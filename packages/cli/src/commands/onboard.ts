@@ -50,16 +50,21 @@ function reloadEnvToProcess(hiveDir: string): void {
   }
 }
 
+// Cada valor debe existir en SEED_DATA.models (packages/core/src/storage/seed.ts):
+// el onboarding guarda esto como model_id del coordinador, y un id que no esté en
+// el catálogo queda desvinculado en el próximo re-seed.
 const DEFAULT_MODELS: Record<string, string> = {
-  anthropic: "claude-sonnet-4-6",
-  openai: "gpt-5.2",
-  gemini: "gemini-3.1-flash-preview",
+  anthropic: "claude-sonnet-5",
+  openai: "gpt-5.6-luna",
+  gemini: "gemini-3.6-flash",
   mistral: "mistral-large-latest",
-  deepseek: "deepseek-chat",
-  kimi: "kimi-k2.5",
-  openrouter: "meta-llama/llama-3.3-70b-instruct",
+  deepseek: "deepseek-v4-flash",
+  kimi: "kimi-k3",
+  openrouter: "openrouter/anthropic/claude-sonnet-5",
   ollama: "llama3.3:8b",
-  nvidia: "meta/llama-3.3-70b-instruct",
+  nvidia: "nvidia/nvidia/nemotron-3-super-120b-a12b",
+  "z-ai": "glm-5.2",
+  minimax: "MiniMax-M3",
   hiveagents: "Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf",
 };
 
@@ -69,10 +74,12 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
   gemini: "https://generativelanguage.googleapis.com",
   mistral: "https://api.mistral.ai/v1",
   deepseek: "https://api.deepseek.com",
-  kimi: "https://api.moonshot.cn",
+  kimi: "https://api.moonshot.ai/v1",
   openrouter: "https://openrouter.ai/api",
   ollama: "http://localhost:11434",
   nvidia: "https://integrate.api.nvidia.com/v1",
+  "z-ai": "https://api.z.ai/api/paas/v4",
+  minimax: "https://api.minimaxi.com/v1",
   hiveagents: "https://llm.hiveagents.io/v1",
 };
 
@@ -86,6 +93,8 @@ const API_KEY_PLACEHOLDERS: Record<string, string> = {
   openrouter: "sk-or-...",
   ollama: "",
   nvidia: "nvapi-...",
+  "z-ai": "sk-...",
+  minimax: "sk-...",
   hiveagents: "Bearer token...",
 };
 
@@ -95,31 +104,33 @@ const API_KEY_LINKS: Record<string, string> = {
   gemini: "https://aistudio.google.com/app/apikey",
   mistral: "https://console.mistral.ai/api-keys",
   deepseek: "https://platform.deepseek.com/api_keys",
-  kimi: "https://platform.moonshot.cn/console/api-keys",
+  kimi: "https://platform.kimi.ai/console/api-keys",
   openrouter: "https://openrouter.ai/keys",
   ollama: "",
   nvidia: "https://build.nvidia.com/",
+  "z-ai": "https://z.ai/manage-apikey/apikey-list",
+  minimax: "https://platform.minimaxi.com/user-center/basic-information/interface-key",
   hiveagents: "",
 };
 
 const AVAILABLE_MODELS: Record<string, Array<{ value: string; label: string; hint?: string }>> = {
   anthropic: [
-    { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", hint: "Recomendado — mejor equilibrio, 1M contexto" },
-    { value: "claude-opus-4-6", label: "Claude Opus 4.6", hint: "Más potente — agentic coding, 1M contexto" },
-    { value: "claude-haiku-4-6", label: "Claude Haiku 4.6", hint: "Más rápido y económico" },
+    { value: "claude-sonnet-5", label: "Claude Sonnet 5", hint: "Recomendado — mejor equilibrio, 1M contexto" },
+    { value: "claude-opus-5", label: "Claude Opus 5", hint: "Más potente — agentic coding, 1M contexto" },
+    { value: "claude-fable-5", label: "Claude Fable 5", hint: "Máxima capacidad — agentes de larga duración" },
+    { value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5", hint: "Más rápido y económico — 200K contexto" },
   ],
   openai: [
-    { value: "gpt-5.2", label: "GPT-5.2", hint: "Recomendado — 400K contexto, latest" },
-    { value: "gpt-5.1", label: "GPT-5.1", hint: "Versión anterior estable" },
-    { value: "gpt-5.2-codex", label: "GPT-5.2 Codex", hint: "Especializado en código" },
-    { value: "o4-mini", label: "o4-mini", hint: "Razonamiento avanzado, económico" },
+    { value: "gpt-5.6-luna", label: "GPT-5.6 Luna", hint: "Recomendado — mejor calidad/precio, 1M contexto" },
+    { value: "gpt-5.6-terra", label: "GPT-5.6 Terra", hint: "Equilibrio inteligencia/costo" },
+    { value: "gpt-5.6-sol", label: "GPT-5.6 Sol", hint: "Frontier — razonamiento y código complejos" },
   ],
   gemini: [
-    { value: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash (Preview)", hint: "Frontier-class, muy económico" },
-    { value: "gemini-3-flash-preview", label: "Gemini 3 Flash (Preview)", hint: "Frontier-class, muy económico" },
-    { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash", hint: "Recomendado — estable, rápido" },
-    { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro", hint: "Más potente — razonamiento profundo" },
-    { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (Preview)", hint: "Latest — tareas complejas" },
+    { value: "gemini-3.6-flash", label: "Gemini 3.6 Flash", hint: "Recomendado — el más nuevo, agentic, 1M contexto" },
+    { value: "gemini-3.5-flash", label: "Gemini 3.5 Flash", hint: "Máxima inteligencia sostenida, 1M contexto" },
+    { value: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash Lite", hint: "El más económico de la serie 3.5" },
+    { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (Preview)", hint: "Problemas complejos" },
+    { value: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite", hint: "Frontier-class, muy económico" },
   ],
   mistral: [
     { value: "mistral-large-latest", label: "Mistral Large", hint: "Recomendado — potente, 1M contexto" },
@@ -127,20 +138,19 @@ const AVAILABLE_MODELS: Record<string, Array<{ value: string; label: string; hin
     { value: "pixtral-large-latest", label: "Pixtral Large", hint: "Multimodal — visión" },
   ],
   deepseek: [
-    { value: "deepseek-chat", label: "DeepSeek-V3", hint: "Recomendado — muy económico, capaz" },
-    { value: "deepseek-reasoner", label: "DeepSeek-R1", hint: "Razonamiento profundo" },
-    { value: "deepseek-coder", label: "DeepSeek Coder", hint: "Especializado en código" },
+    { value: "deepseek-v4-flash", label: "DeepSeek V4 Flash", hint: "Recomendado — muy económico, 1M contexto" },
+    { value: "deepseek-v4-pro", label: "DeepSeek V4 Pro", hint: "Más potente — código y agentes, 1M contexto" },
   ],
   kimi: [
-    { value: "kimi-k2.5", label: "Kimi K2.5", hint: "Recomendado — multimodal, agentic, 1T params" },
-    { value: "kimi-k2-thinking", label: "Kimi K2 Thinking", hint: "Largo razonamiento" },
-    { value: "kimi-k2-turbo-preview", label: "Kimi K2 Turbo", hint: "Rápido, preview" },
+    { value: "kimi-k3", label: "Kimi K3", hint: "Recomendado — flagship, 1M contexto" },
+    { value: "kimi-k2.7-code", label: "Kimi K2.7 Code", hint: "Multimodal, especializado en código" },
+    { value: "kimi-k2.6", label: "Kimi K2.6", hint: "Agentic tool use — 256K contexto" },
   ],
   openrouter: [
-    { value: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B", hint: "Gratis — GPT-4 level" },
-    { value: "google/gemini-2.0-flash-exp:free", label: "Gemini 2.0 Flash", hint: "Gratis — 1M contexto" },
-    { value: "deepseek/deepseek-r1:free", label: "DeepSeek R1", hint: "Gratis — razonamiento fuerte" },
-    { value: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6", hint: "Vía OpenRouter" },
+    { value: "openrouter/anthropic/claude-sonnet-5", label: "Claude Sonnet 5", hint: "Recomendado — vía OpenRouter" },
+    { value: "openrouter/openai/gpt-5.6-sol", label: "GPT-5.6 Sol", hint: "Flagship de OpenAI" },
+    { value: "openrouter/google/gemini-3.6-flash", label: "Gemini 3.6 Flash", hint: "Rápido — 1M contexto" },
+    { value: "openrouter/deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash", hint: "Económico — 1M contexto" },
   ],
   ollama: [
     { value: "llama3.3:8b", label: "Llama 3.3 8B", hint: "Recomendado — general, ~5GB RAM" },
@@ -149,12 +159,21 @@ const AVAILABLE_MODELS: Record<string, Array<{ value: string; label: string; hin
     { value: "phi4:14b", label: "Phi-4 14B", hint: "Mejor calidad, ~8GB RAM" },
   ],
   nvidia: [
-    { value: "meta/llama-3.3-70b-instruct", label: "Llama 3.3 70B", hint: "General — 128K contexto" },
-    { value: "nvidia/llama-3.1-nemotron-ultra-253b-v1", label: "Nemotron Ultra 253B", hint: "NVIDIA flagship — reasoning" },
-    { value: "deepseek-ai/deepseek-v3.2", label: "DeepSeek V3.2", hint: "Multimodal, código — 128K" },
-    { value: "qwen/qwen3-coder-480b-a35b-instruct", label: "Qwen3 Coder 480B", hint: "Especializado en código" },
-    { value: "google/gemma-4-31b-it", label: "Gemma 4 31B", hint: "Multimodal — 256K contexto" },
-    { value: "moonshotai/kimi-k2-thinking", label: "Kimi K2 Thinking", hint: "Razonamiento profundo — 256K" },
+    { value: "nvidia/nvidia/nemotron-3-super-120b-a12b", label: "Nemotron 3 Super 120B", hint: "Recomendado — agentic, 1M contexto" },
+    { value: "nvidia/nvidia/nemotron-3-ultra-550b-a55b", label: "Nemotron 3 Ultra 550B", hint: "NVIDIA flagship — 1M contexto" },
+    { value: "nvidia/z-ai/glm-5.2", label: "GLM 5.2", hint: "Agentic workflows y código" },
+    { value: "nvidia/moonshotai/kimi-k2.6", label: "Kimi K2.6", hint: "Agentic tool use — 256K" },
+    { value: "nvidia/minimaxai/minimax-m3", label: "MiniMax M3", hint: "Multimodal — tool calling" },
+    { value: "nvidia/deepseek-ai/deepseek-v4-pro", label: "DeepSeek V4 Pro", hint: "Código y agentes — 1M contexto" },
+  ],
+  "z-ai": [
+    { value: "glm-5.2", label: "GLM 5.2", hint: "Recomendado — 1M contexto, 128K salida" },
+    { value: "glm-5.1", label: "GLM 5.1", hint: "Generación anterior — 200K contexto" },
+    { value: "glm-5", label: "GLM 5", hint: "200K contexto" },
+  ],
+  minimax: [
+    { value: "MiniMax-M3", label: "MiniMax M3", hint: "Recomendado — multimodal, 1M contexto" },
+    { value: "MiniMax-M2.7", label: "MiniMax M2.7", hint: "200K contexto" },
   ],
   hiveagents: [
     { value: "Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf", label: "Qwen-AgentWorld 35B MoE (Recomendado)", hint: "MoE 22.1GB — optimizado para agentes, tool use y MCP" },

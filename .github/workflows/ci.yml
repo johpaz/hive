@@ -1,0 +1,85 @@
+name: CI
+
+# release.yml sólo dispara con tags, y nunca corrió tests ni typecheck: un tag
+# podía publicarse sin que nadie hubiera ejecutado la suite. Esto cierra ese hueco
+# en cada push y cada PR, antes de que exista el tag.
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+
+  test:
+    name: Tests (core)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - run: bun install --frozen-lockfile
+      - name: Run suite
+        run: bun run test
+      - name: Assert the suite never touched the real database
+        shell: bash
+        run: |
+          # tests/preload.ts fija HIVE_DB_PATH=":memory:". Si un import resuelve la
+          # ruta antes de que corra el preload, la suite le escribe a la base del
+          # usuario — ya pasó una vez y en CI no se nota porque ~/.hive no existe.
+          test ! -e "$HOME/.hive/data/hivedb"
+
+  test-ui:
+    name: Tests (UI)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - run: bun install --frozen-lockfile
+      - run: bun run test:ui
+
+  guard:
+    name: Artefactos generados
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: El bundle de UI embebida no puede llegar poblado
+        shell: bash
+        run: |
+          # `generate-ui-bundle.ts` reescribe este archivo con la UI en base64 al
+          # compilar un binario. Si se commitea así, la imagen Docker lo embebe y
+          # el gateway sirve esa copia congelada en vez de la UI que la etapa
+          # ui-builder acaba de construir. Ya pasó: una versión de 2.99 MB estuvo
+          # commiteada desde el 2026-07-03 y el smoke de release no la detectaba
+          # porque `<div id="root">` aparece en cualquiera de las dos.
+          ! grep -q 'Buffer.from(' packages/cli/src/ui-bundle.generated.ts
+
+  docs:
+    name: Documentation contract
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - run: bun install --frozen-lockfile
+      - run: bun run docs:check

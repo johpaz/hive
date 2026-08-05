@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-agents-mcp",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "Hive MCP Client — Model Context Protocol client layer",
   "main": "./src/index.ts",
@@ -12,8 +12,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "latest",
-    "zod": "latest"
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "typescript": "7.0.2",

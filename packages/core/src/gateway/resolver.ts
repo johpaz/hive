@@ -11,10 +11,12 @@ export interface ResolveContextResult {
 export interface ResolveContextOptions {
   channel: string
   channelUserId: string
+  /** Channel account the message arrived on — persisted so replies can be routed back to it. */
+  accountId?: string
 }
 
 export async function resolveContext(options: ResolveContextOptions): Promise<ResolveContextResult> {
-  const { channel, channelUserId } = options
+  const { channel, channelUserId, accountId } = options
 
   const identitiesCol = await col<UserIdentityDoc>("userIdentities")
   const usersCol = await col<UserDoc>("users")
@@ -28,6 +30,11 @@ export async function resolveContext(options: ResolveContextOptions): Promise<Re
 
   if (identity) {
     userId = identity.doc.user_id
+    // Backfill/refresh the owning account so replies survive a restart, when
+    // the in-memory session→account map in ChannelManager is empty.
+    if (accountId && identity.doc.account_id !== accountId) {
+      await identitiesCol.put(identity.id, { ...identity.doc, account_id: accountId })
+    }
   } else {
     // Sistema mono-usuario: reutilizar el usuario del onboarding
     const allUsers = await usersCol.scan({})
@@ -43,7 +50,8 @@ export async function resolveContext(options: ResolveContextOptions): Promise<Re
     // put(): si ya existe una fila (user_id, channel), actualiza channel_user_id
     // con el valor real del canal (e.g. chat ID numérico de Telegram).
     await identitiesCol.put(`${userId}:${channel}`, {
-      user_id: userId, channel, channel_user_id: channelUserId, linked_at: Date.now(),
+      user_id: userId, channel, channel_user_id: channelUserId,
+      account_id: accountId, linked_at: Date.now(),
     })
   }
 

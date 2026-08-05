@@ -2,6 +2,12 @@
  * Real browser test: navegación por bun.sh usando agent-browser
  * Requiere: BROWSER_TESTS=1
  */
+
+// BrowserService arrastra los módulos de storage, que resuelven la ruta de la BD
+// al cargarse. Sin esto la suite abría la BD real del usuario (~/.hive/data) y
+// le escribía contadores, además de romper el aislamiento de otros archivos.
+process.env.HIVE_DB_PATH = ":memory:";
+
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { BrowserService } from "../packages/core/src/tools/web/browser-service.ts";
 

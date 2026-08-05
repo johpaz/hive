@@ -35,6 +35,16 @@ function checkNode(): { ok: boolean; version: string } {
   }
 }
 
+/** Tamaño total de un directorio, recursivo. */
+function dirSize(dir: string): number {
+  let total = 0;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    total += entry.isDirectory() ? dirSize(full) : fs.statSync(full).size;
+  }
+  return total;
+}
+
 function isGatewayRunning(): boolean {
   if (!fs.existsSync(getPidFile())) return false;
   const pid = parseInt(fs.readFileSync(getPidFile(), "utf-8").trim(), 10);
@@ -143,6 +153,78 @@ export async function doctor(): Promise<void> {
     checks.push({ category: "Sistema", name: "Base de Datos", status: "ok", message: "hivedb presente" });
   } else {
     checks.push({ category: "Sistema", name: "Base de Datos", status: "warn", message: "hivedb no existe" });
+  }
+
+  // Integridad de la BD — HiveDB es un directorio con varios componentes que
+  // tienen que estar los cuatro: el store de documentos, el índice de texto, el
+  // vectorial y el meta. Que falte uno no impide abrir la base, pero deja
+  // búsquedas mudas en vez de errores, que es peor.
+  if (fs.existsSync(getDbFile())) {
+    const componentes = ["collections.redb", "meta.json", "fts", "vec"];
+    const faltantes = componentes.filter((c) => !fs.existsSync(path.join(getDbFile(), c)));
+
+    if (faltantes.length > 0) {
+      checks.push({
+        category: "Integridad",
+        name: "Componentes",
+        status: "error",
+        message: `faltan: ${faltantes.join(", ")}`,
+        hint: "La base está incompleta. Restaurá una copia o reiniciá para re-sembrar.",
+      });
+    } else {
+      const bytes = dirSize(getDbFile());
+      checks.push({
+        category: "Integridad",
+        name: "Componentes",
+        status: "ok",
+        message: `${componentes.length}/4 presentes — ${(bytes / 1024 / 1024).toFixed(1)} MB`,
+      });
+    }
+
+    // Lectura real: que los archivos existan no prueba que se puedan leer.
+    try {
+      const { ensureHiveDb } = await import("@johpaz/hive-agents-core/storage/bootstrap");
+      const { col } = await import("@johpaz/hive-agents-core/storage/hive");
+      await ensureHiveDb();
+
+      let filas = 0;
+      for (const nombre of ["agents", "models", "providers", "tools", "skills"]) {
+        filas += await (await col(nombre)).count();
+      }
+      checks.push({
+        category: "Integridad",
+        name: "Lectura",
+        status: "ok",
+        message: `${filas} filas leídas de 5 colecciones`,
+      });
+    } catch (e) {
+      const mensaje = (e as Error).message;
+      // "Cannot acquire lock" significa que otro proceso la tiene abierta —el
+      // gateway, o un `bun -e` que quedó colgado—, no que esté rota. Tratarlo
+      // como corrupción manda a restaurar un backup sin motivo.
+      const enUso = /already open|acquire lock|locked/i.test(mensaje);
+      checks.push({
+        category: "Integridad",
+        name: "Lectura",
+        status: enUso ? "warn" : "error",
+        message: enUso ? "en uso por otro proceso — no se pudo verificar" : `la base no se pudo leer: ${mensaje}`,
+        hint: enUso
+          ? "Detené el gateway (hive stop) y volvé a correr el diagnóstico."
+          : "Puede haber quedado corrupta. Si tenés una copia de <HIVE_HOME>/data, restaurala.",
+      });
+    }
+
+    // No hay backup automático: hive-db 0.3.1 no expone snapshot ni checkpoint,
+    // y copiar el directorio con el gateway corriendo puede dar una copia
+    // desgarrada entre collections.redb y los índices. Mejor decirlo que
+    // simularlo.
+    checks.push({
+      category: "Integridad",
+      name: "Backup",
+      status: "warn",
+      message: "sin copia automática",
+      hint: `Con el gateway detenido: cp -r "${getDbFile()}" "${getDbFile()}.bak"`,
+    });
   }
 
   // Configuración (In-memory/Env)
@@ -321,6 +403,35 @@ export async function doctor(): Promise<void> {
       name: "Propuestas del curador",
       status: "warn",
       message: "No se pudo verificar (BD no disponible)",
+    });
+  }
+
+  // Navegador — qué backend va a usar el agente y si el elegido es viable acá.
+  try {
+    const { resolveBackendKind, isWebViewSupported, findChrome } = await import(
+      "@johpaz/hive-agents-core/tools/web/browser-backend"
+    );
+    const config = loadConfig();
+    const kind = resolveBackendKind(config.tools?.browser?.backend);
+
+    if (kind === "webview" && !isWebViewSupported()) {
+      checks.push({
+        category: "Navegador",
+        name: "Backend",
+        status: "error",
+        message: "webview elegido pero no hay motor disponible",
+        hint: "WebKit sólo existe en macOS. Instalá Chrome, definí BUN_CHROME_PATH, o usá el backend agent-browser.",
+      });
+    } else {
+      const detalle = kind === "webview" ? `motor ${findChrome() ? "chrome" : "webkit"}, in-process` : "Chrome via CLI";
+      checks.push({ category: "Navegador", name: "Backend", status: "ok", message: `${kind} (${detalle})` });
+    }
+  } catch (e) {
+    checks.push({
+      category: "Navegador",
+      name: "Backend",
+      status: "warn",
+      message: `no se pudo determinar: ${(e as Error).message}`,
     });
   }
 

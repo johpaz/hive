@@ -8,3 +8,10 @@ hot = true
 
 [test]
 coverage = false
+# Fija HIVE_DB_PATH=":memory:" antes de que cargue cualquier módulo — ver tests/preload.ts.
+preload = ["./tests/preload.ts"]
+# Los tests de hive-ui son de vitest y necesitan jsdom: bajo `bun test` explotan
+# con "localStorage is not defined". Corren aparte, con `bun run test:ui`. Sin
+# esta exclusión, un `bun test` pelado —el comando que cualquiera escribe
+# primero— da rojo por configuración y no por una regresión real.
+pathIgnorePatterns = ["**/packages/hive-ui/**"]

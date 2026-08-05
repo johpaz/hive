@@ -7,7 +7,7 @@ Para usar el repositorio se requiere Bun 1.3.x y Git. Docker o los binarios de r
 ## Desde npm con Bun
 
 ```bash
-bun add --global @johpaz/hive-agents@1.0.1
+bun add --global @johpaz/hive-agents@1.0.2
 hive start
 ```
 
@@ -34,7 +34,7 @@ Este comando construye la UI y usa un `HIVE_HOME` de desarrollo separado.
 docker run --name hive \
   -p 18790:18790 \
   -v hive-data:/root/.hive \
-  johpaz/hive-agents:1.0.1
+  johpaz/hive-agents:1.0.2
 ```
 
 El volumen conserva HiveDB, configuración, credenciales de canales y artefactos. No expongas el puerto directamente a Internet; usa un proxy TLS y conserva la autenticación.

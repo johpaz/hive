@@ -180,6 +180,12 @@ async function judgeCriteriaWithLLM(
       });
     }
 
+    // Without this the error text falls through to JSON.parse and the catch below
+    // reports a bogus "Unexpected token" instead of the actual provider failure.
+    if (response.stop_reason === "error") {
+      throw new Error(response.error?.message ?? response.content);
+    }
+
     const content = response.content?.trim() || "";
     const candidate = content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1);
     const parsed = JSON.parse(candidate) as { results?: Array<{ id: string; met: boolean; reason?: string }> };
@@ -263,6 +269,10 @@ export async function verifyGoal(
         inputTokens: response.usage.input_tokens ?? 0,
         outputTokens: response.usage.output_tokens ?? 0,
       });
+    }
+
+    if (response.stop_reason === "error") {
+      throw new Error(response.error?.message ?? response.content);
     }
 
     const content = response.content?.trim() || "";

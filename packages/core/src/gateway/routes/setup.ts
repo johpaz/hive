@@ -11,6 +11,7 @@ import {
   activateEthics,
 } from "../../storage/onboarding"
 import { normalizeUserEmail } from "../../storage/user-email"
+import { catalogModelKey, wireModelId } from "../../storage/model-id"
 import { getHiveDir } from "../../config/loader"
 import type { Config } from "../../config/loader"
 
@@ -90,11 +91,14 @@ export async function handleSetupOllamaModels(
     try {
       const modelsCol = await col<ModelDoc>("models")
       for (const m of detected) {
-        if (!(await modelsCol.get(m.name))) {
-          await modelsCol.put(m.name, {
-            id: m.name, name: m.name, provider_id: "ollama", model_type: "llm",
+        const key = catalogModelKey("ollama", m.name)
+        if (!(await modelsCol.get(key))) {
+          await modelsCol.put(key, {
+            id: key, name: m.name, provider_id: "ollama", model_type: "llm",
             context_window: 0, capabilities: null, enabled: true, active: false,
             source: "discovered",
+            // Local: siempre gratis, no "precio desconocido".
+            input_per_1m: 0, output_per_1m: 0,
           }, { expectedVersion: 0 })
         }
       }
@@ -129,6 +133,24 @@ export async function handleSetupStatus(): Promise<Response> {
   })
 }
 
+/**
+ * Providers OpenAI-compatibles que no necesitan un branch propio acá: el request
+ * es idéntico y sólo cambia el host, que sale de `providers.base_url` en la BD.
+ * Si el usuario apunta uno a un proxy propio, la verificación usa ese endpoint y
+ * no uno fijo en el código.
+ */
+const OPENAI_COMPAT_PING = new Set(["nvidia", "z-ai", "minimax", "qwen", "opencode-go", "modelscope"])
+
+/** base_url del provider tal como está en la BD. */
+async function providerBaseUrl(providerId: string): Promise<string | null> {
+  try {
+    const providersCol = await col<ProviderDoc>("providers")
+    return (await providersCol.get(providerId))?.doc.base_url ?? null
+  } catch {
+    return null
+  }
+}
+
 export async function handleVerifyProvider(req: Request): Promise<Response> {
   const body = await req.json().catch(() => ({}))
   const { provider, apiKey, model } = body
@@ -154,7 +176,9 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
         const modelsCol = await col<ModelDoc>("models")
         const candidates = (await modelsCol.findBy("provider_id", provider)).filter(e => e.doc.model_type === "llm")
         const best = [...candidates].sort((a, b) => Number(b.doc.active) - Number(a.doc.active))[0]
-        pingModel = best?.doc.id
+        // El id de la BD viene prefijado en los providers revendedores; acá se
+        // arma el fetch a mano, así que hay que mandar el nombre del cable.
+        pingModel = best ? wireModelId(provider, best.doc.id) : undefined
       } catch { /* DB may not be initialized yet during early setup — ignore */ }
     }
 
@@ -179,7 +203,7 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
     if (provider === "anthropic") {
       testUrl = "https://api.anthropic.com/v1/messages"
       testBody = {
-        model: pingModel || "claude-sonnet-4-6",
+        model: pingModel || "claude-sonnet-5",
         max_tokens: 10,
         messages: testMessages,
       }
@@ -192,7 +216,7 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
     } else if (provider === "openai") {
       testUrl = "https://api.openai.com/v1/chat/completions"
       testBody = {
-        model: pingModel || "gpt-4o-mini",
+        model: pingModel || "gpt-5.6-luna",
         max_tokens: 10,
         messages: testMessages,
       }
@@ -201,7 +225,7 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
         "Authorization": `Bearer ${apiKey}`,
       }
     } else if (provider === "gemini") {
-      testUrl = `https://generativelanguage.googleapis.com/v1beta/models/${pingModel || "gemini-2.5-flash"}:generateContent?key=${apiKey}`
+      testUrl = `https://generativelanguage.googleapis.com/v1beta/models/${pingModel || "gemini-3.6-flash"}:generateContent?key=${apiKey}`
       testBody = {
         contents: [{ parts: [{ text: "Say ok" }] }],
       }
@@ -220,7 +244,7 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
     } else if (provider === "openrouter") {
       testUrl = "https://openrouter.ai/api/v1/chat/completions"
       testBody = {
-        model: pingModel || "meta-llama/llama-3.3-70b-instruct",
+        model: pingModel || "anthropic/claude-sonnet-5",
         max_tokens: 10,
         messages: testMessages,
       }
@@ -242,7 +266,7 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
     } else if (provider === "deepseek") {
       testUrl = "https://api.deepseek.com/v1/chat/completions"
       testBody = {
-        model: pingModel || "deepseek-chat",
+        model: pingModel || "deepseek-v4-flash",
         max_tokens: 10,
         messages: testMessages,
       }
@@ -251,9 +275,37 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
         "Authorization": `Bearer ${apiKey}`,
       }
     } else if (provider === "kimi") {
-      testUrl = "https://api.moonshot.cn/v1/chat/completions"
+      testUrl = "https://api.moonshot.ai/v1/chat/completions"
       testBody = {
-        model: pingModel || "moonshot-v1-8k",
+        model: pingModel || "kimi-k3",
+        max_tokens: 10,
+        messages: testMessages,
+      }
+      headers = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      }
+    } else if (OPENAI_COMPAT_PING.has(provider)) {
+      // Resto de providers OpenAI-compatibles: mismo shape de request, sólo
+      // cambia el host. Sin esto, verificar su API key devolvía "Unsupported
+      // provider" aunque el provider funcionara perfectamente.
+      // Host y modelo salen de la BD; no hay catálogo fijo acá.
+      const baseUrl = (await providerBaseUrl(provider))?.replace(/\/+$/, "")
+      if (!baseUrl) {
+        return Response.json({
+          success: false,
+          error: `El provider "${provider}" no tiene base_url configurada. Agregala en su configuración.`,
+        })
+      }
+      if (!pingModel) {
+        return Response.json({
+          success: false,
+          error: `El provider "${provider}" no tiene modelos en el catálogo para probar la key.`,
+        })
+      }
+      testUrl = `${baseUrl}/chat/completions`
+      testBody = {
+        model: pingModel,
         max_tokens: 10,
         messages: testMessages,
       }

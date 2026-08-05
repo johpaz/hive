@@ -19,7 +19,7 @@ type SendFn = (
   channel: string,
   sessionId: string,
   message: string,
-  metadata?: { notificationId?: string },
+  metadata?: { notificationId?: string; accountId?: string },
 ) => Promise<void>
 
 let _sendFn: SendFn | null = null
@@ -31,18 +31,22 @@ export function setChannelSendFn(fn: SendFn): void {
 }
 
 /**
- * Resuelve el sessionId real (chat ID de Telegram, etc.) desde user_identities.
+ * Resuelve el sessionId real (chat ID de Telegram, etc.) desde user_identities,
+ * junto con la cuenta del canal por la que llegó — con varias cuentas del mismo
+ * tipo conectadas, la respuesta debe salir por la misma.
  * Necesario porque config.thread_id es el userId interno, no el chat ID externo.
  */
-async function resolveSessionId(userId: string, channel: string): Promise<string> {
+async function resolveSession(userId: string, channel: string): Promise<{ sessionId: string; accountId?: string }> {
   try {
     const identitiesCol = await col<UserIdentityDoc>("userIdentities")
     const identity = await identitiesCol.get(`${userId}:${channel}`)
-    if (identity?.doc.channel_user_id) return identity.doc.channel_user_id
+    if (identity?.doc.channel_user_id) {
+      return { sessionId: identity.doc.channel_user_id, accountId: identity.doc.account_id }
+    }
   } catch {
     // DB no lista — fallback al userId
   }
-  return userId
+  return { sessionId: userId }
 }
 
 /**
@@ -75,11 +79,11 @@ export async function sendToUserChannel(
     return { ok: false, error: "Channel send not initialized" }
   }
 
-  const sessionId = await resolveSessionId(userId, channel)
+  const { sessionId, accountId } = await resolveSession(userId, channel)
   log.info(`[channel-notify] Sending to ${channel}/${sessionId}: ${message.substring(0, 80)}`)
 
   try {
-    await _sendFn(channel, sessionId, message, { notificationId })
+    await _sendFn(channel, sessionId, message, { notificationId, accountId })
     if (notificationId) await markNotificationDelivered(notificationId, userId)
     return { ok: true, queued: false, notificationId }
   } catch (err) {

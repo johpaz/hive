@@ -5,22 +5,25 @@ import type { ContentPart, LLMMessage } from "../llm-client"
 
 const log = logger.child("llm-client")
 
-// Models that support extended thinking (claude-3-7+ and claude-4.x).
+// Models that accept the explicit `thinking: { type: "enabled" }` parameter, per
+// the "Extended thinking" row of platform.claude.com/docs/en/about-claude/models/overview.
+// This is an allowlist on purpose: from Opus 4.7 onward Anthropic replaced extended
+// thinking with *adaptive* thinking, which is server-side and always on — those models
+// reject the parameter, so being absent here is the correct behavior, not an omission.
 const THINKING_CAPABLE_MODELS = new Set([
   "claude-3-7-sonnet-20250219",
   "claude-sonnet-4-5",
-  "claude-sonnet-4-6",
+  "claude-sonnet-4-5-20250929",
+  "claude-sonnet-4-6",  // deprecated but still accepted
   "claude-opus-4-5",
-  "claude-opus-4-6",
-  "claude-opus-4-7",
+  "claude-opus-4-5-20251101",
+  "claude-opus-4-6",    // deprecated but still accepted
   "claude-haiku-4-5",
   "claude-haiku-4-5-20251001",
 ])
 
 function supportsThinking(model: string): boolean {
-  if (THINKING_CAPABLE_MODELS.has(model)) return true
-  // Also match any claude-4.x or claude-3-7+ by prefix
-  return /^claude-(4|3-7)/.test(model)
+  return THINKING_CAPABLE_MODELS.has(model)
 }
 
 /** Anthropic's documented shape for context-length errors: 400 + invalid_request_error + a "too long"/"maximum" message. */

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import React from "react";
-import type { Provider, Model, Agent, Tool, Skill, MCPServer, ConnectedChannel } from "@/types";
+import type { Provider, Model, ModelFormData, Agent, Tool, Skill, MCPServer, ConnectedChannel } from "@/types";
 import { apiClient } from "@/lib/api";
 import { useLoaderStore } from "@/stores/useLoaderStore";
 
@@ -132,11 +132,11 @@ interface ModelsState {
   availableModels: Model[];
   fetchModels: () => Promise<void>;
   toggleModel: (id: string, active: boolean) => Promise<void>;
-  createModel: (providerId: string, name: string) => Promise<void>;
+  createModel: (providerId: string, data: ModelFormData) => Promise<void>;
   syncModels: (providerId: string) => Promise<{ synced: number }>;
   getModelsByProvider: (providerId: string) => Model[];
   deleteModel: (id: string) => Promise<void>;
-  updateModel: (id: string, data: { name?: string; id?: string }) => Promise<void>;
+  updateModel: (id: string, data: Partial<ModelFormData>) => Promise<void>;
   loadHiveAgentsModel: (modelId: string, ctx: number) => Promise<{ success: boolean; loading: boolean; model_id?: string; ctx?: number }>;
   getHiveAgentsModelStatus: () => Promise<{ success: boolean; loaded: boolean; model?: { name?: string; ctx?: number } }>;
 }
@@ -223,11 +223,11 @@ const createModelsSlice = (set: any, get: any) => ({
     }
   },
 
-  createModel: async (providerId: string, name: string) => {
+  createModel: async (providerId: string, data: ModelFormData) => {
     try {
       const response = await apiClient<{ ok: boolean; id: string; model: any }>("/api/models", {
         method: "POST",
-        body: { provider_id: providerId, name },
+        body: { provider_id: providerId, ...data },
         showLoader: "Agregando modelo...",
         showError: true,
         showSuccess: "Modelo agregado"
@@ -309,7 +309,7 @@ const createModelsSlice = (set: any, get: any) => ({
     }
   },
 
-  updateModel: async (id: string, data: { name?: string; id?: string }) => {
+  updateModel: async (id: string, data: Partial<ModelFormData>) => {
     try {
       const response = await apiClient<{ ok: boolean; model: any }>(`/api/models/${encodeURIComponent(id)}`, {
         method: "PUT",

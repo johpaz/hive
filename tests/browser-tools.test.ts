@@ -33,6 +33,7 @@ interface MockView {
   scroll: ReturnType<typeof mock>;
   scrollTo: ReturnType<typeof mock>;
   resize: ReturnType<typeof mock>;
+  screenshotElement: ReturnType<typeof mock>;
   run: ReturnType<typeof mock>;
   cdp: ReturnType<typeof mock>;
   close: ReturnType<typeof mock>;
@@ -54,6 +55,7 @@ function createMockView(overrides: Partial<MockView> = {}): MockView {
     scroll: mock(async () => {}),
     scrollTo: mock(async () => {}),
     resize: mock(async () => {}),
+    screenshotElement: mock(async () => "base64encodedpng=="),
     run: mock(async () => ({ success: true, data: { path: "/tmp/mock.png" } })),
     cdp: mock(async () => ({ data: "base64png==" })),
     close: mock(() => {}),
@@ -134,26 +136,23 @@ describe("waitForCondition", () => {
 });
 
 describe("screenshotElement", () => {
-  it("retorna base64 del screenshot cuando el elemento existe", async () => {
-    const tmpPath = "/tmp/test-screenshot.png";
-    writeFileSync(tmpPath, "fake-png-data");
-
+  // El helper ya no habla con el CLI: delega en el backend, que puede recortar
+  // como quiera (agent-browser por selector posicional, WebView por CDP clip).
+  it("delega en el backend y devuelve su base64", async () => {
     const { screenshotElement } = await import("../packages/core/src/tools/web/browser-service.ts");
     const view = createMockView({
-      run: mock(async () => ({ success: true, data: { path: tmpPath } })),
+      screenshotElement: mock(async () => "recorte-en-base64=="),
     });
 
     const result = await screenshotElement(view as any, "#logo");
-    expect(typeof result).toBe("string");
-    expect(view.run).toHaveBeenCalledWith(["screenshot", "#logo"]);
-
-    try { rmSync(tmpPath); } catch { /* already cleaned by screenshotElement */ }
+    expect(result).toBe("recorte-en-base64==");
+    expect(view.screenshotElement).toHaveBeenCalledWith("#logo");
   });
 
-  it("lanza error cuando el elemento no existe", async () => {
+  it("propaga el error del backend cuando el elemento no existe", async () => {
     const { screenshotElement } = await import("../packages/core/src/tools/web/browser-service.ts");
     const view = createMockView({
-      run: mock(async () => ({ success: false, error: "Element not found" })),
+      screenshotElement: mock(async () => { throw new Error("Element not found"); }),
     });
 
     await expect(screenshotElement(view as any, ".missing")).rejects.toThrow("Element not found");
@@ -373,14 +372,11 @@ describe("browser_screenshot", () => {
   });
 
   it("usa screenshotElement cuando se pasa selector", async () => {
-    const tmpPath = "/tmp/test-screenshot-hero.png";
-    writeFileSync(tmpPath, "fake-png-data");
-
     const mod = await import("../packages/core/src/tools/web/browser-screenshot.ts");
     const browserServiceMod = await import("../packages/core/src/tools/web/browser-service.ts");
 
     const view = createMockView({
-      run: mock(async () => ({ success: true, data: { path: tmpPath } })),
+      screenshotElement: mock(async () => "recorte-en-base64=="),
     });
     const service = createMockService(view);
     const spy = spyOn(browserServiceMod, "getBrowserService").mockReturnValue(service as any);
@@ -393,10 +389,10 @@ describe("browser_screenshot", () => {
     expect(result.ok).toBe(true);
     expect(result.artifact_id).toBeString();
     expect(result.screenshot).toBeUndefined();
+    expect(view.screenshotElement).toHaveBeenCalledWith("#hero");
 
     spy.mockRestore();
     rmSync(artifactDir, { recursive: true, force: true });
-    try { rmSync(tmpPath); } catch { /* already cleaned by screenshotElement */ }
   });
 
   it("navega a la url antes del screenshot si se proporciona", async () => {

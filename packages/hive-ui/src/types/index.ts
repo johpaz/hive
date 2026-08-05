@@ -11,4 +11,4 @@ export type { AgentFullConfig, ConfigSection, ConfigValidationError, ConfigSnaps
 export type { ChannelType, ChannelStatus, ChannelConfig, ChannelPolicies, ConnectedChannel, ChannelStats, ChannelLog, ChannelTelegramConfig, ChannelWhatsAppConfig, ChannelDiscordConfig, ChannelSignalConfig, ChannelWebChatConfig } from "./channels";
 export type { ProviderType, ProviderStatus, ModelCapability, ProviderConfig, ModelPricing, ModelPerformance, ModelDefinition, Provider, ProviderUsageStats, FailoverConfig } from "./providers";
 export type { ConnectionsOverview, ConnectionsSummary } from "./connections";
-export type { Model } from "./providers";
+export type { Model, ModelFormData } from "./providers";

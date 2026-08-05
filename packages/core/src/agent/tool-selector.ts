@@ -321,8 +321,31 @@ export async function selectTools(
         return []
     }
 
-    // Step 4: Map to tool descriptors with additional metadata
+    // Step 4: Map to tool descriptors with additional metadata.
+    //
+    // El mapa tiene que cubrir lo mismo que se indexó, o el hit se descarta en
+    // silencio. `syncToolCatalogToIndex` indexa CORE_TOOL_CATALOG **más** las
+    // filas de la colección `tools`; resolver sólo contra `fullToolList` (que
+    // por defecto es CORE_TOOL_CATALOG) hace que una tool registrada en runtime
+    // puntúe primera en BM25 y aun así nunca se le ofrezca al modelo. Acá no se
+    // nota porque todas las tools de hive están en el catálogo estático, pero
+    // cualquier tool que llegue sólo por la colección cae en el mismo pozo.
     const toolMap = new Map(fullToolList.map(t => [t.name, t]))
+    const unresolved = relevantHits.filter(h => !toolMap.has(h.rawId))
+    if (unresolved.length > 0) {
+        const toolsCol = await col<ToolDoc>("tools")
+        for (const hit of unresolved) {
+            const entry = await toolsCol.get(hit.rawId)
+            if (!entry?.doc.enabled || !entry.doc.active) continue
+            toolMap.set(entry.doc.name, {
+                name: entry.doc.name,
+                description: entry.doc.description ?? entry.doc.name,
+                category: (entry.doc.category ?? "core") as any,
+                abstractionLevel: "atomic",
+            })
+        }
+    }
+
     const calendarOperation = isCalendarOperation(userMessage)
 
     const scoredTools: SelectedTool[] = []

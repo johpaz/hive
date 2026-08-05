@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-agents",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Tu colmena de agentes IA. Local-first. Multi-canal. Open source. Construido desde Colombia para el mundo.",
   "private": false,
   "bin": {
@@ -125,21 +125,21 @@
     "@google/genai": "^1.43.0",
     "@johpaz/hive-db": "0.3.1",
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "@slack/bolt": "latest",
+    "@slack/bolt": "^4.7.2",
     "@vitejs/plugin-react": "^5.1.4",
-    "@whiskeysockets/baileys": "latest",
+    "@whiskeysockets/baileys": "7.0.0-rc11",
     "async-mutex": "^0.5.0",
     "croner": "^10.0.1",
-    "discord.js": "latest",
-    "grammy": "latest",
+    "discord.js": "^14.26.4",
+    "grammy": "^1.42.0",
     "groq-sdk": "^0.37.0",
     "jsonwebtoken": "^9.0.3",
     "ollama": "^0.6.3",
     "openai": "^6.18.0",
-    "qrcode-terminal": "latest",
+    "qrcode-terminal": "^0.12.0",
     "react-markdown": "^10.1.0",
     "toon-format-parser": "^1.1.0",
-    "zod": "latest"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/bun": "^1.3.13",

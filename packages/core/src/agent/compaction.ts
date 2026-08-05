@@ -59,7 +59,10 @@ export async function maybeCompact(
       const modelId = fromIndexable(coordinators[0]?.doc.model_id ?? null)
       if (modelId) {
         const modelsCol = await col<ModelDoc>("models")
-        const modelEntry = await modelsCol.get(modelId.replace(/^[^/]+\//, ''))
+        // El id se busca completo: recortar el primer segmento rompía cualquier
+        // modelo cuyo nombre lleve barra (meta/llama-3.3-70b-instruct buscaba
+        // "llama-3.3-70b-instruct", no encontraba nada y caía al default).
+        const modelEntry = await modelsCol.get(modelId)
         if (modelEntry?.doc.context_window) {
           effectiveThreshold = Math.floor(modelEntry.doc.context_window * 0.25)
         }
@@ -160,6 +163,18 @@ async function compactThread(
       },
     ],
   })
+
+  // A failed provider call still returns a populated `content` (the error text),
+  // so this has to gate on stop_reason — otherwise the summary that permanently
+  // replaces N messages of history becomes "[LLM Error] ...". Skipping leaves the
+  // thread uncompacted, which is recoverable; saving is not.
+  if (summaryResponse.stop_reason === "error") {
+    log.warn(
+      `[compaction] Summarizer call failed (${summaryResponse.error?.message ?? "unknown error"}) — `
+      + `keeping thread ${threadId} uncompacted rather than saving the error as its summary`
+    )
+    return
+  }
 
   const summary = summaryResponse.content.trim()
   if (!summary) return

@@ -47,7 +47,7 @@ describe("saveAgentConfig", () => {
       agentName: "Bee",
       tone: "friendly",
       providerId: "gemini",
-      modelId: "gemini-2.5-flash",
+      modelId: "gemini-3.6-flash",
     });
 
     const coordinator = await agent(agentId);
@@ -57,7 +57,7 @@ describe("saveAgentConfig", () => {
     for (const id of CATALOG_AGENT_IDS) {
       const doc = await agent(id);
       expect(fromIndexable(doc.provider_id)).toBe("gemini");
-      expect(fromIndexable(doc.model_id)).toBe("gemini-2.5-flash");
+      expect(fromIndexable(doc.model_id)).toBe("gemini-3.6-flash");
       expect(doc.user_id).toBe("user-1");
       expect(doc.role).toBe("worker");
       // The rest of the persona survives the rewrite untouched
@@ -104,7 +104,7 @@ describe("reseed on an already-configured install (boot, no setup)", () => {
       agentName: "Bee",
       tone: "friendly",
       providerId: "gemini",
-      modelId: "gemini-2.5-flash",
+      modelId: "gemini-3.6-flash",
     });
   }
 
@@ -113,21 +113,21 @@ describe("reseed on an already-configured install (boot, no setup)", () => {
     const agentsCol = await col<AgentDoc>("agents");
     // A worker the user pointed at a different model from the UI
     const custom = { ...(await agent(CATALOG_AGENT_IDS[0])), id: "custom-worker" };
-    await agentsCol.put(custom.id, { ...custom, provider_id: toIndexable("openai"), model_id: toIndexable("gpt-4o-mini") });
+    await agentsCol.put(custom.id, { ...custom, provider_id: toIndexable("openai"), model_id: toIndexable("gpt-5.6-luna") });
     // A persona the user disabled
     const off = await agent(CATALOG_AGENT_IDS[1]);
     await agentsCol.put(off.id, { ...off, enabled: false }, { expectedVersion: (await agentsCol.get(off.id))!.version });
 
     await seedAllData();
 
-    expect(fromIndexable((await agent(coordinatorId)).model_id)).toBe("gemini-2.5-flash");
+    expect(fromIndexable((await agent(coordinatorId)).model_id)).toBe("gemini-3.6-flash");
     for (const id of CATALOG_AGENT_IDS) {
       const doc = await agent(id);
       expect(fromIndexable(doc.provider_id)).toBe("gemini");
-      expect(fromIndexable(doc.model_id)).toBe("gemini-2.5-flash");
+      expect(fromIndexable(doc.model_id)).toBe("gemini-3.6-flash");
     }
     // Per-agent choices and toggles survive the reseed
-    expect(fromIndexable((await agent("custom-worker")).model_id)).toBe("gpt-4o-mini");
+    expect(fromIndexable((await agent("custom-worker")).model_id)).toBe("gpt-5.6-luna");
     expect((await agent(CATALOG_AGENT_IDS[1])).enabled).toBe(false);
   });
 
@@ -162,7 +162,7 @@ describe("reseed on an already-configured install (boot, no setup)", () => {
     expect(migrated.system_prompt).not.toContain("Tu dominio es recordatorios");
     expect(migrated.enabled).toBe(false);
     expect(migrated.helpful_count).toBe(7);
-    expect(fromIndexable(migrated.model_id)).toBe("gemini-2.5-flash");
+    expect(fromIndexable(migrated.model_id)).toBe("gemini-3.6-flash");
   });
 
   test("configures a persona added by an upgrade", async () => {
@@ -182,7 +182,7 @@ describe("reseed on an already-configured install (boot, no setup)", () => {
 
     const doc = await agent("new_persona");
     expect(fromIndexable(doc.provider_id)).toBe("gemini");
-    expect(fromIndexable(doc.model_id)).toBe("gemini-2.5-flash");
+    expect(fromIndexable(doc.model_id)).toBe("gemini-3.6-flash");
     expect(doc.user_id).toBe("user-1");
     expect(doc.enabled).toBe(true);
   });
@@ -237,18 +237,18 @@ describe("propagateCoordinatorModel", () => {
       agentName: "Bee",
       tone: "friendly",
       providerId: "gemini",
-      modelId: "gemini-2.5-flash",
+      modelId: "gemini-3.6-flash",
     });
 
-    const updated = await propagateCoordinatorModel("user-1", "openai", "gpt-4o-mini");
+    const updated = await propagateCoordinatorModel("user-1", "openai", "gpt-5.6-luna");
     expect(updated).toBe(CATALOG_AGENT_IDS.length + 1);
     expect(fromIndexable((await agent("custom-worker")).provider_id)).toBe("openai");
     // The coordinator keeps what saveAgentConfig persisted for it
-    expect(fromIndexable((await agent(coordinatorId)).model_id)).toBe("gemini-2.5-flash");
+    expect(fromIndexable((await agent(coordinatorId)).model_id)).toBe("gemini-3.6-flash");
     expect((await agent(CATALOG_AGENT_IDS[0])).updated_at).toBeGreaterThanOrEqual(now);
 
     // Idempotent: a second run with the same pair rewrites nothing
-    expect(await propagateCoordinatorModel("user-1", "openai", "gpt-4o-mini")).toBe(0);
+    expect(await propagateCoordinatorModel("user-1", "openai", "gpt-5.6-luna")).toBe(0);
   });
 
   test("keeps a user_id that is already set", async () => {
@@ -256,7 +256,7 @@ describe("propagateCoordinatorModel", () => {
     const owned = { ...(await agent(CATALOG_AGENT_IDS[0])), id: "owned-worker", user_id: "other-user" };
     await agentsCol.put(owned.id, owned);
 
-    await propagateCoordinatorModel("user-1", "openai", "gpt-4o-mini");
+    await propagateCoordinatorModel("user-1", "openai", "gpt-5.6-luna");
 
     expect((await agent("owned-worker")).user_id).toBe("other-user");
     expect((await agent("owned-worker")).provider_id).toBe(toIndexable("openai"));

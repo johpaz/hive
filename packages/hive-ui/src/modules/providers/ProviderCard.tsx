@@ -1,10 +1,14 @@
 import { Switch } from "@/components/ui/switch";
-import { Settings, ChevronDown, ChevronRight, Cpu, Plus, KeyRound, Globe, RefreshCw, Pencil, Trash2, Check, X } from "lucide-react";
-import type { Provider, Model } from "@/types";
+import { Settings, ChevronDown, ChevronRight, Cpu, Plus, KeyRound, Globe, RefreshCw, Pencil, Trash2 } from "lucide-react";
+import type { Provider, Model, ModelFormData } from "@/types";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ProviderConfigForm } from "./ProviderConfigForm";
 import { useModels, useProviders } from "@/hooks/useProviders";
 import { useState, useMemo } from "react";
+import { ModelPriceLine } from "./models/ModelPriceLine";
+import { ModelFormDialog } from "./models/ModelFormDialog";
+import { summarizeProviderPricing } from "@/lib/model-pricing";
+import { formatCostUsd, formatTokens, type ProviderUsage } from "@/hooks/useProviderUsage";
 
 const SettingsIcon = Settings as any;
 const ChevronDownIcon = ChevronDown as any;
@@ -16,25 +20,24 @@ const GlobeIcon = Globe as any;
 const RefreshCwIcon = RefreshCw as any;
 const PencilIcon = Pencil as any;
 const Trash2Icon = Trash2 as any;
-const CheckIcon = Check as any;
-const XIcon = X as any;
 
 interface ProviderCardProps {
   provider: Provider;
   updateProvider: (id: string, data: { apiKey?: string; baseUrl?: string; headers?: Record<string, string>; numCtx?: number | null }) => void;
   onManageModels?: () => void;
+  /** Consumo real del provider. `undefined` = todavía sin cargar o sin registros. */
+  usage?: ProviderUsage;
+  /** Abre la guía, que vive a nivel de página y no repetida por tarjeta. */
+  onOpenGuide?: () => void;
 }
 
-export function ProviderCard({ provider, updateProvider, onManageModels }: ProviderCardProps) {
+export function ProviderCard({ provider, updateProvider, onManageModels, usage, onOpenGuide }: ProviderCardProps) {
   const [configOpen, setConfigOpen] = useState(false);
   const [modelsExpanded, setModelsExpanded] = useState(false);
-  const [newModelName, setNewModelName] = useState("");
-  const [addingModel, setAddingModel] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [editingModelId, setEditingModelId] = useState<string | null>(null);
-  const [editModelName, setEditModelName] = useState("");
-  const [editModelApiId, setEditModelApiId] = useState("");
   const [deletingModelId, setDeletingModelId] = useState<string | null>(null);
+  // `null` = el diálogo está cerrado; `undefined` como modelo = alta.
+  const [modelForm, setModelForm] = useState<{ model?: Model } | null>(null);
 
   const { models, toggleModel, createModel, syncModels, deleteModel, updateModel } = useModels();
   const { toggleProvider } = useProviders();
@@ -50,6 +53,7 @@ export function ProviderCard({ provider, updateProvider, onManageModels }: Provi
   }, [models, provider.id, provider.models]);
 
   const activeModels = providerModels.filter(m => m.enabled || m.active);
+  const pricing = useMemo(() => summarizeProviderPricing(providerModels), [providerModels]);
 
   const handleSave = (data: { apiKey?: string; baseUrl?: string; headers?: Record<string, string>; numCtx?: number | null }) => {
     updateProvider(provider.id, data);
@@ -84,30 +88,11 @@ export function ProviderCard({ provider, updateProvider, onManageModels }: Provi
     }
   };
 
-  const handleStartEdit = (model: Model) => {
-    setEditingModelId(model.id);
-    setEditModelName(model.name);
-    setEditModelApiId(model.id);
-  };
-
-  const handleCancelEdit = () => {
-    setEditingModelId(null);
-    setEditModelName("");
-    setEditModelApiId("");
-  };
-
-  const handleConfirmEdit = async (model: Model) => {
-    const name = editModelName.trim() || model.name;
-    const newId = editModelApiId.trim() || model.id;
-    if (name === model.name && newId === model.id) {
-      handleCancelEdit();
-      return;
-    }
-    try {
-      await updateModel(model.id, { name, id: newId });
-      handleCancelEdit();
-    } catch (error) {
-      console.error("Failed to update model:", error);
+  const handleSubmitModel = async (data: ModelFormData) => {
+    if (modelForm?.model) {
+      await updateModel(modelForm.model.id, data);
+    } else {
+      await createModel(provider.id, data);
     }
   };
 
@@ -119,20 +104,6 @@ export function ProviderCard({ provider, updateProvider, onManageModels }: Provi
       console.error("Failed to delete model:", error);
     } finally {
       setDeletingModelId(null);
-    }
-  };
-
-  const handleAddModel = async () => {
-    const name = newModelName.trim();
-    if (!name) return;
-    setAddingModel(true);
-    try {
-      await createModel(provider.id, name);
-      setNewModelName("");
-    } catch (error) {
-      console.error("Failed to add model:", error);
-    } finally {
-      setAddingModel(false);
     }
   };
 
@@ -238,6 +209,22 @@ export function ProviderCard({ provider, updateProvider, onManageModels }: Provi
             </span>
           </button>
 
+          {/* Precio de referencia del provider — el modelo más barato por token de entrada */}
+          {pricing && (
+            <span
+              className={`text-[9px] font-mono font-semibold rounded px-1.5 py-0.5 leading-none whitespace-nowrap border ${
+                pricing.allFree
+                  ? 'text-emerald-400/80 bg-emerald-400/10 border-emerald-400/20'
+                  : 'text-white/45 bg-white/5 border-white/10'
+              }`}
+              title={pricing.allFree
+                ? "Todos los modelos de este provider son gratuitos"
+                : "Precio del modelo más barato, en USD por millón de tokens de entrada"}
+            >
+              {pricing.label}
+            </span>
+          )}
+
           {/* Badge + botón sync — solo providers locales */}
           {isLocal && (
             <>
@@ -280,103 +267,56 @@ export function ProviderCard({ provider, updateProvider, onManageModels }: Provi
               )}
               {providerModels.map((model) => {
                 const modelActive = model.enabled || !!model.active;
-                const isEditing = editingModelId === model.id;
                 return (
                   <div
                     key={model.id}
-                    className={`rounded-lg transition-colors ${
-                      modelActive && !isEditing ? 'bg-white/5' : isEditing ? 'bg-white/5' : 'bg-transparent opacity-40'
-                    }`}
+                    className={`rounded-lg transition-colors ${modelActive ? 'bg-white/5' : 'bg-transparent opacity-40'}`}
                   >
-                    {isEditing ? (
-                      <div className="flex flex-col gap-1 px-2.5 py-1.5">
-                        <input
-                          type="text"
-                          value={editModelName}
-                          onChange={(e) => setEditModelName(e.target.value)}
-                          placeholder="Display name"
-                          className="w-full bg-white/5 border border-white/10 rounded-md px-2 h-7 text-[11px] text-white/70 placeholder-white/20 focus:outline-none focus:border-blue-500/50 transition-all"
-                        />
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="text"
-                            value={editModelApiId}
-                            onChange={(e) => setEditModelApiId(e.target.value)}
-                            placeholder="API model ID"
-                            className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-md px-2 h-7 text-[11px] text-white/70 placeholder-white/20 focus:outline-none focus:border-blue-500/50 transition-all font-mono"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleConfirmEdit(model)}
-                            className="shrink-0 h-7 w-7 flex items-center justify-center rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors"
-                          >
-                            <CheckIcon className="h-3 w-3" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleCancelEdit}
-                            className="shrink-0 h-7 w-7 flex items-center justify-center rounded-md bg-white/5 border border-white/10 text-white/40 hover:text-white hover:bg-white/10 transition-colors"
-                          >
-                            <XIcon className="h-3 w-3" />
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-between px-2.5 py-1.5">
-                        <span className="text-[11px] font-medium text-white truncate flex-1 mr-2">
+                    <div className="flex items-center justify-between px-2.5 py-1.5">
+                      <div className="min-w-0 flex-1 mr-2">
+                        <span className="block text-[11px] font-medium text-white truncate">
                           {model.name}
                         </span>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleStartEdit(model)}
-                            title="Editar modelo"
-                            className="h-5 w-5 flex items-center justify-center rounded text-white/25 hover:text-blue-400 hover:bg-blue-400/10 transition-colors"
-                          >
-                            <PencilIcon className="h-3 w-3" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteModel(model)}
-                            disabled={deletingModelId === model.id}
-                            title="Eliminar modelo"
-                            className="h-5 w-5 flex items-center justify-center rounded text-white/25 hover:text-red-400 hover:bg-red-400/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                          >
-                            <Trash2Icon className="h-3 w-3" />
-                          </button>
-                          <Switch
-                            checked={modelActive}
-                            onCheckedChange={(checked) => handleModelToggle(model, checked)}
-                            className="scale-[0.7] origin-right data-[state=checked]:bg-blue-400 ml-0.5"
-                          />
-                        </div>
+                        <ModelPriceLine model={model} showContext />
                       </div>
-                    )}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setModelForm({ model })}
+                          title="Editar modelo — ID, contexto, costo y capacidades"
+                          className="h-5 w-5 flex items-center justify-center rounded text-white/25 hover:text-blue-400 hover:bg-blue-400/10 transition-colors"
+                        >
+                          <PencilIcon className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteModel(model)}
+                          disabled={deletingModelId === model.id}
+                          title="Eliminar modelo"
+                          className="h-5 w-5 flex items-center justify-center rounded text-white/25 hover:text-red-400 hover:bg-red-400/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <Trash2Icon className="h-3 w-3" />
+                        </button>
+                        <Switch
+                          checked={modelActive}
+                          onCheckedChange={(checked) => handleModelToggle(model, checked)}
+                          className="scale-[0.7] origin-right data-[state=checked]:bg-blue-400 ml-0.5"
+                        />
+                      </div>
+                    </div>
                   </div>
                 );
               })}
             </div>
 
-            {/* Add model input */}
-            <div className="flex items-center gap-1.5 pt-1.5 border-t border-white/5">
-              <input
-                type="text"
-                value={newModelName}
-                onChange={(e) => setNewModelName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleAddModel()}
-                placeholder="nombre-del-modelo"
-                className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-md px-2 h-7 text-[11px] text-white/70 placeholder-white/20 focus:outline-none focus:border-blue-500/50 transition-all font-mono"
-              />
-              <button
-                type="button"
-                onClick={handleAddModel}
-                disabled={addingModel || !newModelName.trim()}
-                className="shrink-0 h-7 px-2.5 flex items-center gap-1 rounded-md bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-black uppercase tracking-wider hover:bg-blue-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                <PlusIcon className="h-3 w-3" />
-                <span className="hidden xs:inline">ADD</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setModelForm({})}
+              className="w-full mt-1.5 h-7 flex items-center justify-center gap-1 rounded-md bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-black uppercase tracking-wider hover:bg-blue-500/20 transition-colors"
+            >
+              <PlusIcon className="h-3 w-3" />
+              Agregar modelo
+            </button>
           </div>
         )}
       </div>
@@ -384,9 +324,19 @@ export function ProviderCard({ provider, updateProvider, onManageModels }: Provi
       {/* ── Footer ── */}
       <div className="px-4 py-3 border-t border-white/5 flex items-center justify-between gap-2 overflow-hidden">
         <div className="flex items-center gap-3 min-w-0 overflow-hidden">
-          <div className="hive-stat shrink-0">
-            <span className="hive-stat__label">Uptime</span>
-            <span className="hive-stat__value">99.9%</span>
+          {/* Consumo real de la BD (usageRollups). "—" cuando no hay registros:
+              nunca un número de relleno. */}
+          <div className="hive-stat shrink-0" title="Gasto acumulado en los últimos 30 días">
+            <span className="hive-stat__label">Gasto 30d</span>
+            <span className={`hive-stat__value ${usage && usage.costUsd > 0 ? 'text-amber-400' : 'text-white/30'}`}>
+              {usage ? formatCostUsd(usage.costUsd) : '—'}
+            </span>
+          </div>
+          <div className="hive-stat shrink-0" title="Tokens consumidos en los últimos 30 días">
+            <span className="hive-stat__label">Tokens</span>
+            <span className={`hive-stat__value ${usage && usage.tokens > 0 ? 'text-white/60' : 'text-white/30'}`}>
+              {usage ? formatTokens(usage.tokens) : '—'}
+            </span>
           </div>
           <div className="hive-stat shrink-0">
             <span className="hive-stat__label">Estado</span>
@@ -419,6 +369,16 @@ export function ProviderCard({ provider, updateProvider, onManageModels }: Provi
           </DialogContent>
         </Dialog>
       </div>
+
+      <ModelFormDialog
+        open={modelForm !== null}
+        onOpenChange={(open) => { if (!open) setModelForm(null); }}
+        providerId={provider.id}
+        model={modelForm?.model}
+        onSubmit={handleSubmitModel}
+        onOpenGuide={onOpenGuide}
+        isFreeProvider={pricing?.allFree ?? false}
+      />
 
       <div className={`hive-strip--bottom ${!isActive ? 'opacity-20' : ''}`} />
     </div>

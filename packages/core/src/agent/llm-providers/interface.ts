@@ -30,6 +30,11 @@ export const OPENAI_COMPAT_BASE_URLS: Record<string, string> = {
   minimax: "https://api.minimaxi.com/v1",
   "opencode-go": "https://opencode.ai/zen/go/v1",
   hiveagents: "https://llm.hiveagents.io/v1",
+  "z-ai": "https://api.z.ai/api/paas/v4",
+  // OJO: `.ai`, no `.cn`. Son dos plataformas con cuentas y tokens distintos, y
+  // un token de la internacional da 401 contra el endpoint chino aunque el
+  // listado de modelos responda 200 en ambos (ese listado es público).
+  modelscope: "https://api-inference.modelscope.ai/v1",
 }
 
 // ─── Provider profiles ────────────────────────────────────────────────────────
@@ -63,9 +68,15 @@ const PROVIDER_PROFILES: Record<string, ProviderProfile> = {
   kimi: { ...DEFAULT_PROFILE, normalizeToolNames: true, disableParallelToolCalls: true, retryWithoutToolsOnCodes: [422] },
   deepseek: { ...DEFAULT_PROFILE, normalizeToolNames: true },
   groq: { ...DEFAULT_PROFILE, normalizeToolNames: true, retryWithoutToolsOnCodes: [400, 422] },
-  mistral: { ...DEFAULT_PROFILE, normalizeToolNames: true, toolChoiceAuto: "any", stripAdditionalProperties: true },
+  // tool_choice "any" *forces* a tool call on every request per docs.mistral.ai —
+  // it is not Mistral's spelling of "auto", which Mistral supports and defaults to.
+  // With "any" the agent could never answer in plain text: every turn had to end
+  // in a tool call, so the loop only stopped when it hit max iterations.
+  mistral: { ...DEFAULT_PROFILE, normalizeToolNames: true, stripAdditionalProperties: true },
   openrouter: { ...DEFAULT_PROFILE, normalizeToolNames: true, retryWithoutToolsOnCodes: [400, 422] },
-  nvidia: { ...DEFAULT_PROFILE, normalizeToolNames: true },
+  nvidia: { ...DEFAULT_PROFILE, normalizeToolNames: true, retryWithoutToolsOnCodes: [400, 422] },
+  "z-ai": { ...DEFAULT_PROFILE, normalizeToolNames: true, retryWithoutToolsOnCodes: [400, 422] },
+  modelscope: { ...DEFAULT_PROFILE, normalizeToolNames: true, retryWithoutToolsOnCodes: [400, 422] },
   qwen: { ...DEFAULT_PROFILE, normalizeToolNames: true, retryWithoutToolsOnCodes: [400, 422] },
   minimax: { ...DEFAULT_PROFILE, normalizeToolNames: true, retryWithoutToolsOnCodes: [400, 422] },
   "opencode-go": { ...DEFAULT_PROFILE, normalizeToolNames: true, retryWithoutToolsOnCodes: [400, 422] },

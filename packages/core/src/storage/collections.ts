@@ -53,6 +53,14 @@ export interface ModelDoc {
    * agent pointing at it. Legacy rows (undefined) are treated as discovered.
    */
   source?: "catalog" | "discovered"
+  /**
+   * Precio en USD por millón de tokens. Única fuente de verdad para el costo
+   * del dashboard: `calculateCost` (storage/usage.ts) lee de acá, no de una
+   * tabla aparte. `null` = precio desconocido (modelo agregado a mano o
+   * descubierto en runtime), que se reporta como $0 con un warning.
+   */
+  input_per_1m?: number | null
+  output_per_1m?: number | null
 }
 
 export interface AgentDoc {
@@ -217,6 +225,8 @@ export interface UserIdentityDoc {
   user_id: string
   channel: string
   channel_user_id: string
+  /** Account that owns this session — replies must go back out through it. Absent on legacy rows. */
+  account_id?: string
   linked_at: number
 }
 

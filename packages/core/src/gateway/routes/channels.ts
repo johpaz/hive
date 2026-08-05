@@ -1,6 +1,7 @@
 import { col, updateDoc, toIndexable } from "../../storage/hive"
 import type { ChannelDoc } from "../../storage/collections"
 import { storeChannelConfig, loadChannelConfig, deleteChannelSecrets } from "../../storage/crypto"
+import { invalidateNarrationModeCache, DEFAULT_NARRATION_MODE } from "../../events/channel-narration"
 
 export async function handleGetChannels(
   req: Request,
@@ -162,7 +163,7 @@ export async function handleCreateChannel(
     await channelsCol.put(id, {
       id, user_id: toIndexable(null), type, enabled: true, active: true, status: "connecting",
       last_active: null, voice_enabled: false, tts_enabled: false, stt_provider: null, tts_provider: null,
-      tts_voice_id: null, step_delivery_mode: "new_messages", vision_enabled: false,
+      tts_voice_id: null, step_delivery_mode: DEFAULT_NARRATION_MODE, vision_enabled: false,
       ocr_provider: null, vision_provider: null, vision_model_id: null,
     }, { expectedVersion: 0 });
   }
@@ -340,6 +341,16 @@ export async function handleUpdateChannelSettings(
     }
   }
 
+  if ("step_delivery_mode" in patch) {
+    const mode = patch.step_delivery_mode;
+    if (mode !== "off" && mode !== "milestones" && mode !== "all") {
+      return addCorsHeaders(Response.json(
+        { error: "step_delivery_mode must be one of: off, milestones, all" },
+        { status: 400 }
+      ), req);
+    }
+  }
+
   // Merge type-specific config into the secrets store if body.config is provided
   const newConfig = body.config as Record<string, unknown> | undefined;
   if (newConfig && typeof newConfig === "object" && Object.keys(newConfig).length > 0) {
@@ -355,6 +366,9 @@ export async function handleUpdateChannelSettings(
 
   if (entry) {
     await channelsCol.put(channelId, { ...entry.doc, ...patch }, { expectedVersion: entry.version });
+    // Narration delivery caches the mode per channel type — drop it so the new
+    // setting applies to the next turn instead of after the TTL.
+    if ("step_delivery_mode" in patch) invalidateNarrationModeCache(entry.doc.type);
   }
 
   return addCorsHeaders(Response.json({ success: true }), req);

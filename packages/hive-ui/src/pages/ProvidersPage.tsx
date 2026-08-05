@@ -1,11 +1,12 @@
-import { Plus, Eye, Mic, Server, type LucideProps } from "lucide-react";
+import { Plus, Eye, Mic, Server, BookOpen, type LucideProps } from "lucide-react";
 import { ProviderList } from "@/modules/providers";
 import { NewProviderForm } from "@/modules/providers/NewProviderForm";
 import { VisionModelsTab } from "@/modules/providers/tabs/VisionModelsTab";
 import { VoiceProvidersTab } from "@/modules/providers/tabs/VoiceProvidersTab";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription, DialogHeader } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { useProviders } from "@/hooks/useProviders";
+import { useProviders, useModels } from "@/hooks/useProviders";
+import { ProviderGuideDialog } from "@/modules/providers/models/ProviderGuideDialog";
 import { useState } from "react";
 import type React from "react";
 
@@ -13,10 +14,14 @@ const PlusIcon = Plus as React.ComponentType<LucideProps>;
 const EyeIcon = Eye as React.ComponentType<LucideProps>;
 const MicIcon = Mic as React.ComponentType<LucideProps>;
 const ServerIcon = Server as React.ComponentType<LucideProps>;
+const BookIcon = BookOpen as React.ComponentType<LucideProps>;
 
 export function ProvidersPage() {
   const { providers, createProvider } = useProviders();
+  const { models } = useModels();
   const [open, setOpen] = useState(false);
+  // La guía vive acá, no en cada tarjeta: es documentación global.
+  const [guideOpen, setGuideOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("providers");
 
   const handleAdd = async (data: {
@@ -53,6 +58,16 @@ export function ProvidersPage() {
           </div>
           <h2 className="hive-title-page">Providers de IA<span className="hive-title-page__accent">.</span></h2>
         </div>
+        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setGuideOpen(true)}
+          className="hive-btn hive-btn--ghost"
+          title="Cómo configurar providers, cuáles son gratis, cómo agregar modelos"
+        >
+          <BookIcon className="mr-1 h-4 w-4" />
+          Guía
+        </button>
         <Dialog open={open} onOpenChange={(val) => { setOpen(val); }}>
           <DialogTrigger asChild>
             <button className="hive-btn hive-btn--primary">
@@ -76,7 +91,15 @@ export function ProvidersPage() {
             </div>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
+
+      <ProviderGuideDialog
+        open={guideOpen}
+        onOpenChange={setGuideOpen}
+        providers={providers}
+        models={models}
+      />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="w-full grid grid-cols-3 h-10">
@@ -95,7 +118,7 @@ export function ProvidersPage() {
         </TabsList>
 
         <TabsContent value="providers" className="mt-4">
-          <ProviderList />
+          <ProviderList onOpenGuide={() => setGuideOpen(true)} />
         </TabsContent>
         <TabsContent value="vision" className="mt-4">
           <VisionModelsTab />

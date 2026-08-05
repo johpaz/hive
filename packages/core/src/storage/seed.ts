@@ -1,6 +1,8 @@
 import { col, toIndexable, nextId } from "./hive"
 import type { Collection } from "@johpaz/hive-db"
 import { logger } from "../utils/logger"
+import { catalogModelKey } from "./model-id"
+import { invalidateModelPricingCache } from "./usage"
 
 /**
  * Seed de datos predeterminados para Hive
@@ -11,7 +13,20 @@ import { logger } from "../utils/logger"
 export interface SeedData {
   tools: Array<{ id: string; name: string; category: string; description: string; enabled?: boolean }>
   providers: Array<{ id: string; name: string; baseUrl?: string; category?: string }>
-  models: Array<{ id: string; providerId: string; name: string; modelType: string; contextWindow?: number; capabilities?: string }>
+  /**
+   * Catálogo de modelos — única fuente de verdad, incluidos los precios.
+   *
+   * `id` es el nombre del modelo tal como lo llama su propietario. La clave real
+   * en la BD la deriva `catalogModelKey()` (storage/model-id.ts), que prefija a
+   * los providers revendedores para que dos servicios puedan ofrecer el mismo
+   * modelo sin pisarse.
+   *
+   * `inputPer1M` / `outputPer1M` son USD por millón de tokens y alimentan el
+   * costo del dashboard. Obligatorios en los modelos `llm`: omitirlos hace que
+   * el modelo aparezca gratis, que es indistinguible de un endpoint sin costo.
+   * Los endpoints realmente gratuitos (NVIDIA NIM, Ollama, HiveAgents) van con 0.
+   */
+  models: Array<{ id: string; providerId: string; name: string; modelType: string; contextWindow?: number; capabilities?: string; inputPer1M?: number; outputPer1M?: number }>
   mcpServers: Array<{ id: string; name: string; transport: string; command?: string; args?: string[]; builtin: boolean }>
   channels: Array<{ id: string; type: string }>
   ethics: Array<{ id: string; name: string; description: string; content: string; isDefault: boolean }>
@@ -126,26 +141,32 @@ export const SEED_DATA: SeedData = {
     { id: "qwen", name: "Qwen (Alibaba)", baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", category: "llm" },
     { id: "nvidia", name: "NVIDIA NIM", baseUrl: "https://integrate.api.nvidia.com/v1" },
     { id: "minimax", name: "MiniMax", baseUrl: "https://api.minimaxi.com/v1" },
+    { id: "z-ai", name: "Z.ai (GLM)", baseUrl: "https://api.z.ai/api/paas/v4" },
+    // `.ai` (internacional), NO `.cn`. Son plataformas separadas con cuentas y
+    // tokens propios: un token internacional responde 401 en el endpoint chino.
+    // Confunde porque GET /v1/models da 200 en ambos — ese listado es público y
+    // no valida la key; el 401 recién aparece al invocar el modelo.
+    { id: "modelscope", name: "ModelScope Qwen", baseUrl: "https://api-inference.modelscope.ai/v1" },
     { id: "opencode-go", name: "OpenCode Go", baseUrl: "https://opencode.ai/zen/go/v1" },
     { id: "piper", name: "Piper (Local TTS)", category: "tts" },
     { id: "hiveagents", name: "HiveAgents LLM (Cloudflare)", baseUrl: "https://llm.hiveagents.io/v1", category: "llm" },
   ],
 
   models: [
-    // ── Anthropic (fuente: docs.anthropic.com/en/docs/about-claude/models) ──
-    { id: "claude-opus-4-6", providerId: "anthropic", name: "Claude Opus 4.6", modelType: "llm", contextWindow: 200000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code", "reasoning"]) },
-    { id: "claude-sonnet-4-6", providerId: "anthropic", name: "Claude Sonnet 4.6", modelType: "llm", contextWindow: 200000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code"]) },
-    { id: "claude-haiku-4-5-20251001", providerId: "anthropic", name: "Claude Haiku 4.5", modelType: "llm", contextWindow: 200000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
+    // ── Anthropic (fuente: platform.claude.com/docs/en/about-claude/models/overview) ──
+    // Generación actual (4.6/4.7/4.8 pasaron a "legacy"). Los IDs sin fecha ya son
+    // snapshots fijos, no alias evergreen.
+    { id: "claude-opus-5", providerId: "anthropic", name: "Claude Opus 5", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code", "reasoning"]), inputPer1M: 5, outputPer1M: 25 },
+    { id: "claude-sonnet-5", providerId: "anthropic", name: "Claude Sonnet 5", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code", "reasoning"]), inputPer1M: 3, outputPer1M: 15 },
+    { id: "claude-fable-5", providerId: "anthropic", name: "Claude Fable 5", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code", "reasoning"]), inputPer1M: 10, outputPer1M: 50 },
+    { id: "claude-haiku-4-5-20251001", providerId: "anthropic", name: "Claude Haiku 4.5", modelType: "llm", contextWindow: 200000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 1, outputPer1M: 5 },
 
-    // ── OpenAI (fuente: openrouter.ai/openai) ──
-    // Chat / Reasoning
-    { id: "gpt-4o", providerId: "openai", name: "GPT-4o", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code"]) },
-    { id: "gpt-4o-mini", providerId: "openai", name: "GPT-4o Mini", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
-    { id: "gpt-5.4", providerId: "openai", name: "GPT-5.4", modelType: "llm", contextWindow: 1050000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code"]) },
-    { id: "gpt-5.4-pro", providerId: "openai", name: "GPT-5.4 Pro", modelType: "llm", contextWindow: 1050000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code", "reasoning"]) },
-    { id: "gpt-5.3", providerId: "openai", name: "GPT-5.3", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
-    { id: "gpt-5.2", providerId: "openai", name: "GPT-5.2", modelType: "llm", contextWindow: 400000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code"]) },
-    { id: "o4-mini", providerId: "openai", name: "o4-mini", modelType: "llm", contextWindow: 200000, capabilities: JSON.stringify(["chat", "reasoning", "streaming"]) },
+    // ── OpenAI (fuente: developers.openai.com/api/docs/models) ──
+    // Serie 5.6: Sol (frontier), Terra (equilibrio) y Luna (alto volumen / bajo costo).
+    // Las tres comparten 1.05M de contexto; se quitó la familia GPT-4o (2024).
+    { id: "gpt-5.6-luna", providerId: "openai", name: "GPT-5.6 Luna", modelType: "llm", contextWindow: 1050000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code", "reasoning"]), inputPer1M: 0.1, outputPer1M: 0.6 },
+    { id: "gpt-5.6-terra", providerId: "openai", name: "GPT-5.6 Terra", modelType: "llm", contextWindow: 1050000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code", "reasoning"]), inputPer1M: 1, outputPer1M: 6 },
+    { id: "gpt-5.6-sol", providerId: "openai", name: "GPT-5.6 Sol", modelType: "llm", contextWindow: 1050000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code", "reasoning"]), inputPer1M: 5, outputPer1M: 30 },
     // STT / TTS
     { id: "whisper-1", providerId: "openai", name: "Whisper 1", modelType: "stt", contextWindow: 0, capabilities: JSON.stringify(["transcription", "translation"]) },
     { id: "tts-1", providerId: "openai", name: "TTS-1", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
@@ -153,83 +174,85 @@ export const SEED_DATA: SeedData = {
     { id: "gpt-4o-mini-tts", providerId: "openai", name: "GPT-4o Mini TTS", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
     { id: "es_MX-claude-14947-epoch-high", providerId: "piper", name: "Piper Spanish (Claude)", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "local"]) },
 
-    // ── Google Gemini (fuente: openrouter.ai/google + ai.google.dev) ──
-    { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", providerId: "gemini", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]) },
-    { id: "gemini-3.5-pro", providerId: "gemini", name: "Gemini 3.5 Pro", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]) },
-    { id: "gemini-3.5-flash", providerId: "gemini", name: "Gemini 3.5 Flash", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]) },
-    { id: "gemini-3.1-pro-preview", providerId: "gemini", name: "Gemini 3.1 Pro Preview", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]) },
-    { id: "gemini-3.1-flash-lite-preview", providerId: "gemini", name: "Gemini 3.1 Flash Lite Preview", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
-    { id: "gemini-3-flash-preview", providerId: "gemini", name: "Gemini 3 Flash Preview", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
-    { id: "gemini-2.5-pro", providerId: "gemini", name: "Gemini 2.5 Pro", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]) },
-    { id: "gemini-2.5-flash", providerId: "gemini", name: "Gemini 2.5 Flash", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]) },
-    { id: "gemini-3-flash-preview", providerId: "gemini", name: "Gemini 3 Flash Preview", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
-
+    // ── Google Gemini (fuente: ai.google.dev/gemini-api/docs/models) ──
+    // Solo la generación 3.x: la familia 2.0 ya está apagada y la 2.5 quedó
+    // superada. `gemini-3.5-pro` y `gemini-3.1-flash-lite-preview` se quitaron:
+    // el primero no existe en el catálogo y el segundo ya salió de preview.
+    { id: "gemini-3.6-flash", providerId: "gemini", name: "Gemini 3.6 Flash", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 1.5, outputPer1M: 7.5 },
+    { id: "gemini-3.5-flash", providerId: "gemini", name: "Gemini 3.5 Flash", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 1.5, outputPer1M: 9 },
+    { id: "gemini-3.5-flash-lite", providerId: "gemini", name: "Gemini 3.5 Flash Lite", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.3, outputPer1M: 2.5 },
+    { id: "gemini-3.1-pro-preview", providerId: "gemini", name: "Gemini 3.1 Pro Preview", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 2, outputPer1M: 12 },
+    { id: "gemini-3.1-flash-lite", providerId: "gemini", name: "Gemini 3.1 Flash Lite", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.25, outputPer1M: 1.5 },
 
     // TTS
     { id: "gemini-2.5-flash-preview-tts", providerId: "gemini", name: "Gemini 2.5 Flash TTS", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
     { id: "gemini-2.5-pro-preview-tts", providerId: "gemini", name: "Gemini 2.5 Pro TTS", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "high_quality"]) },
 
     // ── Mistral (fuente: openrouter.ai/mistralai + docs.mistral.ai) ──
-    { id: "mistral-large-2512", providerId: "mistral", name: "Mistral Large 2512", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
-    { id: "devstral-2512", providerId: "mistral", name: "Devstral 2512", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "ministral-14b-2512", providerId: "mistral", name: "Ministral 14B", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
-    { id: "ministral-8b-2512", providerId: "mistral", name: "Ministral 8B", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
-    { id: "codestral-2508", providerId: "mistral", name: "Codestral 2508", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "mistral-small-3.2-24b-instruct", providerId: "mistral", name: "Mistral Small 3.2 24B", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
+    { id: "mistral-large-2512", providerId: "mistral", name: "Mistral Large 2512", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.5, outputPer1M: 1.5 },
+    { id: "devstral-2512", providerId: "mistral", name: "Devstral 2512", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]), inputPer1M: 0.4, outputPer1M: 2 },
+    { id: "ministral-14b-2512", providerId: "mistral", name: "Ministral 14B", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.2, outputPer1M: 0.2 },
+    { id: "ministral-8b-2512", providerId: "mistral", name: "Ministral 8B", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.15, outputPer1M: 0.15 },
+    { id: "codestral-2508", providerId: "mistral", name: "Codestral 2508", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]), inputPer1M: 0.2, outputPer1M: 0.6 },
+    { id: "mistral-small-3.2-24b-instruct", providerId: "mistral", name: "Mistral Small 3.2 24B", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.1, outputPer1M: 0.3 },
     // Aliases (siguen funcionando en la API de Mistral)
-    { id: "mistral-large-latest", providerId: "mistral", name: "Mistral Large (latest)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
-    { id: "codestral-latest", providerId: "mistral", name: "Codestral (latest)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "mistral-large-latest", providerId: "mistral", name: "Mistral Large (latest)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.5, outputPer1M: 1.5 },
+    { id: "codestral-latest", providerId: "mistral", name: "Codestral (latest)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]), inputPer1M: 0.2, outputPer1M: 0.6 },
 
     // ── DeepSeek (fuente: api-docs.deepseek.com/quick_start/pricing) ──
-    // deepseek-chat = DeepSeek-V3.2, deepseek-reasoner = V3.2 thinking mode
-    { id: "deepseek-chat", providerId: "deepseek", name: "DeepSeek-V3.2", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "code"]) },
-    { id: "deepseek-reasoner", providerId: "deepseek", name: "DeepSeek-V3.2 Thinking", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "reasoning", "streaming"]) },
+    // V4 reemplazó a deepseek-chat/deepseek-reasoner (V3.2): 1M de contexto,
+    // 384K de salida máxima y tool calling en ambos.
+    { id: "deepseek-v4-pro", providerId: "deepseek", name: "DeepSeek V4 Pro", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "code", "reasoning"]), inputPer1M: 0.435, outputPer1M: 0.87 },
+    { id: "deepseek-v4-flash", providerId: "deepseek", name: "DeepSeek V4 Flash", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "code", "reasoning"]), inputPer1M: 0.14, outputPer1M: 0.28 },
 
-    // ── Kimi / Moonshot (fuente: openrouter.ai/moonshotai + platform.moonshot.cn) ──
-    { id: "kimi-k2.5", providerId: "kimi", name: "Kimi K2.5", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code"]) },
-    { id: "kimi-k2", providerId: "kimi", name: "Kimi K2", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code"]) },
-    { id: "moonshot-v1-8k", providerId: "kimi", name: "Moonshot V1 8K", modelType: "llm", contextWindow: 8000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
-    { id: "moonshot-v1-32k", providerId: "kimi", name: "Moonshot V1 32K", modelType: "llm", contextWindow: 32000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
-    { id: "moonshot-v1-128k", providerId: "kimi", name: "Moonshot V1 128K", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
+    // ── Kimi / Moonshot (fuente: platform.kimi.ai/docs/pricing/chat) ──
+    // La serie moonshot-v1-* se apaga el 2026-08-31; K2/K2.5 quedaron superadas.
+    { id: "kimi-k3", providerId: "kimi", name: "Kimi K3", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code", "reasoning"]), inputPer1M: 3, outputPer1M: 15 },
+    { id: "kimi-k2.7-code", providerId: "kimi", name: "Kimi K2.7 Code", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code"]), inputPer1M: 0.73, outputPer1M: 3.5 },
+    { id: "kimi-k2.6", providerId: "kimi", name: "Kimi K2.6", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code"]), inputPer1M: 0.6, outputPer1M: 3.41 },
 
-    // ── OpenRouter — selección de modelos populares ──
+    // ── OpenRouter (fuente: GET https://openrouter.ai/api/v1/models) ──
+    // Solo modelos vivos con `tools` en supported_parameters y publicados desde
+    // 2025-07. contextWindow = context_length reportado por el propio catálogo.
     // Anthropic
-    { id: "anthropic/claude-opus-4-6", providerId: "openrouter", name: "Claude Opus 4.6 (OR)", modelType: "llm", contextWindow: 200000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code", "reasoning"]) },
-    { id: "anthropic/claude-sonnet-4-6", providerId: "openrouter", name: "Claude Sonnet 4.6 (OR)", modelType: "llm", contextWindow: 200000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
-    // OpenAI
-    { id: "openai/gpt-5.4", providerId: "openrouter", name: "GPT-5.4 (OR)", modelType: "llm", contextWindow: 1050000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code"]) },
-    { id: "openai/gpt-5.4-pro", providerId: "openrouter", name: "GPT-5.4 Pro (OR)", modelType: "llm", contextWindow: 1050000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code", "reasoning"]) },
-    { id: "openai/gpt-5.2", providerId: "openrouter", name: "GPT-5.2 (OR)", modelType: "llm", contextWindow: 400000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
+    { id: "anthropic/claude-opus-5", providerId: "openrouter", name: "Claude Opus 5 (OR)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code", "reasoning"]), inputPer1M: 5, outputPer1M: 25 },
+    { id: "anthropic/claude-sonnet-5", providerId: "openrouter", name: "Claude Sonnet 5 (OR)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code", "reasoning"]), inputPer1M: 2, outputPer1M: 10 },
+    // OpenAI — la serie 5.6 se divide en Sol (flagship), Terra (equilibrado) y Luna (económico)
+    { id: "openai/gpt-5.6-sol", providerId: "openrouter", name: "GPT-5.6 Sol (OR)", modelType: "llm", contextWindow: 1050000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code", "reasoning"]), inputPer1M: 5, outputPer1M: 30 },
+    { id: "openai/gpt-5.6-terra", providerId: "openrouter", name: "GPT-5.6 Terra (OR)", modelType: "llm", contextWindow: 1050000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code"]), inputPer1M: 1, outputPer1M: 6 },
+    { id: "openai/gpt-5.6-luna", providerId: "openrouter", name: "GPT-5.6 Luna (OR)", modelType: "llm", contextWindow: 1050000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.1, outputPer1M: 0.6 },
     // Google
-    { id: "google/gemini-3.1-pro-preview", providerId: "openrouter", name: "Gemini 3.1 Pro (OR)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]) },
-    { id: "google/gemini-3.1-flash-lite-preview", providerId: "openrouter", name: "Gemini 3.1 Flash Lite (OR)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
-    { id: "google/gemini-3-flash-preview", providerId: "openrouter", name: "Gemini 3 Flash (OR)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
-    { id: "google/gemini-2.5-flash", providerId: "openrouter", name: "Gemini 2.5 Flash (OR)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
-    { id: "google/gemini-3-flash-preview", providerId: "openrouter", name: "Gemini 3 Flash (OR)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
-    // Meta Llama
-    { id: "meta-llama/llama-3.3-70b-instruct", providerId: "openrouter", name: "Llama 3.3 70B", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
-    { id: "meta-llama/llama-4-maverick", providerId: "openrouter", name: "Llama 4 Maverick", modelType: "llm", contextWindow: 524288, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
+    { id: "google/gemini-3.6-flash", providerId: "openrouter", name: "Gemini 3.6 Flash (OR)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 1.5, outputPer1M: 7.5 },
+    { id: "google/gemini-3.5-flash", providerId: "openrouter", name: "Gemini 3.5 Flash (OR)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 1.5, outputPer1M: 9 },
+    { id: "google/gemini-3.1-pro-preview", providerId: "openrouter", name: "Gemini 3.1 Pro (OR)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 2, outputPer1M: 12 },
     // DeepSeek
-    { id: "deepseek/deepseek-v3.2", providerId: "openrouter", name: "DeepSeek V3.2 (OR)", modelType: "llm", contextWindow: 163840, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "code"]) },
-    { id: "deepseek/deepseek-r1:free", providerId: "openrouter", name: "DeepSeek R1 (Free)", modelType: "llm", contextWindow: 64000, capabilities: JSON.stringify(["chat", "reasoning", "streaming"]) },
+    { id: "deepseek/deepseek-v4-pro", providerId: "openrouter", name: "DeepSeek V4 Pro (OR)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "code", "reasoning"]), inputPer1M: 0.435, outputPer1M: 0.87 },
+    { id: "deepseek/deepseek-v4-flash", providerId: "openrouter", name: "DeepSeek V4 Flash (OR)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "code"]), inputPer1M: 0.14, outputPer1M: 0.28 },
     // Kimi
-    { id: "moonshotai/kimi-k2.5", providerId: "openrouter", name: "Kimi K2.5 (OR)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code"]) },
+    { id: "moonshotai/kimi-k3", providerId: "openrouter", name: "Kimi K3 (OR)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code", "reasoning"]), inputPer1M: 3, outputPer1M: 15 },
+    { id: "moonshotai/kimi-k2.7-code", providerId: "openrouter", name: "Kimi K2.7 Code (OR)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code"]), inputPer1M: 0.73, outputPer1M: 3.5 },
+    // MiniMax
+    { id: "minimax/minimax-m3", providerId: "openrouter", name: "MiniMax M3 (OR)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code", "reasoning"]), inputPer1M: 0.3, outputPer1M: 1.2 },
+    // Z.ai / GLM
+    { id: "z-ai/glm-5.2", providerId: "openrouter", name: "GLM 5.2 (OR)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "code", "reasoning"]), inputPer1M: 0.63, outputPer1M: 1.98 },
     // Qwen
-    { id: "qwen/qwen3.5-plus-02-15", providerId: "openrouter", name: "Qwen3.5 Plus", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "reasoning"]) },
-    { id: "qwen/qwen3.5-flash-02-23", providerId: "openrouter", name: "Qwen3.5 Flash", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
-    { id: "qwen/qwen3-next-80b-a3b-instruct:free", providerId: "openrouter", name: "Qwen3 Next 80B", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
-    { id: "qwen/qwen3-coder:free", providerId: "openrouter", name: "Qwen3 Coder", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
+    { id: "qwen/qwen3.8-max", providerId: "openrouter", name: "Qwen3.8 Max (OR)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 2, outputPer1M: 6 },
+    { id: "qwen/qwen3.7-flash", providerId: "openrouter", name: "Qwen3.7 Flash (OR)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.03, outputPer1M: 0.13 },
+    // xAI
+    { id: "x-ai/grok-4.5", providerId: "openrouter", name: "Grok 4.5 (OR)", modelType: "llm", contextWindow: 500000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 2, outputPer1M: 6 },
+    // Mistral
+    { id: "mistralai/mistral-medium-3-5", providerId: "openrouter", name: "Mistral Medium 3.5 (OR)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "code"]), inputPer1M: 1.5, outputPer1M: 7.5 },
 
 
     // ── Groq (fuente: console.groq.com/docs/models) ──
-    { id: "llama-3.3-70b-versatile", providerId: "groq", name: "Llama 3.3 70B", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
-    { id: "llama-3.1-8b-instant", providerId: "groq", name: "Llama 3.1 8B Instant", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
-    { id: "openai/gpt-oss-120b", providerId: "groq", name: "GPT OSS 120B", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "code"]) },
-    { id: "openai/gpt-oss-20b", providerId: "groq", name: "GPT OSS 20B", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
-    { id: "groq/compound", providerId: "groq", name: "Groq Compound", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
-    { id: "groq/compound-mini", providerId: "groq", name: "Groq Compound Mini", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
-    { id: "moonshotai/kimi-k2-instruct-0905", providerId: "groq", name: "Kimi K2 (Groq)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "code"]) },
-    { id: "qwen/qwen3-32b", providerId: "groq", name: "Qwen3 32B (Groq)", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "reasoning"]) },
+    { id: "llama-3.3-70b-versatile", providerId: "groq", name: "Llama 3.3 70B", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.59, outputPer1M: 0.79 },
+    { id: "llama-3.1-8b-instant", providerId: "groq", name: "Llama 3.1 8B Instant", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.05, outputPer1M: 0.08 },
+    { id: "openai/gpt-oss-120b", providerId: "groq", name: "GPT OSS 120B", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "code"]), inputPer1M: 0.15, outputPer1M: 0.6 },
+    { id: "openai/gpt-oss-20b", providerId: "groq", name: "GPT OSS 20B", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.075, outputPer1M: 0.3 },
+    { id: "groq/compound", providerId: "groq", name: "Groq Compound", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "groq/compound-mini", providerId: "groq", name: "Groq Compound Mini", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "moonshotai/kimi-k2-instruct-0905", providerId: "groq", name: "Kimi K2 (Groq)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "code"]), inputPer1M: 0.45, outputPer1M: 2.2 },
+    { id: "qwen/qwen3-32b", providerId: "groq", name: "Qwen3 32B (Groq)", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "whisper-large-v3", providerId: "groq", name: "Whisper Large V3", modelType: "stt", contextWindow: 0, capabilities: JSON.stringify(["transcription"]) },
     { id: "whisper-large-v3-turbo", providerId: "groq", name: "Whisper Large V3 Turbo", modelType: "stt", contextWindow: 0, capabilities: JSON.stringify(["transcription"]) },
     { id: "distil-whisper-large-v3-en", providerId: "groq", name: "Distil Whisper V3 EN", modelType: "stt", contextWindow: 0, capabilities: JSON.stringify(["transcription", "english"]) },
@@ -243,58 +266,89 @@ export const SEED_DATA: SeedData = {
     { id: "eleven_multilingual_v2", providerId: "elevenlabs", name: "Eleven Multilingual V2", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "multilingual"]) },
     { id: "eleven_v3", providerId: "elevenlabs", name: "Eleven V3", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "expressive"]) },
 
-    // ── Qwen (Alibaba DashScope) ──
-    { id: "qwen3.6-max-preview", providerId: "qwen", name: "Qwen 3.6 Max", modelType: "llm", contextWindow: 32768, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
-    { id: "qwen3.6-plus", providerId: "qwen", name: "Qwen 3.6 Plus", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
-    { id: "qwen3.5-omni-plus", providerId: "qwen", name: "Qwen 3.5 Omni Plus", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
-    { id: "qwen3.5-plus", providerId: "qwen", name: "Qwen 3.5 Plus", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "streaming"]) },
+    // ── Qwen (Alibaba DashScope / Model Studio) ──
+    // Serie 3.7 = generación actual. Los contextWindow salen del catálogo de
+    // OpenRouter, que enruta a los mismos modelos: el `qwen3.6-max-preview` que
+    // estaba sembrado con 32768 en realidad tiene 262144.
+    { id: "qwen3.7-max", providerId: "qwen", name: "Qwen 3.7 Max", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 1.475, outputPer1M: 4.425 },
+    { id: "qwen3.7-plus", providerId: "qwen", name: "Qwen 3.7 Plus", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0.32, outputPer1M: 1.28 },
+    { id: "qwen3.6-flash", providerId: "qwen", name: "Qwen 3.6 Flash", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.1875, outputPer1M: 1.125 },
+    { id: "qwen3.5-omni-plus", providerId: "qwen", name: "Qwen 3.5 Omni Plus", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.32, outputPer1M: 1.28 },
 
     // ── Qwen (TTS) ──
     { id: "qwen3-tts-instruct-flash", providerId: "qwen", name: "Qwen TTS Instruct Flash", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
     { id: "qwen3-tts-flash", providerId: "qwen", name: "Qwen TTS Flash", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
     { id: "qwen-tts", providerId: "qwen", name: "Qwen TTS", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
 
-    // ── NVIDIA NIM (fuente: build.nvidia.com — modelos con endpoint gratuito) ──
-    { id: "meta/llama-3.3-70b-instruct", providerId: "nvidia", name: "Llama 3.3 70B (NVIDIA)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
-    { id: "meta/llama-4-maverick-17b-128e-instruct", providerId: "nvidia", name: "Llama 4 Maverick (NVIDIA)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
-    { id: "nvidia/llama-3.1-nemotron-ultra-253b-v1", providerId: "nvidia", name: "Nemotron Ultra 253B", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "reasoning"]) },
-    { id: "nvidia/llama-3.1-nemotron-70b-instruct", providerId: "nvidia", name: "Nemotron 70B", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
-    { id: "deepseek-ai/deepseek-v3.2", providerId: "nvidia", name: "DeepSeek V3.2 (NVIDIA)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "code"]) },
-    { id: "qwen/qwen3-coder-480b-a35b-instruct", providerId: "nvidia", name: "Qwen3 Coder 480B (NVIDIA)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "code"]) },
-    { id: "qwen/qwen3.5-397b-a17b", providerId: "nvidia", name: "Qwen3.5 397B (NVIDIA)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
-    { id: "moonshotai/kimi-k2-thinking", providerId: "nvidia", name: "Kimi K2 Thinking (NVIDIA)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "reasoning", "function_calling", "streaming"]) },
-    { id: "mistralai/mistral-large-3-675b-instruct-2512", providerId: "nvidia", name: "Mistral Large 3 (NVIDIA)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
-    { id: "google/gemma-4-31b-it", providerId: "nvidia", name: "Gemma 4 31B (NVIDIA)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
-    { id: "google/gemma-3-27b-it", providerId: "nvidia", name: "Gemma 3 27B (NVIDIA)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]) },
-    { id: "z-ai/glm-5.1", providerId: "nvidia", name: "GLM 5.1 (NVIDIA)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]) },
+    // ── NVIDIA NIM (fuente: GET https://integrate.api.nvidia.com/v1/models) ──
+    // Solo los mejores modelos agénticos (tool calling) del catálogo vivo. NVIDIA
+    // retira modelos del endpoint sin avisar y responde 410 Gone al llamarlos, así
+    // que esta lista se valida contra /v1/models — no contra la web de build.nvidia.com,
+    // que sigue mostrando fichas de modelos ya retirados. Verificado 2026-08-03.
+    // Nota: Qwen ya no tiene ningún modelo en el catálogo NVIDIA (todos retirados);
+    // para Qwen usar el provider `qwen` (DashScope) directamente.
+    { id: "z-ai/glm-5.2", providerId: "nvidia", name: "GLM 5.2 (NVIDIA)", modelType: "llm", contextWindow: 200000, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "moonshotai/kimi-k2.6", providerId: "nvidia", name: "Kimi K2.6 (NVIDIA)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "vision", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "minimaxai/minimax-m3", providerId: "nvidia", name: "MiniMax M3 (NVIDIA)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "nvidia/nemotron-3-ultra-550b-a55b", providerId: "nvidia", name: "Nemotron 3 Ultra 550B", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "nvidia/nemotron-3-super-120b-a12b", providerId: "nvidia", name: "Nemotron 3 Super 120B", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "deepseek-ai/deepseek-v4-pro", providerId: "nvidia", name: "DeepSeek V4 Pro (NVIDIA)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+
+    // ── ModelScope Qwen (fuente: GET https://api-inference.modelscope.ai/v1/models) ──
+    // Endpoint gratuito dentro de cuota (2000 llamadas/día, ≤500 por modelo), por
+    // eso todos van con precio 0 explícito y no vacío.
+    //
+    // Los Qwen-Ambassador son modelos no-públicos: se listan para cualquiera pero
+    // sólo los invoca una cuenta del programa de embajadores. Con otra cuenta el
+    // provider devuelve un error de autorización, que ahora llega al usuario como
+    // mensaje accionable en vez de guardarse como respuesta del agente.
+    // Verificados contra la API: chat, tool calling y streaming los tres.
+    { id: "Qwen-Ambassador/Qwen3.8-Max", providerId: "modelscope", name: "Qwen3.8 Max (Embajador)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "Qwen-Ambassador/Qwen3.7-Max", providerId: "modelscope", name: "Qwen3.7 Max (Embajador)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "Qwen-Ambassador/Qwen3.7-Plus", providerId: "modelscope", name: "Qwen3.7 Plus (Embajador)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    // Open-weight del mismo endpoint, para cuentas sin permiso de embajador.
+    { id: "Qwen/Qwen3.5-397B-A17B", providerId: "modelscope", name: "Qwen3.5 397B (ModelScope)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "Qwen/Qwen3-Next-80B-A3B-Instruct", providerId: "modelscope", name: "Qwen3 Next 80B (ModelScope)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "Qwen/Qwen3-Coder-30B-A3B-Instruct", providerId: "modelscope", name: "Qwen3 Coder 30B (ModelScope)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "Qwen/Qwen3-VL-235B-A22B-Instruct", providerId: "modelscope", name: "Qwen3 VL 235B (ModelScope)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
 
     // ── MiniMax (fuente: platform.minimaxi.com) — OpenAI-compatible endpoint ──
-    { id: "MiniMax-M3", providerId: "minimax", name: "MiniMax M3", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "vision", "function_calling", "streaming", "reasoning"]) },
-    { id: "MiniMax-M2.7", providerId: "minimax", name: "MiniMax M2.7", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "MiniMax-M2.7-highspeed", providerId: "minimax", name: "MiniMax M2.7 Highspeed", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "MiniMax-M2.5", providerId: "minimax", name: "MiniMax M2.5", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "MiniMax-M2.5-highspeed", providerId: "minimax", name: "MiniMax M2.5 Highspeed", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    // La M2.x tiene 204800 de contexto, no 1M: ese valor solo aplica a M3. Estaba
+    // mal y hacía que la compactación no disparara hasta muy pasado el límite real.
+    { id: "MiniMax-M3", providerId: "minimax", name: "MiniMax M3", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "vision", "function_calling", "streaming", "reasoning"]), inputPer1M: 0.3, outputPer1M: 1.2 },
+    { id: "MiniMax-M2.7", providerId: "minimax", name: "MiniMax M2.7", modelType: "llm", contextWindow: 204800, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]), inputPer1M: 0.3, outputPer1M: 1.2 },
+    { id: "MiniMax-M2.7-highspeed", providerId: "minimax", name: "MiniMax M2.7 Highspeed", modelType: "llm", contextWindow: 204800, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]), inputPer1M: 0.3, outputPer1M: 1.2 },
+
+    // ── Z.ai / GLM (fuente: docs.z.ai/guides/llm) — OpenAI-compatible endpoint ──
+    { id: "glm-5.2", providerId: "z-ai", name: "GLM 5.2", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0.63, outputPer1M: 1.98 },
+    { id: "glm-5.1", providerId: "z-ai", name: "GLM 5.1", modelType: "llm", contextWindow: 204800, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0.97, outputPer1M: 3.04 },
+    { id: "glm-5", providerId: "z-ai", name: "GLM 5", modelType: "llm", contextWindow: 200000, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0.97, outputPer1M: 3.04 },
 
     // ── OpenCode Go (fuente: opencode.ai) — OpenAI-compatible endpoint ──
-    { id: "opencode-go/minimax-m3", providerId: "opencode-go", name: "MiniMax M3", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "vision", "function_calling", "streaming", "reasoning"]) },
-    { id: "opencode-go/minimax-m2.7", providerId: "opencode-go", name: "MiniMax M2.7", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "opencode-go/minimax-m2.5", providerId: "opencode-go", name: "MiniMax M2.5", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "opencode-go/kimi-k2.6", providerId: "opencode-go", name: "Kimi K2.6", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "opencode-go/kimi-k2.5", providerId: "opencode-go", name: "Kimi K2.5", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "opencode-go/glm-5.1", providerId: "opencode-go", name: "GLM-5.1", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "opencode-go/glm-5", providerId: "opencode-go", name: "GLM-5", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "opencode-go/deepseek-v4-pro", providerId: "opencode-go", name: "DeepSeek V4 Pro", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming", "reasoning"]) },
-    { id: "opencode-go/deepseek-v4-flash", providerId: "opencode-go", name: "DeepSeek V4 Flash", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "opencode-go/mimo-v2-pro", providerId: "opencode-go", name: "MiMo-V2 Pro", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming", "reasoning"]) },
-    { id: "opencode-go/mimo-v2-omni", providerId: "opencode-go", name: "MiMo-V2 Omni", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "opencode-go/mimo-v2.5-pro", providerId: "opencode-go", name: "MiMo-V2.5 Pro", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming", "reasoning"]) },
-    { id: "opencode-go/mimo-v2.5", providerId: "opencode-go", name: "MiMo-V2.5", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
-    { id: "opencode-go/hy3-preview", providerId: "opencode-go", name: "Hunyuan 3 Preview", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]) },
+    { id: "minimax-m3", providerId: "opencode-go", name: "MiniMax M3", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "vision", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "minimax-m2.7", providerId: "opencode-go", name: "MiniMax M2.7", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "minimax-m2.5", providerId: "opencode-go", name: "MiniMax M2.5", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "kimi-k2.6", providerId: "opencode-go", name: "Kimi K2.6", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "kimi-k2.5", providerId: "opencode-go", name: "Kimi K2.5", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "glm-5.1", providerId: "opencode-go", name: "GLM-5.1", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "glm-5", providerId: "opencode-go", name: "GLM-5", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "deepseek-v4-pro", providerId: "opencode-go", name: "DeepSeek V4 Pro", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "deepseek-v4-flash", providerId: "opencode-go", name: "DeepSeek V4 Flash", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "mimo-v2-pro", providerId: "opencode-go", name: "MiMo-V2 Pro", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "mimo-v2-omni", providerId: "opencode-go", name: "MiMo-V2 Omni", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "mimo-v2.5-pro", providerId: "opencode-go", name: "MiMo-V2.5 Pro", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "mimo-v2.5", providerId: "opencode-go", name: "MiMo-V2.5", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "hy3-preview", providerId: "opencode-go", name: "Hunyuan 3 Preview", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
 
     // ── HiveAgents (llama.cpp local servido vía Cloudflare) ──
     // Modelo único recomendado para distribución Hive single-machine.
     // Ver API.md para detalles de carga e inferencia.
-    { id: "Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf", providerId: "hiveagents", name: "Qwen-AgentWorld 35B MoE (Recomendado)", modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "reasoning", "function_calling"]) },
+    //
+    // El id ES el nombre del archivo .gguf que sirve llama.cpp, así que cambia
+    // con cada bump del modelo. Al renombrarlo, el re-seed borra la fila vieja y
+    // crea la nueva desactivada, y desvincula a los agentes que apuntaban a la
+    // anterior: hay que volver a elegir el modelo en la UI una vez.
+    { id: "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf", providerId: "hiveagents", name: "Qwen3.6 35B MoE (Recomendado)", modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "reasoning", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },
   ],
 
 
@@ -628,39 +682,50 @@ export async function seedAllData(): Promise<void> {
     }
     log.info(`[seed] ✅ ${providerCount} providers procesados`);
 
-    // 5️⃣ Models (re-seed: overwrite catalog fields in place, preserve the user's own
-    // enabled/active activation state, remove entries no longer in the catalog)
-    log.info("[seed] 🔄 Re-seeding models...");
+    // 5️⃣ Models — wipe & recreate.
+    //
+    // Actualizar el catálogo es editar SEED_DATA.models y arrancar: las filas de
+    // catálogo se borran enteras y se vuelven a crear, así ningún campo viejo
+    // (context_window, capabilities, precio) sobrevive a una entrada renombrada
+    // o corregida. Un upsert en sitio no daba esa garantía.
+    //
+    // Dos cosas sí se preservan a propósito:
+    //   - enabled/active por id, para no desactivar el modelo que el usuario
+    //     eligió cada vez que se publica un catálogo nuevo;
+    //   - las filas source != "catalog" (Ollama tags, /v1/models), que no tienen
+    //     origen canónico desde el que recrearse.
+    log.info("[seed] 🔄 Re-seeding models (wipe & recreate)...");
     const modelsCol = await col<ModelDoc>("models");
-    const existingModels = new Map((await modelsCol.scan({})).map((e) => [e.id, e]));
+    const beforeWipe = await modelsCol.scan({});
+
+    const activationState = new Map(
+      beforeWipe.map((e) => [e.id, { enabled: e.doc.enabled, active: e.doc.active }])
+    );
+
+    let wipedModels = 0;
+    for (const row of beforeWipe) {
+      if (row.doc.source !== "catalog") continue;
+      await modelsCol.delete(row.id);
+      wipedModels++;
+    }
 
     let modelCount = 0;
     for (const model of SEED_DATA.models) {
-      const existing = existingModels.get(model.id);
-      await modelsCol.put(model.id, {
-        id: model.id, provider_id: model.providerId, name: model.name,
+      const key = catalogModelKey(model.providerId, model.id);
+      const previous = activationState.get(key);
+      await modelsCol.put(key, {
+        id: key, provider_id: model.providerId, name: model.name,
         model_type: model.modelType as ModelDoc["model_type"],
         context_window: model.contextWindow || 0, capabilities: model.capabilities || null,
-        enabled: existing?.doc.enabled ?? true, active: existing?.doc.active ?? false,
+        enabled: previous?.enabled ?? true, active: previous?.active ?? false,
         source: "catalog",
+        input_per_1m: model.inputPer1M ?? null,
+        output_per_1m: model.outputPer1M ?? null,
       });
-      existingModels.delete(model.id);
       modelCount++;
     }
-    // Whatever remains was either dropped from the catalog (e.g. a consolidated
-    // HiveAgents GGUF variant) — remove it — or discovered at runtime from a
-    // provider (Ollama tags, /v1/models). Discovered rows have no canonical
-    // source to be re-created from, so they survive the reseed: purging them
-    // would unlink the model of every install that runs on a local Ollama.
-    let removedModels = 0;
-    for (const [staleId, stale] of existingModels) {
-      if (stale.doc.source !== "catalog") continue;
-      await modelsCol.delete(staleId);
-      removedModels++;
-    }
-    if (removedModels > 0) {
-      log.info(`[seed] 🗑️  Removed ${removedModels} model(s) no longer in the catalog.`);
-    }
+    log.info(`[seed] 🗑️  ${wipedModels} modelo(s) de catálogo borrados y recreados desde SEED_DATA`);
+    invalidateModelPricingCache();
 
     // An agent pointing at a model that just got removed would otherwise keep
     // a dangling model_id — unlink it so loadAgentConfigFromDB() falls back to
@@ -751,7 +816,7 @@ export async function seedAllData(): Promise<void> {
       await putIfAbsent(channelsCol, channel.id, {
         id: channel.id, user_id: toIndexable(null), type: channel.type, enabled: true, active: false,
         status: "disconnected", last_active: null, voice_enabled: false, tts_enabled: false,
-        stt_provider: null, tts_provider: null, tts_voice_id: null, step_delivery_mode: "new_messages",
+        stt_provider: null, tts_provider: null, tts_voice_id: null, step_delivery_mode: "milestones",
         vision_enabled: false, ocr_provider: null, vision_provider: null, vision_model_id: null,
       });
       channelCount++;

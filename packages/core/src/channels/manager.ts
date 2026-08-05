@@ -7,7 +7,7 @@ import { createWebChatChannel, type WebChatConfig } from "./webchat.ts";
 import { createWhatsAppChannel, WhatsAppChannel, type WhatsAppConfig } from "./whatsapp.ts";
 import { createSlackChannel, type SlackConfig } from "./slack.ts";
 import { col } from "../storage/hive.ts";
-import type { ChannelDoc, AgentDoc } from "../storage/collections.ts";
+import type { ChannelDoc, AgentDoc, UserIdentityDoc } from "../storage/collections.ts";
 import { loadChannelConfig } from "../storage/crypto.ts";
 
 export class ChannelManager {
@@ -15,9 +15,42 @@ export class ChannelManager {
   private channels: Map<string, IChannel> = new Map();
   private messageHandler?: MessageHandler;
   private log = logger.child("channels");
+  /**
+   * `channel:sessionId` → accountId of the account that received the message.
+   *
+   * Outbound calls (agent reply, narration, notify tools, scheduler) only carry
+   * a channel name and a routing session id. With two accounts of the same type
+   * connected — two WhatsApp numbers — picking a channel by name alone sends the
+   * reply out through whichever account happens to be first, to a peer that may
+   * not even exist there. Every inbound message records its account here so the
+   * reply goes back out the way it came in.
+   *
+   * Known limit: if the same peer id talks to two accounts of one type, the
+   * routing session id is identical for both and the most recent inbound
+   * message wins. Distinguishing them would require the account in the session
+   * id itself.
+   */
+  private sessionAccounts: Map<string, string> = new Map();
 
   constructor(config: Config) {
     this.config = config;
+  }
+
+  private sessionKey(channelName: string, sessionId: string): string {
+    return `${channelName}:${sessionId}`;
+  }
+
+  /**
+   * Resolves which account owns an outbound session: an explicit account wins,
+   * then the account that last received a message on it.
+   */
+  private resolveAccountId(
+    channelName: string,
+    sessionId: string,
+    explicit?: string
+  ): string | undefined {
+    if (explicit) return explicit;
+    return this.sessionAccounts.get(this.sessionKey(channelName, sessionId));
   }
 
   onMessage(handler: MessageHandler): void {
@@ -33,7 +66,29 @@ export class ChannelManager {
       await this.initializeFromConfig();
     }
 
+    await this.seedSessionAccounts();
+
     this.log.info(`Initialized ${this.channels.size} channel(s)`);
+  }
+
+  /**
+   * Restores session→account routing from persisted identities. Without this, a
+   * durable worker that finishes after a restart would have no record of which
+   * account its conversation came in on.
+   */
+  private async seedSessionAccounts(): Promise<void> {
+    try {
+      const identitiesCol = await col<UserIdentityDoc>("userIdentities");
+      for (const { doc } of await identitiesCol.scan({})) {
+        if (!doc.account_id || !doc.channel_user_id) continue;
+        // Skip identities whose account is gone (disconnected and replaced by
+        // another one) — pinning a session to it would only fail every send.
+        if (!this.channels.has(`${doc.channel}:${doc.account_id}`)) continue;
+        this.sessionAccounts.set(this.sessionKey(doc.channel, doc.channel_user_id), doc.account_id);
+      }
+    } catch (error) {
+      this.log.debug(`Could not seed session accounts: ${(error as Error).message}`);
+    }
   }
 
   private async initializeFromDB(): Promise<void> {
@@ -82,6 +137,26 @@ export class ChannelManager {
         await this.createChannel(channelName, accountId, fullConfig);
       }
     }
+  }
+
+  /**
+   * Wires a channel into the manager: inbound messages record which account
+   * received them before reaching the handler, so replies can be routed back.
+   */
+  private registerChannel(key: string, channel: IChannel): void {
+    channel.onMessage(async (message: IncomingMessage) => {
+      if (message.accountId && message.sessionId) {
+        this.sessionAccounts.set(
+          this.sessionKey(message.channel, message.sessionId),
+          message.accountId
+        );
+      }
+      if (this.messageHandler) {
+        await this.messageHandler(message);
+      }
+    });
+
+    this.channels.set(key, channel);
   }
 
   private async createChannel(
@@ -158,14 +233,8 @@ export class ChannelManager {
           return;
       }
 
-      channel.onMessage(async (message: IncomingMessage) => {
-        if (this.messageHandler) {
-          await this.messageHandler(message);
-        }
-      });
-
       const key = `${channelName}:${accountId}`;
-      this.channels.set(key, channel);
+      this.registerChannel(key, channel);
 
       this.log.info(`Created channel: ${key}`);
     } catch (error) {
@@ -217,22 +286,35 @@ export class ChannelManager {
 
   getChannel(channelName: string, accountId?: string): IChannel | undefined {
     if (accountId) {
-      return this.channels.get(`${channelName}:${accountId}`);
-    }
-
-    for (const [key, channel] of this.channels) {
-      if (key.startsWith(channelName)) {
-        return channel;
+      const exact = this.channels.get(`${channelName}:${accountId}`);
+      // Deliberately no fallback: delivering through a different account would
+      // send someone else's conversation out of the wrong number.
+      if (!exact) {
+        this.log.warn(`Channel ${channelName}:${accountId} is not instantiated — refusing to fall back to another account`);
       }
+      return exact;
     }
 
-    return undefined;
+    const matches = [...this.channels.entries()].filter(([key]) => key.startsWith(`${channelName}:`));
+    if (matches.length > 1) {
+      this.log.warn(
+        `${matches.length} "${channelName}" accounts are connected and no account was given — routing through ${matches[0]![0]}`
+      );
+    }
+    return matches[0]?.[1];
   }
 
   async removeChannel(channelName: string, accountId: string): Promise<void> {
     const key = `${channelName}:${accountId}`;
     await this.stopChannel(channelName, accountId);
     this.channels.delete(key);
+    // Drop sessions pinned to this account, otherwise every later send to them
+    // resolves to a channel that no longer exists.
+    for (const [sessionKey, account] of this.sessionAccounts) {
+      if (account === accountId && sessionKey.startsWith(`${channelName}:`)) {
+        this.sessionAccounts.delete(sessionKey);
+      }
+    }
     this.log.info(`Removed channel: ${key}`);
   }
 
@@ -398,12 +480,22 @@ export class ChannelManager {
     });
   }
 
+  /** Resolves the account that owns this session (see `sessionAccounts`). */
+  private channelForSession(
+    channelName: string,
+    sessionId: string,
+    accountId?: string
+  ): IChannel | undefined {
+    return this.getChannel(channelName, this.resolveAccountId(channelName, sessionId, accountId));
+  }
+
   async send(
     channelName: string,
     sessionId: string,
-    message: unknown
+    message: unknown,
+    accountId?: string
   ): Promise<void> {
-    const channel = this.getChannel(channelName);
+    const channel = this.channelForSession(channelName, sessionId, accountId);
 
     if (!channel) {
       throw new Error(`Channel not found: ${channelName}`);
@@ -412,29 +504,29 @@ export class ChannelManager {
     await channel.send(sessionId, message as any);
   }
 
-  async startTyping(channelName: string, sessionId: string): Promise<void> {
-    const channel = this.getChannel(channelName);
+  async startTyping(channelName: string, sessionId: string, accountId?: string): Promise<void> {
+    const channel = this.channelForSession(channelName, sessionId, accountId);
     if (channel?.startTyping) {
       await channel.startTyping(sessionId);
     }
   }
 
-  async stopTyping(channelName: string, sessionId: string): Promise<void> {
-    const channel = this.getChannel(channelName);
+  async stopTyping(channelName: string, sessionId: string, accountId?: string): Promise<void> {
+    const channel = this.channelForSession(channelName, sessionId, accountId);
     if (channel?.stopTyping) {
       await channel.stopTyping(sessionId);
     }
   }
 
-  async markAsRead(channelName: string, sessionId: string, messageId?: string): Promise<void> {
-    const channel = this.getChannel(channelName);
+  async markAsRead(channelName: string, sessionId: string, messageId?: string, accountId?: string): Promise<void> {
+    const channel = this.channelForSession(channelName, sessionId, accountId);
     if (channel?.markAsRead) {
       await channel.markAsRead(sessionId, messageId);
     }
   }
 
-  async sendAudio(channelName: string, sessionId: string, audio: Buffer, mimeType: string): Promise<void> {
-    const channel = this.getChannel(channelName);
+  async sendAudio(channelName: string, sessionId: string, audio: Buffer, mimeType: string, accountId?: string): Promise<void> {
+    const channel = this.channelForSession(channelName, sessionId, accountId);
     if (!channel) {
       throw new Error(`Channel not found: ${channelName}`);
     }

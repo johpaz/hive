@@ -28,6 +28,8 @@ import { QwenProvider } from "./llm-providers/qwen"
 import { MiniMaxProvider } from "./llm-providers/minimax"
 import { OpenCodeGoProvider } from "./llm-providers/opencode-go"
 import { HiveAgentsProvider } from "./llm-providers/hiveagents"
+import { ZaiProvider } from "./llm-providers/z-ai"
+import { ModelScopeProvider } from "./llm-providers/modelscope"
 import type { LLMProvider } from "./llm-providers/interface"
 
 const log = logger.child("llm-client")
@@ -108,6 +110,18 @@ export interface LLMResponse {
   thinking_content?: string
   /** Anthropic extended thinking raw blocks — must be round-tripped verbatim when tool calls follow. */
   thinking_blocks?: ThinkingBlock[]
+  /**
+   * Set only when stop_reason === "error". `content` carries a human-readable
+   * version of the same failure for display, but it is NOT model output —
+   * callers must check this field before persisting `content` anywhere durable
+   * (conversation history, summaries, task results).
+   */
+  error?: {
+    message: string
+    status?: number
+    /** The model id no longer resolves at the provider (HTTP 404/410) — the config needs to change, retrying won't help. */
+    modelUnavailable?: boolean
+  }
 }
 
 // ─── Provider factory ─────────────────────────────────────────────────────────
@@ -129,6 +143,8 @@ function getProvider(provider: string): LLMProvider {
     case "minimax":     return new MiniMaxProvider()
     case "opencode-go": return new OpenCodeGoProvider()
     case "hiveagents":  return new HiveAgentsProvider()
+    case "z-ai":        return new ZaiProvider()
+    case "modelscope":  return new ModelScopeProvider()
     default:
       log.warn(`[llm-client] Unknown provider "${provider}" — falling back to OpenAI-compatible endpoint`)
       return new OpenAIProvider()
@@ -163,11 +179,27 @@ export async function callLLM(options: LLMCallOptions): Promise<LLMResponse> {
       (err) => !options.signal?.aborted && isRetryableError(err)
     )
   } catch (err) {
-    const msg = (err as Error).message
     const cleanModel = options.model.replace(new RegExp(`^${options.provider}\\/`), "")
+    const status = extractErrorStatus(err)
+    const modelUnavailable = status === 404 || status === 410
+    const msg = modelUnavailable
+      ? `El modelo "${cleanModel}" ya no existe en ${options.provider} (HTTP ${status}). `
+        + `El proveedor lo retiró de su catálogo; reintentar no sirve. `
+        + `Elegí otro modelo en Ajustes → Proveedores.`
+      : (err as Error).message
     log.error(`[llm-client] Error calling ${options.provider}/${cleanModel}: ${msg}`, err)
-    return { content: `[LLM Error] ${msg}`, stop_reason: "error" }
+    return {
+      content: `[LLM Error] ${msg}`,
+      stop_reason: "error",
+      error: { message: msg, status, modelUnavailable },
+    }
   }
+}
+
+/** Provider SDKs disagree on where the HTTP status lands; check every shape we've seen. */
+function extractErrorStatus(err: unknown): number | undefined {
+  const e = err as { status?: number; statusCode?: number; response?: { status?: number } }
+  return e?.status ?? e?.statusCode ?? e?.response?.status
 }
 
 /**

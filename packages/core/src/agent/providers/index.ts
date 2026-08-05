@@ -12,7 +12,7 @@ import { resolveUserId, resolveAgentId } from "../../storage/onboarding"
 import type { ContentPart } from "../../multimodal/types"
 import type { TurnSource } from "../../storage/collections"
 
-export type Provider = "openai" | "anthropic" | "gemini" | "mistral" | "kimi" | "ollama" | "openrouter" | "deepseek" | "nvidia" | "hiveagents"
+export type Provider = "openai" | "anthropic" | "gemini" | "mistral" | "kimi" | "ollama" | "openrouter" | "deepseek" | "nvidia" | "hiveagents" | "z-ai" | "modelscope" | "minimax" | "qwen" | "groq" | "opencode-go"
 
 export interface StepEvent {
   type: "text" | "plan" | "tool_call" | "tool_result"

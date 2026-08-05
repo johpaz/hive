@@ -210,6 +210,24 @@ jobs:
           curl -fsS http://127.0.0.1:18790/health | grep -q '"status":"ok"'
           curl -fsSL http://127.0.0.1:18790/ | grep -q '<div id="root">'
 
+          # El binario compilado reporta la versión de package.json: si la imagen
+          # se armó con un contexto viejo, esto no coincide con el tag.
+          VERSION="${GITHUB_REF_NAME#v}"
+          curl -fsS http://127.0.0.1:18790/health | grep -q "\"version\":\"$VERSION\""
+
+          # `<div id="root">` está en cualquier build de la UI, así que no
+          # distingue la que la etapa ui-builder acaba de compilar de una copia
+          # vieja embebida en el binario (packages/cli/src/ui-bundle.generated.ts).
+          # El hash de vite sí: index-<hash>.js cambia en cada build. Si el
+          # gateway sirve un hash que no está en /app/ui, está sirviendo el embed.
+          docker exec hive-release-smoke cat /app/ui/index.html > disk-index.html
+          curl -fsSL http://127.0.0.1:18790/ > served-index.html
+          DISK_ASSET="$(grep -o '/assets/index-[^"]*\.js' disk-index.html | head -1)"
+          SERVED_ASSET="$(grep -o '/assets/index-[^"]*\.js' served-index.html | head -1)"
+          test -n "$DISK_ASSET"
+          test "$SERVED_ASSET" = "$DISK_ASSET"
+          curl -fsS "http://127.0.0.1:18790$SERVED_ASSET" > /dev/null
+
   release-gate:
     name: Release gate
     runs-on: ubuntu-24.04
@@ -289,3 +307,47 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  verify-docker-publish:
+    name: Verificar la imagen publicada en Docker Hub
+    runs-on: ubuntu-24.04
+    needs: docker-publish
+    steps:
+      # validate-docker prueba una imagen construida localmente; esto prueba la
+      # que quedó en el registry, que es la que instala un usuario. Cubre el caso
+      # de un push a un tag equivocado, un cache de buildx que rehusó una capa
+      # que no correspondía, o un `latest` que quedó apuntando a otra versión.
+      - name: Bajar el tag publicado
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          docker pull "johpaz/hive-agents:$VERSION"
+          docker pull "johpaz/hive-agents:latest"
+      - name: latest y el tag de versión son la misma imagen, construida en este commit
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          test "$(docker image inspect -f '{{.Id}}' "johpaz/hive-agents:$VERSION")" \
+             = "$(docker image inspect -f '{{.Id}}' johpaz/hive-agents:latest)"
+          # metadata-action escribe esta label con github.sha al construir.
+          REVISION="$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "johpaz/hive-agents:$VERSION")"
+          echo "revision de la imagen: $REVISION (esperada: $GITHUB_SHA)"
+          test "$REVISION" = "$GITHUB_SHA"
+      - name: La imagen publicada arranca y sirve su propia UI
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          docker run -d --name hive-published -p 18790:18790 "johpaz/hive-agents:$VERSION"
+          trap 'docker logs hive-published; docker rm -f hive-published' EXIT
+          for attempt in {1..90}; do
+            if curl -fsS http://127.0.0.1:18790/health 2>/dev/null | grep -q '"status":"ok"'; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:18790/health | grep -q "\"version\":\"$VERSION\""
+          docker exec hive-published cat /app/ui/index.html > disk-index.html
+          curl -fsSL http://127.0.0.1:18790/ > served-index.html
+          DISK_ASSET="$(grep -o '/assets/index-[^"]*\.js' disk-index.html | head -1)"
+          SERVED_ASSET="$(grep -o '/assets/index-[^"]*\.js' served-index.html | head -1)"
+          test -n "$DISK_ASSET"
+          test "$SERVED_ASSET" = "$DISK_ASSET"
+          curl -fsS "http://127.0.0.1:18790$SERVED_ASSET" > /dev/null

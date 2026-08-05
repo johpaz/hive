@@ -482,7 +482,11 @@ export class WhatsAppChannel extends BaseChannel {
       throw new Error("WhatsApp not connected");
     }
 
-    await this.stopTyping(sessionId);
+    // Progress narration arrives mid-turn. Clearing "typing…" on it would leave
+    // the user watching interim messages with no sign the agent is still
+    // working — only a final message ends the indicator.
+    const isInterim = message.type === "progress";
+    if (!isInterim) await this.stopTyping(sessionId);
 
     const text = message.content ?? message.chunk ?? "";
     if (!text) return;
@@ -490,6 +494,7 @@ export class WhatsAppChannel extends BaseChannel {
     const jid = this.getJid(sessionId);
 
     await this.socket.sendMessage(jid, { text });
+    if (isInterim) await this.startTyping(sessionId);
     this.log.debug(`Sent message to ${jid}`);
   }
 

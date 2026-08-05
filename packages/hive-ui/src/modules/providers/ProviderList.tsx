@@ -1,8 +1,16 @@
 import { useProviders } from "@/hooks/useProviders";
+import { useProviderUsage } from "@/hooks/useProviderUsage";
 import { ProviderCard } from "./ProviderCard";
 
-export function ProviderList() {
+interface ProviderListProps {
+  /** Abre la guía, montada en la página para no repetirla en cada tarjeta. */
+  onOpenGuide?: () => void;
+}
+
+export function ProviderList({ onOpenGuide }: ProviderListProps) {
   const { providers, updateProvider } = useProviders();
+  // Un solo fetch de consumo para toda la grilla, en vez de uno por tarjeta.
+  const usageByProvider = useProviderUsage();
 
   // Solo providers de texto (category 'llm'); los de voz viven en la pestaña Voz
   const textProviders = providers.filter(p => (p.category ?? "llm") === "llm");
@@ -22,6 +30,8 @@ export function ProviderList() {
             key={provider.id}
             provider={provider}
             updateProvider={updateProvider}
+            usage={usageByProvider?.[provider.id]}
+            onOpenGuide={onOpenGuide}
           />
         ))}
         {textProviders.length === 0 && (
