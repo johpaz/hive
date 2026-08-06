@@ -99,13 +99,23 @@ describe("keychain compatibility", () => {
   test("a secret that only exists in the OS keychain is still readable", async () => {
     const keychain = new Map<string, string>([["provider:legacy:api_key", "sk-from-keychain"]]);
     const original = (Bun as any).secrets;
-    (Bun as any).secrets = {
-      get: async ({ name }: { name: string }) => keychain.get(name) ?? null,
-      set: async ({ name, value }: { name: string; value: string }) => void keychain.set(name, value),
-      delete: async ({ name }: { name: string }) => void keychain.delete(name),
-    };
+
     try {
+      // A previous headless attempt may have marked the original API as
+      // unavailable. Replacing the API must allow a new backend to be tried.
+      (Bun as any).secrets = {
+        get: async () => { throw new Error("keychain unavailable") },
+        set: async () => { throw new Error("keychain unavailable") },
+        delete: async () => { throw new Error("keychain unavailable") },
+      };
       const { loadProviderApiKey, storeProviderApiKey } = await import("../packages/core/src/storage/crypto");
+      expect(await loadProviderApiKey("unavailable-first")).toBe("");
+
+      (Bun as any).secrets = {
+        get: async ({ name }: { name: string }) => keychain.get(name) ?? null,
+        set: async ({ name, value }: { name: string; value: string }) => void keychain.set(name, value),
+        delete: async ({ name }: { name: string }) => void keychain.delete(name),
+      };
       expect(await loadProviderApiKey("legacy")).toBe("sk-from-keychain");
 
       // New writes are mirrored to the keychain as well, so a downgrade or a

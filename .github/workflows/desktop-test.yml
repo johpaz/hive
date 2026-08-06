@@ -1,0 +1,65 @@
+name: Desktop Test Builds
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-desktop:
+    name: Build Hive Agents (${{ matrix.platform.name }})
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: windows-x86_64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            bundles: nsis,msi
+          - name: macos-x86_64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: dmg
+          - name: macos-aarch64
+            runner: macos-15
+            target: aarch64-apple-darwin
+            bundles: dmg
+
+    env:
+      TAURI_ENV_TARGET_TRIPLE: ${{ matrix.platform.target }}
+      HIVE_DESKTOP_PREBUILT_UI: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
+      - name: Install JavaScript dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build UI
+        run: bun --cwd=packages/hive-ui run build
+
+      - name: Install Rust target
+        shell: bash
+        run: rustup target add "${{ matrix.platform.target }}"
+
+      - name: Install Tauri CLI
+        shell: bash
+        run: cargo install tauri-cli --version 2.11.4 --locked
+
+      - name: Build unsigned test installer
+        shell: bash
+        run: cargo tauri build --bundles "${{ matrix.platform.bundles }}"
+        working-directory: apps/hive-desktop/src-tauri
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hive-agents-test-${{ matrix.platform.name }}
+          path: apps/hive-desktop/src-tauri/target/release/bundle/
+          if-no-files-found: error
+          retention-days: 14

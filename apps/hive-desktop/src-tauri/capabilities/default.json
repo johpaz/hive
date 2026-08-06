@@ -1,0 +1,20 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-capability",
+  "description": "Permisos mínimos para la ventana principal de Hive Agents",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "updater:default",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "hive-gateway",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    }
+  ]
+}

@@ -115,6 +115,10 @@
     "docs:check": "bun scripts/generate-docs.ts --check",
     "lint": "bunx tsc --noEmit",
     "build:binaries": "bun run build:binary",
+    "desktop:prepare": "bun scripts/build-desktop.ts",
+    "desktop:dev": "bun run --cwd apps/hive-desktop dev",
+    "desktop:build": "bun run --cwd apps/hive-desktop build",
+    "desktop:updater-manifest": "bun scripts/create-updater-manifest.ts",
     "bench": "bun run scripts/bench.ts",
     "publish:sdk": "bun run scripts/publish-sdk.ts"
   },

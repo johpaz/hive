@@ -1,0 +1,11 @@
+{
+  "name": "@johpaz/hive-desktop",
+  "version": "1.0.2",
+  "private": true,
+  "description": "Hive Agents — Tauri shell with an embedded Hive gateway",
+  "scripts": {
+    "prepare:sidecar": "bun ../../scripts/build-desktop.ts",
+    "dev": "cargo tauri dev",
+    "build": "cargo tauri build"
+  }
+}

@@ -1,0 +1,34 @@
+app-id: io.hiveagents.desktop
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+command: hive
+finish-args:
+  - --share=network
+  - --socket=x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --device=dri
+  - --filesystem=home
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.kde.StatusNotifierWatcher
+modules:
+  - name: hive-desktop
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 hive-desktop /app/bin/hive
+      - install -Dm755 hive-gateway /app/bin/binaries/hive-gateway
+      - install -Dm644 io.hiveagents.desktop.desktop /app/share/applications/io.hiveagents.desktop.desktop
+      - install -Dm644 hive.png /app/share/icons/hicolor/512x512/apps/io.hiveagents.desktop.png
+    sources:
+      - type: file
+        path: ../src-tauri/target/release/hive-desktop
+        dest-filename: hive-desktop
+      - type: file
+        path: ../src-tauri/binaries/hive-gateway-x86_64-unknown-linux-gnu
+        dest-filename: hive-gateway
+      - type: file
+        path: io.hiveagents.desktop.desktop
+      - type: file
+        path: ../src-tauri/icons/icon.png
+        dest-filename: hive.png

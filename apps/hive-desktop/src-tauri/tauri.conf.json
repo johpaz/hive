@@ -1,0 +1,56 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Hive Agents",
+  "version": "1.0.2",
+  "identifier": "io.hiveagents.desktop",
+  "build": {
+    "beforeDevCommand": "bun ../../scripts/build-desktop.ts --dev",
+    "beforeBuildCommand": "bun ../../scripts/build-desktop.ts",
+    "frontendDist": "../../../packages/hive-ui/dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "capabilities": ["main-capability"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": false,
+    "icon": [
+      "icons/32x32.png",
+      "icons/64x64.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ],
+    "externalBin": ["binaries/hive-gateway"],
+    "linux": {
+      "deb": {
+        "preInstallScript": "scripts/linux-preinstall.sh"
+      },
+      "rpm": {
+        "preInstallScript": "scripts/linux-preinstall.sh"
+      }
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "offlineInstaller",
+        "silent": true
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "dialog": false,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaW5nIHB1YmxpYyBrZXk6IDkwQzJEQUVBODgyNDVDRDAKUldUUVhDU0k2dHJDa0Y4RXlsOU5mQXJSY3VjSTNzS1l6REMwNE96TFpWWnNUUHhuWDNNdXU0aWcK",
+      "endpoints": [
+        "https://github.com/johpaz/hive/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Hive Agents
+Comment=Local-first AI agent workspace
+Exec=hive
+Icon=io.hiveagents.desktop
+Terminal=false
+Type=Application
+Categories=Development;Utility;
+StartupWMClass=Hive Agents

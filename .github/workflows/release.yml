@@ -126,6 +126,101 @@ jobs:
           path: hive-v*-${{ matrix.platform.name }}*
           retention-days: 1
 
+  build-desktop:
+    name: Build desktop (${{ matrix.platform.name }})
+    needs: [validate-version, build-ui]
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: linux-x86_64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage,deb
+            flatpak: true
+          - name: linux-aarch64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            bundles: appimage,deb
+            flatpak: false
+          - name: macos-x86_64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: dmg
+            flatpak: false
+          - name: macos-aarch64
+            runner: macos-15
+            target: aarch64-apple-darwin
+            bundles: dmg
+            flatpak: false
+          - name: windows-x86_64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            bundles: nsis,msi
+            flatpak: false
+    env:
+      TAURI_ENV_TARGET_TRIPLE: ${{ matrix.platform.target }}
+      HIVE_DESKTOP_PREBUILT_UI: "1"
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - name: Install Linux desktop build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            patchelf \
+            libssl-dev
+      - name: Install JavaScript dependencies
+        run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: hive-ui-dist
+          path: packages/hive-ui/dist/
+      - name: Install Rust target
+        shell: bash
+        run: rustup target add "${{ matrix.platform.target }}"
+      - name: Install Tauri CLI
+        shell: bash
+        run: cargo install tauri-cli --version 2.11.4 --locked
+      - name: Build native Hive installer
+        shell: bash
+        run: cargo tauri build --config tauri.release.conf.json --bundles "${{ matrix.platform.bundles }}"
+        working-directory: apps/hive-desktop/src-tauri
+      - name: Install Flatpak tooling
+        if: matrix.platform.flatpak
+        run: |
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user --noninteractive flathub org.gnome.Sdk//49 org.gnome.Platform//49
+      - name: Build Flatpak
+        if: matrix.platform.flatpak
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          flatpak-builder --user --force-clean --disable-rofiles-fuse \
+            --repo=flatpak-repo flatpak-build \
+            apps/hive-desktop/flatpak/io.hiveagents.desktop.yml
+          flatpak build-bundle flatpak-repo \
+            "Hive-${VERSION}-linux-x86_64.flatpak" io.hiveagents.desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.platform.name }}
+          path: |
+            apps/hive-desktop/src-tauri/target/release/bundle/
+            Hive-*.flatpak
+          if-no-files-found: error
+          retention-days: 1
+
   build-npm-package:
     name: Build and smoke npm tarball
     runs-on: ubuntu-24.04
@@ -231,7 +326,7 @@ jobs:
   release-gate:
     name: Release gate
     runs-on: ubuntu-24.04
-    needs: [build-ui, build-worker, build-binaries, build-npm-package, validate-docker]
+    needs: [build-ui, build-worker, build-binaries, build-desktop, build-npm-package, validate-docker]
     steps:
       - run: echo "All release artifacts passed their runtime smoke tests."
 
@@ -243,6 +338,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
       - uses: actions/download-artifact@v4
         with:
           path: artifacts/
@@ -251,8 +349,14 @@ jobs:
         run: |
           tar -czf ui-dist.tar.gz -C artifacts/hive-ui-dist .
           find artifacts -type f -name 'hive-v*' -exec cp {} . \;
+          find artifacts -type f -path '*/bundle/*' -exec cp {} . \;
+          find artifacts -type f -name '*.flatpak' -exec cp {} . \;
           cp artifacts/tool-worker/tool-worker.js .
-          sha256sum hive-v* tool-worker.js ui-dist.tar.gz > checksums.txt
+          bun scripts/create-updater-manifest.ts \
+            --artifacts-dir artifacts \
+            --version "${GITHUB_REF_NAME#v}" \
+            --output latest.json
+          sha256sum hive-v* tool-worker.js ui-dist.tar.gz latest.json Hive_* > checksums.txt
       - uses: softprops/action-gh-release@v2
         with:
           name: Hive ${{ github.ref_name }}
@@ -261,6 +365,9 @@ jobs:
             hive-v*
             tool-worker.js
             ui-dist.tar.gz
+            Hive_*
+            Hive-*.flatpak
+            latest.json
             checksums.txt
 
   npm-publish:

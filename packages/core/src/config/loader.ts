@@ -19,8 +19,15 @@ export function loadEnv(hiveDir: string): void {
 
         const [key, ...valueParts] = trimmed.split("=");
         if (key && valueParts.length > 0) {
+          const normalizedKey = key.trim();
           const value = valueParts.join("=").trim().replace(/^['"]|['"]$/g, "");
-          process.env[key.trim()] = value;
+          // Explicit process environment values (for example the random
+          // port assigned by the desktop shell) must take precedence over the
+          // persisted .env file. This follows dotenv conventions and prevents
+          // a previous CLI port from breaking desktop startup.
+          if (process.env[normalizedKey] === undefined) {
+            process.env[normalizedKey] = value;
+          }
         }
       }
     } catch (e) {

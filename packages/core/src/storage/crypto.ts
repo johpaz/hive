@@ -28,6 +28,21 @@ interface SecretDoc {
 
 const _mem = new Map<string, string>()
 let _keychainOk: boolean | null = null // null = untested
+let _keychainApi: unknown = undefined
+
+/**
+ * A test double or a recovered runtime may replace Bun.secrets. Reset the
+ * cached availability result when that API object changes so a previous
+ * headless failure cannot poison the replacement backend forever.
+ */
+function _getKeychainApi(): any {
+  const api = (Bun as any).secrets
+  if (api !== _keychainApi) {
+    _keychainApi = api
+    _keychainOk = null
+  }
+  return api
+}
 
 async function _get(name: string): Promise<string | null> {
   const cached = _mem.get(name)
@@ -80,9 +95,10 @@ async function _readCollectionSecret(name: string): Promise<string | null> {
 }
 
 async function _keychainGet(name: string): Promise<string | null> {
+  const keychain = _getKeychainApi()
   if (_keychainOk === false) return null
   try {
-    const val = await (Bun as any).secrets.get({ service: SERVICE, name })
+    const val = await keychain.get({ service: SERVICE, name })
     _keychainOk = true
     return val ?? null
   } catch {
@@ -92,9 +108,10 @@ async function _keychainGet(name: string): Promise<string | null> {
 }
 
 async function _keychainSet(name: string, value: string): Promise<boolean> {
+  const keychain = _getKeychainApi()
   if (_keychainOk === false) return false
   try {
-    await (Bun as any).secrets.set({ service: SERVICE, name, value })
+    await keychain.set({ service: SERVICE, name, value })
     _keychainOk = true
     return true
   } catch {

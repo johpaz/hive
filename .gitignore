@@ -40,6 +40,17 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 binaries/
 
+# Rust/Tauri build output is generated locally and in CI.
+target/
+
+# Tauri-generated schemas are derived from capabilities/configuration.
+apps/hive-desktop/src-tauri/gen/
+
+# Hive Desktop sidecar binaries are generated per target during the Tauri build.
+!apps/hive-desktop/src-tauri/binaries/
+apps/hive-desktop/src-tauri/binaries/*
+!apps/hive-desktop/src-tauri/binaries/.gitkeep
+
 # UI bundle generado (solo para binario standalone, puede pesar 10MB+)
 # El stub vacío en src/ui-bundle.generated.ts SÍ se commitea; solo ignorar el relleno.
 # packages/cli/src/ui-bundle.generated.ts  ← NO ignorar el stub
@@ -65,5 +76,3 @@ packages/tts/voices/*
 .agent
 .opencode
 .kilo
-
-

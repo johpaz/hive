@@ -11,7 +11,7 @@
  * instead of `DELETE`+`INSERT`.
  */
 
-import { getHiveDb } from "./hivedb";
+import { getHiveDb, getOpenHiveDb } from "./hivedb";
 import { col } from "./hive";
 import { seedAllData } from "./seed";
 import { ensureSecretsBackend } from "./crypto";
@@ -123,7 +123,10 @@ async function ensureSeedData(): Promise<void> {
   await seedAllData();
 }
 
-let bootstrapped = false;
+// Bootstrap state belongs to a specific database instance. A boolean that
+// survives closeHiveDb() can report a closed/replaced database as ready when
+// tests or long-running processes open a fresh instance in the same runtime.
+let bootstrappedDb: Awaited<ReturnType<typeof getHiveDb>> | null = null;
 
 /**
  * Idempotent entry point: opens the database, ensures indexes, reseeds the
@@ -131,7 +134,7 @@ let bootstrapped = false;
  * gateway boot.
  */
 export async function ensureHiveDb(): Promise<void> {
-  await getHiveDb();
+  const db = await getHiveDb();
   await ensureIndexes();
   // Mint the master key before anything can save an API key, so a fresh
   // install is durable from the first keystroke rather than after a restart
@@ -143,9 +146,9 @@ export async function ensureHiveDb(): Promise<void> {
   const existing = await meta.get("schemaVersion");
   if (!existing) await meta.put("schemaVersion", { value: 1 }, { expectedVersion: 0 });
 
-  bootstrapped = true;
+  bootstrappedDb = db;
 }
 
 export function isBootstrapped(): boolean {
-  return bootstrapped;
+  return bootstrappedDb !== null && bootstrappedDb === getOpenHiveDb();
 }

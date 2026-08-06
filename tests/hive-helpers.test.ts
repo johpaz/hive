@@ -124,5 +124,10 @@ describe("storage/bootstrap.ts", () => {
     const meta = await col<{ value: number }>("meta");
     const version = await meta.get("schemaVersion");
     expect(version?.doc.value).toBe(1);
+
+    closeHiveDb();
+    expect(isBootstrapped()).toBe(false);
+    await ensureHiveDb();
+    expect(isBootstrapped()).toBe(true);
   });
 });
