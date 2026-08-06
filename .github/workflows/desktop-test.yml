@@ -1,6 +1,18 @@
 name: Desktop Test Builds
 
 on:
+  # Genera instaladores de prueba automáticamente cuando un cambio puede
+  # modificar la aplicación de escritorio o el gateway que se empaqueta.
+  push:
+    branches: [master, main]
+    paths:
+      - "apps/hive-desktop/**"
+      - "packages/**"
+      - "scripts/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/desktop-test.yml"
+  # También permite lanzar una compilación sin crear otro commit.
   workflow_dispatch:
 
 permissions:
