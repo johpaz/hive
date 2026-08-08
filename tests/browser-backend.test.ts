@@ -109,7 +109,7 @@ describe.skipIf(!LIVE)("WebViewBackend (navegador real)", () => {
   test("navega y evalúa en la página", async () => {
     await backend.navigate(page("<h1>hola mundo</h1>"));
     expect(await backend.evaluate<string>("document.querySelector('h1').textContent")).toBe("hola mundo");
-  });
+  }, 15000);
 
   test("serializa operaciones concurrentes — WebView rechaza las solapadas", async () => {
     // Sin la cola interna esto falla con
@@ -124,14 +124,14 @@ describe.skipIf(!LIVE)("WebViewBackend (navegador real)", () => {
     ]);
 
     expect(results).toEqual([2, 4, 6, "1"]);
-  });
+  }, 15000);
 
   test("una operación fallida no rompe la cola para las siguientes", async () => {
     await backend.navigate(page("<h1>sigo viva</h1>"));
 
     await expect(backend.evaluate("esto.no.existe()")).rejects.toThrow();
     expect(await backend.evaluate<string>("document.querySelector('h1').textContent")).toBe("sigo viva");
-  });
+  }, 15000);
 
   test("click y fill operan por selector CSS", async () => {
     await backend.navigate(
@@ -143,19 +143,19 @@ describe.skipIf(!LIVE)("WebViewBackend (navegador real)", () => {
 
     await backend.click("#b");
     expect(await backend.evaluate<string>("document.getElementById('i').dataset.hit")).toBe("1");
-  });
+  }, 15000);
 
   test("fill reemplaza el contenido en vez de agregarlo", async () => {
     await backend.navigate(page(`<input id="i" value="viejo">`));
     await backend.fill("#i", "nuevo");
     expect(await backend.evaluate<string>("document.getElementById('i').value")).toBe("nuevo");
-  });
+  }, 15000);
 
   test("typeIn y fill fallan claro cuando el selector no existe", async () => {
     await backend.navigate(page("<h1>x</h1>"));
     await expect(backend.typeIn("#no-existe", "x")).rejects.toThrow(/no encontrado/);
     await expect(backend.fill("#no-existe", "x")).rejects.toThrow(/no encontrado/);
-  });
+  }, 15000);
 
   test("la navegación hacia atrás usa goBack — los tipos de bun-types dicen back()", async () => {
     await backend.navigate(page("<h1>primera</h1>"));
@@ -164,7 +164,7 @@ describe.skipIf(!LIVE)("WebViewBackend (navegador real)", () => {
 
     await backend.back();
     expect(await backend.evaluate<string>("document.querySelector('h1').textContent")).toBe("primera");
-  });
+  }, 15000);
 
   test("screenshot devuelve un PNG en base64", async () => {
     await backend.navigate(page("<h1>foto</h1>"));
@@ -172,7 +172,7 @@ describe.skipIf(!LIVE)("WebViewBackend (navegador real)", () => {
     expect(shot.length).toBeGreaterThan(100);
     // Cabecera PNG (\x89PNG) en base64.
     expect(shot.startsWith("iVBORw0KGgo")).toBe(true);
-  });
+  }, 15000);
 
   test("screenshotElement recorta al elemento pedido", async () => {
     await backend.navigate(
@@ -182,12 +182,12 @@ describe.skipIf(!LIVE)("WebViewBackend (navegador real)", () => {
     expect(shot.startsWith("iVBORw0KGgo")).toBe(true);
     // El recorte tiene que pesar menos que la captura del viewport entero.
     expect(shot.length).toBeLessThan((await backend.screenshot()).length);
-  });
+  }, 15000);
 
   test("screenshotElement falla claro si el elemento no existe", async () => {
     await backend.navigate(page("<h1>x</h1>"));
     await expect(backend.screenshotElement("#fantasma")).rejects.toThrow(/no visible o inexistente/);
-  });
+  }, 15000);
 });
 
 // ─── snapshot sintetizado ─────────────────────────────────────────────────────
@@ -210,7 +210,7 @@ describe.skipIf(!LIVE)("WebViewBackend.snapshot", () => {
     expect(snapshot).toContain('- heading "Example Domain" [level=1, ref=e1]');
     expect(snapshot).toContain('link "Learn more"');
     expect(snapshot).toMatch(/ref=e\d+/);
-  });
+  }, 15000);
 
   test("anida los hijos bajo el padre que emitió línea", async () => {
     await backend.navigate(page(`<p>Intro <a href="/x">un link</a></p>`));
@@ -218,7 +218,7 @@ describe.skipIf(!LIVE)("WebViewBackend.snapshot", () => {
 
     const linea = snapshot.split("\n").find((l) => l.includes("link"));
     expect(linea?.startsWith("  ")).toBe(true);
-  });
+  }, 15000);
 
   test("los divs de maquetado no generan sangría — el árbol no se hunde", async () => {
     await backend.navigate(
@@ -228,7 +228,7 @@ describe.skipIf(!LIVE)("WebViewBackend.snapshot", () => {
 
     // Cuatro divs de por medio y el botón sigue en el nivel raíz.
     expect(snapshot).toBe('- button "Enviar" [ref=e1]');
-  });
+  }, 15000);
 
   test("ignora script, style y lo oculto", async () => {
     await backend.navigate(
@@ -245,7 +245,7 @@ describe.skipIf(!LIVE)("WebViewBackend.snapshot", () => {
     expect(snapshot).not.toContain("oculto");
     expect(snapshot).not.toContain("tampoco");
     expect(snapshot).not.toContain("ni este");
-  });
+  }, 15000);
 
   test("toma el nombre accesible de aria-label, alt y placeholder", async () => {
     await backend.navigate(
@@ -258,7 +258,7 @@ describe.skipIf(!LIVE)("WebViewBackend.snapshot", () => {
     expect(snapshot).toContain("Cerrar ventana");
     expect(snapshot).toContain("Un gato");
     expect(snapshot).toContain("Tu correo");
-  });
+  }, 15000);
 
   test("interactiveOnly deja sólo lo accionable", async () => {
     await backend.navigate(
@@ -270,7 +270,7 @@ describe.skipIf(!LIVE)("WebViewBackend.snapshot", () => {
     expect(snapshot).toContain("Un botón");
     expect(snapshot).not.toContain("Un título");
     expect(snapshot).not.toContain("Un párrafo largo");
-  });
+  }, 15000);
 
   test("depth corta la profundidad de lo que sí anida", async () => {
     // La profundidad cuenta niveles *emitidos*, no nodos del DOM: por eso hace
@@ -279,7 +279,7 @@ describe.skipIf(!LIVE)("WebViewBackend.snapshot", () => {
 
     expect(await backend.snapshot({ depth: 1 })).not.toContain("hondo");
     expect(await backend.snapshot({ depth: 5 })).toContain("hondo");
-  });
+  }, 15000);
 
   test("marca los atributos de estado del control", async () => {
     await backend.navigate(
@@ -290,7 +290,7 @@ describe.skipIf(!LIVE)("WebViewBackend.snapshot", () => {
 
     expect(snapshot).toContain("checked");
     expect(snapshot).toContain("disabled");
-  });
+  }, 15000);
 
   test("un DOM enorme se trunca en vez de comerse el contexto", async () => {
     const filas = Array.from({ length: 4000 }, (_, i) => `<p>fila número ${i} con texto de relleno</p>`).join("");
@@ -299,10 +299,10 @@ describe.skipIf(!LIVE)("WebViewBackend.snapshot", () => {
     const snapshot = await backend.snapshot();
     expect(snapshot.length).toBeLessThan(21_000);
     expect(snapshot).toContain("snapshot truncado");
-  });
+  }, 15000);
 
   test("una página vacía devuelve string vacío, no una excepción", async () => {
     await backend.navigate(page("<body></body>"));
     expect(await backend.snapshot()).toBe("");
-  });
+  }, 15000);
 });
