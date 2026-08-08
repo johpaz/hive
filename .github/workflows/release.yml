@@ -214,7 +214,12 @@ jobs:
         if: matrix.platform.flatpak
         run: |
           sudo apt-get install -y flatpak flatpak-builder
-          flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          # --user en remote-add: sin él, flatpak intenta agregarlo a nivel
+          # sistema, lo que pide autorización por polkit (ConfigureRemote) —
+          # en un runner headless sin agente polkit/sesión interactiva eso
+          # falla con "not allowed for user". El install de abajo ya era
+          # --user; el remote tiene que vivir en el mismo scope.
+          flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
           flatpak install --user --noninteractive flathub org.gnome.Sdk//49 org.gnome.Platform//49
       - name: Build Flatpak
         if: matrix.platform.flatpak
