@@ -138,7 +138,7 @@ Descarga el instalador para tu sistema desde la [última versión](https://githu
 |---|---|
 | Windows | `Hive Agents_<versión>_x64-setup.exe` (o `.msi`) |
 | macOS | `Hive Agents_<versión>_<arquitectura>.dmg` |
-| Linux | `.AppImage`, `.deb`, `.rpm` o el paquete Flatpak |
+| Linux | `.deb`, `.rpm` o el paquete Flatpak |
 
 La app se actualiza sola. Si el sistema operativo advierte que el instalador no está verificado, revisa la nota sobre firma de código en la [guía de instalación](docs/guides/instalacion.md).
 

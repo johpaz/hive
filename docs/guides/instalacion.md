@@ -63,7 +63,9 @@ Descarga el instalador de tu sistema desde la [última versión](https://github.
 |---|---|
 | Windows | `Hive Agents_<versión>_x64-setup.exe`, `Hive Agents_<versión>_x64_en-US.msi` |
 | macOS | `Hive Agents_<versión>_x86_64.dmg`, `Hive Agents_<versión>_aarch64.dmg` |
-| Linux | `Hive Agents_<versión>_amd64.deb`, `Hive Agents-<versión>-1.x86_64.rpm`, `Hive Agents_<versión>_amd64.AppImage`, `Hive-<versión>-linux-x86_64.flatpak` |
+| Linux | `Hive Agents_<versión>_amd64.deb`, `Hive Agents-<versión>-1.x86_64.rpm`, `Hive-<versión>-linux-x86_64.flatpak` |
+
+> AppImage está temporalmente fuera del release: `linuxdeploy` (la herramienta que lo empaqueta) aborta al inspeccionar nuestro sidecar del gateway, compilado con Bun — ver el comentario en `.github/workflows/release.yml` job `build-desktop`. Se retoma en un release posterior.
 
 La app se autoactualiza: revisa nuevas versiones contra el manifiesto publicado en cada release y las instala sin pasos manuales.
 
@@ -77,7 +79,7 @@ Los instaladores **no están firmados con un certificado de plataforma** (Apple 
   ```
   o hacé clic derecho sobre la app → "Abrir" → confirmar en el diálogo.
 - **Windows**: SmartScreen muestra "Windows protegió tu PC". Hacé clic en "Más información" → "Ejecutar de todas formas".
-- **Linux**: no aplica — deb/rpm/AppImage/Flatpak no pasan por ningún gatekeeper del sistema.
+- **Linux**: no aplica — deb/rpm/Flatpak no pasan por ningún gatekeeper del sistema.
 
 ## Migrar desde 0.0.x
 

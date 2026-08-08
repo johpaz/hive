@@ -22,16 +22,19 @@ const ARTIFACT_DIR_BY_PLATFORM: Record<Platform, string> = {
 // TODOS los formatos que se construyan: Deb+Rpm+AppImage en Linux, NSIS+MSI
 // en Windows. `latest.json` solo admite un asset por plataforma, así que se
 // fija un orden de preferencia explícito en vez de exigir una única firma:
-//   - Linux: AppImage. Es autocontenido y no requiere privilegios de root
-//     para autoactualizarse; Deb/Rpm sí (vía pkexec/dpkg/rpm).
+//   - Linux: Deb, con Rpm como respaldo. AppImage sería preferible (autoactualiza
+//     sin privilegios, a diferencia de Deb/Rpm que van vía pkexec/dpkg/rpm), pero
+//     está fuera de "bundles" en release.yml — linuxdeploy revienta al escanear
+//     con `ldd` nuestro sidecar hive-gateway (compilado con Bun). Ver ese archivo.
+//     Cuando AppImage vuelva, reordenar esta lista para preferirlo de nuevo.
 //   - Windows: NSIS. Es el formato que Tauri recomienda para el updater
 //     ("MSI installers have some limitations that prevent good update UX").
 //   - macOS: solo el bundle `app` genera `.app.tar.gz` + firma; no hay
 //     ambigüedad aunque también se construya `dmg` (dmg no es un formato de
 //     updater válido en Tauri, así que nunca produce `.sig`).
 const PREFERRED_SUFFIXES: Record<Platform, string[]> = {
-  "linux-x86_64": [".AppImage.sig"],
-  "linux-aarch64": [".AppImage.sig"],
+  "linux-x86_64": [".deb.sig", ".rpm.sig"],
+  "linux-aarch64": [".deb.sig", ".rpm.sig"],
   "darwin-x86_64": [".app.tar.gz.sig"],
   "darwin-aarch64": [".app.tar.gz.sig"],
   "windows-x86_64": ["-setup.exe.sig", ".msi.sig"],

@@ -62,7 +62,7 @@ bun scripts/bump-version.ts 1.0.1 --dry-run   # solo muestra qué cambiaría
    ```
    Esto agrega lo que quede sin commitear, commitea como `chore: release v1.0.1`, crea el tag `v1.0.1` y hace push de `master` + el tag — pero antes pide confirmación explícita (hay que escribir `si`). Si el tag ya existe localmente, el script aborta: es la señal de que esa versión ya se publicó antes.
 
-El push del tag `v*.*.*` dispara `.github/workflows/release.yml`, que construye y publica en paralelo: paquete npm, imagen Docker (`linux/amd64` + `linux/arm64`) e instaladores de escritorio para Windows, macOS (x64 + arm64) y Linux (AppImage, deb, rpm, Flatpak).
+El push del tag `v*.*.*` dispara `.github/workflows/release.yml`, que construye y publica en paralelo: paquete npm, imagen Docker (`linux/amd64` + `linux/arm64`) e instaladores de escritorio para Windows, macOS (x64 + arm64) y Linux (deb, rpm, Flatpak — AppImage está temporalmente fuera, ver el comentario en el job `build-desktop`).
 
 ## Verificar que una release salió bien
 
@@ -72,7 +72,7 @@ docker run --rm johpaz/hive-agents:<versión> --version
 curl -s https://api.github.com/repos/johpaz/hive/releases/latest | grep '"name"'
 ```
 
-El GitHub Release debe traer únicamente instaladores de escritorio (`.deb`, `.rpm`, `.AppImage`, `.dmg`, `.exe`, `.msi`, `.flatpak`), `latest.json` (el manifiesto del updater) y `checksums.txt`. Los binarios standalone de Bun ya no se publican — la instalación sin dependencias es la app de escritorio; el paquete npm y Docker cubren el resto.
+El GitHub Release debe traer únicamente instaladores de escritorio (`.deb`, `.rpm`, `.dmg`, `.exe`, `.msi`, `.flatpak`), `latest.json` (el manifiesto del updater) y `checksums.txt`. Los binarios standalone de Bun ya no se publican — la instalación sin dependencias es la app de escritorio; el paquete npm y Docker cubren el resto.
 
 ## Recuperarse de una release fallida
 

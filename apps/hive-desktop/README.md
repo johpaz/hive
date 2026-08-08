@@ -42,15 +42,24 @@ GitHub Releases publish native installers per desktop platform:
 
 - Windows: NSIS `.exe` and `.msi`, with the WebView2 offline installer embedded.
 - macOS: `.dmg` for Intel and Apple Silicon.
-- Linux: `.AppImage`, `.deb`, `.rpm`, and a Flatpak bundle for x86_64; ARM64
-  publishes AppImage, `.deb`, and `.rpm` when a native runner is available.
+- Linux: `.deb`, `.rpm`, and a Flatpak bundle for x86_64; ARM64 publishes
+  `.deb` and `.rpm` when a native runner is available.
 
-Linux users should choose AppImage for portability, Flatpak for sandboxing, or
-`.deb`/`.rpm` for native package-manager integration. The `.deb`, `.rpm`, and
-Flatpak declare their runtime WebKitGTK/GTK environment so users do not have
-to install Hive dependencies manually. Tauri still uses the operating system
-WebView on Linux; this is why the Linux release offers multiple native
-packaging formats.
+AppImage is temporarily excluded from `bundles` in `release.yml`:
+`linuxdeploy-plugin-gtk` aborts (SIGABRT) running `ldd` on our `hive-gateway`
+sidecar (compiled with Bun) during dependency deployment, reproduced
+consistently in CI on both x86_64 and aarch64. It is unrelated to FUSE or to
+the `.relr.dyn`/`strip` issue also seen on this bundler (`NO_STRIP=true` is
+still set and did not fix this one). `.deb`/`.rpm` don't go through
+`linuxdeploy` and build fine; Flatpak doesn't use it either, since it installs
+the sidecar directly via its own manifest.
+
+Linux users should choose Flatpak for sandboxing, or `.deb`/`.rpm` for native
+package-manager integration. The `.deb`, `.rpm`, and Flatpak declare their
+runtime WebKitGTK/GTK environment so users do not have to install Hive
+dependencies manually. Tauri still uses the operating system WebView on
+Linux; this is why the Linux release offers multiple native packaging
+formats.
 
 **Neither the macOS `.dmg` nor the Windows installers carry OS-level code
 signing** (no Apple Developer ID notarization, no Authenticode certificate) —

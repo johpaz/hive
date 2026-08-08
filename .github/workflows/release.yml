@@ -117,15 +117,23 @@ jobs:
       fail-fast: false
       matrix:
         platform:
+          # AppImage temporalmente fuera de "bundles": linuxdeploy-plugin-gtk
+          # aborta (SIGABRT) al correr `ldd` sobre nuestro sidecar hive-gateway
+          # (compilado con Bun) durante el deploy de dependencias — reproducido
+          # de forma consistente en CI en x86_64 y aarch64, con --verbose activo,
+          # no es un problema de FUSE ni de strip (NO_STRIP ya estaba puesto).
+          # Ver docs/guides/instalacion.md. deb/rpm no pasan por linuxdeploy y
+          # construyen bien; Flatpak tampoco lo usa (instala el sidecar directo
+          # vía el manifiesto propio) y no se ve afectado.
           - name: linux-x86_64
             runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-            bundles: appimage,deb,rpm
+            bundles: deb,rpm
             flatpak: true
           - name: linux-aarch64
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            bundles: appimage,deb,rpm
+            bundles: deb,rpm
             flatpak: false
           - name: macos-x86_64
             runner: macos-15-intel
