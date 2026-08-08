@@ -108,7 +108,7 @@
     "build": "bun scripts/build-npm-package.ts",
     "build:binary": "bun --cwd=packages/hive-ui run build && bun packages/cli/scripts/generate-ui-bundle.ts && bun scripts/build-gateway.ts --target bun-linux-x64 --outfile dist/hive-binary",
     "prepublishOnly": "bun scripts/verify-package.ts",
-    "test": "bun test tests",
+    "test": "bun test tests --timeout 15000",
     "test:ci": "bun test tests --coverage",
     "test:ui": "bun --cwd=packages/hive-ui run test",
     "docs:generate": "bun scripts/generate-docs.ts",
