@@ -196,7 +196,11 @@ jobs:
         run: cargo install tauri-cli --version 2.11.4 --locked
       - name: Build native Hive installer
         shell: bash
-        run: cargo tauri build --config tauri.release.conf.json --bundles "${{ matrix.platform.bundles }}"
+        # --verbose: "failed to run linuxdeploy" es un mensaje paraguas que cubre
+        # varias causas internas distintas (falla de strip, plugin GTK, permisos,
+        # red) — sin esto, tauri-cli se traga la salida real de linuxdeploy y
+        # solo queda ese resumen genérico en el log.
+        run: cargo tauri build --config tauri.release.conf.json --bundles "${{ matrix.platform.bundles }}" --verbose
         working-directory: apps/hive-desktop/src-tauri
       - name: Install Flatpak tooling
         if: matrix.platform.flatpak
