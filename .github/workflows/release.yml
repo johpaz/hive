@@ -147,6 +147,12 @@ jobs:
       HIVE_DESKTOP_PREBUILT_UI: "1"
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      # linuxdeploy empaqueta el AppImage como... un AppImage, que se ejecuta
+      # montándose vía FUSE. Los runners ubuntu-24.04 no traen libfuse2 (ver
+      # apt-get abajo) ni siempre exponen /dev/fuse de forma confiable — esto
+      # lo hace correr por extracción directa en vez de depender del montaje,
+      # sin efecto sobre deb/rpm/dmg/msi/nsis.
+      APPIMAGE_EXTRACT_AND_RUN: "1"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -164,7 +170,8 @@ jobs:
             librsvg2-dev \
             libxdo-dev \
             patchelf \
-            libssl-dev
+            libssl-dev \
+            libfuse2
       - name: Install JavaScript dependencies
         run: bun install --frozen-lockfile
       - uses: actions/download-artifact@v4
