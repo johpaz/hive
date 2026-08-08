@@ -153,6 +153,16 @@ jobs:
       # lo hace correr por extracción directa en vez de depender del montaje,
       # sin efecto sobre deb/rpm/dmg/msi/nsis.
       APPIMAGE_EXTRACT_AND_RUN: "1"
+      # La causa real de "failed to run linuxdeploy" en Ubuntu 24.04+: linuxdeploy
+      # corre `strip` sobre las librerías del sistema que empaqueta, y el `strip`
+      # de binutils moderno no reconoce la sección ELF `.relr.dyn` (relocaciones
+      # comprimidas, presentes en las libs de Ubuntu 24.04) — falla con
+      # "unknown type [0x13] section `.relr.dyn`" y aborta el bundling. NO_STRIP
+      # se salta ese paso; confirmado por un mantenedor de Tauri en
+      # https://github.com/tauri-apps/tauri/issues/14796#issuecomment (2026-01-20).
+      # El AppImage resultante pesa más (sin strip) — sin efecto sobre el resto
+      # de los bundles.
+      NO_STRIP: "true"
     steps:
       - uses: actions/checkout@v4
         with:
