@@ -4,29 +4,70 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag a re-lanzar (ej. v1.0.1). Debe existir ya en el repo."
+        required: true
 
 permissions:
   contents: read
 
 jobs:
+  resolve-tag:
+    name: Resolve release tag
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      # En push de tag, github.ref_name YA es el tag y github.sha YA es su
+      # commit. En un reintento manual (workflow_dispatch) github.ref_name es
+      # la rama por defecto del repo y github.sha es el HEAD de esa rama, no
+      # el commit del tag — así que se resuelve el SHA real del tag con
+      # checkout+rev-parse. Todo job de aquí en adelante usa estos outputs en
+      # vez de GITHUB_REF_NAME / github.ref_name / github.sha.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+      - id: resolve
+        shell: bash
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   validate-version:
     name: Validate release version
     runs-on: ubuntu-24.04
+    needs: resolve-tag
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
       - name: Match tag and package version
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           PACKAGE_VERSION="$(node -p "require('./package.json').version")"
-          test "$VERSION" = "$PACKAGE_VERSION"
+          test "${{ needs.resolve-tag.outputs.version }}" = "$PACKAGE_VERSION"
+      - name: Match tag and desktop manifests
+        shell: bash
+        run: |
+          TAURI_VERSION="$(node -p "require('./apps/hive-desktop/src-tauri/tauri.conf.json').version")"
+          CARGO_VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' apps/hive-desktop/src-tauri/Cargo.toml | head -1)"
+          test "${{ needs.resolve-tag.outputs.version }}" = "$TAURI_VERSION"
+          test "${{ needs.resolve-tag.outputs.version }}" = "$CARGO_VERSION"
 
   build-ui:
     name: Build UI
     runs-on: ubuntu-24.04
-    needs: validate-version
+    needs: [resolve-tag, validate-version]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
@@ -45,9 +86,11 @@ jobs:
   build-worker:
     name: Build platform-neutral tool worker
     runs-on: ubuntu-24.04
-    needs: validate-version
+    needs: [resolve-tag, validate-version]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
@@ -66,69 +109,9 @@ jobs:
           path: tool-worker.js
           retention-days: 1
 
-  build-binaries:
-    name: Build gateway (${{ matrix.platform.name }})
-    needs: [validate-version, build-ui]
-    runs-on: ${{ matrix.platform.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        platform:
-          - name: linux-x64
-            runner: ubuntu-24.04
-            target: bun-linux-x64
-            extension: ""
-          - name: linux-arm64
-            runner: ubuntu-24.04-arm
-            target: bun-linux-arm64
-            extension: ""
-          - name: macos-x64
-            runner: macos-15-intel
-            target: bun-darwin-x64
-            extension: ""
-          - name: macos-arm64
-            runner: macos-15
-            target: bun-darwin-arm64
-            extension: ""
-          - name: windows-x64
-            runner: windows-2025
-            target: bun-windows-x64
-            extension: ".exe"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.14"
-      - name: Install dependencies for native platform
-        run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
-        with:
-          name: hive-ui-dist
-          path: packages/hive-ui/dist/
-      - name: Generate embedded UI
-        run: bun packages/cli/scripts/generate-ui-bundle.ts
-      - name: Compile gateway
-        shell: bash
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          OUTFILE="hive-v${VERSION}-${{ matrix.platform.name }}${{ matrix.platform.extension }}"
-          bun scripts/build-gateway.ts --target "${{ matrix.platform.target }}" --outfile "$OUTFILE"
-          if [[ "${{ matrix.platform.name }}" != "windows-x64" ]]; then chmod +x "$OUTFILE"; fi
-      - name: Smoke gateway, HiveDB, and embedded UI
-        shell: bash
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          OUTFILE="hive-v${VERSION}-${{ matrix.platform.name }}${{ matrix.platform.extension }}"
-          bun scripts/smoke-release.ts --executable "$OUTFILE" --version "$VERSION"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: binary-${{ matrix.platform.name }}
-          path: hive-v*-${{ matrix.platform.name }}*
-          retention-days: 1
-
   build-desktop:
     name: Build desktop (${{ matrix.platform.name }})
-    needs: [validate-version, build-ui]
+    needs: [resolve-tag, validate-version, build-ui]
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       fail-fast: false
@@ -137,22 +120,22 @@ jobs:
           - name: linux-x86_64
             runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-            bundles: appimage,deb
+            bundles: appimage,deb,rpm
             flatpak: true
           - name: linux-aarch64
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            bundles: appimage,deb
+            bundles: appimage,deb,rpm
             flatpak: false
           - name: macos-x86_64
             runner: macos-15-intel
             target: x86_64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
             flatpak: false
           - name: macos-aarch64
             runner: macos-15
             target: aarch64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
             flatpak: false
           - name: windows-x86_64
             runner: windows-2025
@@ -166,6 +149,8 @@ jobs:
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
@@ -175,7 +160,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
+            libayatana-appindicator3-dev \
             librsvg2-dev \
             libxdo-dev \
             patchelf \
@@ -206,7 +191,7 @@ jobs:
         if: matrix.platform.flatpak
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ needs.resolve-tag.outputs.version }}"
           flatpak-builder --user --force-clean --disable-rofiles-fuse \
             --repo=flatpak-repo flatpak-build \
             apps/hive-desktop/flatpak/io.hiveagents.desktop.yml
@@ -224,9 +209,11 @@ jobs:
   build-npm-package:
     name: Build and smoke npm tarball
     runs-on: ubuntu-24.04
-    needs: [validate-version, build-ui, build-worker]
+    needs: [resolve-tag, validate-version, build-ui, build-worker]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
@@ -263,7 +250,7 @@ jobs:
           npm install --global --prefix "$PREFIX" "./${{ steps.pack.outputs.tarball }}"
           bun scripts/smoke-release.ts \
             --executable "$PREFIX/bin/hive" \
-            --version "${GITHUB_REF_NAME#v}" \
+            --version "${{ needs.resolve-tag.outputs.version }}" \
             --ui-dir "$PREFIX/lib/node_modules/@johpaz/hive-agents/dist/ui"
       - uses: actions/upload-artifact@v4
         with:
@@ -273,7 +260,7 @@ jobs:
 
   validate-docker:
     name: Validate Docker (${{ matrix.platform.name }})
-    needs: [validate-version, build-ui]
+    needs: [resolve-tag, validate-version, build-ui]
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       fail-fast: false
@@ -287,6 +274,8 @@ jobs:
             docker: linux/arm64
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
       - name: Build image for native architecture
         run: docker build --platform "${{ matrix.platform.docker }}" -t hive-release-smoke .
       - name: Smoke container gateway and UI
@@ -307,7 +296,7 @@ jobs:
 
           # El binario compilado reporta la versión de package.json: si la imagen
           # se armó con un contexto viejo, esto no coincide con el tag.
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ needs.resolve-tag.outputs.version }}"
           curl -fsS http://127.0.0.1:18790/health | grep -q "\"version\":\"$VERSION\""
 
           # `<div id="root">` está en cualquier build de la UI, así que no
@@ -326,18 +315,20 @@ jobs:
   release-gate:
     name: Release gate
     runs-on: ubuntu-24.04
-    needs: [build-ui, build-worker, build-binaries, build-desktop, build-npm-package, validate-docker]
+    needs: [build-ui, build-worker, build-desktop, build-npm-package, validate-docker]
     steps:
       - run: echo "All release artifacts passed their runtime smoke tests."
 
   github-release:
     name: Publish GitHub Release
     runs-on: ubuntu-24.04
-    needs: release-gate
+    needs: [resolve-tag, release-gate]
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
@@ -347,26 +338,30 @@ jobs:
       - name: Assemble release files
         shell: bash
         run: |
-          tar -czf ui-dist.tar.gz -C artifacts/hive-ui-dist .
-          find artifacts -type f -name 'hive-v*' -exec cp {} . \;
-          find artifacts -type f -path '*/bundle/*' -exec cp {} . \;
-          find artifacts -type f -name '*.flatpak' -exec cp {} . \;
-          cp artifacts/tool-worker/tool-worker.js .
+          # Solo instaladores de escritorio: se descartó publicar los binarios
+          # standalone de Bun (npm y Docker ya cubren esas rutas de instalación).
+          # Se filtra por extensión en vez de copiar todo `*/bundle/*`, porque ese
+          # árbol también contiene el AppDir del AppImage completo (cientos de
+          # .so) y colisiones de basename entre plataformas se pisarían en
+          # silencio.
+          mkdir -p release-assets
+          find artifacts -type f \( \
+              -iname '*.deb' -o -iname '*.rpm' -o -iname '*.AppImage' -o \
+              -iname '*.dmg' -o -iname '*.exe' -o -iname '*.msi' \
+            \) -exec cp {} release-assets/ \;
+          find artifacts -type f -name '*.flatpak' -exec cp {} release-assets/ \;
           bun scripts/create-updater-manifest.ts \
             --artifacts-dir artifacts \
-            --version "${GITHUB_REF_NAME#v}" \
+            --version "${{ needs.resolve-tag.outputs.version }}" \
             --output latest.json
-          sha256sum hive-v* tool-worker.js ui-dist.tar.gz latest.json Hive_* > checksums.txt
+          sha256sum release-assets/* latest.json > checksums.txt
       - uses: softprops/action-gh-release@v2
         with:
-          name: Hive ${{ github.ref_name }}
+          name: Hive ${{ needs.resolve-tag.outputs.tag }}
+          tag_name: ${{ needs.resolve-tag.outputs.tag }}
           generate_release_notes: true
           files: |
-            hive-v*
-            tool-worker.js
-            ui-dist.tar.gz
-            Hive_*
-            Hive-*.flatpak
+            release-assets/*
             latest.json
             checksums.txt
 
@@ -389,9 +384,11 @@ jobs:
   docker-publish:
     name: Publish Docker manifest
     runs-on: ubuntu-24.04
-    needs: release-gate
+    needs: [resolve-tag, release-gate]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-tag.outputs.tag }}
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -402,9 +399,18 @@ jobs:
         id: meta
         with:
           images: johpaz/hive-agents
+          # type=semver se resuelve a partir de github.ref, que en un reintento
+          # manual (workflow_dispatch) es la rama por defecto y no un tag —
+          # el tag semver saldría vacío y solo se publicaría `latest`. Se fija
+          # el valor explícitamente con el output de resolve-tag en su lugar.
           tags: |
             type=raw,value=latest
-            type=semver,pattern={{version}}
+            type=raw,value=${{ needs.resolve-tag.outputs.version }}
+          # La label revision por defecto sale de github.sha, que en un
+          # workflow_dispatch es el HEAD de la rama, no el commit del tag que
+          # realmente se está empaquetando (checkout usa needs.resolve-tag.tag).
+          labels: |
+            org.opencontainers.image.revision=${{ needs.resolve-tag.outputs.sha }}
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -418,7 +424,7 @@ jobs:
   verify-docker-publish:
     name: Verificar la imagen publicada en Docker Hub
     runs-on: ubuntu-24.04
-    needs: docker-publish
+    needs: [resolve-tag, docker-publish]
     steps:
       # validate-docker prueba una imagen construida localmente; esto prueba la
       # que quedó en el registry, que es la que instala un usuario. Cubre el caso
@@ -427,23 +433,26 @@ jobs:
       - name: Bajar el tag publicado
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ needs.resolve-tag.outputs.version }}"
           docker pull "johpaz/hive-agents:$VERSION"
           docker pull "johpaz/hive-agents:latest"
       - name: latest y el tag de versión son la misma imagen, construida en este commit
         shell: bash
+        env:
+          EXPECTED_SHA: ${{ needs.resolve-tag.outputs.sha }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ needs.resolve-tag.outputs.version }}"
           test "$(docker image inspect -f '{{.Id}}' "johpaz/hive-agents:$VERSION")" \
              = "$(docker image inspect -f '{{.Id}}' johpaz/hive-agents:latest)"
-          # metadata-action escribe esta label con github.sha al construir.
+          # docker-publish fija esta label al SHA del tag resuelto por
+          # resolve-tag (no github.sha: bajo workflow_dispatch difieren).
           REVISION="$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "johpaz/hive-agents:$VERSION")"
-          echo "revision de la imagen: $REVISION (esperada: $GITHUB_SHA)"
-          test "$REVISION" = "$GITHUB_SHA"
+          echo "revision de la imagen: $REVISION (esperada: $EXPECTED_SHA)"
+          test "$REVISION" = "$EXPECTED_SHA"
       - name: La imagen publicada arranca y sirve su propia UI
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ needs.resolve-tag.outputs.version }}"
           docker run -d --name hive-published -p 18790:18790 "johpaz/hive-agents:$VERSION"
           trap 'docker logs hive-published; docker rm -f hive-published' EXIT
           for attempt in {1..90}; do

@@ -58,6 +58,12 @@ const packageFiles = [
   "packages/mcp/package.json",
   "packages/skills/package.json",
   "packages/hive-ui/package.json",
+  // La app de escritorio (Tauri) vive fuera de `workspaces` y por eso queda
+  // afuera de todo lo anterior si no se lista explícitamente. Sin esto, el
+  // updater anuncia una versión que el binario instalado no reconoce como
+  // "más nueva que la mía" y vuelve a ofrecer la misma actualización siempre.
+  "apps/hive-desktop/package.json",
+  "apps/hive-desktop/src-tauri/tauri.conf.json",
 ];
 
 // packages/cli/src/index.ts, commands/onboard.ts y commands/gateway.ts leen la
@@ -70,6 +76,21 @@ function textReplacements(newVersion: string) {
     { path: "README.md", pattern: /badge\/versi%C3%B3n-[\d.]+-/g, replacement: `badge/versi%C3%B3n-${newVersion}-` },
     { path: "docs/guides/instalacion.md", pattern: /johpaz\/hive-agents:[\d.]+/g, replacement: `johpaz/hive-agents:${newVersion}` },
     { path: "docs/guides/instalacion.md", pattern: /bun add --global @johpaz\/hive-agents@[\d.]+/g, replacement: `bun add --global @johpaz/hive-agents@${newVersion}` },
+    {
+      path: "apps/hive-desktop/src-tauri/Cargo.toml",
+      // Única línea `version = "..."` sin indentar: la de [package]. Las
+      // dependencias fijan versión inline (`dep = { version = "..." }`),
+      // nunca como línea propia al inicio — el patrón no las toca.
+      pattern: /^version = "[\d.]+"/m,
+      replacement: `version = "${newVersion}"`,
+    },
+    {
+      path: "apps/hive-desktop/src-tauri/Cargo.lock",
+      // Acotado al bloque [[package]] de hive-desktop (el crate raíz), no a
+      // cualquier dependencia externa que también declare "version".
+      pattern: /(\[\[package\]\]\nname = "hive-desktop"\nversion = ")[\d.]+(")/,
+      replacement: `$1${newVersion}$2`,
+    },
   ];
 }
 
@@ -93,8 +114,13 @@ async function main() {
     for (const file of textReplacements(newVersion)) {
       try {
         const content = await Bun.file(file.path).text();
-        const matches = content.match(file.pattern);
-        console.log(`  ${file.path}: ${matches ? `${matches.length} coincidencia(s) de ${file.pattern}` : "sin coincidencias (revisar patrón)"}`);
+        // Un conteo de "N coincidencias" vía content.match() es engañoso para
+        // los patrones con grupos de captura (Cargo.lock): sin flag /g,
+        // match() devuelve [matchCompleto, ...grupos], así que .length cuenta
+        // grupos, no ocurrencias. Solo importa si matcheó o no.
+        const matched = file.pattern.test(content);
+        file.pattern.lastIndex = 0; // test() con /g deja el regex con estado
+        console.log(`  ${file.path}: ${matched ? "coincide" : "sin coincidencias (revisar patrón)"}`);
       } catch (e) {
         console.log(`  ⚠️  ${file.path}: ${(e as Error).message}`);
       }

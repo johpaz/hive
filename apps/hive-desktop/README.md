@@ -38,26 +38,39 @@ Sidecar binaries and generated build output are intentionally ignored by Git.
 
 ## Release distribution
 
-GitHub Releases publish one native installer per desktop platform:
+GitHub Releases publish native installers per desktop platform:
 
 - Windows: NSIS `.exe` and `.msi`, with the WebView2 offline installer embedded.
-- macOS: signed `.dmg` files for Intel and Apple Silicon.
-- Linux: `.AppImage`, `.deb`, and Flatpak for x86_64; ARM64 publishes AppImage
-  and `.deb` when a native runner is available.
+- macOS: `.dmg` for Intel and Apple Silicon.
+- Linux: `.AppImage`, `.deb`, `.rpm`, and a Flatpak bundle for x86_64; ARM64
+  publishes AppImage, `.deb`, and `.rpm` when a native runner is available.
 
 Linux users should choose AppImage for portability, Flatpak for sandboxing, or
-`.deb` for native package-manager integration. The `.deb` and Flatpak declare
-their runtime WebKitGTK/GTK environment so users do not have to install Hive
-dependencies manually. Tauri still uses the operating system WebView on Linux;
-this is why the Linux release offers multiple native packaging formats.
+`.deb`/`.rpm` for native package-manager integration. The `.deb`, `.rpm`, and
+Flatpak declare their runtime WebKitGTK/GTK environment so users do not have
+to install Hive dependencies manually. Tauri still uses the operating system
+WebView on Linux; this is why the Linux release offers multiple native
+packaging formats.
+
+**Neither the macOS `.dmg` nor the Windows installers carry OS-level code
+signing** (no Apple Developer ID notarization, no Authenticode certificate) —
+that requires paid certificates that this project does not currently hold.
+Gatekeeper on macOS will show "app is damaged" / "cannot verify developer",
+and SmartScreen on Windows will warn the installer is unrecognized. Both are
+one-time prompts users can bypass (`xattr -dr com.apple.quarantine` on macOS,
+"More info → Run anyway" on Windows) — see `docs/guides/instalacion.md` for
+the exact steps. This is unrelated to the updater signing below, which only
+guarantees that an *update* was produced by this project's release pipeline,
+not that the *installer* is trusted by the OS.
 
 The updater reads the signed metadata from:
 
 `https://github.com/johpaz/hive/releases/latest/download/latest.json`
 
-Release signing requires the `TAURI_SIGNING_PRIVATE_KEY` and
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` GitHub secrets. The public key is safe to
-keep in `src-tauri/tauri.conf.json`; never commit the private key.
+Update signing (minisign, via the Tauri updater plugin) requires the
+`TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` GitHub
+secrets. The public key is safe to keep in `src-tauri/tauri.conf.json`; never
+commit the private key.
 
 The desktop shell chooses a free loopback port, creates an application-scoped
 `HIVE_HOME`, starts the gateway, waits for `/health`, and then opens the existing

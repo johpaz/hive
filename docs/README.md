@@ -5,6 +5,7 @@ Esta es la entrada canónica a la documentación. Todo el contenido operativo es
 ## Para empezar
 
 - [Instalación y actualización](guides/instalacion.md)
+- [Versionado y releases](guides/versionado.md)
 - [Configuración](guides/configuracion.md)
 - [Seguridad](guides/seguridad.md)
 - [Canales](guides/canales.md)

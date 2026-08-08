@@ -62,4 +62,4 @@ Los `SKILL.md` solo pueden declarar tools existentes y agentes preferidos del ca
 
 ## Commits y releases
 
-No ejecutes `scripts/bump-version.ts` para preparar cambios locales: ese script también añade, crea commit, tag y hace push. Las versiones deben sincronizarse en manifests y lockfile, y la publicación debe realizarse únicamente desde el flujo autorizado de release.
+`scripts/bump-version.ts` (sin `--push`) solo edita manifests y prosa — no toca git. Con `--push` sí commitea, tagea y hace push, pero pide confirmación explícita antes de publicar. La publicación real (npm, Docker, instaladores de escritorio) ocurre exclusivamente en `.github/workflows/release.yml`, disparado por el push del tag. Ver la [guía de versionado](docs/guides/versionado.md) para el flujo completo.

@@ -207,14 +207,17 @@ export async function handleTriggerUpdate(
         break
         
       case "binary":
+        // Este gateway compilado corre embebido dentro de la app de
+        // escritorio (Tauri) — GitHub Releases ya no publica binarios
+        // standalone sueltos, así que no hay un "archivo" que reemplazar
+        // manualmente. La actualización real la maneja el updater de Tauri.
         return addCorsHeaders(Response.json({
           success: false,
-          error: "Para actualizar el binario, descarga la última versión desde https://github.com/johpaz/hive/releases/latest",
+          error: "La app de escritorio se actualiza sola. Si no viste el aviso de actualización, reinícia la app o descarga el instalador más reciente.",
           instructions: [
-            "1. Visita https://github.com/johpaz/hive/releases/latest",
-            "2. Descarga el binario para tu sistema operativo",
-            "3. Reemplaza el archivo existente",
-            "4. Ejecuta: hive start"
+            "1. La app revisa actualizaciones al iniciar y las instala automáticamente",
+            "2. Si el aviso no aparece, cierra y volvé a abrir la app",
+            "3. Alternativa manual: descargá el instalador de tu sistema desde https://github.com/johpaz/hive/releases/latest y ejecutalo — reemplaza la instalación existente"
           ]
         }), req)
         

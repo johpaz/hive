@@ -2,12 +2,14 @@
 
 ## Requisitos
 
-Para usar el repositorio se requiere Bun 1.3.x y Git. Docker o los binarios de release no necesitan un runtime JavaScript instalado.
+Para usar el repositorio se requiere Bun 1.3.x y Git. Docker y la app de escritorio no necesitan ningún runtime JavaScript instalado: el gateway va embebido.
 
 ## Desde npm con Bun
 
+El paquete publicado en npm **requiere Bun** como runtime — no funciona con Node. `dist/hive.js` lleva `#!/usr/bin/env bun` y usa APIs exclusivas de Bun (`Bun.spawn`, `Bun.serve`, `Bun.file`, etc.). `npm install -g` funciona porque solo descarga el paquete, pero `hive` no arranca sin Bun instalado en el `PATH`.
+
 ```bash
-bun add --global @johpaz/hive-agents@1.0.2
+bun add --global @johpaz/hive-agents@1.0.1
 hive start
 ```
 
@@ -34,22 +36,48 @@ Este comando construye la UI y usa un `HIVE_HOME` de desarrollo separado.
 docker run --name hive \
   -p 18790:18790 \
   -v hive-data:/root/.hive \
-  johpaz/hive-agents:1.0.2
+  johpaz/hive-agents:1.0.1
 ```
 
 El volumen conserva HiveDB, configuración, credenciales de canales y artefactos. No expongas el puerto directamente a Internet; usa un proxy TLS y conserva la autenticación.
 
-## Binarios
+### Despliegue en VPS
 
-Los artefactos de una release 1.0.0 siguen estos nombres:
+Para un servidor con dominio propio (por ejemplo detrás de Traefik), usa `docker-compose.hostinguer.yml` como referencia: agrega las labels de enrutamiento, TLS automático (`certresolver`) y cabeceras HSTS sobre el mismo `docker-compose.yml` base. Asume una red Docker externa ya creada (`n8n_evoapi` en el archivo de ejemplo — cambiala por la tuya) y toma `HIVE_DOMAIN` y opcionalmente `HIVE_PUBLIC_URL` del entorno:
 
-- `hive-v1.0.0-linux-x64`
-- `hive-v1.0.0-linux-arm64`
-- `hive-v1.0.0-macos-x64`
-- `hive-v1.0.0-macos-arm64`
-- `hive-v1.0.0-windows-x64.exe`
+```bash
+docker network create n8n_evoapi   # si todavía no existe
+HIVE_DOMAIN=hive.tu-dominio.com HIVE_PUBLIC_URL=https://hive.tu-dominio.com \
+  docker compose -f docker-compose.hostinguer.yml up -d
+```
 
-Descárgalos desde la release correspondiente, concede permiso de ejecución en Linux/macOS y ejecuta `hive start` — abre el asistente de configuración en el navegador la primera vez.
+El repo también trae utilidades de conveniencia para arrancar localmente (`hive-docker.sh`, `start.sh`) y para construir y publicar la imagen a mano (`build.sh`). Sobre `build.sh --push`: construye **solo para la arquitectura de la máquina donde corre** (sin `buildx`, sin multi-arch) — si lo corrés desde un Mac ARM, el `latest` que sube pisa el manifiesto `linux/amd64,linux/arm64` que produce el release oficial. Para un VPS, preferí siempre la imagen publicada por el pipeline de release (`johpaz/hive-agents:<versión>`) en vez de reconstruir localmente.
+
+## App de escritorio
+
+La app de escritorio (Windows, macOS, Linux) no requiere Bun, Docker ni Git: es un shell [Tauri](https://tauri.app) que trae el gateway embebido como proceso secundario y lo levanta al abrir la ventana.
+
+Descarga el instalador de tu sistema desde la [última versión](https://github.com/johpaz/hive/releases/latest):
+
+| Sistema | Instaladores |
+|---|---|
+| Windows | `Hive Agents_<versión>_x64-setup.exe`, `Hive Agents_<versión>_x64_en-US.msi` |
+| macOS | `Hive Agents_<versión>_x86_64.dmg`, `Hive Agents_<versión>_aarch64.dmg` |
+| Linux | `Hive Agents_<versión>_amd64.deb`, `Hive Agents-<versión>-1.x86_64.rpm`, `Hive Agents_<versión>_amd64.AppImage`, `Hive-<versión>-linux-x86_64.flatpak` |
+
+La app se autoactualiza: revisa nuevas versiones contra el manifiesto publicado en cada release y las instala sin pasos manuales.
+
+### El sistema operativo advierte que el instalador no es de confianza
+
+Los instaladores **no están firmados con un certificado de plataforma** (Apple Developer ID o Authenticode de Windows) — sí van firmados internamente para el mecanismo de autoactualización, pero eso no evita el aviso del sistema operativo en la primera instalación:
+
+- **macOS**: Gatekeeper bloquea la app con "está dañada" o "no se puede verificar el desarrollador". Quita el atributo de cuarentena:
+  ```bash
+  xattr -dr com.apple.quarantine "/Applications/Hive Agents.app"
+  ```
+  o hacé clic derecho sobre la app → "Abrir" → confirmar en el diálogo.
+- **Windows**: SmartScreen muestra "Windows protegió tu PC". Hacé clic en "Más información" → "Ejecutar de todas formas".
+- **Linux**: no aplica — deb/rpm/AppImage/Flatpak no pasan por ningún gatekeeper del sistema.
 
 ## Migrar desde 0.0.x
 

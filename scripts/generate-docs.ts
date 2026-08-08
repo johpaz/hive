@@ -14,7 +14,13 @@ const packagePaths = [
   "packages/hive-ui/package.json",
   "packages/mcp/package.json",
   "packages/skills/package.json",
+  // La app de escritorio vive fuera de `workspaces` (apps/*, no packages/*),
+  // así que sin listarla aquí ningún gate detecta que quedó desincronizada.
+  "apps/hive-desktop/package.json",
+  "apps/hive-desktop/src-tauri/tauri.conf.json",
 ];
+// Cargo.toml no es JSON — se valida aparte con un regex en validateContracts().
+const desktopCargoTomlPath = "apps/hive-desktop/src-tauri/Cargo.toml";
 const categories = ["filesystem", "web", "cron", "cli", "agents", "a2ui", "core", "office", "api"];
 
 function markdown(value: unknown): string {
@@ -68,6 +74,11 @@ function validateContracts(tools: ReturnType<typeof createAllTools>, skills: Ret
       }
     }
   }
+
+  const cargoToml = readFileSync(resolve(root, desktopCargoTomlPath), "utf8");
+  const cargoVersion = cargoToml.match(/^version = "([\d.]+)"/m)?.[1];
+  if (!cargoVersion) errors.push(`${desktopCargoTomlPath}: no se encontró una línea "version = ..." en [package]`);
+  else if (cargoVersion !== expectedVersion) errors.push(`${desktopCargoTomlPath}: versión ${cargoVersion} != ${expectedVersion}`);
 
   for (const skill of skills) {
     for (const tool of skill.tools) {
@@ -157,7 +168,9 @@ function renderInventory(): string {
     "",
     "| Paquete | Versión |",
     "|---|---:|",
-    ...manifests.map(({ pkg }) => `| \`${markdown(pkg.name)}\` | \`${markdown(pkg.version)}\` |`),
+    // tauri.conf.json no tiene campo "name" (usa "productName"/"identifier");
+    // se muestra la ruta del archivo para esas filas en vez de una celda vacía.
+    ...manifests.map(({ path, pkg }) => `| \`${markdown(pkg.name ?? path)}\` | \`${markdown(pkg.version)}\` |`),
     "",
     `## Herramientas (${tools.length})`,
     "",
