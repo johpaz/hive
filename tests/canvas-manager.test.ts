@@ -94,6 +94,26 @@ describe("A2UI session manager", () => {
     ).toBe(false);
   });
 
+  it("keeps surface discovery and replay isolated per session", async () => {
+    await manager.sendA2UIMessage("session-1", "a2ui:createSurface", {
+      surfaceId: "private-1",
+      catalogId: "basic",
+    });
+
+    expect(manager.getA2UISurfaces("session-1")).toEqual([{
+      surfaceId: "private-1",
+      catalogId: "basic",
+      theme: undefined,
+      hasComponents: false,
+      hasDataModel: false,
+    }]);
+    expect(manager.getA2UISurfaces("session-2")).toEqual([]);
+
+    const otherSession = createMockWebSocket();
+    manager.registerSession("session-2", otherSession);
+    expect(otherSession.messages.some((message) => message.includes("private-1"))).toBe(false);
+  });
+
   it("clears sessions and replay state", async () => {
     const ws = createMockWebSocket();
     manager.registerSession("session-1", ws);

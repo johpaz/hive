@@ -7,6 +7,14 @@ export interface WebSocketLike {
   close(code?: number, reason?: string): void;
 }
 
+export interface A2UISurfaceInfo {
+  surfaceId: string;
+  catalogId?: string;
+  theme?: Record<string, unknown>;
+  hasComponents: boolean;
+  hasDataModel: boolean;
+}
+
 export const WebSocketState = {
   CONNECTING: 0,
   OPEN: 1,
@@ -22,7 +30,10 @@ interface A2UISurfaceCache {
 
 export class CanvasManager {
   private sessions: Map<string, WebSocketLike> = new Map();
-  private a2uiCache: Map<string, A2UISurfaceCache> = new Map();
+  // Surfaces belong to a canvas session. Keeping this scoped prevents a
+  // desktop reconnect (or another user) from receiving a surface addressed
+  // to a different session and makes surface discovery deterministic.
+  private a2uiCache: Map<string, Map<string, A2UISurfaceCache>> = new Map();
   private log = logger.child("canvas");
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -69,8 +80,11 @@ export class CanvasManager {
     // Notify the client that the session is registered
     ws.send(JSON.stringify({ type: "canvas:connected", sessionId }));
 
-    // Replay any cached A2UI surfaces so late-connecting clients get current state
-    for (const [surfaceId, cache] of this.a2uiCache) {
+    // Replay cached A2UI surfaces for this session so late-connecting clients
+    // get current state without leaking another session's surfaces.
+    const sessionSurfaces = this.a2uiCache.get(sessionId) ?? new Map();
+    this.a2uiCache.set(sessionId, sessionSurfaces);
+    for (const [surfaceId, cache] of sessionSurfaces) {
       try {
         ws.send(JSON.stringify({ type: "a2ui:createSurface", data: cache.createData }));
         if (cache.components && cache.components.length > 0) {
@@ -96,13 +110,15 @@ export class CanvasManager {
     // Update A2UI cache so late-connecting clients can receive current state
     const surfaceId = data.surfaceId as string | undefined;
     if (surfaceId) {
+      const sessionSurfaces = this.a2uiCache.get(sessionId) ?? new Map<string, A2UISurfaceCache>();
+      this.a2uiCache.set(sessionId, sessionSurfaces);
       if (messageType === "a2ui:createSurface") {
-        this.a2uiCache.set(surfaceId, { createData: data });
+        sessionSurfaces.set(surfaceId, { createData: data });
       } else if (messageType === "a2ui:updateComponents") {
-        const cached = this.a2uiCache.get(surfaceId);
+        const cached = sessionSurfaces.get(surfaceId);
         if (cached) cached.components = data.components as unknown[];
       } else if (messageType === "a2ui:updateDataModel") {
-        const cached = this.a2uiCache.get(surfaceId);
+        const cached = sessionSurfaces.get(surfaceId);
         if (cached) {
           const path = data.path as string | undefined;
           const value = data.value as Record<string, unknown>;
@@ -116,7 +132,7 @@ export class CanvasManager {
           }
         }
       } else if (messageType === "a2ui:deleteSurface") {
-        this.a2uiCache.delete(surfaceId);
+        sessionSurfaces.delete(surfaceId);
       }
     }
 
@@ -148,6 +164,19 @@ export class CanvasManager {
       totalSessions: this.sessions.size,
       activeSessions: this.getConnectedSessions().length,
     };
+  }
+
+  getA2UISurfaces(sessionId: string): A2UISurfaceInfo[] {
+    const surfaces = this.a2uiCache.get(sessionId);
+    if (!surfaces) return [];
+
+    return Array.from(surfaces.entries()).map(([surfaceId, cache]) => ({
+      surfaceId,
+      catalogId: cache.createData.catalogId as string | undefined,
+      theme: cache.createData.theme as Record<string, unknown> | undefined,
+      hasComponents: Boolean(cache.components?.length),
+      hasDataModel: Boolean(cache.dataModel && Object.keys(cache.dataModel).length > 0),
+    }));
   }
 
   clearAll(): void {

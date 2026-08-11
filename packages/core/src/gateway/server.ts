@@ -48,6 +48,8 @@ import { handleGetAgents, handleCreateAgent, handleUpdateAgent, handleDeleteAgen
 import { handleGetProviders, handleCreateProvider, handleToggleProvider, handleUpdateProvider, handleSyncProviderModels, handleGetProviderAvailableModels, handleLoadHiveAgentsModel, handleGetHiveAgentsModelStatus } from "./routes/providers";
 import { handleGetUsers, handleCreateUser, handleUpdateUserSettings, handleGetUserChannels, handleLinkUserChannel } from "./routes/users";
 import { handleGetSkills, handleActivateSkill, handleUpdateSkill, handleDeleteSkill, handleCreateSkill } from "./routes/skills";
+import { handleGetA2UISurfaces, handleDeleteA2UISurface } from "./routes/a2ui";
+import { handleGetRuntimeStatus } from "./routes/runtime";
 import { handleGetEthics, handleActivateEthics, handleDeleteEthics } from "./routes/ethics";
 import { handleGetTools, handleActivateTool, handleUpdateTool } from "./routes/tools";
 import { handleGetTasks, handleUpdateTask } from "./routes/tasks";
@@ -1005,6 +1007,20 @@ export async function startGateway(
         // GET /api/setup/status
         if (url.pathname === "/api/setup/status" || url.pathname === "/api/setup/status/") {
           return addCorsHeaders(await handleSetupStatus(), req)
+        }
+
+        // GET /api/a2ui/surfaces — exact surface IDs for the authenticated canvas session
+        if ((url.pathname === "/api/a2ui/surfaces" || url.pathname === "/api/a2ui/surfaces/") && req.method === "GET") {
+          return await handleGetA2UISurfaces(req, addCorsHeaders)
+        }
+        const a2uiSurfaceMatch = url.pathname.match(/^\/api\/a2ui\/surfaces\/([^/]+)$/)
+        if (a2uiSurfaceMatch && req.method === "DELETE") {
+          return await handleDeleteA2UISurface(req, addCorsHeaders)
+        }
+
+        // GET /api/system/runtime — catalog/sidecar diagnostics for desktop support
+        if ((url.pathname === "/api/system/runtime" || url.pathname === "/api/system/runtime/") && req.method === "GET") {
+          return await handleGetRuntimeStatus(req, addCorsHeaders)
         }
 
         // GET /api/setup/providers

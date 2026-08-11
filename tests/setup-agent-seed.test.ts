@@ -41,6 +41,24 @@ describe("catalog agents after boot", () => {
 });
 
 describe("saveAgentConfig", () => {
+  test("seeds a coordinator prompt with the specialist map and delegation priority", async () => {
+    const coordinatorId = await saveAgentConfig({
+      userId: "user-1",
+      agentName: "Bee",
+      tone: "friendly",
+      providerId: "gemini",
+      modelId: "gemini-3.6-flash",
+    });
+
+    const prompt = (await agent(coordinatorId)).system_prompt;
+    expect(prompt).toContain("## 2. MAPA RÁPIDO DE ESPECIALISTAS");
+    expect(prompt).toContain("`a2ui_builder`: construye formularios, dashboards y flujos interactivos A2UI.");
+    expect(prompt).toContain("`software_engineer`: implementa, depura y prueba software en un repositorio.");
+    expect(prompt).toContain("primero elegí un agente de este mapa");
+    expect(prompt).toContain("verificá antes que aparezca activo en la COLMENA");
+    expect(prompt.indexOf("task_delegate")).toBeLessThan(prompt.indexOf("search_knowledge"));
+  });
+
   test("seeds every catalog agent with the coordinator's provider/model", async () => {
     const agentId = await saveAgentConfig({
       userId: "user-1",

@@ -14,6 +14,9 @@ import { normalizeUserEmail } from "../../storage/user-email"
 import { catalogModelKey, wireModelId } from "../../storage/model-id"
 import { getHiveDir } from "../../config/loader"
 import type { Config } from "../../config/loader"
+import { logger } from "../../utils/logger"
+
+const log = logger.child("setup")
 
 export async function handleSetupProviders(
   addCorsHeaders: (response: Response, request: Request) => Response,
@@ -139,7 +142,17 @@ export async function handleSetupStatus(): Promise<Response> {
  * Si el usuario apunta uno a un proxy propio, la verificación usa ese endpoint y
  * no uno fijo en el código.
  */
-const OPENAI_COMPAT_PING = new Set(["nvidia", "z-ai", "minimax", "qwen", "opencode-go", "modelscope"])
+const OPENAI_COMPAT_PING = new Set(["z-ai", "minimax", "qwen", "opencode-go"])
+
+/**
+ * Providers cuyo GET /models es público (no exige Authorization) — NVIDIA y
+ * ModelScope responden 200 con dummy key, así que ese endpoint sólo sirve para
+ * descubrir un modelo vivo, no para validar la key. Para eso se prueba una
+ * completion real con el primer modelo de ese mismo listado (nunca uno
+ * retirado, porque sale del catálogo vivo y no del seed) y se juzga la key por
+ * el status de esa respuesta.
+ */
+const PUBLIC_MODEL_LIST = new Set(["nvidia", "modelscope"])
 
 /** base_url del provider tal como está en la BD. */
 async function providerBaseUrl(providerId: string): Promise<string | null> {
@@ -153,7 +166,12 @@ async function providerBaseUrl(providerId: string): Promise<string | null> {
 
 export async function handleVerifyProvider(req: Request): Promise<Response> {
   const body = await req.json().catch(() => ({}))
-  const { provider, apiKey, model } = body
+  const { provider } = body
+  // Trim: un \n o espacio colgado del copy-paste (típico al pegar desde un
+  // .txt o la terminal) es invisible en el input pero hace que `fetch()`
+  // explote al armar el header `Authorization: Bearer <key>` — antes de
+  // mandar nada, con un error críptico del runtime en vez de un 401 claro.
+  const apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : body.apiKey
 
   if (!provider || !apiKey) {
     return Response.json({
@@ -163,24 +181,17 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
   }
 
   try {
+    // Verificación por listado de modelos (GET, sin costo) en vez de armar una
+    // completion real con un modelo "de prueba" adivinado del catálogo. Ese
+    // enfoque anterior fallaba con key válida cuando el modelo elegido estaba
+    // retirado (NVIDIA da 410 Gone en modelos de baja) o el provider exigía un
+    // parámetro distinto para ese modelo puntual (p.ej. modelos de razonamiento
+    // de OpenAI que rechazan `max_tokens`). El dashboard (agregar/editar
+    // provider) nunca tuvo este problema porque sólo lista modelos — acá se
+    // alinea a lo mismo, y de paso deja de gastar tokens en cada click de
+    // "Verificar".
     let testUrl: string | null = null
-    let testBody: unknown = null
     let headers: Record<string, string> = {}
-
-    const testMessages = [{ role: "user" as const, content: "Say 'ok' if you can read this." }]
-
-    // Modelo de prueba: el indicado en el request, o el primer modelo LLM del provider en la BD
-    let pingModel: string | undefined = model
-    if (!pingModel) {
-      try {
-        const modelsCol = await col<ModelDoc>("models")
-        const candidates = (await modelsCol.findBy("provider_id", provider)).filter(e => e.doc.model_type === "llm")
-        const best = [...candidates].sort((a, b) => Number(b.doc.active) - Number(a.doc.active))[0]
-        // El id de la BD viene prefijado en los providers revendedores; acá se
-        // arma el fetch a mano, así que hay que mandar el nombre del cable.
-        pingModel = best ? wireModelId(provider, best.doc.id) : undefined
-      } catch { /* DB may not be initialized yet during early setup — ignore */ }
-    }
 
     if (provider === "ollama") {
       const ollamaUrl = process.env.OLLAMA_HOST || "http://localhost:11434"
@@ -201,95 +212,35 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
     }
 
     if (provider === "anthropic") {
-      testUrl = "https://api.anthropic.com/v1/messages"
-      testBody = {
-        model: pingModel || "claude-sonnet-5",
-        max_tokens: 10,
-        messages: testMessages,
-      }
+      testUrl = "https://api.anthropic.com/v1/models"
       headers = {
-        "Content-Type": "application/json",
         "x-api-key": apiKey,
         "anthropic-version": "2023-06-01",
         "anthropic-dangerous-direct-browser-access": "true",
       }
     } else if (provider === "openai") {
-      testUrl = "https://api.openai.com/v1/chat/completions"
-      testBody = {
-        model: pingModel || "gpt-5.6-luna",
-        max_tokens: 10,
-        messages: testMessages,
-      }
-      headers = {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      }
+      testUrl = "https://api.openai.com/v1/models"
+      headers = { "Authorization": `Bearer ${apiKey}` }
     } else if (provider === "gemini") {
-      testUrl = `https://generativelanguage.googleapis.com/v1beta/models/${pingModel || "gemini-3.6-flash"}:generateContent?key=${apiKey}`
-      testBody = {
-        contents: [{ parts: [{ text: "Say ok" }] }],
-      }
-      headers = { "Content-Type": "application/json" }
+      testUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
     } else if (provider === "groq") {
-      testUrl = "https://api.groq.com/openai/v1/chat/completions"
-      testBody = {
-        model: pingModel || "llama-3.3-70b-versatile",
-        max_tokens: 10,
-        messages: testMessages,
-      }
-      headers = {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      }
+      testUrl = "https://api.groq.com/openai/v1/models"
+      headers = { "Authorization": `Bearer ${apiKey}` }
     } else if (provider === "openrouter") {
-      testUrl = "https://openrouter.ai/api/v1/chat/completions"
-      testBody = {
-        model: pingModel || "anthropic/claude-sonnet-5",
-        max_tokens: 10,
-        messages: testMessages,
-      }
-      headers = {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      }
+      // /api/v1/models es público y responde 200 sin auth — no sirve para
+      // validar la key. /api/v1/key sí la exige.
+      testUrl = "https://openrouter.ai/api/v1/key"
+      headers = { "Authorization": `Bearer ${apiKey}` }
     } else if (provider === "mistral") {
-      testUrl = "https://api.mistral.ai/v1/chat/completions"
-      testBody = {
-        model: pingModel || "mistral-small-latest",
-        max_tokens: 10,
-        messages: testMessages,
-      }
-      headers = {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      }
+      testUrl = "https://api.mistral.ai/v1/models"
+      headers = { "Authorization": `Bearer ${apiKey}` }
     } else if (provider === "deepseek") {
-      testUrl = "https://api.deepseek.com/v1/chat/completions"
-      testBody = {
-        model: pingModel || "deepseek-v4-flash",
-        max_tokens: 10,
-        messages: testMessages,
-      }
-      headers = {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      }
+      testUrl = "https://api.deepseek.com/v1/models"
+      headers = { "Authorization": `Bearer ${apiKey}` }
     } else if (provider === "kimi") {
-      testUrl = "https://api.moonshot.ai/v1/chat/completions"
-      testBody = {
-        model: pingModel || "kimi-k3",
-        max_tokens: 10,
-        messages: testMessages,
-      }
-      headers = {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      }
-    } else if (OPENAI_COMPAT_PING.has(provider)) {
-      // Resto de providers OpenAI-compatibles: mismo shape de request, sólo
-      // cambia el host. Sin esto, verificar su API key devolvía "Unsupported
-      // provider" aunque el provider funcionara perfectamente.
-      // Host y modelo salen de la BD; no hay catálogo fijo acá.
+      testUrl = "https://api.moonshot.ai/v1/models"
+      headers = { "Authorization": `Bearer ${apiKey}` }
+    } else if (PUBLIC_MODEL_LIST.has(provider)) {
       const baseUrl = (await providerBaseUrl(provider))?.replace(/\/+$/, "")
       if (!baseUrl) {
         return Response.json({
@@ -297,22 +248,79 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
           error: `El provider "${provider}" no tiene base_url configurada. Agregala en su configuración.`,
         })
       }
-      if (!pingModel) {
+      // Modelos que ya verificamos manualmente como chat/tool-calling en el
+      // seed (storage/seed.ts) — van primero porque son los que más chance
+      // tienen de estar habilitados para la cuenta. El listado público de
+      // NVIDIA mezcla chat con embeddings/rerank (p.ej. `baai/bge-m3`), que
+      // jamás van a responder en /chat/completions sea cual sea la key.
+      let curatedModels: string[] = []
+      try {
+        const modelsCol = await col<ModelDoc>("models")
+        curatedModels = (await modelsCol.findBy("provider_id", provider))
+          .filter(e => e.doc.model_type === "llm")
+          .map(e => wireModelId(provider, e.doc.id))
+      } catch { /* DB puede no estar lista en early setup — se sigue con el catálogo vivo */ }
+
+      let liveModels: string[] = []
+      try {
+        const listRes = await fetch(`${baseUrl}/models`, { signal: AbortSignal.timeout(10000) })
+        const listData = await listRes.json() as { data?: Array<{ id: string }> }
+        const NON_CHAT = /embed|rerank|bge|colbert|clip|e5-|gte-|whisper|tts|guard/i
+        liveModels = (listData.data ?? [])
+          .map(m => m.id)
+          .filter(id => id && !NON_CHAT.test(id))
+      } catch { /* liveModels queda vacío, se sigue con lo curado si hay */ }
+
+      const candidates = [...new Set([...curatedModels, ...liveModels])].slice(0, 6)
+      if (candidates.length === 0) {
         return Response.json({
           success: false,
-          error: `El provider "${provider}" no tiene modelos en el catálogo para probar la key.`,
+          error: `No se pudo obtener el catálogo de modelos de "${provider}" para probar la key.`,
         })
       }
-      testUrl = `${baseUrl}/chat/completions`
-      testBody = {
-        model: pingModel,
-        max_tokens: 10,
-        messages: testMessages,
+      // El catálogo público de NVIDIA lista modelos que no siempre están
+      // habilitados para la cuenta puntual (404 "Function not found for
+      // account" aunque la key sea válida) — se prueban varios candidatos y
+      // sólo un 401/403 real se toma como key inválida. Cualquier otro error
+      // (404, 410, etc.) pasa al siguiente candidato.
+      let lastStatus = 0
+      let lastBody = ""
+      for (const candidate of candidates) {
+        const pingRes = await fetch(`${baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+          body: JSON.stringify({
+            model: candidate,
+            max_tokens: 10,
+            messages: [{ role: "user", content: "Say 'ok' if you can read this." }],
+          }),
+          signal: AbortSignal.timeout(10000),
+        })
+        if (pingRes.ok) return Response.json({ success: true, error: null })
+        lastStatus = pingRes.status
+        lastBody = (await pingRes.text()).slice(0, 300)
+        if (pingRes.status === 401 || pingRes.status === 403) break // key inválida, no tiene sentido seguir probando
+        log.warn(`verify-provider ${provider}: modelo=${candidate} status=${pingRes.status} body=${lastBody} — probando siguiente candidato`)
       }
-      headers = {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
+      log.warn(`verify-provider ${provider} falló tras ${candidates.length} candidato(s): último status=${lastStatus} body=${lastBody}`)
+      return Response.json({
+        success: false,
+        error: `API error: ${lastStatus}`,
+      })
+    } else if (OPENAI_COMPAT_PING.has(provider)) {
+      // Resto de providers OpenAI-compatibles: mismo shape de request, sólo
+      // cambia el host. Sin esto, verificar su API key devolvía "Unsupported
+      // provider" aunque el provider funcionara perfectamente.
+      // Host sale de la BD; no hay catálogo fijo acá.
+      const baseUrl = (await providerBaseUrl(provider))?.replace(/\/+$/, "")
+      if (!baseUrl) {
+        return Response.json({
+          success: false,
+          error: `El provider "${provider}" no tiene base_url configurada. Agregala en su configuración.`,
+        })
       }
+      testUrl = `${baseUrl}/models`
+      headers = { "Authorization": `Bearer ${apiKey}` }
     }
 
     if (provider === "hiveagents") {
@@ -347,20 +355,31 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
     }
 
     const response = await fetch(testUrl, {
-      method: "POST",
+      method: "GET",
       headers,
-      body: JSON.stringify(testBody),
       signal: AbortSignal.timeout(10000),
     })
+
+    if (!response.ok) {
+      log.warn(`verify-provider ${provider} falló: url=${testUrl} status=${response.status} body=${(await response.text()).slice(0, 300)}`)
+    }
 
     return Response.json({
       success: response.ok,
       error: response.ok ? null : `API error: ${response.status}`,
     })
   } catch (error) {
+    const message = (error as Error).message
+    log.warn(`verify-provider ${provider} excepción: ${message}`)
+    // fetch() rechaza el request antes de mandarlo si el header Authorization
+    // trae un carácter inválido (control chars, no-ASCII) — pasa con keys
+    // pegadas con basura invisible en el medio, no sólo al final.
+    const isHeaderError = /header/i.test(message) && /invalid/i.test(message)
     return Response.json({
       success: false,
-      error: `Connection error: ${(error as Error).message}`,
+      error: isHeaderError
+        ? "La API key tiene caracteres inválidos (revisá que no tenga saltos de línea o espacios raros al copiarla)."
+        : `Connection error: ${message}`,
     })
   }
 }

@@ -109,17 +109,23 @@ Examples:
 `;
 
 async function main(): Promise<void> {
-  // In compiled Bun binaries, process.argv is [binaryPath, arg0, arg1, ...]
-  // In dev mode (bun run script.ts), it is [bun, scriptPath, arg0, arg1, ...]
-  // We detect dev mode by checking if argv[1] ends with .ts
-  const isDev = process.argv[1]?.endsWith(".ts");
-  // Skip bun executable and script path in dev mode
-  const args = process.argv.slice(isDev ? 2 : 1);
-  // Skip script path in compiled mode (first arg is the script/binary path)
-  const normalizedArgs = args[0]?.includes("\\") || args[0]?.includes("/") ? args.slice(1) : args;
+  // Bun uses different argv layouts for `bun script.ts`, `bun run`, and
+  // compiled binaries. A compiled binary can inject its bundled entrypoint
+  // (for example `/$bunfs/root/index.js`) before the real arguments. Find the
+  // first known CLI token instead of assuming a fixed offset.
+  const commandTokens = new Set([
+    "dev", "start", "stop", "reload", "status", "chat", "logs", "message",
+    "agent", "agents", "mcp", "skills", "config", "sessions", "cron", "causal",
+    "doctor", "security", "install-service", "update", "migrate",
+    "--version", "-v", "version", "--help", "-h", "help",
+  ]);
+  const rawArgs = process.argv.slice(1);
+  const commandIndex = rawArgs.findIndex((arg) => commandTokens.has(arg));
+  const normalizedArgs = commandIndex >= 0 ? rawArgs.slice(commandIndex) : rawArgs;
   const command = normalizedArgs[0];
   const subcommand = normalizedArgs[1];
   const flags = normalizedArgs.filter((a) => a.startsWith("--"));
+  const commandArgs = normalizedArgs.slice(2);
 
   switch (command) {
     case "dev":
@@ -144,31 +150,31 @@ async function main(): Promise<void> {
       await logs(flags);
       break;
     case "message":
-      await message(subcommand, args.slice(2));
+      await message(subcommand, commandArgs);
       break;
     case "agent":
-      await agent(subcommand, args.slice(2));
+      await agent(subcommand, commandArgs);
       break;
     case "agents":
-      await agents(subcommand, args.slice(2));
+      await agents(subcommand, commandArgs);
       break;
     case "mcp":
-      await mcp(subcommand, args.slice(2));
+      await mcp(subcommand, commandArgs);
       break;
     case "skills":
-      await skills(subcommand, args.slice(2));
+      await skills(subcommand, commandArgs);
       break;
     case "config":
-      await config(subcommand, args.slice(2));
+      await config(subcommand, commandArgs);
       break;
     case "sessions":
-      await sessions(subcommand, args.slice(2));
+      await sessions(subcommand, commandArgs);
       break;
     case "cron":
-      await cron(subcommand, args.slice(2));
+      await cron(subcommand, commandArgs);
       break;
     case "causal":
-      await causal(subcommand, args.slice(2));
+      await causal(subcommand, commandArgs);
       break;
     case "doctor":
       await doctor();

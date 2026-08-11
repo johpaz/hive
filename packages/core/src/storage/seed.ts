@@ -290,15 +290,17 @@ export const SEED_DATA: SeedData = {
     // Solo los mejores modelos agénticos (tool calling) del catálogo vivo. NVIDIA
     // retira modelos del endpoint sin avisar y responde 410 Gone al llamarlos, así
     // que esta lista se valida contra /v1/models — no contra la web de build.nvidia.com,
-    // que sigue mostrando fichas de modelos ya retirados. Verificado 2026-08-03.
+    // que sigue mostrando fichas de modelos ya retirados. Verificado 2026-08-11.
     // Nota: Qwen ya no tiene ningún modelo en el catálogo NVIDIA (todos retirados);
     // para Qwen usar el provider `qwen` (DashScope) directamente.
+    // DeepSeek V4 Pro (deepseek-ai/deepseek-v4-pro) se sacó: devuelve 404
+    // "Function not found for account" en cuentas normales — no está habilitado
+    // de forma general aunque figure en el listado público de /v1/models.
     { id: "z-ai/glm-5.2", providerId: "nvidia", name: "GLM 5.2 (NVIDIA)", modelType: "llm", contextWindow: 200000, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "moonshotai/kimi-k2.6", providerId: "nvidia", name: "Kimi K2.6 (NVIDIA)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "vision", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "minimaxai/minimax-m3", providerId: "nvidia", name: "MiniMax M3 (NVIDIA)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "nvidia/nemotron-3-ultra-550b-a55b", providerId: "nvidia", name: "Nemotron 3 Ultra 550B", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "nvidia/nemotron-3-super-120b-a12b", providerId: "nvidia", name: "Nemotron 3 Super 120B", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
-    { id: "deepseek-ai/deepseek-v4-pro", providerId: "nvidia", name: "DeepSeek V4 Pro (NVIDIA)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
 
     // ── ModelScope Qwen (fuente: GET https://api-inference.modelscope.ai/v1/models) ──
     // Endpoint gratuito dentro de cuota (2000 llamadas/día, ≤500 por modelo), por
@@ -512,6 +514,15 @@ const RETIRED_CATALOG_AGENT_IDS = [
   // delivery itself in the closing turn — no extra agent loop per task.
   "acceptance_verifier",
 ];
+
+function parseSkillList(value: string | null | undefined): string[] {
+  try {
+    const parsed = value ? JSON.parse(value) : [];
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 const LEGACY_CRON_PERSONA = {
   id: "schedule_automation_agent",
@@ -799,6 +810,7 @@ export async function seedAllData(): Promise<void> {
     // rows. Existing user choices remain untouched; narrowly identified
     // factory values from older releases are migrated in place.
     let catalogAgentCount = 0;
+    let repairedCatalogSkills = 0;
     for (const catalogAgent of createSeedCatalogAgents()) {
       await putIfAbsent(agentsCol, catalogAgent.id, catalogAgent);
       const existing = await agentsCol.get(catalogAgent.id);
@@ -815,6 +827,20 @@ export async function seedAllData(): Promise<void> {
       if (reconciled.status === "archived") {
         reconciled = { ...reconciled, status: "idle" };
       }
+
+      // Catalog agents may survive upgrades with an older skills_json. Keep
+      // any user-added skills, but restore every canonical dependency so a
+      // worker cannot reach delegation with a stale/missing reference.
+      const currentSkills = parseSkillList(reconciled.skills_json);
+      const missingCatalogSkills = parseSkillList(catalogAgent.skills_json)
+        .filter((id) => !currentSkills.includes(id));
+      if (missingCatalogSkills.length > 0) {
+        reconciled = {
+          ...reconciled,
+          skills_json: JSON.stringify([...currentSkills, ...missingCatalogSkills]),
+        };
+        repairedCatalogSkills += missingCatalogSkills.length;
+      }
       if (JSON.stringify(reconciled) !== JSON.stringify(existing.doc)) {
         await agentsCol.put(
           existing.id,
@@ -825,6 +851,9 @@ export async function seedAllData(): Promise<void> {
       catalogAgentCount++;
     }
     log.info(`[seed] ✅ ${catalogAgentCount} catalog agents ensured`);
+    if (repairedCatalogSkills > 0) {
+      log.info(`[seed] 🔧 Restauradas ${repairedCatalogSkills} dependencia(s) de skills en agentes de catálogo`);
+    }
 
     // Catalog rows are born without a provider/model (no provider exists at
     // first boot), and setup only runs once — so anything that arrives later

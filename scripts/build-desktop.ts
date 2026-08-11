@@ -53,6 +53,10 @@ try {
   } else if (!existsSync(join(root, "packages", "hive-ui", "dist", "index.html"))) {
     throw new Error("--prebuilt-ui requiere packages/hive-ui/dist/index.html")
   }
+  // The sidecar is the runtime for the installed desktop app. Regenerate the
+  // static skill catalog here so a release cannot accidentally embed an older
+  // catalog than the source tree (the generated file is intentionally ignored).
+  run(["bun", "packages/skills/scripts/generate-bundle.ts"])
   run(["bun", "packages/cli/scripts/generate-ui-bundle.ts"])
   run([
     "bun",

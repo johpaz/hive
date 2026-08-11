@@ -1,17 +1,35 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Layers } from "lucide-react";
+import { Layers, Trash2 } from "lucide-react";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { A2UIRenderer } from "./A2UIRenderer";
 import type { A2UIActionMessage } from "@/types/a2ui";
+import { apiClient } from "@/lib/api";
 
 export function A2UISurfacePanel() {
   const a2uiSurfaces = useCanvasStore((s) => s.a2uiSurfaces);
   const sendA2UIAction = useCanvasStore((s) => s.sendA2UIAction);
+  const deleteA2UISurface = useCanvasStore((s) => s.deleteA2UISurface);
+  const [deletingSurfaceId, setDeletingSurfaceId] = useState<string | null>(null);
 
   const handleA2UIAction = useCallback((action: A2UIActionMessage) => {
     sendA2UIAction(action);
   }, [sendA2UIAction]);
+
+  const handleDeleteSurface = async (surfaceId: string) => {
+    setDeletingSurfaceId(surfaceId);
+    try {
+      await apiClient(`/api/a2ui/surfaces/${encodeURIComponent(surfaceId)}`, {
+        method: "DELETE",
+        showError: true,
+      });
+      deleteA2UISurface(surfaceId);
+    } catch {
+      // apiClient already presents the server error to the user.
+    } finally {
+      setDeletingSurfaceId(null);
+    }
+  };
 
   const surfacesList = Array.from(a2uiSurfaces.values());
   const isEmpty = surfacesList.length === 0;
@@ -41,8 +59,9 @@ export function A2UISurfacePanel() {
                     ? { borderColor: `${surface.theme.primaryColor}33` }
                     : undefined}
                 >
-                  {surface.theme?.agentDisplayName && (
-                    <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/5">
+                  <div className="flex items-center justify-between gap-3 mb-3 pb-3 border-b border-white/5">
+                    {surface.theme?.agentDisplayName ? (
+                      <div className="flex items-center gap-2">
                       {surface.theme.iconUrl && (
                         <img src={surface.theme.iconUrl} alt="" className="w-5 h-5 rounded-full" />
                       )}
@@ -50,8 +69,19 @@ export function A2UISurfacePanel() {
                         style={{ color: surface.theme.primaryColor ?? "#93c5fd" }}>
                         {surface.theme.agentDisplayName}
                       </span>
-                    </div>
-                  )}
+                      </div>
+                    ) : <span className="font-mono text-[10px] text-white/40">{surface.surfaceId}</span>}
+                    <button
+                      type="button"
+                      title={`Eliminar superficie ${surface.surfaceId}`}
+                      aria-label={`Eliminar superficie ${surface.surfaceId}`}
+                      disabled={deletingSurfaceId === surface.surfaceId}
+                      onClick={() => handleDeleteSurface(surface.surfaceId)}
+                      className="rounded-md p-1.5 text-white/25 transition hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                   <A2UIRenderer surface={surface} onAction={handleA2UIAction} />
                 </div>
               ))}

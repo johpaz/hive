@@ -15,6 +15,17 @@ import type { Skill } from "@/types";
 
 const EMPTY_FORM = { name: "", body: "", tools: "", triggers: "", category: "", version: 1, active: true };
 
+interface RuntimeStatus {
+  version: string;
+  hiveHome: string;
+  healthy: boolean;
+  skills: {
+    total: number;
+    active: number;
+    required: Array<{ name: string; present: boolean; active: boolean }>;
+  };
+}
+
 export function SkillsTab() {
   const { skills, isLoading, fetchSkills, toggleSkill, updateSkill } = useSkills();
 
@@ -28,6 +39,7 @@ export function SkillsTab() {
   const [isSaving, setIsSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const adjustHeight = () => {
@@ -36,10 +48,23 @@ export function SkillsTab() {
   };
 
   useEffect(() => {
-    if (editingSkill || isCreating) setTimeout(adjustHeight, 0);
+    if (!editingSkill && !isCreating) return;
+    const timer = setTimeout(adjustHeight, 0);
+    return () => clearTimeout(timer);
   }, [editingSkill, isCreating, editForm.body]);
 
   useEffect(() => { fetchSkills(); }, [fetchSkills]);
+
+  // When the catalog is empty, show whether this is a database problem or an
+  // outdated desktop sidecar. The endpoint contains no secrets or skill body.
+  useEffect(() => {
+    if (skills.length > 0) return;
+    let cancelled = false;
+    apiClient<RuntimeStatus>("/api/system/runtime", { showError: false })
+      .then((status) => { if (!cancelled) setRuntimeStatus(status); })
+      .catch(() => { if (!cancelled) setRuntimeStatus(null); });
+    return () => { cancelled = true; };
+  }, [skills.length]);
 
   const categories = useMemo<string[]>(() => {
     const cats = new Set<string>(skills.map(s => (s.category || "GENERAL").toUpperCase()));
@@ -187,6 +212,8 @@ export function SkillsTab() {
             />
             {searchQuery && (
               <button
+                type="button"
+                aria-label="Limpiar búsqueda"
                 onClick={() => setSearchQuery("")}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-white/20 hover:text-white/60 transition-colors"
               >
@@ -242,8 +269,24 @@ export function SkillsTab() {
             </div>
             <p className="hive-title-section text-center mb-2">No se detectan habilidades</p>
             <p className="text-xs text-white/40 mb-8 max-w-[300px] mx-auto leading-relaxed text-center">
-              El repositorio de habilidades está vacío. Crea una nueva habilidad o visita el Marketplace.
+              El repositorio de habilidades está vacío. Revisa el estado del gateway antes de crear una habilidad.
             </p>
+            {runtimeStatus && (
+              <div className="mb-8 max-w-xl rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-left text-[11px] text-amber-100/70">
+                <p className="font-semibold text-amber-200">Diagnóstico del runtime {runtimeStatus.version}</p>
+                <p className="mt-1 font-mono break-all">HIVE_HOME: {runtimeStatus.hiveHome}</p>
+                <p className="mt-1">
+                  {runtimeStatus.skills.total} skills detectadas, {runtimeStatus.skills.active} activas.
+                  {!runtimeStatus.healthy && " Faltan dependencias del catálogo A2UI."}
+                </p>
+                <p className="mt-1">
+                  Requeridas ausentes/inactivas: {runtimeStatus.skills.required.reduce<string[]>((missing, skill) => {
+                    if (!skill.present || !skill.active) missing.push(skill.name);
+                    return missing;
+                  }, []).join(", ") || "ninguna"}
+                </p>
+              </div>
+            )}
             <Button
               onClick={handleOpenCreate}
               className="hive-btn hive-btn--primary px-8"
