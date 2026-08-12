@@ -208,7 +208,24 @@ jobs:
         # varias causas internas distintas (falla de strip, plugin GTK, permisos,
         # red) — sin esto, tauri-cli se traga la salida real de linuxdeploy y
         # solo queda ese resumen genérico en el log.
-        run: cargo tauri build --config tauri.release.conf.json --bundles "${{ matrix.platform.bundles }}" --verbose
+        #
+        # Reintento: en macOS, bundle_dmg.sh falla de forma intermitente con
+        # "hdiutil: create failed - Resource busy" — un runner de GitHub Actions
+        # con Spotlight indexando o un hdiutil/Finder colgado de background que
+        # sostiene el recurso justo cuando se crea el .dmg. Es transitorio y
+        # conocido en la comunidad de Tauri; el .app ya se armó bien en esos casos,
+        # sólo falla el empaquetado del .dmg. Repetir el build es idempotente
+        # (cargo cachea la compilación, sólo se re-corre el bundling) y casi
+        # siempre pasa al segundo o tercer intento.
+        run: |
+          for attempt in 1 2 3; do
+            if cargo tauri build --config tauri.release.conf.json --bundles "${{ matrix.platform.bundles }}" --verbose; then
+              exit 0
+            fi
+            echo "::warning::cargo tauri build falló (intento $attempt/3) — reintentando en 15s"
+            sleep 15
+          done
+          exit 1
         working-directory: apps/hive-desktop/src-tauri
       - name: Install Flatpak tooling
         if: matrix.platform.flatpak
