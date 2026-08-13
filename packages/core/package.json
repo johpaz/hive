@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-agents-core",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "module",
   "private": true,
   "description": "Hive Gateway — Personal AI agent runtime",
@@ -17,8 +17,8 @@
   },
   "dependencies": {
     "@ag-ui/core": "^0.0.46",
-    "@johpaz/hive-agents-mcp": "^1.0.2",
-    "@johpaz/hive-agents-skills": "^1.0.2",
+    "@johpaz/hive-agents-mcp": "^1.0.3",
+    "@johpaz/hive-agents-skills": "^1.0.3",
     "@johpaz/hive-db": "0.3.1",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@slack/bolt": "^4.7.2",

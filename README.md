@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="Licencia MIT" src="https://img.shields.io/badge/licencia-MIT-3b82f6.svg"></a>
-  <img alt="Versión" src="https://img.shields.io/badge/versi%C3%B3n-1.0.2-6f42c1.svg">
+  <img alt="Versión" src="https://img.shields.io/badge/versi%C3%B3n-1.0.3-6f42c1.svg">
   <img alt="Bun" src="https://img.shields.io/badge/bun-%3E%3D1.3-fbf0df?logo=bun&logoColor=000">
   <img alt="TypeScript" src="https://img.shields.io/badge/typescript-7.0-3178c6?logo=typescript&logoColor=fff">
   <a href="docs/README.md"><img alt="Documentación" src="https://img.shields.io/badge/docs-espa%C3%B1ol-0ea5e9.svg"></a>
@@ -115,7 +115,7 @@ El gateway escucha por defecto en `127.0.0.1:18790`. En el primer arranque, `hiv
 ### Instalación global
 
 ```bash
-bun add --global @johpaz/hive-agents@1.0.2
+bun add --global @johpaz/hive-agents@1.0.3
 hive start
 ```
 
@@ -125,7 +125,7 @@ hive start
 docker run --name hive \
   -p 18790:18790 \
   -v hive-data:/root/.hive \
-  johpaz/hive-agents:1.0.2
+  johpaz/hive-agents:1.0.3
 ```
 
 ### App de escritorio (Windows, macOS, Linux)
