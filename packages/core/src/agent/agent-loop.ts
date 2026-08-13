@@ -26,6 +26,7 @@ import { emitCanvas } from "../canvas/emitter"
 import type { MCPClientManager } from "@johpaz/hive-agents-mcp"
 import { compileContext } from "./context-compiler"
 import { formatToolResult } from "../utils/toon"
+import { redactBinaryStrings } from "../utils/redact-binary"
 import { resolveUserId, resolveAgentId } from "../storage/onboarding"
 import type { ContentPart } from "../multimodal/types"
 import { loadConfig } from "../config/loader"
@@ -215,6 +216,8 @@ export interface StreamChunk {
   agent?: { messages: any[]; streamed?: boolean }
   tools?: { messages: any[] }
   usage?: { input_tokens: number; output_tokens: number }
+  /** Image artifacts (mcp-result-normalizer.ts) produced by tools this turn. */
+  artifacts?: { images: Array<{ artifactId: string; mimeType: string }> }
 }
 
 // ─── Main agent loop ──────────────────────────────────────────────────────────
@@ -360,6 +363,10 @@ export async function* runAgent(
   let iterations = 0
   let totalInputTokens = 0
   let totalOutputTokens = 0
+  // Image artifacts produced by tool results this turn (post mcp-result-normalizer.ts) —
+  // surfaced in the final chunk so callers (webchat-turn.ts) can attach them to the
+  // outbound message instead of the model having to describe them in text.
+  const turnImageArtifacts: Array<{ artifactId: string; mimeType: string }> = []
   let lastToolSignature = ""
   let consecutiveRepeat = 0
   let idleIterations = 0
@@ -647,6 +654,23 @@ export async function* runAgent(
       const toolName = batchResult.toolName
       const toolResultJS = batchResult.result
       const toolMs = batchResult.durationMs
+
+      // Surface image artifacts (see mcp-result-normalizer.ts) so the final
+      // response can carry them to the UI/channel — before TOON-encoding,
+      // while toolResultJS is still structured.
+      if (Array.isArray(toolResultJS)) {
+        for (const block of toolResultJS) {
+          if (
+            block && typeof block === "object" &&
+            (block as { type?: unknown }).type === "artifact_ref" &&
+            typeof (block as { mime_type?: unknown }).mime_type === "string" &&
+            (block as { mime_type: string }).mime_type.startsWith("image/")
+          ) {
+            const ref = block as { artifact_id: string; mime_type: string }
+            turnImageArtifacts.push({ artifactId: ref.artifact_id, mimeType: ref.mime_type })
+          }
+        }
+      }
 
       // Encode TOON only for LLM consumption (with cost calculation)
       const toolResultLLM = formatToolResult(toolResultJS, cleanModel)
@@ -1085,6 +1109,10 @@ export async function* runAgent(
     yield { usage: { input_tokens: totalInputTokens, output_tokens: totalOutputTokens } }
   }
 
+  if (turnImageArtifacts.length > 0) {
+    yield { artifacts: { images: turnImageArtifacts } }
+  }
+
   // ── Post-loop ────────────────────────────────────────────────────────────
   const durationMs = Math.round(performance.now() - t0)
 
@@ -1232,9 +1260,7 @@ export async function runAgentIsolatedDetailed(
     }
     for (const message of chunk.tools?.messages ?? []) {
       const raw = typeof message.content === "string" ? message.content : JSON.stringify(message.content)
-      const safe = raw
-        .replace(/data:[a-z0-9.+-]+\/[a-z0-9.+-]+;base64,[a-z0-9+/=\s]+/gi, "[REDACTED_BINARY]")
-        .replace(/[A-Za-z0-9+/]{1000,}={0,2}/g, "[REDACTED_BINARY]")
+      const safe = redactBinaryStrings(raw)
       toolEvidence.push(`${message.name ?? "tool"}: ${safe.slice(0, 4000)}`)
       if (toolEvidence.length > 8) toolEvidence.shift()
     }

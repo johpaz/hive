@@ -36,6 +36,7 @@ import { createAllTools } from "../tools/index.ts"
 import { resolveUserId } from "../storage/onboarding"
 import { getMCPManager as getSingletonMCPManager } from "../mcp/singleton"
 import { syncMCPToolsToDB, syncMCPToolsToIndex } from "../mcp/tool-sync"
+import { normalizeMcpResult } from "./mcp-result-normalizer"
 import { getUserDate, getUserTime } from "../utils/date"
 import { loadConfig } from "../config/loader"
 import { getHiveDb } from "../storage/hivedb"
@@ -293,10 +294,20 @@ export async function compileContext(opts: {
               name: fullName,
               description: mcpTool.description || `Tool from ${server.name}`,
               parameters: mcpTool.inputSchema || { type: "object", properties: {} },
-              execute: async (params: Record<string, unknown>) => {
+              execute: async (params: Record<string, unknown>, config?: { configurable?: Record<string, unknown> }) => {
                 // Return raw JS value — agent-loop will TOON-encode via formatToolResult.
                 // Never pre-stringify here: formatToolResult(string) double-encodes.
-                return await effectiveMcpManager.callTool(resolvedServerKey, mcpTool.name, params)
+                const raw = await effectiveMcpManager.callTool(resolvedServerKey, mcpTool.name, params)
+                // MCP results can carry base64 image/audio/blob content blocks —
+                // normalize those into artifact_ref pointers so a large binary
+                // result never gets serialized whole into the LLM context (see
+                // mcp-result-normalizer.ts for the incident this prevents).
+                const configurable = config?.configurable ?? {}
+                return await normalizeMcpResult(raw, {
+                  userId: configurable.user_id ? String(configurable.user_id) : undefined,
+                  runId: configurable.run_id ? String(configurable.run_id) : null,
+                  taskId: configurable.task_id ? String(configurable.task_id) : null,
+                })
               },
             })
 

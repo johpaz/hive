@@ -337,6 +337,12 @@ export async function reclaimOrInterrupt(jobId: string, opts?: { force?: boolean
       try {
         await c.put(jobId, updated, { expectedVersion: entry.version });
         log.warn(`[reclaimOrInterrupt] Job ${jobId} interrupted (attempts exhausted)`);
+        // Terminal via lease-expiry, not executeJob's normal fail path — that
+        // path already fires the hook, this one didn't before. Dynamic import
+        // avoids a static circular import (durable-queue.ts imports
+        // reclaimOrInterrupt from this module).
+        const { runTerminalHook } = await import("./durable-queue");
+        await runTerminalHook(updated, { ok: false, error: updated.error ?? "Job interrupted after lease expiry" }).catch(() => {});
         return updated;
       } catch {
         await occRetryDelay(attempt);

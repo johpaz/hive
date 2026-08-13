@@ -7,7 +7,7 @@ import {
   type DMChannel,
   type NewsChannel,
 } from "discord.js";
-import { BaseChannel, type ChannelConfig, type IncomingMessage, type OutboundMessage } from "./base.ts";
+import { BaseChannel, type ChannelConfig, type IncomingMessage, type OutboundMessage, readOutboundImageBytes } from "./base.ts";
 import { logger } from "../utils/logger.ts";
 import { updateDoc } from "../storage/hive.ts";
 import type { ChannelDoc } from "../storage/collections.ts";
@@ -207,8 +207,27 @@ export class DiscordChannel extends BaseChannel {
       throw new Error(`Channel not found for session: ${sessionId}`);
     }
 
+    if (message.image) {
+      try {
+        const bytes = await readOutboundImageBytes(message.image);
+        if (bytes) {
+          const ext = message.image.mimeType === "image/jpeg" ? "jpg" : message.image.mimeType === "image/webp" ? "webp" : "png";
+          await channel.send({
+            content: message.image.caption,
+            files: [{ attachment: bytes, name: `image.${ext}` }],
+          });
+        } else {
+          this.log.warn(`Image artifact unavailable, skipping photo send`, { sessionId });
+        }
+      } catch (error) {
+        this.log.error(`Failed to send Discord image: ${(error as Error).message}`);
+      }
+    }
+
     const content = message.content ?? "";
     const maxLength = 2000;
+
+    if (!content) return;
 
     try {
       if (content.length <= maxLength) {

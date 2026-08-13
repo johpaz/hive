@@ -91,6 +91,22 @@ export async function createArtifact(input: {
   }
 }
 
+/**
+ * Reads an artifact's bytes straight off disk — for server-side consumers
+ * that don't need an HTTP round trip (routes/artifacts.ts is for the
+ * browser; channels/*.ts send()s use this directly to build a Telegram/
+ * Discord/Slack/WhatsApp photo attachment from the same file).
+ */
+export async function readArtifactBytes(
+  artifactId: string,
+): Promise<{ bytes: Buffer; mimeType: string } | null> {
+  const artifacts = await col<ArtifactDoc>("artifacts");
+  const entry = await artifacts.get(artifactId);
+  if (!entry || entry.doc.status !== "active") return null;
+  if (!existsSync(entry.doc.path)) return null;
+  return { bytes: readFileSync(entry.doc.path), mimeType: entry.doc.mime_type };
+}
+
 export async function inspectArtifact(
   artifactId: string,
   options: { userId?: string } = {},

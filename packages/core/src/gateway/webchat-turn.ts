@@ -54,7 +54,12 @@ export interface WebchatTurnLive {
 }
 
 export interface WebchatTurnDeps {
-  runner: { generate: (opts: any) => Promise<{ content?: string }> };
+  runner: {
+    generate: (opts: any) => Promise<{
+      content?: string;
+      imageArtifacts?: Array<{ artifactId: string; mimeType: string }>;
+    }>;
+  };
   getProvider: () => string;
   getModel: () => string;
 }
@@ -451,6 +456,40 @@ export async function runWebchatTurn(
         await sendToUserChannel(channel, userId, content).catch((err) =>
           log.warn(`[runWebchatTurn] Failed to deliver crash-recovered response: ${(err as Error).message}`)
         );
+      }
+    }
+
+    // ── Image artifacts (e.g. an MCP image-generation tool's result) ─────────
+    // Sent as a trailing frame regardless of which content/audio branch above
+    // ran — decouples the (already-branchy) text/TTS delivery logic from
+    // whether this turn happened to also produce an image. Points at the
+    // artifacts download endpoint (routes/artifacts.ts) rather than
+    // re-inflating base64 into the WS payload — the whole point of
+    // materializing it as an artifact in the first place (see
+    // mcp-result-normalizer.ts) was to keep it out of large payloads.
+    if (response.imageArtifacts?.length) {
+      const img = response.imageArtifacts[response.imageArtifacts.length - 1];
+      const imageFrame = JSON.stringify({
+        type: "message",
+        id: messageId,
+        sessionId,
+        content: "",
+        image: `/api/artifacts/${img.artifactId}/download`,
+        imageMimeType: img.mimeType,
+        isStep: false,
+      });
+      if (hasLive) {
+        sendRaw(imageFrame);
+      } else {
+        const liveSession = channel === "webchat" ? sessionManager.get(sessionId) : undefined;
+        const liveWs = liveSession?.ws?.readyState === 1 ? liveSession.ws : null;
+        if (liveWs) {
+          try { liveWs.send(imageFrame); } catch { /* socket gone, best effort */ }
+        }
+        // No live socket at all (crash recovery / async notification path):
+        // image delivery there is out of scope for now — sendToUserChannel
+        // only carries plain text. The artifact itself is still safely
+        // persisted and inspectable (artifact_inspect) either way.
       }
     }
 

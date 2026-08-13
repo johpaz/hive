@@ -1,7 +1,14 @@
 import { useCallback, useRef } from "react";
 import { useChatStore } from "@/stores/chatStore";
 import { generateId } from "@/lib/utils";
+import { getApiBaseUrl } from "@/lib/gateway-url";
 import type { Message, MessageProcessItem, MessageProcessKind, MessageProcessStatus } from "@/types";
+
+/** data.image is a relative /api/artifacts/:id/download path from webchat-turn.ts — prefix with the gateway base URL, same pattern as MeetingPanel.tsx's report download link. */
+function imageAttachment(data: any): Pick<Message, "image"> | Record<string, never> {
+  if (!data.image) return {};
+  return { image: { url: `${getApiBaseUrl()}${data.image}`, mimeType: data.imageMimeType } };
+}
 
 export function useChatStreaming(agentId: string, sessionId: string) {
   const addMessage = useChatStore((s) => s.addMessage);
@@ -99,6 +106,7 @@ export function useChatStreaming(agentId: string, sessionId: string) {
           content: data.content || existingMessage.content,
           timestamp: data.timestamp || existingMessage.timestamp,
           ...(data.audio && { audio: { base64: data.audio, mimeType: data.mimeType } }),
+          ...imageAttachment(data),
         });
       } else {
         addMessage({
@@ -109,6 +117,7 @@ export function useChatStreaming(agentId: string, sessionId: string) {
           agentId,
           timestamp: data.timestamp || new Date().toISOString(),
           ...(data.audio && { audio: { base64: data.audio, mimeType: data.mimeType } }),
+          ...imageAttachment(data),
         });
       }
 

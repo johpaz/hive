@@ -8,7 +8,7 @@ import makeWASocket, {
   type WAMessage,
 } from "@whiskeysockets/baileys";
 import type { ChannelConfig, IncomingMessage, OutboundMessage } from "./base.ts";
-import { BaseChannel } from "./base.ts";
+import { BaseChannel, readOutboundImageBytes } from "./base.ts";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import * as path from "node:path";
 import { homedir } from "node:os";
@@ -488,10 +488,23 @@ export class WhatsAppChannel extends BaseChannel {
     const isInterim = message.type === "progress";
     if (!isInterim) await this.stopTyping(sessionId);
 
+    const jid = this.getJid(sessionId);
+
+    if (message.image) {
+      try {
+        const bytes = await readOutboundImageBytes(message.image);
+        if (bytes) {
+          await this.socket.sendMessage(jid, { image: bytes, caption: message.image.caption });
+        } else {
+          this.log.warn(`Image artifact unavailable, skipping photo send`, { sessionId });
+        }
+      } catch (error) {
+        this.log.error(`Failed to send WhatsApp image: ${(error as Error).message}`);
+      }
+    }
+
     const text = message.content ?? message.chunk ?? "";
     if (!text) return;
-
-    const jid = this.getJid(sessionId);
 
     await this.socket.sendMessage(jid, { text });
     if (isInterim) await this.startTyping(sessionId);

@@ -1,3 +1,22 @@
+import { readArtifactBytes } from "../artifacts/store";
+
+/**
+ * Resolves an OutboundMessage.image to raw bytes for channels that need to
+ * upload a photo directly (Telegram/Discord/Slack/WhatsApp) — prefers the
+ * artifact on disk (artifactId, the common path from mcp-result-normalizer.ts
+ * results) over an inline base64 payload.
+ */
+export async function readOutboundImageBytes(
+  image: NonNullable<OutboundMessage["image"]>,
+): Promise<Buffer | null> {
+  if (image.artifactId) {
+    const artifact = await readArtifactBytes(image.artifactId);
+    if (artifact) return artifact.bytes;
+  }
+  if (image.base64) return Buffer.from(image.base64, "base64");
+  return null;
+}
+
 export interface OutboundMessage {
   type: "message" | "stream" | "status" | "error" | "pong" | "command_result" | "log" | "typing" | "audio" | "process" | "progress" | "notification";
   sessionId: string;
@@ -18,6 +37,20 @@ export interface OutboundMessage {
     buffer?: Buffer;
     base64?: string;
     mimeType?: string;
+  };
+  /** Image artifact to show alongside the response (e.g. an MCP image-generation tool's result — see mcp-result-normalizer.ts). `url` points at the artifacts download endpoint (webchat/HTTP consumers); `artifactId` lets server-side channels (Telegram/Discord/Slack/WhatsApp) read the bytes straight off disk via artifacts/store.ts's readArtifactBytes — no HTTP round trip needed since they run in the same process. */
+  image?: {
+    artifactId?: string;
+    url?: string;
+    base64?: string;
+    mimeType?: string;
+    caption?: string;
+  };
+  document?: {
+    url?: string;
+    base64?: string;
+    mimeType?: string;
+    filename?: string;
   };
   status?: {
     state: string;

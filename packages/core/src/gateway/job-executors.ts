@@ -464,6 +464,7 @@ const goalRunExecutor: JobExecutor = async (job, signal) => {
     }
   } catch (err) {
     await failRun(goalRunId, (err as Error).message).catch(() => {});
+    await notify(`❌ No pude completar la meta: "${goal}". Error: ${(err as Error).message}`);
     return { ok: false, error: (err as Error).message, retryable: isRetryableError(err) };
   } finally {
     stopLeaseRenewal(goalRunId);

@@ -1,6 +1,6 @@
 import { App, ExpressReceiver, type SlashCommand } from "@slack/bolt";
 import type { ChannelConfig, IncomingMessage, OutboundMessage } from "./base.ts";
-import { BaseChannel } from "./base.ts";
+import { BaseChannel, readOutboundImageBytes } from "./base.ts";
 import { logger } from "../utils/logger.ts";
 import { updateDoc } from "../storage/hive.ts";
 import type { ChannelDoc } from "../storage/collections.ts";
@@ -260,10 +260,29 @@ await this.handleMessage(incoming);
       throw new Error("Slack not connected");
     }
 
+    const peerId = this.extractPeerId(sessionId);
+
+    if (message.image) {
+      try {
+        const bytes = await readOutboundImageBytes(message.image);
+        if (bytes) {
+          await this.app.client.files.uploadV2({
+            channel_id: peerId,
+            file: bytes,
+            filename: `image.${message.image.mimeType === "image/jpeg" ? "jpg" : message.image.mimeType === "image/webp" ? "webp" : "png"}`,
+            title: message.image.caption ?? "Image response",
+          });
+        } else {
+          this.log.warn(`Image artifact unavailable, skipping photo send`, { sessionId });
+        }
+      } catch (error) {
+        this.log.error(`Failed to send Slack image: ${(error as Error).message}`);
+      }
+    }
+
     const text = message.content ?? message.chunk ?? "";
     if (!text) return;
 
-    const peerId = this.extractPeerId(sessionId);
     const pending = this.pendingMessages.get(sessionId);
 
     try {

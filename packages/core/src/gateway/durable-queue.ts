@@ -92,7 +92,8 @@ export function registerTerminalHook(type: JobType, hook: JobTerminalHook): void
   terminalHooks.set(type, hook);
 }
 
-async function runTerminalHook(job: JobDoc, outcome: JobTerminalOutcome): Promise<void> {
+/** Exported so job-store.ts's reclaimOrInterrupt can fire it too (dynamic import there — see its call site — avoids a static circular import since this module already imports reclaimOrInterrupt from job-store.ts). */
+export async function runTerminalHook(job: JobDoc, outcome: JobTerminalOutcome): Promise<void> {
   const hook = terminalHooks.get(job.type);
   if (!hook) return;
   try {

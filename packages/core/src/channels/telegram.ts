@@ -1,5 +1,5 @@
 import { Bot, GrammyError, InputFile, type Context } from "grammy";
-import { BaseChannel, type ChannelConfig, type IncomingMessage, type OutboundMessage } from "./base.ts";
+import { BaseChannel, type ChannelConfig, type IncomingMessage, type OutboundMessage, readOutboundImageBytes } from "./base.ts";
 import { logger } from "../utils/logger.ts";
 import { col, updateDoc } from "../storage/hive.ts";
 import type { ChannelDoc, UserIdentityDoc } from "../storage/collections.ts";
@@ -402,6 +402,21 @@ export class TelegramChannel extends BaseChannel {
 
     if (isNaN(chatId)) {
       throw new Error(`Invalid chat ID from session: ${sessionId}`);
+    }
+
+    if (message.image) {
+      try {
+        const bytes = await readOutboundImageBytes(message.image);
+        if (bytes) {
+          await this.bot.api.sendPhoto(chatId, new InputFile(bytes), {
+            caption: message.image.caption,
+          });
+        } else {
+          this.log.warn(`Image artifact unavailable, skipping photo send`, { sessionId });
+        }
+      } catch (error) {
+        this.log.error(`Telegram sendPhoto failed: ${(error as Error).message}`);
+      }
     }
 
     const content = message.content ?? "";

@@ -30,6 +30,8 @@ import { shutdownToolRuntime } from "../tool-runtime";
 import { initDurableQueue, getDurableQueue } from "./durable-queue";
 import { initJobExecutors, setJobExecutorMCPManager } from "./job-executors";
 import { initDelegationNotify } from "./delegation-notify";
+import { initFailureNotify } from "./failure-notify";
+import { installProcessSafetyNet } from "./process-safety";
 import { findAllPendingJobs, findExpiredLeases, loadJobRetryPolicy } from "./job-store";
 import type { UserDoc, AgentDoc } from "../storage/collections";
 import { canvasManager } from "../canvas/canvas-manager.ts";
@@ -92,6 +94,7 @@ import { handleGetVoiceProviders, handleGetConfiguredVoiceProviders, handleSaveV
 import { handleGetVisionProviders, handleGetChannelVision, handleUpdateChannelVision, handleOcrImage } from "./routes/multimodal";
 import { handleGetLocalTTSStatus, handleGetLocalTTSLogs, handleInstallLocalTTS, handleStartLocalTTS, handleStopLocalTTS, handleSpeakLocalTTS, handleGetAvailableModels, handleGetInstalledVoices, handleDownloadModel, handleGetDownloadLogs, initializeLocalTTS } from "./routes/tts-local";
 import { handleCreateMeeting, handleListMeetings, handleGetMeeting, handleAddMeetingSegment, handleStopMeeting, handleGenerateMeetingReport, handleDownloadMeetingReport } from "./routes/meeting";
+import { handleDownloadArtifact } from "./routes/artifacts";
 import { handleGetActivityStats, handleGetSystemStats, handleGetUsageStats, handleSystemReload, handleApiReload, handleGetVersion, handleTriggerUpdate } from "./routes/system";
 import { handleGetChatHistory, handleGetNotes, handleUpdateNote } from "./routes/chat";
 import { handleChat as handlePostChat } from "./routes/chat";
@@ -134,6 +137,11 @@ export async function startGateway(
   const startTime = Date.now();
 
   const log = logger.child("gateway");
+
+  // Installed first, before anything else can throw: an exception no catch
+  // block reaches should crash loudly and exit cleanly, not hang silently
+  // (see process-safety.ts).
+  installProcessSafetyNet();
 
   log.info(`Starting gateway on ${host}:${port}`);
 
@@ -291,6 +299,9 @@ export async function startGateway(
         // Closes the async task_delegate loop: relays worker_task outcomes
         // back into the delegating conversation (see delegation-notify.ts).
         initDelegationNotify();
+        // Never let a chat_turn/goal_run fail without telling the user (see
+        // failure-notify.ts) — previously only worker_task had a terminal hook.
+        initFailureNotify();
         log.info(`🔀 DurableQueue initialized (maxConcurrency=${durableQueue.getMaxGlobalConcurrency()})`);
 
         // Create and boot scheduler
@@ -614,6 +625,11 @@ export async function startGateway(
       }
       log.info(`📤 LLM response: ${responseContent.substring(0, 100)}${responseContent.length > 100 ? "..." : ""}`);
 
+      // Image artifacts (e.g. an MCP image-generation tool's result — see
+      // mcp-result-normalizer.ts) produced this turn, most recent first channel
+      // send only carries one at a time for now.
+      const imageArtifact = response.imageArtifacts?.[response.imageArtifacts.length - 1];
+
       // Narration is delivered off the critical path — let it drain first so the
       // final answer lands after the progress messages, not before them.
       await awaitChannelNarration(`${message.channel}:${routingSessionId}`);
@@ -622,13 +638,17 @@ export async function startGateway(
       let responseType: "text" | "audio" = "text";
       let ttsProviderUsed: string | null = null;
       let ttsMimeType: string | null = null;
+      const imageField = imageArtifact
+        ? { image: { artifactId: imageArtifact.artifactId, mimeType: imageArtifact.mimeType } }
+        : {};
 
       if (responseContent) {
         if (shouldSpeak) {
           if (!voiceConfig.ttsProvider) {
             log.warn(`⚠️ TTS provider not configured, user requested audio`);
             await channelManager.send(message.channel, routingSessionId, {
-              content: `${responseContent}\n\n🔊 Para recibir respuestas en audio, configura el proveedor TTS en Configuración > Canales > [Tu canal] (ej: elevenlabs, openai-tts)`
+              content: `${responseContent}\n\n🔊 Para recibir respuestas en audio, configura el proveedor TTS en Configuración > Canales > [Tu canal] (ej: elevenlabs, openai-tts)`,
+              ...imageField,
             });
           } else {
             try {
@@ -643,22 +663,27 @@ export async function startGateway(
                 if (channel?.sendAudio) {
                   await channel.sendAudio(routingSessionId, audioOutput.data as Buffer, audioOutput.mimeType);
                   log.info(`✅ Audio sent to ${routingSessionId}`);
+                  // sendAudio() is a dedicated binary path, separate from
+                  // send(OutboundMessage) — the image needs its own send() call.
+                  if (imageArtifact) {
+                    await channelManager.send(message.channel, routingSessionId, { content: "", ...imageField });
+                  }
                 } else {
                   log.warn(`Channel ${message.channel} does not support audio, sending text`);
-                  await channelManager.send(message.channel, routingSessionId, { content: responseContent });
+                  await channelManager.send(message.channel, routingSessionId, { content: responseContent, ...imageField });
                 }
               } catch (audioError) {
                 log.error(`❌ Audio send failed: ${(audioError as Error).message}, sending text instead`);
                 // Fallback to text
-                await channelManager.send(message.channel, routingSessionId, { content: responseContent });
+                await channelManager.send(message.channel, routingSessionId, { content: responseContent, ...imageField });
               }
             } catch (ttsError) {
               log.error(`❌ TTS failed: ${(ttsError as Error).message}, sending text instead`);
-              await channelManager.send(message.channel, routingSessionId, { content: responseContent });
+              await channelManager.send(message.channel, routingSessionId, { content: responseContent, ...imageField });
             }
           }
         } else {
-          await channelManager.send(message.channel, routingSessionId, { content: responseContent });
+          await channelManager.send(message.channel, routingSessionId, { content: responseContent, ...imageField });
         }
       }
 
@@ -1886,6 +1911,12 @@ export async function startGateway(
         const meetingReportDownloadMatch = url.pathname.match(/^\/api\/meetings\/([^/]+)\/report\/download$/);
         if (meetingReportDownloadMatch && req.method === "GET") {
           return await handleDownloadMeetingReport(req, addCorsHeaders, meetingReportDownloadMatch[1]);
+        }
+
+        // ── Artifacts (MCP tool binaries: images, screenshots, etc.) ─────────
+        const artifactDownloadMatch = url.pathname.match(/^\/api\/artifacts\/([^/]+)\/download$/);
+        if (artifactDownloadMatch && req.method === "GET") {
+          return await handleDownloadArtifact(req, addCorsHeaders, artifactDownloadMatch[1]);
         }
 
         // ── Chat / Notes API ────────────────────────────────────────────────
