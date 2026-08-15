@@ -530,11 +530,15 @@ class ToolWorkerPool {
     job.resolve(result)
 
     if (restart) {
+      // Un worker que abortó o murió se descarta, y el reemplazo lo crea
+      // `drain()` solo si queda trabajo. Antes se levantaba uno nuevo en el
+      // acto: sobre un aborto —el caso típico al terminar un turno o una
+      // suite— eso deja un worker recién arrancado que nadie va a usar y que
+      // hay que terminar a mitad del arranque. Bun se cae con SIGSEGV al
+      // cerrar el proceso en ese estado (CI: workers_spawned 13, terminated 11).
       slot.worker.terminate()
       const index = this.workers.indexOf(slot)
-      if (index >= 0) {
-        this.workers[index] = this.createSlot()
-      }
+      if (index >= 0) this.workers.splice(index, 1)
     } else {
       slot.busy = false
       slot.job = undefined

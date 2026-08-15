@@ -16,6 +16,7 @@ import {
   Video,
   Globe,
   Hexagon,
+  ArrowUpCircle,
   type LucideProps,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
@@ -53,7 +54,7 @@ const navItems = [
 
 ];
 
-const configGroups = [
+export const configGroups = [
   {
     label: "Entorno",
     items: [
@@ -67,6 +68,12 @@ const configGroups = [
     label: "Usuario",
     items: [
       { id: "perfil", label: "Perfil", icon: User },
+    ],
+  },
+  {
+    label: "Sistema",
+    items: [
+      { id: "actualizaciones", label: "Actualizaciones", icon: ArrowUpCircle },
     ],
   },
 ];

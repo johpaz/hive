@@ -7,10 +7,11 @@ import { UserProfileEditor } from "@/modules/agent-config/user/UserProfileEditor
 import { SkillsTab } from "@/modules/agent-config/skills/SkillsTab";
 import { NotesPanel } from "@/components/NotesPanel";
 import { CronJobsPanel } from "@/components/CronJobsPanel";
+import { DesktopUpdateCard } from "@/components/DesktopUpdateCard";
 import { useSkills, useTools, useMCPServers } from "@/hooks/useProviders";
 import { splitPanelTitle } from "./settingsTitle";
 
-type PanelId = "etica" | "herramientas" | "mcp" | "skills" | "perfil" | "notas" | "cron-jobs";
+export type PanelId = "etica" | "herramientas" | "mcp" | "skills" | "perfil" | "notas" | "cron-jobs" | "actualizaciones";
 
 function PanelContent({ panel }: { panel: PanelId }) {
   switch (panel) {
@@ -56,12 +57,20 @@ function PanelContent({ panel }: { panel: PanelId }) {
           <CronJobsPanel />
         </div>
       );
+    case "actualizaciones":
+      return (
+        <div className="p-4">
+          <DesktopUpdateCard />
+        </div>
+      );
   default:
       return null;
   }
 }
 
-const VALID_PANELS: PanelId[] = ["etica", "herramientas", "mcp", "skills", "perfil", "notas", "cron-jobs"];
+// Esta lista decide si la URL es válida: un panel que falte acá cae en
+// "herramientas" y el ítem del menú parece no hacer nada.
+export const VALID_PANELS: PanelId[] = ["etica", "herramientas", "mcp", "skills", "perfil", "notas", "cron-jobs", "actualizaciones"];
 
 export function SettingsPage({ forcePanel }: { forcePanel?: PanelId }) {
   const { panel } = useParams<{ panel: string }>();
@@ -115,6 +124,11 @@ export function SettingsPage({ forcePanel }: { forcePanel?: PanelId }) {
       eyebrow: "AUTOMATIZACIÓN TEMPORAL",
       title: "Tareas Programadas",
       subtitle: "Gestión de ejecuciones recurrentes y disparadores cron."
+    },
+    actualizaciones: {
+      eyebrow: "MANTENIMIENTO",
+      title: "Actualizaciones",
+      subtitle: "Consultá tu versión, buscá una nueva e instalala sin salir de la app."
     }
 };
 

@@ -43,7 +43,11 @@ describe("tool runtime worker pool", () => {
     const elapsed = performance.now() - startedAt
 
     expect(results.map((result) => (result.result as any).name)).toEqual(["slow_a", "slow_b", "slow_c"])
-    expect(elapsed).toBeLessThan(260)
+    // Tres tools de 120 ms: en serie serían 360 ms, en paralelo ~120. El umbral
+    // separa las dos hipótesis con aire de sobra — el anterior (260 ms) dejaba
+    // 20 ms de margen y fallaba en un runner de 2 núcleos por 4 milisegundos,
+    // que es ruido de planificación y no una regresión.
+    expect(elapsed).toBeLessThan(330)
   })
 
   it("preserves input order when tools complete out of order", async () => {
@@ -224,6 +228,41 @@ describe("tool runtime worker pool", () => {
 
     expect(results.every((result) => result.aborted)).toBe(true)
     expect(results.map((result) => result.toolName)).toEqual(["slow_one", "slow_two"])
+  })
+
+  it("sigue sirviendo lotes después de un aborto, sin dejar workers de más", async () => {
+    // Un aborto descarta el worker y NO levanta un reemplazo: el siguiente lote
+    // es quien lo crea. Antes se recreaba en el acto, y ese worker a medio
+    // arrancar —que nadie iba a usar— hacía que Bun se cayera con SIGSEGV al
+    // cerrar el proceso (CI: workers_spawned 13, terminated 11).
+    const controller = new AbortController()
+    const tools: RuntimeTool[] = [
+      { name: "slow_one", execute: async () => { await delay(200); return { done: 1 } } },
+      { name: "slow_two", execute: async () => { await delay(200); return { done: 2 } } },
+      { name: "quick_one", execute: async () => ({ ok: 1 }) },
+      { name: "quick_two", execute: async () => ({ ok: 2 }) },
+    ]
+
+    setTimeout(() => controller.abort(), 30)
+    await executeToolBatch({
+      toolCalls: [toolCall("1", "slow_one"), toolCall("2", "slow_two")],
+      allTools: tools,
+      toolConfig: {},
+      hiveConfig: loadConfig(),
+      workerPool: { enabled: true, maxWorkers: 1, toolTimeoutMs: 1000, parallelToolCalls: true },
+      signal: controller.signal,
+    })
+
+    const results = await executeToolBatch({
+      toolCalls: [toolCall("3", "quick_one"), toolCall("4", "quick_two")],
+      allTools: tools,
+      toolConfig: {},
+      hiveConfig: loadConfig(),
+      workerPool: { enabled: true, maxWorkers: 1, toolTimeoutMs: 1000, parallelToolCalls: true },
+    })
+
+    expect(results.every((result) => result.ok)).toBe(true)
+    expect(results.map((result) => result.toolName)).toEqual(["quick_one", "quick_two"])
   })
 
   it("passes toolConfig (including agent_id) through to a single tool call's config.configurable", async () => {

@@ -324,12 +324,40 @@ fn stop_gateway(state: &GatewayState) {
     }
 }
 
+/// ¿Puede esta instalación reemplazarse a sí misma?
+///
+/// Windows (NSIS/MSI) y macOS (bundle `app`) sí: el updater descarga el
+/// instalador firmado y lo aplica solo.
+///
+/// Linux depende del formato. El plugin sabe instalar AppImage, .deb (dpkg) y
+/// .rpm (rpm), pidiendo permisos por pkexec cuando hace falta — pero
+/// `latest.json` admite **un solo** asset por plataforma y el manifiesto que
+/// publicamos lleva el .deb (el bundler no genera artefacto de updater para
+/// rpm). O sea: en una máquina con dpkg la actualización funciona, y en una
+/// Fedora/RHEL llegaría un .deb que no se puede instalar.
+///
+/// Antes que ofrecer un botón que descargue algo inservible, acá se responde
+/// que no y la UI manda al instalador correcto. Cuando el AppImage vuelva a
+/// `bundles` en release.yml, esto puede simplificarse: sirve para todo Linux.
+fn self_update_supported() -> bool {
+    if !cfg!(target_os = "linux") {
+        return true;
+    }
+    if std::env::var_os("APPIMAGE").is_some() {
+        return true;
+    }
+    ["/usr/bin/dpkg", "/bin/dpkg"]
+        .iter()
+        .any(|path| std::path::Path::new(path).exists())
+}
+
 #[tauri::command]
 fn gateway_info(state: State<'_, GatewayState>) -> serde_json::Value {
     serde_json::json!({
         "port": state.port,
         "url": format!("http://127.0.0.1:{}", state.port),
         "hiveHome": state.hive_home,
+        "selfUpdate": self_update_supported(),
     })
 }
 
