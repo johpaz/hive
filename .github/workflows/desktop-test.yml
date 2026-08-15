@@ -1,18 +1,13 @@
 name: Desktop Test Builds
 
 on:
-  # Genera instaladores de prueba automáticamente cuando un cambio puede
-  # modificar la aplicación de escritorio o el gateway que se empaqueta.
-  push:
-    branches: [master, main]
-    paths:
-      - "apps/hive-desktop/**"
-      - "packages/**"
-      - "scripts/**"
-      - "package.json"
-      - "bun.lock"
-      - ".github/workflows/desktop-test.yml"
-  # También permite lanzar una compilación sin crear otro commit.
+  # Solo a pedido, desde la pestaña Actions.
+  #
+  # Antes corría en cada push que tocara `packages/**` o `scripts/**` — o sea,
+  # casi todos — y levantaba tres runners, dos de ellos macOS, que facturan 10×
+  # en minutos de Actions y recompilan Rust desde cero. Los instaladores que
+  # importan salen del release al taggear; estos son para probar un cambio
+  # concreto antes de publicarlo, y eso se decide a mano.
   workflow_dispatch:
 
 permissions:

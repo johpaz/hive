@@ -67,7 +67,9 @@ Descarga el instalador de tu sistema desde la [última versión](https://github.
 
 > AppImage está temporalmente fuera del release: `linuxdeploy` (la herramienta que lo empaqueta) aborta al inspeccionar nuestro sidecar del gateway, compilado con Bun — ver el comentario en `.github/workflows/release.yml` job `build-desktop`. Se retoma en un release posterior.
 
-La app se autoactualiza: revisa nuevas versiones contra el manifiesto publicado en cada release y las instala sin pasos manuales.
+La app revisa si hay versión nueva al abrirse y cada 6 horas, contra el manifiesto publicado en cada release. Cuando encuentra una, muestra un aviso con las notas y un botón para instalarla; al terminar se reinicia sola. También se puede consultar a mano en **Ajustes → Sistema → Actualizaciones**.
+
+Una excepción: el manifiesto admite un solo instalador por plataforma y en Linux publica el `.deb`, así que en distribuciones basadas en RPM (Fedora, RHEL, openSUSE) la app avisa que hay que bajar el `.rpm` e instalarlo encima en vez de intentar una actualización que no podría aplicar. Vuelve a ser automática para todo Linux cuando el AppImage regrese al release.
 
 ### El sistema operativo advierte que el instalador no es de confianza
 
