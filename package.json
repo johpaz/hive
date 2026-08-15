@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-agents",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Tu colmena de agentes IA. Local-first. Multi-canal. Open source. Construido desde Colombia para el mundo.",
   "private": false,
   "bin": {
