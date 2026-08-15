@@ -201,6 +201,7 @@ export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
 
     // Artifacts
     { name: "artifact_inspect", description: "Inspect a managed artifact's integrity and metadata without modifying it. Spanish keywords: inspeccionar artefacto, verificar archivo generado, metadatos artefacto, comprobar entrega", category: "web", abstractionLevel: "atomic" },
+    { name: "artifact_read", description: "Read a managed artifact's text content in slices, or search inside it — the way to open any artifact_ref a tool returned. Spanish keywords: leer artefacto, ver contenido del artefacto, abrir resultado grande, buscar dentro del artefacto", category: "web", abstractionLevel: "atomic" },
 
     // Office documents — read
     { name: "office_leer_pdf", description: "Read and extract text from a PDF document. Spanish keywords: leer pdf, extraer texto pdf, abrir pdf, contenido pdf", category: "office", abstractionLevel: "atomic" },

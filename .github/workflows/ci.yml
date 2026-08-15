@@ -72,6 +72,14 @@ jobs:
           # commiteada desde el 2026-07-03 y el smoke de release no la detectaba
           # porque `<div id="root">` aparece en cualquiera de las dos.
           ! grep -q 'Buffer.from(' packages/cli/src/ui-bundle.generated.ts
+      - name: El módulo del tool worker embebido no puede llegar poblado
+        shell: bash
+        run: |
+          # `build-gateway.ts` lo reescribe con un import `with { type: "file" }`
+          # al bundle del worker y lo restaura al terminar. Si la versión poblada
+          # se commitea, cualquier checkout limpio falla al importarlo porque
+          # tool-worker.generated.js está gitignoreado y no existe.
+          ! grep -q '^import ' packages/core/src/tool-runtime/embedded-worker.generated.ts
 
   docs:
     name: Documentation contract

@@ -90,7 +90,7 @@ Los instaladores **no están firmados con un certificado de plataforma** (Apple 
 5. Ejecuta `hive doctor`.
 6. Arranca con `hive start` y revisa agentes, canales y servidores MCP.
 
-El arranque repara estados interrumpidos y vuelve a sembrar catálogos del sistema sin borrar contenido de usuario. Consulta las incompatibilidades en el [changelog 1.0.0](../../CHANGELOG_v1.0.0.md).
+El arranque repara estados interrumpidos y vuelve a sembrar catálogos del sistema sin borrar contenido de usuario. Consulta las incompatibilidades en el [changelog 1.0.1](../../CHANGELOG_v1.0.1.md).
 
 ### Migración de Canvas a A2UI
 

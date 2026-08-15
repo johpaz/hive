@@ -22,11 +22,20 @@ use tauri_plugin_shell::{
     ShellExt,
 };
 
+/// El mismo puerto que usa la CLI instalada con bun. La app de escritorio
+/// tomaba un puerto libre al azar en cada arranque, así que cada instalación
+/// vivía en una dirección distinta de la que documentamos y de la que el
+/// usuario ve en el navegador.
+const DEFAULT_PORT: u16 = 18790;
+
 struct GatewayState {
     child: Mutex<Option<CommandChild>>,
     port: u16,
     hive_home: PathBuf,
     shutting_down: Arc<AtomicBool>,
+    /// El gateway ya estaba corriendo (lo levantó la CLI): esta app es solo su
+    /// ventana. Nunca hay que matarlo al cerrar ni reiniciarlo.
+    external: bool,
 }
 
 fn available_port() -> Result<u16, String> {
@@ -67,13 +76,10 @@ fn spawn_gateway(
         .map_err(|error| format!("No se pudo iniciar el gateway: {error}"))
 }
 
-fn monitor_gateway(
-    app: AppHandle,
-    port: u16,
-    hive_home: PathBuf,
-    shutting_down: Arc<AtomicBool>,
-    mut events: tauri::async_runtime::Receiver<CommandEvent>,
-) {
+/// Vuelca la salida del sidecar al log de la app. No reinicia nada: de eso se
+/// encarga `watch_gateway_health`, porque el proceso que este receptor observa
+/// no es el servidor.
+fn monitor_gateway(mut events: tauri::async_runtime::Receiver<CommandEvent>) {
     tauri::async_runtime::spawn(async move {
         while let Some(event) = events.recv().await {
             match event {
@@ -92,25 +98,6 @@ fn monitor_gateway(
                 CommandEvent::Error(error) => eprintln!("[Hive Gateway] {error}"),
                 CommandEvent::Terminated(payload) => {
                     eprintln!("[Hive Gateway] terminado: {payload:?}");
-                    if shutting_down.load(Ordering::SeqCst) {
-                        break;
-                    }
-
-                    eprintln!("[Hive Agents] reiniciando el gateway incluido...");
-                    match spawn_gateway(&app, port, &hive_home) {
-                        Ok((next_events, next_child)) => {
-                            if let Some(state) = app.try_state::<GatewayState>() {
-                                if let Ok(mut child) = state.child.lock() {
-                                    *child = Some(next_child);
-                                }
-                            }
-                            events = next_events;
-                        }
-                        Err(error) => {
-                            eprintln!("[Hive Agents] no se pudo reiniciar el gateway: {error}");
-                            break;
-                        }
-                    }
                 }
                 _ => {}
             }
@@ -118,32 +105,166 @@ fn monitor_gateway(
     });
 }
 
-fn start_gateway(app: &AppHandle) -> Result<GatewayState, String> {
-    let port = available_port()?;
-    let hive_home = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("No se pudo resolver el directorio de datos: {error}"))?
-        .join("hive");
+/// Reinicia el gateway cuando deja de responder.
+///
+/// El evento `Terminated` del sidecar no alcanza: el proceso que Tauri lanza es
+/// el envoltorio de la CLI, y el servidor de verdad corre como *nieto*. Cuando
+/// ese servidor se muere —un crash, un `hive start` desde la terminal que libera
+/// el puerto a la fuerza— el envoltorio sigue vivo, Tauri nunca se entera y la
+/// ventana se queda hablándole a un puerto muerto: conectada en apariencia,
+/// muda en los hechos. Preguntarle a `/health` es la única señal que cubre los
+/// dos casos.
+fn watch_gateway_health(
+    app: AppHandle,
+    port: u16,
+    hive_home: PathBuf,
+    shutting_down: Arc<AtomicBool>,
+) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            if shutting_down.load(Ordering::SeqCst) {
+                break;
+            }
+            if gateway_is_healthy(port) {
+                continue;
+            }
+            // Segunda oportunidad: un turno pesado puede tardar en contestar.
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            if shutting_down.load(Ordering::SeqCst) || gateway_is_healthy(port) {
+                continue;
+            }
 
+            eprintln!("[Hive Agents] el gateway dejó de responder — reiniciándolo");
+            if let Some(state) = app.try_state::<GatewayState>() {
+                if let Ok(mut child) = state.child.lock() {
+                    if let Some(previous) = child.take() {
+                        let _ = previous.kill();
+                    }
+                }
+            }
+
+            match spawn_gateway(&app, port, &hive_home) {
+                Ok((events, next_child)) => {
+                    monitor_gateway(events);
+                    if let Some(state) = app.try_state::<GatewayState>() {
+                        if let Ok(mut child) = state.child.lock() {
+                            *child = Some(next_child);
+                        }
+                    }
+                    if wait_for_gateway(port).await.is_err() {
+                        eprintln!("[Hive Agents] el gateway reiniciado no respondió a tiempo");
+                    }
+                }
+                Err(error) => eprintln!("[Hive Agents] no se pudo reiniciar el gateway: {error}"),
+            }
+        }
+    });
+}
+
+/// `$HIVE_HOME`, o `~/.hive` — el mismo directorio que usa la CLI instalada con
+/// bun. Antes la app guardaba todo bajo su propio `app_data_dir`, así que la
+/// versión de escritorio y la de terminal eran dos instalaciones separadas con
+/// agentes, historial y claves distintos aunque el usuario creyera lo contrario.
+fn resolve_hive_home(app: &AppHandle) -> Result<PathBuf, String> {
+    if let Some(explicit) = std::env::var_os("HIVE_HOME") {
+        return Ok(PathBuf::from(explicit));
+    }
+    app.path()
+        .home_dir()
+        .map(|home| home.join(".hive"))
+        .map_err(|error| format!("No se pudo resolver el directorio del usuario: {error}"))
+}
+
+fn copy_tree(from: &PathBuf, to: &PathBuf) -> std::io::Result<()> {
+    if from.is_dir() {
+        std::fs::create_dir_all(to)?;
+        for entry in std::fs::read_dir(from)? {
+            let entry = entry?;
+            copy_tree(&entry.path(), &to.join(entry.file_name()))?;
+        }
+        Ok(())
+    } else {
+        std::fs::copy(from, to).map(|_| ())
+    }
+}
+
+/// Trae los datos que la app dejó en su propio `app_data_dir` cuando usaba un
+/// HIVE_HOME separado. Sin esto, mudarse a `~/.hive` sería empezar de cero:
+/// agentes, historial, claves y servidores MCP viven en esa carpeta.
+fn migrate_legacy_home(app: &AppHandle, hive_home: &PathBuf) {
+    if hive_home.join("data").exists() {
+        return; // ya hay una instalación acá; no tocar nada
+    }
+    let Ok(legacy) = app.path().app_data_dir().map(|dir| dir.join("hive")) else {
+        return;
+    };
+    if legacy == *hive_home || !legacy.join("data").exists() {
+        return;
+    }
+
+    println!("[Hive Agents] migrando datos de {legacy:?} a {hive_home:?}");
+    let Ok(entries) = std::fs::read_dir(&legacy) else { return };
+    for entry in entries.flatten() {
+        let target = hive_home.join(entry.file_name());
+        if target.exists() {
+            continue; // lo que ya existe en el destino manda
+        }
+        let source = entry.path();
+        if std::fs::rename(&source, &target).is_ok() {
+            continue;
+        }
+        // Otro sistema de archivos: copiar y dejar el original como respaldo.
+        if let Err(error) = copy_tree(&source, &target) {
+            eprintln!("[Hive Agents] no se pudo migrar {source:?}: {error}");
+        }
+    }
+}
+
+fn start_gateway(app: &AppHandle) -> Result<GatewayState, String> {
+    let hive_home = resolve_hive_home(app)?;
     std::fs::create_dir_all(&hive_home)
         .map_err(|error| format!("No se pudo crear HIVE_HOME: {error}"))?;
+    migrate_legacy_home(app, &hive_home);
+    let shutting_down = Arc::new(AtomicBool::new(false));
+
+    // Ya hay un Hive sano escuchando (por ejemplo `hive start` desde la
+    // terminal): esta ventana se conecta a ese y no levanta un segundo gateway.
+    // Arrancar otro terminaría matándolo — `hive start` libera el puerto a la
+    // fuerza antes de ligarlo.
+    if gateway_is_healthy(DEFAULT_PORT) {
+        println!("[Hive Agents] gateway ya activo en {DEFAULT_PORT} — usando esa instancia");
+        return Ok(GatewayState {
+            child: Mutex::new(None),
+            port: DEFAULT_PORT,
+            hive_home,
+            shutting_down,
+            external: true,
+        });
+    }
+
+    // El puerto de siempre; solo si está tomado por algo que no es Hive se cae
+    // a uno libre, para que la app arranque igual en vez de morir.
+    let port = if TcpListener::bind(("127.0.0.1", DEFAULT_PORT)).is_ok() {
+        DEFAULT_PORT
+    } else {
+        let fallback = available_port()?;
+        eprintln!(
+            "[Hive Agents] el puerto {DEFAULT_PORT} está ocupado por otro proceso — usando {fallback}"
+        );
+        fallback
+    };
 
     let (events, child) = spawn_gateway(app, port, &hive_home)?;
-    let shutting_down = Arc::new(AtomicBool::new(false));
-    monitor_gateway(
-        app.clone(),
-        port,
-        hive_home.clone(),
-        shutting_down.clone(),
-        events,
-    );
+    monitor_gateway(events);
+    watch_gateway_health(app.clone(), port, hive_home.clone(), shutting_down.clone());
 
     Ok(GatewayState {
         child: Mutex::new(Some(child)),
         port,
         hive_home,
         shutting_down,
+        external: false,
     })
 }
 
@@ -189,6 +310,11 @@ fn gateway_response_is_healthy(response: &str) -> bool {
 
 fn stop_gateway(state: &GatewayState) {
     state.shutting_down.store(true, Ordering::SeqCst);
+    if state.external {
+        // No lo arrancamos nosotros: cerrar la ventana no puede dejar sin
+        // gateway a la terminal que lo levantó.
+        return;
+    }
     if let Ok(mut child) = state.child.lock() {
         if let Some(child) = child.take() {
             if let Err(error) = child.kill() {
@@ -248,6 +374,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let state = start_gateway(&app.handle()).map_err(std::io::Error::other)?;
             let port = state.port;
@@ -282,7 +409,28 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::gateway_response_is_healthy;
+    use super::{copy_tree, gateway_response_is_healthy};
+    use std::path::PathBuf;
+
+    #[test]
+    fn copy_tree_preserves_nested_data() {
+        // La migración a ~/.hive no puede perder el árbol de datos cuando el
+        // rename falla por cruzar de sistema de archivos.
+        let root = std::env::temp_dir().join(format!("hive-copy-tree-{}", std::process::id()));
+        let from = root.join("origen");
+        let to = root.join("destino");
+        std::fs::create_dir_all(from.join("data/nested")).unwrap();
+        std::fs::write(from.join("data/nested/hivedb"), b"contenido").unwrap();
+
+        copy_tree(&from, &to).unwrap();
+
+        assert_eq!(
+            std::fs::read(to.join("data/nested/hivedb")).unwrap(),
+            b"contenido"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _: PathBuf = to;
+    }
 
     #[test]
     fn starting_health_response_is_not_ready() {

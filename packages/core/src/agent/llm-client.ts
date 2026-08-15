@@ -182,18 +182,53 @@ export async function callLLM(options: LLMCallOptions): Promise<LLMResponse> {
     const cleanModel = options.model.replace(new RegExp(`^${options.provider}\\/`), "")
     const status = extractErrorStatus(err)
     const modelUnavailable = status === 404 || status === 410
-    const msg = modelUnavailable
-      ? `El modelo "${cleanModel}" ya no existe en ${options.provider} (HTTP ${status}). `
-        + `El proveedor lo retiró de su catálogo; reintentar no sirve. `
-        + `Elegí otro modelo en Ajustes → Proveedores.`
-      : (err as Error).message
+    const msg = describeProviderFailure(err, status, options.provider, cleanModel)
     log.error(`[llm-client] Error calling ${options.provider}/${cleanModel}: ${msg}`, err)
     return {
-      content: `[LLM Error] ${msg}`,
+      content: `${LLM_ERROR_PREFIX} ${msg}`,
       stop_reason: "error",
       error: { message: msg, status, modelUnavailable },
     }
   }
+}
+
+/**
+ * Marks content that is a provider failure rather than something the agent
+ * said. webchat-turn.ts keys the failed-turn UI off this prefix, and
+ * agent-loop.ts keeps such content out of the conversation history.
+ */
+export const LLM_ERROR_PREFIX = "[LLM Error]"
+
+/**
+ * Turns a provider failure into something the user can act on.
+ *
+ * The raw SDK text is written for whoever is reading a stack trace: "429 status
+ * code (no body)" showed up verbatim in the chat and says nothing about what
+ * happened (the account hit its rate limit) or what to do about it. Statuses
+ * without a specific mapping keep the original message — a wrong explanation is
+ * worse than a technical one.
+ */
+export function describeProviderFailure(
+  err: unknown,
+  status: number | undefined,
+  provider: string,
+  cleanModel: string,
+): string {
+  if (status === 404 || status === 410) {
+    return `El modelo "${cleanModel}" ya no existe en ${provider} (HTTP ${status}). `
+      + `El proveedor lo retiró de su catálogo; reintentar no sirve. `
+      + `Elegí otro modelo en Ajustes → Proveedores.`
+  }
+  if (status === 429) {
+    return `${provider} está limitando las peticiones (HTTP 429) y los reintentos tampoco pasaron. `
+      + `Es el límite de uso de tu cuenta, no un problema del modelo: esperá unos minutos, `
+      + `revisá tu cuota con el proveedor, o cambiá de modelo en Ajustes → Proveedores.`
+  }
+  if (status === 401 || status === 403) {
+    return `${provider} rechazó la API key (HTTP ${status}). `
+      + `Revisá que siga siendo válida y tenga acceso a "${cleanModel}" en Ajustes → Proveedores.`
+  }
+  return (err as Error).message
 }
 
 /** Provider SDKs disagree on where the HTTP status lands; check every shape we've seen. */

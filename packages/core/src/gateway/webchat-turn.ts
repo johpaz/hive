@@ -22,6 +22,8 @@ import { getNarration } from "./helpers";
 import { createRun, getRun } from "../agent/run-store";
 import { getDurableQueue } from "./durable-queue";
 import { sessionManager } from "./session";
+import { publishNarration } from "../events/narration";
+import { LLM_ERROR_PREFIX } from "../agent/llm-client";
 import type { JobDoc, TurnSource } from "../storage/collections";
 
 const log = logger.child("webchat-turn");
@@ -493,7 +495,13 @@ export async function runWebchatTurn(
       }
     }
 
-    if (delegationGroup) {
+    if (content.startsWith(LLM_ERROR_PREFIX)) {
+      // El turno terminó sin excepción pero lo que devuelve es una falla del
+      // proveedor (callLLM la entrega como contenido, no como throw). Cerrar la
+      // burbuja con "Listo" encima de un mensaje de error es decirle al usuario
+      // que salió bien algo que no salió.
+      processReporter?.error("El proveedor del modelo rechazó la petición");
+    } else if (delegationGroup) {
       processReporter?.pending();
     } else {
       processReporter?.done("Listo");
@@ -501,6 +509,31 @@ export async function runWebchatTurn(
     return content;
   } catch (error) {
     processReporter?.error("No se pudo completar la respuesta");
+    // La narración vive en su propia burbuja del chat (server.ts la entrega con
+    // messageId = turn_id, distinto del messageId de este turno) y solo se
+    // cierra cuando llega el tool_result de cada tool_call. Si el turno muere
+    // entre medio — como pasaba con "Tool worker entry not found" — ese
+    // tool_result nunca se publica y la burbuja queda en "Pensando" para
+    // siempre, aunque el processReporter ya haya marcado error. Este evento
+    // terminal la cierra, y a diferencia del processReporter no depende del
+    // socket del job: se entrega por sessionManager, así que también alcanza a
+    // los turnos rehidratados.
+    if (payload.turnId) {
+      await publishNarration({
+        turnId: payload.turnId,
+        threadId,
+        channel,
+        userId,
+        sessionId,
+        kind: "failed",
+        status: "error",
+        label: "No se pudo completar la respuesta",
+        detail: (error as Error).message,
+        dedupeKey: `turn_failed:${payload.turnId}`,
+      }).catch((err) =>
+        log.warn(`[runWebchatTurn] Could not publish the turn's failure narration: ${(err as Error).message}`)
+      );
+    }
     // Detener typing aunque falle — nunca dejar el spinner infinito
     send({ type: "typing", isTyping: false, sessionId });
     send({ type: "error", sessionId, error: (error as Error).message });

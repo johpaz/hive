@@ -27,6 +27,7 @@ const NotFound = lazy(() => import("@/pages/NotFound"));
 import { useInitializeGlobalConfig } from "@/stores/useGlobalConfigStore";
 import { useUserStore } from "@/stores/userStore";
 import { WelcomeDialog } from "@/components/WelcomeDialog";
+import { DesktopUpdater } from "@/components/DesktopUpdater";
 import { useEffect, useState, type ReactNode } from "react";
 import { BeeLoader } from "@/components/ui/bee-loader";
 import { getApiBaseUrl } from "@/lib/gateway-url";
@@ -144,6 +145,7 @@ const AppContent = () => {
     <>
       <BeeLoader />
       <WelcomeDialog />
+      <DesktopUpdater />
 
       <Routes>
         <Route path="/setup" element={<SetupPage />} />

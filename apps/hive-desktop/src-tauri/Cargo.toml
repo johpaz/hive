@@ -18,6 +18,8 @@ url = "2"
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-shell = "2"
 tauri-plugin-updater = "2"
+# Reiniciar la app después de instalar una actualización (relaunch()).
+tauri-plugin-process = "2"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

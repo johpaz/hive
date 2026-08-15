@@ -15,6 +15,7 @@ import { browserExtractTool } from "./browser-extract.ts";
 import { browserScriptTool } from "./browser-script.ts";
 import { browserWaitTool } from "./browser-wait.ts";
 import { artifactInspectTool } from "./artifact-inspect.ts";
+import { artifactReadTool } from "./artifact-read.ts";
 
 export function createTools(): Tool[] {
   return [
@@ -28,6 +29,7 @@ export function createTools(): Tool[] {
     browserScriptTool,
     browserWaitTool,
     artifactInspectTool,
+    artifactReadTool,
   ];
 }
 
@@ -42,3 +44,4 @@ export * from "./browser-script.ts";
 export * from "./browser-wait.ts";
 export * from "./browser-service.ts";
 export * from "./artifact-inspect.ts";
+export * from "./artifact-read.ts";

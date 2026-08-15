@@ -6,6 +6,7 @@
 
 import { describe, test, expect } from "bun:test";
 import { isRetryableError, withRetry, computeRetryDelay, type RetryPolicy } from "../packages/core/src/resilience/retry";
+import { describeProviderFailure } from "../packages/core/src/agent/llm-client";
 
 describe("resilience/retry: isRetryableError", () => {
   test("classifies HTTP status codes", () => {
@@ -93,5 +94,38 @@ describe("resilience/retry: withRetry", () => {
     );
     expect(result).toBe("recovered");
     expect(calls).toBe(2);
+  });
+});
+
+/**
+ * Un error de proveedor termina en la pantalla del usuario, así que tiene que
+ * decirle qué pasó y qué hacer. "429 status code (no body)" —el texto crudo del
+ * SDK— llegó tal cual al chat: no nombra el rate limit ni sugiere nada.
+ */
+describe("llm-client: mensajes de falla del proveedor", () => {
+  test("un 429 explica que es límite de cuota y qué hacer", () => {
+    const msg = describeProviderFailure(new Error("429 status code (no body)"), 429, "nvidia", "z-ai/glm-5.2");
+    expect(msg).toContain("limitando las peticiones");
+    expect(msg).toContain("Ajustes → Proveedores");
+    expect(msg).not.toContain("no body");
+  });
+
+  test("un 401/403 apunta a la API key, no al modelo", () => {
+    for (const status of [401, 403]) {
+      const msg = describeProviderFailure(new Error("Unauthorized"), status, "nvidia", "z-ai/glm-5.2");
+      expect(msg).toContain("API key");
+      expect(msg).toContain("z-ai/glm-5.2");
+    }
+  });
+
+  test("un 404 sigue diciendo que el modelo ya no existe", () => {
+    const msg = describeProviderFailure(new Error("Not Found"), 404, "nvidia", "moonshotai/kimi-k2.6");
+    expect(msg).toContain("ya no existe");
+    expect(msg).toContain("moonshotai/kimi-k2.6");
+  });
+
+  test("un status sin mapeo conserva el mensaje original en vez de inventar una causa", () => {
+    const msg = describeProviderFailure(new Error("socket hang up"), 502, "nvidia", "z-ai/glm-5.2");
+    expect(msg).toBe("socket hang up");
   });
 });

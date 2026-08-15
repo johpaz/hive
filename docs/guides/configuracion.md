@@ -56,3 +56,9 @@ Cada agente puede tener un workspace y un scope de lectura/escritura. Las herram
 ## Modelos
 
 El onboarding asigna proveedor y modelo al coordinador y completa agentes sin configuración. Un agente puede definir un override por capacidades; si no lo tiene, hereda el modelo del coordinador. Los cambios explícitos hechos en la UI no son sobrescritos durante un arranque normal.
+
+### Razonamiento visible
+
+Cada turno pide razonamiento y cada proveedor decide cómo cumplirlo: Anthropic con extended thinking, Gemini y Ollama con sus propios campos, y los compatibles con OpenAI leyendo `reasoning_content` del stream.
+
+NVIDIA NIM es el caso especial: lo mantiene apagado salvo que se lo pidan por `chat_template_kwargs`, con una clave distinta por familia de modelo — `enable_thinking` para GLM, `thinking_mode` para MiniMax, `thinking` para Kimi y DeepSeek. Nemotron 3 razona sin pedírselo. Si un modelo rechaza esa clave, la llamada se repite sin ella: se pierde el razonamiento en pantalla, nunca el turno.

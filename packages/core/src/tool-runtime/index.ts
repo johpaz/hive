@@ -4,6 +4,8 @@ import { dirname, join } from "node:path"
 import { availableParallelism } from "node:os"
 import type { Config } from "../config/loader.ts"
 import { loadConfig } from "../config/loader.ts"
+import { logger } from "../utils/logger.ts"
+import { embeddedToolWorkerPath } from "./embedded-worker.generated.ts"
 
 export type ToolCallLike = {
   id: string
@@ -105,7 +107,19 @@ type WorkerSlot = {
   job?: QueuedJob
 }
 
-function resolveWorkerEntry(): string {
+let cachedWorkerEntry: string | null | undefined
+
+/**
+ * Locate the tool worker entry, or null when this build ships without one.
+ *
+ * Returning null instead of throwing is deliberate: workers are an
+ * optimization, and a packaging gap must never take a whole turn down with it
+ * (it did until v1.0.3 — every desktop install failed each multi-tool turn
+ * with "Tool worker entry not found"). The caller degrades to the main thread.
+ */
+function resolveWorkerEntry(): string | null {
+  if (cachedWorkerEntry !== undefined) return cachedWorkerEntry
+
   const candidates = [
     new URL("./tool-worker.js", import.meta.url),
     new URL("./tool-worker.ts", import.meta.url),
@@ -115,7 +129,8 @@ function resolveWorkerEntry(): string {
 
   for (const candidate of candidates) {
     if (existsSync(fileURLToPath(candidate))) {
-      return candidate.href
+      cachedWorkerEntry = candidate.href
+      return cachedWorkerEntry
     }
   }
 
@@ -135,13 +150,25 @@ function resolveWorkerEntry(): string {
 
   for (const filePath of fallbacks) {
     if (existsSync(filePath)) {
-      return filePath
+      cachedWorkerEntry = filePath
+      return cachedWorkerEntry
     }
   }
 
-  throw new Error(
-    `Tool worker entry not found. Tried: ${[...candidates.map((candidate) => fileURLToPath(candidate)), ...fallbacks].join(", ")}`
+  // Standalone executable: the worker was embedded at compile time and lives in
+  // the virtual bunfs, where existsSync() reports false — so it is taken on
+  // trust. It is only ever set by scripts/build-gateway.ts.
+  if (embeddedToolWorkerPath) {
+    cachedWorkerEntry = embeddedToolWorkerPath
+    return cachedWorkerEntry
+  }
+
+  logger.warn(
+    "[tool-runtime] No tool worker entry found — running tool batches on the main thread (sequentially)",
+    { tried: [...candidates.map((candidate) => fileURLToPath(candidate)), ...fallbacks] }
   )
+  cachedWorkerEntry = null
+  return null
 }
 
 function serializeError(error: unknown): SerializedError {
@@ -187,6 +214,7 @@ const DEFAULT_MAIN_THREAD_TOOL_NAMES = new Set([
   "browser_navigate",
   "browser_screenshot",
   "artifact_inspect",
+  "artifact_read",
   "browser_click",
   "browser_type",
   "browser_extract",
@@ -255,10 +283,12 @@ class ToolWorkerPool {
   private workers: WorkerSlot[] = []
   private queue: QueuedJob[] = []
   private readonly maxWorkers: number
+  private readonly workerEntry: string
   private disposed = false
 
-  constructor(maxWorkers: number) {
+  constructor(maxWorkers: number, workerEntry: string) {
     this.maxWorkers = Math.max(1, maxWorkers)
+    this.workerEntry = workerEntry
   }
 
   execute(job: Omit<QueuedJob, "resolve" | "settled" | "startedAt">): Promise<ToolBatchResult> {
@@ -385,7 +415,7 @@ class ToolWorkerPool {
   }
 
   private createSlot(): WorkerSlot {
-    const worker = new Worker(resolveWorkerEntry(), { type: "module" })
+    const worker = new Worker(this.workerEntry, { type: "module" })
     const slot: WorkerSlot = { worker, busy: false }
 
     worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
@@ -550,9 +580,12 @@ function resolveToolTimeout(
   return baseTimeoutMs
 }
 
-function getPool(maxWorkers: number): ToolWorkerPool {
+function getPool(maxWorkers: number): ToolWorkerPool | null {
+  const workerEntry = resolveWorkerEntry()
+  if (!workerEntry) return null
+
   if (!sharedPool || sharedPoolSize !== maxWorkers) {
-    sharedPool = new ToolWorkerPool(maxWorkers)
+    sharedPool = new ToolWorkerPool(maxWorkers, workerEntry)
     sharedPoolSize = maxWorkers
   }
   return sharedPool
@@ -578,7 +611,13 @@ export async function executeToolBatch(options: ExecuteToolBatchOptions): Promis
     }))
   }
 
-  if (!runtimeConfig.enabled || !runtimeConfig.parallelToolCalls || options.toolCalls.length <= 1) {
+  // A null pool means workers are disabled, unnecessary (single call), or
+  // unavailable in this build — all three degrade to the main thread.
+  const pool = runtimeConfig.enabled && runtimeConfig.parallelToolCalls && options.toolCalls.length > 1
+    ? getPool(runtimeConfig.maxWorkers)
+    : null
+
+  if (!pool) {
     const results: ToolBatchResult[] = []
     for (const toolCall of options.toolCalls) {
       const startedAt = performance.now()
@@ -605,7 +644,6 @@ export async function executeToolBatch(options: ExecuteToolBatchOptions): Promis
     return results
   }
 
-  const pool = getPool(runtimeConfig.maxWorkers)
   const batchId = crypto.randomUUID()
   const abortHandler = () => pool.abortBatch(batchId, "Tool execution aborted")
   options.signal?.addEventListener("abort", abortHandler, { once: true })

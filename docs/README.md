@@ -27,6 +27,7 @@ Esta es la entrada canónica a la documentación. Todo el contenido operativo es
 - [Arquitectura general](architecture/overview.md)
 - [Runtime de agentes](architecture/runtime.md)
 - [Navegador](internals/browser.md)
+- [Artefactos administrados](internals/artefactos.md)
 - [Workers de herramientas](internals/tool-workers.md)
 - [Formato TOON](internals/toon.md)
 - [Playbook ACE](internals/ace.md)

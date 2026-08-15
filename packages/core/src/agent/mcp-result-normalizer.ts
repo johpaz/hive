@@ -81,6 +81,42 @@ async function materializeBinary(
   };
 }
 
+/** Above this, parsing the text just to describe it costs more than it explains. */
+const MAX_SHAPE_PROBE_CHARS = 5_000_000;
+
+/**
+ * Describes the shape of a JSON payload so the model can aim `artifact_read`
+ * instead of paging blind.
+ *
+ * The 500-char preview alone is close to useless on the payload this was
+ * written for — a Gmail MCP result where the first message's `received`
+ * headers eat the whole window before a single subject line appears. Knowing
+ * "12 items, keyed id/threadId/labelIds/headers" is what turns a search into
+ * one call.
+ */
+function describeJsonShape(text: string): Record<string, unknown> {
+  if (text.length > MAX_SHAPE_PROBE_CHARS) return {};
+  const trimmed = text.trimStart();
+  if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) return {};
+
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) {
+      const first = parsed.find((item) => item && typeof item === "object" && !Array.isArray(item));
+      return {
+        json_items: parsed.length,
+        ...(first ? { json_item_keys: Object.keys(first as Record<string, unknown>).slice(0, 25) } : {}),
+      };
+    }
+    if (parsed && typeof parsed === "object") {
+      return { json_keys: Object.keys(parsed as Record<string, unknown>).slice(0, 25) };
+    }
+  } catch {
+    // Not JSON, or truncated JSON — the plain preview still stands.
+  }
+  return {};
+}
+
 async function materializeText(text: string, ctx: McpNormalizeContext): Promise<Record<string, unknown>> {
   if (!ctx.userId) {
     log.warn(`[materializeText] No user_id in tool context — truncating oversized text block (${text.length} chars) instead of creating an artifact`);
@@ -101,7 +137,13 @@ async function materializeText(text: string, ctx: McpNormalizeContext): Promise<
     artifact_id: artifact.id,
     mime_type: "text/plain",
     size: artifact.size,
+    chars: text.length,
     preview: text.length > 500 ? `${text.slice(0, 500)}…` : text,
+    ...describeJsonShape(text),
+    // Without this the model only knows the data exists somewhere. It used to
+    // reach for artifact_inspect (metadata only), find nothing usable, and
+    // spend its remaining iterations guessing.
+    hint: "Full content is available via artifact_read (artifactId + offset/limit, or search).",
   };
 }
 

@@ -17,7 +17,7 @@ Generado desde el código fuente para Hive **1.0.3**.
 | `@johpaz/hive-desktop` | `1.0.3` |
 | `apps/hive-desktop/src-tauri/tauri.conf.json` | `1.0.3` |
 
-## Herramientas (58)
+## Herramientas (59)
 
 | Herramienta | Categoría | Descripción |
 |---|---|---|
@@ -30,6 +30,7 @@ Generado desde el código fuente para Hive **1.0.3**.
 | `agent_find` | agents | Discover available worker agents. Includes global system catalog agents plus private workers owned by the current user. This tool does not report task execution; use task_list/task_status for that. Spanish: buscar agente, encontrar worker, localizar agente |
 | `api_request` | api | Make an HTTP request to a REST API endpoint. Supports GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS with custom headers, body, and query parameters. Spanish: llamar api, petición http, curl, post a api, put api, delete api, consumir servicio rest |
 | `artifact_inspect` | web | Inspect managed artifact metadata, integrity, MIME type and dimensions without returning or modifying its binary content. |
+| `artifact_read` | web | Read the text content of a managed artifact in slices, or search inside it. Use this on any artifact_ref a tool returned instead of guessing from its preview. Spanish: leer artefacto, ver contenido del artefacto, abrir resultado grande, buscar dentro del artefacto |
 | `browser_click` | web | Click on a web page element. Spanish: hacer clic, botón, enlace, interactuar |
 | `browser_extract` | web | Extract text, links, or structured data from page using CSS selectors or XPath. For general page overview without specific selectors, returns compact accessibility snapshot. Spanish: extraer datos, obtener información, scraping, selectores |
 | `browser_navigate` | web | Navigate browser to URL, get rendered page content (supports JS). Returns compact accessibility tree with element refs (@e1, @e2) for interaction. Spanish: navegar a url, abrir página, sitio web |

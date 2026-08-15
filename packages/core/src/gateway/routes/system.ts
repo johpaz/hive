@@ -211,13 +211,18 @@ export async function handleTriggerUpdate(
         // escritorio (Tauri) — GitHub Releases ya no publica binarios
         // standalone sueltos, así que no hay un "archivo" que reemplazar
         // manualmente. La actualización real la maneja el updater de Tauri.
+        // El gateway no puede actualizarse a sí mismo acá: vive embebido en la
+        // app de escritorio, y quien descarga, verifica la firma e instala es
+        // el updater de Tauri desde la ventana (components/DesktopUpdater.tsx).
+        // Este endpoint solo explica dónde ocurre; prometer que "se actualiza
+        // sola" cuando nadie disparaba el chequeo fue el bug anterior.
         return addCorsHeaders(Response.json({
           success: false,
-          error: "La app de escritorio se actualiza sola. Si no viste el aviso de actualización, reinícia la app o descarga el instalador más reciente.",
+          error: "La app de escritorio se actualiza desde su propia ventana, no desde el gateway.",
           instructions: [
-            "1. La app revisa actualizaciones al iniciar y las instala automáticamente",
-            "2. Si el aviso no aparece, cierra y volvé a abrir la app",
-            "3. Alternativa manual: descargá el instalador de tu sistema desde https://github.com/johpaz/hive/releases/latest y ejecutalo — reemplaza la instalación existente"
+            "1. La app revisa si hay versión nueva al abrirse y cada 6 horas",
+            "2. Cuando la encuentra te muestra un aviso con las notas y un botón para instalarla; al terminar se reinicia sola",
+            "3. Si preferís hacerlo a mano, descargá el instalador de tu sistema desde https://github.com/johpaz/hive/releases/latest — conserva tus datos y agentes"
           ]
         }), req)
         

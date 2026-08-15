@@ -11,7 +11,7 @@ import type { Config } from "../config/loader.ts";
 // Filesystem (7)
 import * as filesystem from "./filesystem/index.ts";
 
-// Web (10)
+// Web (11)
 import * as web from "./web/index.ts";
 
 // Cron (8) - Croner-based scheduler tools
@@ -43,7 +43,7 @@ export function createAllTools(config: Config): Tool[] {
     // FILESYSTEM (7)
     ...filesystem.createTools(),
 
-    // WEB (10)
+    // WEB (11)
     ...web.createTools(),
 
     // CRON (8)
@@ -124,6 +124,7 @@ export {
   browserScriptTool,
   browserWaitTool,
   artifactInspectTool,
+  artifactReadTool,
 } from "./web/index.ts";
 
 export {

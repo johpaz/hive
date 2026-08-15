@@ -95,6 +95,50 @@ export async function synthesizeFinalResponse(
   )
 }
 
+type LoadoutContext = {
+  tools: Array<{ type: string; function?: { name?: string } }>
+  allTools: Array<{ name: string }>
+}
+
+/**
+ * Adds artifact_read to the loadout the moment a tool result hands the model an
+ * `artifact_ref` it will need to open.
+ *
+ * mcp-result-normalizer.ts moves oversized MCP text results out of the context
+ * window and leaves a reference behind. Discovery (search_knowledge) can find
+ * the reader, but that costs an iteration and assumes the model thinks to look:
+ * in the incident this comes from, it reached for artifact_inspect instead, got
+ * metadata, and burned the rest of its budget on `find` and `env` before the
+ * turn died on an empty synthesis. Image refs are excluded — those are carried
+ * to the UI, not read back by the model.
+ *
+ * Returns true when the loadout changed.
+ */
+export function injectArtifactReadIfNeeded(toolResult: unknown, ctx: LoadoutContext): boolean {
+  if (!Array.isArray(toolResult)) return false
+
+  const needsReader = toolResult.some((block) =>
+    !!block && typeof block === "object" &&
+    (block as { type?: unknown }).type === "artifact_ref" &&
+    !String((block as { mime_type?: unknown }).mime_type ?? "").startsWith("image/")
+  )
+  if (!needsReader) return false
+  if (ctx.tools.some((t) => t.function?.name === "artifact_read")) return false
+
+  const reader = ctx.allTools.find((t) => t.name === "artifact_read")
+  if (!reader) return false
+
+  ctx.tools.push({
+    type: "function",
+    function: {
+      name: reader.name,
+      description: (reader as any).description ?? "",
+      parameters: (reader as any).parameters ?? { type: "object", properties: {} },
+    },
+  } as LoadoutContext["tools"][number])
+  return true
+}
+
 /** Bounds a single async operation to its own timeout window, independent of any caller. */
 export async function withTimeout<T>(op: () => Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout>
@@ -670,6 +714,10 @@ export async function* runAgent(
             turnImageArtifacts.push({ artifactId: ref.artifact_id, mimeType: ref.mime_type })
           }
         }
+      }
+
+      if (injectArtifactReadIfNeeded(toolResultJS, ctx)) {
+        log.info("[agent-loop] Tool result carries an artifact_ref — injected artifact_read into loadout")
       }
 
       // Encode TOON only for LLM consumption (with cost calculation)

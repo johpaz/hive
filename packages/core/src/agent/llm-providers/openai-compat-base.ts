@@ -9,6 +9,32 @@ import type { ContentPart, LLMMessage } from "../llm-client"
 
 const log = logger.child("llm-client")
 
+/**
+ * Statuses that mean "this body is malformed or unsupported" — the only ones
+ * where dropping the provider extras can possibly help.
+ *
+ * Deliberately narrow. A first version retried on any status and immediately
+ * misfired in production against a 429: a rate limit is not a body problem, so
+ * the retry spent a second request against the very limit that rejected the
+ * first, and turned thinking off for nothing. Same for 401/403 (auth) and 404
+ * (unknown model).
+ */
+const EXTRAS_REJECTED_CODES = [400, 422]
+
+/**
+ * Drops the non-standard fields a provider added on top of an OpenAI-shaped
+ * body, for use on a retry after the body itself was rejected. Right now that
+ * is only NIM's `chat_template_kwargs` (nvidia.ts): it enables the model's
+ * thinking, so losing it costs the reasoning display and nothing else — a far
+ * better outcome than a turn that dies because one model's chat template did
+ * not recognize the switch.
+ */
+function stripProviderExtras(body: any): any {
+  if (!body?.chat_template_kwargs) return body
+  const { chat_template_kwargs: _dropped, ...rest } = body
+  return rest
+}
+
 /** Matches both generic "context length exceeded" phrasing and llama.cpp's exceed_context_size_error shape. */
 function isContextOverflowError(err: any, errMsg: string): boolean {
   const status = err?.status ?? err?.response?.status
@@ -183,7 +209,14 @@ export abstract class OpenAICompatBase implements LLMProvider {
         delete bodyNoTools.tools
         delete bodyNoTools.tool_choice
         delete bodyNoTools.parallel_tool_calls
-        response = await client.chat.completions.create(this.modifyRequestBody(bodyNoTools, options), { signal: options.signal })
+        response = await client.chat.completions.create(stripProviderExtras(this.modifyRequestBody(bodyNoTools, options)), { signal: options.signal })
+      }
+      // Retry 3: the provider-specific extras are the only other thing we added
+      // to an otherwise standard body (NIM's chat_template_kwargs — see
+      // nvidia.ts). Losing the reasoning display beats failing the turn.
+      else if (EXTRAS_REJECTED_CODES.includes(status) && this.modifyRequestBody(body, options).chat_template_kwargs) {
+        log.warn(`[llm-client] ${this.providerName}: request rejected (HTTP ${status}) — retrying without chat_template_kwargs`)
+        response = await client.chat.completions.create(stripProviderExtras(this.modifyRequestBody(body, options)), { signal: options.signal })
       }
       else {
         throw err
@@ -254,7 +287,10 @@ export abstract class OpenAICompatBase implements LLMProvider {
         delete bodyNoTools.tools
         delete bodyNoTools.tool_choice
         delete bodyNoTools.parallel_tool_calls
-        stream = await client.chat.completions.create({ ...this.modifyRequestBody(bodyNoTools, options), stream: true }, { signal: options.signal })
+        stream = await client.chat.completions.create({ ...stripProviderExtras(this.modifyRequestBody(bodyNoTools, options)), stream: true }, { signal: options.signal })
+      } else if (EXTRAS_REJECTED_CODES.includes(status) && this.modifyRequestBody(body, options).chat_template_kwargs) {
+        log.warn(`[llm-client] ${this.providerName}: request rejected (HTTP ${status}) — retrying stream without chat_template_kwargs`)
+        stream = await client.chat.completions.create({ ...stripProviderExtras(this.modifyRequestBody(body, options)), stream: true }, { signal: options.signal })
       } else {
         throw err
       }

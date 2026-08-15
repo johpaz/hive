@@ -189,7 +189,7 @@ hive migrate
 hive doctor
 ```
 
-Los agentes de catálogo se reconcilian al arrancar. Los datos de usuario se conservan, mientras que las capacidades retiradas dejan de sembrarse. Revisa las incompatibilidades y equivalencias en [CHANGELOG_v1.0.0.md](CHANGELOG_v1.0.0.md).
+Los agentes de catálogo se reconcilian al arrancar. Los datos de usuario se conservan, mientras que las capacidades retiradas dejan de sembrarse. Revisa las incompatibilidades y equivalencias en [CHANGELOG_v1.0.1.md](CHANGELOG_v1.0.1.md).
 
 ## 📄 Licencia
 

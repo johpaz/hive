@@ -22,4 +22,8 @@ Al apagar el runtime se resuelven como abortados tanto jobs en cola como jobs ac
 
 ## Empaquetado
 
-Las distribuciones incluyen `dist/tool-worker.js`. `HIVE_TOOL_WORKER_PATH` permite señalar una ubicación explícita en entornos empaquetados especiales.
+El entry del worker se resuelve en este orden: el archivo en disco junto al bundle (`tool-worker.js` o el `.ts` en desarrollo), `HIVE_TOOL_WORKER_PATH`, el directorio del ejecutable, `/app/tool-worker.js` y, por último, la copia embebida en el ejecutable standalone.
+
+Cada distribución usa una vía distinta: el paquete npm publica `dist/tool-worker.js` junto a `dist/hive.js`; la imagen Docker lo copia al lado del binario; el binario standalone —el sidecar de la app de escritorio— lo lleva embebido, porque un instalador no deja archivos sueltos junto al ejecutable. `scripts/build-gateway.ts` hace ese embebido: `new Worker(path)` resuelve su ruta en runtime, así que el bundler no lo detecta y `bun build --compile` no lo incluiría por su cuenta.
+
+Si ninguna vía resuelve, el runtime registra un warning y ejecuta los lotes en el hilo principal de forma secuencial. Los workers son una optimización: su ausencia nunca debe romper un turno.

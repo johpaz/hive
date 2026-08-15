@@ -107,6 +107,71 @@ export async function readArtifactBytes(
   return { bytes: readFileSync(entry.doc.path), mimeType: entry.doc.mime_type };
 }
 
+/** Beyond this an artifact stops being something an agent can read into a context window. */
+const MAX_TEXT_ARTIFACT_BYTES = 25 * 1024 * 1024;
+
+function looksBinary(mimeType: string, bytes: Buffer): boolean {
+  if (/^(image|audio|video)\//.test(mimeType)) return true;
+  if (mimeType === "application/octet-stream") return true;
+  // A NUL byte in the first KB is the classic "this is not text" tell — a
+  // mislabelled text/plain artifact would otherwise decode to garbage.
+  return bytes.subarray(0, 1024).includes(0x00);
+}
+
+export type ArtifactTextResult = {
+  ok: boolean;
+  text?: string;
+  artifact?: ArtifactDoc;
+  error?: string;
+  status?: string;
+};
+
+/**
+ * Decodes a text artifact for in-process consumers that need its *content*,
+ * not just its metadata (inspectArtifact) or its raw bytes (readArtifactBytes).
+ *
+ * This exists because mcp-result-normalizer.ts moves oversized MCP text results
+ * out of the context window and hands the model an `artifact_ref` instead. Until
+ * this, nothing could read that reference back: the agent held a receipt it
+ * could not cash, burned its iterations guessing, and the turn died on an empty
+ * synthesis. Ownership and status checks mirror inspectArtifact's.
+ */
+export async function readArtifactText(
+  artifactId: string,
+  options: { userId?: string } = {},
+): Promise<ArtifactTextResult> {
+  const artifacts = await col<ArtifactDoc>("artifacts");
+  const entry = await artifacts.get(artifactId);
+  if (!entry) return { ok: false, error: "Artifact not found" };
+  const artifact = entry.doc;
+
+  if (options.userId && artifact.user_id && artifact.user_id !== options.userId) {
+    return { ok: false, error: "Artifact not accessible" };
+  }
+  if (artifact.status !== "active") {
+    return { ok: false, error: "Artifact binary has expired", status: artifact.status };
+  }
+  if (!existsSync(artifact.path)) {
+    return { ok: false, error: "Artifact binary is missing", status: "missing" };
+  }
+  if (artifact.size > MAX_TEXT_ARTIFACT_BYTES) {
+    return {
+      ok: false,
+      error: `Artifact is too large to read as text (${artifact.size} bytes, limit ${MAX_TEXT_ARTIFACT_BYTES})`,
+    };
+  }
+
+  const bytes = readFileSync(artifact.path);
+  if (looksBinary(detectedMime(bytes, artifact.mime_type), bytes)) {
+    return {
+      ok: false,
+      error: `Artifact is binary (${detectedMime(bytes, artifact.mime_type)}) — use artifact_inspect for its metadata`,
+    };
+  }
+
+  return { ok: true, text: bytes.toString("utf-8"), artifact };
+}
+
 export async function inspectArtifact(
   artifactId: string,
   options: { userId?: string } = {},
