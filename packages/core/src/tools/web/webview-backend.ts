@@ -547,24 +547,45 @@ export class WebViewBackend implements BrowserBackend {
    * Vuelca la sesión ya, sin esperar la ventana del debounce. Lo usan el
    * apagado ordenado y los tests; el camino normal es `scheduleSessionSave()`.
    */
+  /**
+   * Guarda la sesión ahora y falla si no puede.
+   *
+   * A diferencia del guardado periódico, aquí alguien pidió expresamente que la
+   * sesión quede en disco, así que callarse un fallo convierte el problema en
+   * "la cookie no aparece" mucho más tarde y en otro sitio — que es justo cómo
+   * se vivió desde una integración continua, sin forma de saber la causa.
+   */
   async flushSession(): Promise<void> {
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
-    await this.saveSession();
+    await this.saveSession(true);
   }
 
-  private async saveSession(): Promise<void> {
-    if (!this.view) return;
-    if (!sessionPersistenceEnabled(this.options.persistSession) || !this.hasCdp) return;
+  private async saveSession(estricto = false): Promise<void> {
+    const rendirse = (motivo: string) => {
+      if (estricto) throw new Error(`no se pudo guardar la sesión: ${motivo}`);
+    };
+    if (!this.view) return rendirse("no hay ninguna vista abierta");
+    // Apagada por configuración: no hay nada que guardar y tampoco un problema
+    // que contar. Sólo se protesta cuando debía guardar y no pudo.
+    if (!sessionPersistenceEnabled(this.options.persistSession)) return;
+    if (!this.hasCdp) {
+      return rendirse(`el motor «${this.engine ?? this.options.engine ?? "?"}» no expone CDP`);
+    }
     try {
       const res = (await this.run((view) => view.cdp("Network.getAllCookies"))) as {
         cookies?: unknown[];
       };
-      const guardadas = await storeCookies(res?.cookies ?? []);
+      const cookies = res?.cookies ?? [];
+      const guardadas = await storeCookies(cookies);
       if (guardadas) log.debug(`sesión del navegador guardada (${guardadas} cookies)`);
+      else if (estricto && cookies.length === 0) {
+        throw new Error("el navegador no reportó ninguna cookie");
+      }
     } catch (err) {
+      if (estricto) throw err;
       log.warn(`no se pudo guardar la sesión: ${(err as Error).message}`);
     }
   }
