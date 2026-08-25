@@ -2662,8 +2662,10 @@ export async function startGateway(
 
     // BrowserService — kill any running browser processes
     try {
+      // `CDPClient` desapareció al retirar agent-browser; el cierre vive ahora
+      // en `shutdownBrowser`, que para el servicio y cierra las WebViews.
       const mod = await import("../tools/web/browser-service");
-      mod.CDPClient.closeAll();
+      await mod.shutdownBrowser();
       log.info("Browser processes cleaned up");
     } catch { }
 
