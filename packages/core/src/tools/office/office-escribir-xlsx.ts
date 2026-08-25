@@ -10,6 +10,7 @@ import type { Tool } from "../types.ts";
 import { logger } from "../../utils/logger.ts";
 import * as path from "node:path";
 import * as fs from "node:fs";
+import { cargarXlsx } from "./xlsx-loader";
 
 const log = logger.child("office-escribir-xlsx");
 
@@ -55,7 +56,7 @@ export const officeEscribirXlsxTool: Tool = {
     log.debug(`Generando XLSX: ${ruta}`);
 
     try {
-      const XLSX = await import("xlsx");
+      const XLSX = await cargarXlsx();
 
       const workbook = XLSX.utils.book_new();
 

@@ -10,6 +10,7 @@ import type { Tool } from "../types.ts";
 import { logger } from "../../utils/logger.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { cargarXlsx } from "./xlsx-loader";
 
 const log = logger.child("office-leer-xlsx");
 
@@ -55,7 +56,7 @@ export const officeLeerXlsxTool: Tool = {
         return { ok: false, error: `Archivo no encontrado: ${rutaAbsoluta}` };
       }
 
-      const XLSX = await import("xlsx");
+      const XLSX = await cargarXlsx();
       const buffer = fs.readFileSync(rutaAbsoluta);
       const workbook = XLSX.read(buffer, { type: "buffer" });
 
