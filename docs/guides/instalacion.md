@@ -22,7 +22,7 @@ Si el navegador está en una ruta rara, apunta `BUN_CHROME_PATH` al binario. El 
 El paquete publicado en npm **requiere Bun** como runtime — no funciona con Node. `dist/hive.js` lleva `#!/usr/bin/env bun` y usa APIs exclusivas de Bun (`Bun.spawn`, `Bun.serve`, `Bun.file`, etc.). `npm install -g` funciona porque solo descarga el paquete, pero `hive` no arranca sin Bun instalado en el `PATH`.
 
 ```bash
-bun add --global @johpaz/hive-agents@1.0.4
+bun add --global @johpaz/hive-agents@1.0.5
 hive start
 ```
 
@@ -49,7 +49,7 @@ Este comando construye la UI y usa un `HIVE_HOME` de desarrollo separado.
 docker run --name hive \
   -p 18790:18790 \
   -v hive-data:/root/.hive \
-  johpaz/hive-agents:1.0.4
+  johpaz/hive-agents:1.0.5
 ```
 
 El volumen conserva HiveDB, configuración, credenciales de canales y artefactos. No expongas el puerto directamente a Internet; usa un proxy TLS y conserva la autenticación.

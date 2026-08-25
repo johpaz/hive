@@ -1,6 +1,6 @@
 {
   "name": "@johpaz/hive-desktop",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "private": true,
   "description": "Hive Agents — Tauri shell with an embedded Hive gateway",
   "scripts": {
