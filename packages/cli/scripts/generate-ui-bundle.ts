@@ -22,6 +22,11 @@ const MIME: Record<string, string> = {
   ".txt": "text/plain",
   ".webp": "image/webp",
   ".gif": "image/gif",
+  // El avatar 3D de HiveLive. Sin esta entrada se servía como
+  // application/octet-stream: el loader lo acepta igual porque detecta el
+  // formato por la cabecera del archivo, pero declararlo evita sorpresas con
+  // caches y proxies intermedios.
+  ".glb": "model/gltf-binary",
 };
 
 function walk(dir: string, base = dir): Array<{ sub: string; full: string }> {

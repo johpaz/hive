@@ -4,6 +4,19 @@
 
 Para usar el repositorio se requiere Bun 1.3.x y Git. Docker y la app de escritorio no necesitan ningún runtime JavaScript instalado: el gateway va embebido.
 
+### Navegador (para las browser tools)
+
+Las herramientas de navegador (`browser_navigate`, `browser_click`, `computer_use_task`…) usan `Bun.WebView`, que necesita un navegador Chromium instalado en la máquina. No se descarga nada: se usa el que ya tengas.
+
+| Sistema | Qué sirve |
+|---|---|
+| Linux | `apt install chromium` · `dnf install chromium` · Chrome, Brave, Edge o Vivaldi, incluidos los de Flatpak y Snap |
+| macOS | `brew install --cask google-chrome` (o Chromium, Brave, Edge). Sin ninguno se usa el WebKit del sistema, con menos capacidades |
+| Windows | Chrome, Edge (viene con el sistema) o Brave |
+| Docker | Ya incluido en la imagen |
+
+Si el navegador está en una ruta rara, apunta `BUN_CHROME_PATH` al binario. El resto de Hive funciona sin navegador: sólo se desactivan esas tools, y `hive doctor` lo dice.
+
 ## Desde npm con Bun
 
 El paquete publicado en npm **requiere Bun** como runtime — no funciona con Node. `dist/hive.js` lleva `#!/usr/bin/env bun` y usa APIs exclusivas de Bun (`Bun.spawn`, `Bun.serve`, `Bun.file`, etc.). `npm install -g` funciona porque solo descarga el paquete, pero `hive` no arranca sin Bun instalado en el `PATH`.

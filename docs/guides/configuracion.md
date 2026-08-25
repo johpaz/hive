@@ -62,3 +62,31 @@ El onboarding asigna proveedor y modelo al coordinador y completa agentes sin co
 Cada turno pide razonamiento y cada proveedor decide cómo cumplirlo: Anthropic con extended thinking, Gemini y Ollama con sus propios campos, y los compatibles con OpenAI leyendo `reasoning_content` del stream.
 
 NVIDIA NIM es el caso especial: lo mantiene apagado salvo que se lo pidan por `chat_template_kwargs`, con una clave distinta por familia de modelo — `enable_thinking` para GLM, `thinking_mode` para MiniMax, `thinking` para Kimi y DeepSeek. Nemotron 3 razona sin pedírselo. Si un modelo rechaza esa clave, la llamada se repite sin ella: se pierde el razonamiento en pantalla, nunca el turno.
+
+## Audio de HiveLive
+
+La entrada y la salida se eligen en el panel de sonido de la consola de voz, y también en Ajustes → Pantalla y audio. La lista la reporta el sistema operativo: en Linux son los puertos de tarjeta, los mismos que enseña el menú de sonido del escritorio, así que un altavoz USB o un HDMI que hoy no está activo también aparece — al elegirlo se activa su perfil.
+
+### Manos libres
+
+Con la voz saliendo por un altavoz abierto —un televisor, unos bafles— el micrófono recoge a la colmena y el detector de voz del modelo lo toma por una interrupción: se contesta a sí misma. En el navegador no pasa porque Chrome cancela su propia salida dentro del micrófono; el motor de la app de escritorio en Linux no puede hacerlo, porque su cancelador necesita una referencia de la reproducción que WebAudio no le entrega.
+
+Por eso existe el modo altavoz, que se enciende solo al elegir una salida al aire: mientras la colmena habla no se le envía micrófono, y su detector se vuelve más exigente para darse por interrumpido. El precio es que en ese rato no se la puede cortar hablando encima; el botón del micrófono sí la corta. Con auriculares no hace falta y se apaga solo.
+
+### Full-duplex real por altavoz
+
+Quien quiera interrumpir hablando encima con el sonido saliendo por un altavoz necesita cancelación de eco del sistema, no de la aplicación. PipeWire la trae en `module-echo-cancel`: crea un micrófono virtual ya cancelado que HiveLive listará como uno más.
+
+```ini
+# ~/.config/pipewire/pipewire.conf.d/99-echo-cancel.conf
+context.modules = [
+  { name = libpipewire-module-echo-cancel
+    args = {
+      capture.props  = { node.name = "efecto_entrada.eco"  }
+      source.props   = { node.name = "eco_cancelado"       }
+    }
+  }
+]
+```
+
+Después de `systemctl --user restart pipewire`, se elige «eco_cancelado» como micrófono y se apaga el modo altavoz. Hive no toca esa configuración: es del sistema y afecta a todas las aplicaciones.

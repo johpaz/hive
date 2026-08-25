@@ -68,7 +68,7 @@ export const browserScreenshotTool: Tool = {
       log.warn("Browser not available");
       return {
         ok: false,
-        error: "Browser automation not available. Install agent-browser.",
+        error: "Browser automation not available. Install Chrome or Chromium (or run `hive doctor`).",
       };
     }
 
@@ -76,16 +76,23 @@ export const browserScreenshotTool: Tool = {
 
     try {
       const view = await browserService.getView();
-      if (!view) return { ok: false, error: "Browser automation not available. Install agent-browser." };
+      if (!view) return { ok: false, error: "Browser automation not available. Install Chrome or Chromium (or run `hive doctor`)." };
 
       if (url) {
         await view.navigate(url);
         await Bun.sleep(500);
       }
 
-      // Resize viewport before screenshot to keep image small
-      await view.resize(width, height);
-      await Bun.sleep(200);
+      // Fijar el viewport es un intento, no un requisito: `Emulation.setDevice
+      // MetricsOverride` no existe en todos los motores —y falla si todavía no
+      // se navegó a ninguna página—. Sin esto, un resize que no se puede hacer
+      // tiraba abajo la captura entera.
+      try {
+        await view.resize(width, height);
+        await Bun.sleep(200);
+      } catch (error) {
+        log.info(`el motor no permite fijar el viewport: ${(error as Error).message}`);
+      }
 
       let screenshot: string;
 

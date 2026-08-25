@@ -173,7 +173,7 @@ export async function fetchProviderModelNames(
 /**
  * GET /api/providers/:id/available-models — sólo lectura.
  * El sync persiste TODO lo que devuelve el provider (102 modelos en NVIDIA), que
- * no es lo que querés al explorar para agregar uno: acá se devuelve la lista y el
+ * no es lo que quieres al explorar para agregar uno: acá se devuelve la lista y el
  * usuario elige.
  */
 export async function handleGetProviderAvailableModels(

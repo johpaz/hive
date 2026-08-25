@@ -22,7 +22,9 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { CheckCircle2, XCircle, Sparkles, Hexagon, Loader2 } from "lucide-react";
+import { CheckCircle2, XCircle, Sparkles, Loader2 } from "lucide-react";
+import { SetupLogo, SetupEyebrow, SetupBrandBar } from "@/modules/setup/SetupBrand";
+import { SETUP_BRAND } from "@/modules/setup/brand";
 import { useLoaderStore } from "@/stores/useLoaderStore";
 import { useHiveAgentsModelLoad } from "@/hooks/useHiveAgentsModelLoad";
 import { cn } from "@/lib/utils";
@@ -342,18 +344,17 @@ export default function SetupPage() {
 
   const renderStep1 = () => (
     <div className="space-y-6">
-      <div className="text-center space-y-4">
-        <div className="flex justify-center">
-          <div className="relative">
-            <Hexagon className="w-24 h-24 text-amber-500" fill="currentColor" />
-            <Sparkles className="w-8 h-8 text-amber-300 absolute -top-2 -right-2" />
-          </div>
+      <div className="flex flex-col items-center gap-5 text-center">
+        <SetupLogo size={112} />
+        <div className="space-y-3">
+          <SetupEyebrow>{SETUP_BRAND.eyebrow}</SetupEyebrow>
+          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
+            {SETUP_BRAND.welcomeTitle}
+          </h1>
+          <p className="mx-auto max-w-md text-sm leading-relaxed text-muted-foreground">
+            {SETUP_BRAND.welcomeBody}
+          </p>
         </div>
-        <h1 className="text-3xl font-bold">Bienvenido a Hive</h1>
-        <p className="text-muted-foreground max-w-md mx-auto">
-          Hive es tu colmena de agentes IA. Local-first. Multi-canal. Open source.
-          En los próximos minutos configurarás tu agente personal Bee.
-        </p>
       </div>
 
       <Card>
@@ -385,7 +386,7 @@ export default function SetupPage() {
               onChange={(e) => updateData({ userEmail: e.target.value })}
             />
             <p className="text-xs text-muted-foreground">
-              Hive lo usará cuando digas «envíame». También será tu usuario de acceso si después activas una contraseña.
+              {SETUP_BRAND.name} lo usará cuando digas «envíame». También será tu usuario de acceso si después activas una contraseña.
             </p>
           </div>
 
@@ -541,6 +542,11 @@ export default function SetupPage() {
 
       {wizardData.provider && (() => {
         const selectedProvider = providers.find(p => p.id === wizardData.provider);
+        // Varios catálogos ya marcan cuál es el modelo recomendado en el propio
+        // nombre (HiveAgents, por ejemplo). Cuando es así, el orden del scan no
+        // decide nada: etiquetar al primero recomendaría el modelo equivocado y
+        // duplicaría el sufijo en el que sí lo es.
+        const modelsMarkRecommended = (selectedProvider?.models ?? []).some(m => (m.name || "").includes("Recomendado"));
         return (
           <Card className="mt-4">
             <CardHeader>
@@ -679,7 +685,7 @@ export default function SetupPage() {
                         const loaded = await loadHiveAgentsModel(value, contextWindow);
                         setHiveagentsLoading(false);
                         if (!loaded) {
-                          setHiveagentsLoadError("No se pudo confirmar la carga del modelo. Intentá de nuevo.");
+                          setHiveagentsLoadError("No se pudo confirmar la carga del modelo. Intenta de nuevo.");
                           return;
                         }
                       }
@@ -692,7 +698,7 @@ export default function SetupPage() {
                     <SelectContent>
                       {(selectedProvider?.models ?? []).map((m, i) => (
                         <SelectItem key={m.id} value={m.id}>
-                          {m.name || m.id}{i === 0 ? " (Recomendado)" : ""}
+                          {m.name || m.id}{!modelsMarkRecommended && i === 0 ? " (Recomendado)" : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1003,24 +1009,31 @@ export default function SetupPage() {
 
   const renderStepSummary = () => (
     <div className="space-y-6">
-      <div className="text-center space-y-2">
-        <h2 className="text-2xl font-bold">¡Todo listo!</h2>
-        <p className="text-muted-foreground">Revisa tu configuración antes de continuar</p>
+      <div className="space-y-2 text-center">
+        <h2 className="text-2xl font-bold tracking-tight">{SETUP_BRAND.successTitle}</h2>
+        <p className="text-sm text-muted-foreground">
+          Revisa la configuración antes de continuar
+        </p>
       </div>
 
       {submitSuccess ? (
-        <Card className="border-green-500 bg-green-500/10">
-          <CardContent className="p-8 text-center space-y-4">
-            <div className="flex justify-center">
-              <div className="relative">
-                <Hexagon className="w-24 h-24 text-amber-500 animate-pulse" fill="currentColor" />
-                <Sparkles className="w-8 h-8 text-amber-300 absolute -top-2 -right-2 animate-bounce" />
-              </div>
+        <Card className="border-emerald-500/40 bg-emerald-500/[0.06]">
+          <CardContent className="flex flex-col items-center gap-4 p-8 text-center">
+            <div className="relative">
+              <SetupLogo size={104} />
+              <span className="absolute -right-1 -top-1 flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500 shadow-lg">
+                <CheckCircle2 className="h-5 w-5 text-white" />
+              </span>
             </div>
-            <h3 className="text-xl font-bold">¡Bienvenido a Hive!</h3>
-            <p className="text-muted-foreground">
-              {wizardData.agentName} está listo para ayudarte.
-            </p>
+            <div className="space-y-1.5">
+              <h3 className="text-xl font-bold tracking-tight">
+                {SETUP_BRAND.welcomeTitle}
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{wizardData.agentName}</span>{" "}
+                está listo para trabajar.
+              </p>
+            </div>
           </CardContent>
         </Card>
       ) : (
@@ -1028,9 +1041,7 @@ export default function SetupPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-amber-500">
-                  <Hexagon className="w-6 h-6 text-white" fill="currentColor" />
-                </div>
+                <SetupLogo size={40} glow={false} />
                 {wizardData.agentName}
               </CardTitle>
               <CardDescription>{wizardData.agentDescription || "Sin descripción"}</CardDescription>
@@ -1107,10 +1118,15 @@ export default function SetupPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
       <div className="container max-w-2xl mx-auto py-8 px-4">
-        {/* Progress */}
-        <div className="mb-8 space-y-2">
-          <div className="flex justify-between text-sm text-muted-foreground">
-            <span>Paso {currentStep} de {TOTAL_STEPS}</span>
+        {/* Marca + progreso */}
+        <div className="mb-8 space-y-3">
+          <div className="flex items-center justify-between gap-4">
+            <SetupBrandBar />
+            <span className="shrink-0 rounded-full border border-border/70 bg-card/60 px-2.5 py-1 text-[11px] font-medium tabular-nums text-muted-foreground">
+              Paso {currentStep} de {TOTAL_STEPS}
+            </span>
+          </div>
+          <div className="flex justify-end text-sm text-muted-foreground">
             <button
               onClick={handleReset}
               className="text-xs text-muted-foreground hover:text-foreground"

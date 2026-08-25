@@ -18,6 +18,7 @@ const ChannelsPage = lazy(() => import("@/pages/ChannelsPage").then(m => ({ defa
 const ProvidersPage = lazy(() => import("@/pages/ProvidersPage").then(m => ({ default: m.ProvidersPage })));
 const WebChatPage = lazy(() => import("@/pages/WebChatPage").then(m => ({ default: m.WebChatPage })));
 const MeetingPage = lazy(() => import("@/pages/MeetingPage").then(m => ({ default: m.MeetingPage })));
+const VoicePage = lazy(() => import("@/pages/VoicePage").then(m => ({ default: m.VoicePage })));
 const Office3DPage = lazy(() => import("@/modules/office3d/Office3DPage"));
 const ApiClientPage = lazy(() => import("@/pages/ApiClientPage").then(m => ({ default: m.ApiClientPage })));
 const SetupPage = lazy(() => import("@/pages/SetupPage"));
@@ -28,6 +29,7 @@ import { useInitializeGlobalConfig } from "@/stores/useGlobalConfigStore";
 import { useUserStore } from "@/stores/userStore";
 import { WelcomeDialog } from "@/components/WelcomeDialog";
 import { DesktopUpdater } from "@/components/DesktopUpdater";
+import { DesktopZoom } from "@/components/DesktopZoom";
 import { useEffect, useState, type ReactNode } from "react";
 import { BeeLoader } from "@/components/ui/bee-loader";
 import { getApiBaseUrl } from "@/lib/gateway-url";
@@ -146,6 +148,7 @@ const AppContent = () => {
       <BeeLoader />
       <WelcomeDialog />
       <DesktopUpdater />
+      <DesktopZoom />
 
       <Routes>
         <Route path="/setup" element={<SetupPage />} />
@@ -165,6 +168,7 @@ const AppContent = () => {
           <Route path="/a2ui" element={<A2UIPage />} />
           <Route path="/a2ui/:sessionId" element={<A2UIPage />} />
           <Route path="/meeting" element={<MeetingPage />} />
+          <Route path="/voz" element={<VoicePage />} />
           <Route path="/channels" element={<ChannelsPage />} />
           <Route path="/providers" element={<ProvidersPage />} />
           <Route path="/logs" element={<LogsPage />} />

@@ -39,8 +39,16 @@ export default defineConfig({
         ws: true,
         rewrite: (path) => path,
       },
+      "/realtime": {
+        target: "ws://127.0.0.1:18790",
+        ws: true,
+        rewrite: (path) => path,
+      },
     },
   },
+  // Rolldown no trata .glb como asset por defecto: sin esto el import del
+  // modelo 3D rompe el build ("Could not load src/assets/bia.glb").
+  assetsInclude: ["**/*.glb"],
   build: {
     outDir: "dist",
     emptyOutDir: true,

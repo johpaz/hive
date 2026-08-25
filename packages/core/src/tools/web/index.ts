@@ -1,7 +1,8 @@
 /**
  * Web Tools - Browser automation + Web utilities
  * 
- * Browser tools use agent-browser (Rust CLI, auto-managed).
+ * Las browser tools hablan con `BrowserBackend`, que hoy tiene una sola
+ * implementación: Bun.WebView in-process sobre un Chromium del sistema.
  */
 
 import type { Tool } from "../types.ts";
@@ -9,6 +10,7 @@ import { webSearchTool } from "./web-search.ts";
 import { webFetchTool } from "./web-fetch.ts";
 import { browserNavigateTool } from "./browser-navigate.ts";
 import { browserScreenshotTool } from "./browser-screenshot.ts";
+import { computerUseTaskTool } from "./computer-use.ts";
 import { browserClickTool } from "./browser-click.ts";
 import { browserTypeTool } from "./browser-type.ts";
 import { browserExtractTool } from "./browser-extract.ts";
@@ -23,6 +25,7 @@ export function createTools(): Tool[] {
     webFetchTool,
     browserNavigateTool,
     browserScreenshotTool,
+    computerUseTaskTool,
     browserClickTool,
     browserTypeTool,
     browserExtractTool,
@@ -37,6 +40,7 @@ export * from "./web-search.ts";
 export * from "./web-fetch.ts";
 export * from "./browser-navigate.ts";
 export * from "./browser-screenshot.ts";
+export * from "./computer-use.ts";
 export * from "./browser-click.ts";
 export * from "./browser-type.ts";
 export * from "./browser-extract.ts";

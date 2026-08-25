@@ -69,6 +69,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates tzdata libgcc-s1 libstdc++6 chromium wget && \
     rm -rf /var/lib/apt/lists/*
 
+# Bun.WebView lanza Chromium por su cuenta y no acepta argumentos extra: no pasa
+# --no-sandbox y no expone forma de agregarlo. Como el contenedor corre como
+# root, Chromium se niega a arrancar ("Running as root without --no-sandbox is
+# not supported"). Este wrapper es el punto donde se inyectan las banderas que
+# el contenedor necesita: sandbox apagado (ya estamos aislados por el
+# contenedor) y /dev/shm chico, que es el default de Docker.
+RUN printf '#!/bin/sh\nexec /usr/bin/chromium --no-sandbox --disable-dev-shm-usage "$@"\n' \
+      > /usr/local/bin/hive-chrome && chmod +x /usr/local/bin/hive-chrome
+ENV BUN_CHROME_PATH=/usr/local/bin/hive-chrome
+
 WORKDIR /app
 
 # Copy compiled binary (self-contained, includes Bun runtime)

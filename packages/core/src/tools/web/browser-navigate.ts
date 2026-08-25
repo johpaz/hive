@@ -49,7 +49,7 @@ export const browserNavigateTool: Tool = {
       log.warn("Browser not available");
       return {
         ok: false,
-        error: "Browser automation not available. Install agent-browser.",
+        error: "Browser automation not available. Install Chrome or Chromium (or run `hive doctor`).",
       };
     }
 
@@ -57,7 +57,7 @@ export const browserNavigateTool: Tool = {
 
     try {
       const view = await browserService.getView();
-      if (!view) return { ok: false, error: "Browser automation not available. Install agent-browser." };
+      if (!view) return { ok: false, error: "Browser automation not available. Install Chrome or Chromium (or run `hive doctor`)." };
 
       await view.navigate(url);
 

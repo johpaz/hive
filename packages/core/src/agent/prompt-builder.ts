@@ -136,7 +136,7 @@ export async function buildSystemPrompt(opts: BuildSystemPromptOpts): Promise<st
     if (Object.keys(userData).length > 0) {
       userSection += formatContext(userData) + "\n\n"
       if (agent.role === "coordinator" && user.email) {
-        userSection += `Cuando el usuario diga "envíame", "mándame" o "a mi correo" sin indicar otro destinatario, usá CorreoPropio. Para terceras personas, resolvé su dirección por separado.\n\n`
+        userSection += `Cuando el usuario diga "envíame", "mándame" o "a mi correo" sin indicar otro destinatario, usa CorreoPropio. Para terceras personas, resuelve su dirección por separado.\n\n`
       }
     } else {
       userSection += `Usuario ID: ${userId}\n\n`

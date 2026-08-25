@@ -45,13 +45,26 @@ export interface StoredMessage {
 // stays clean and the wording can evolve without a migration.
 
 export const INTERNAL_SOURCES: ReadonlySet<string> =
-  new Set(["task_complete", "delegation_summary", "legacy_internal"])
+  new Set(["task_complete", "delegation_summary", "legacy_internal", "realtime_chat"])
 
 export function isInternalSource(source: string | null | undefined): boolean {
   return !!source && INTERNAL_SOURCES.has(source)
 }
 
 export function formatInternalEvent(source: string, content: string): string {
+  // La charla hablada sí salió del usuario, pero la sesión de voz ya la
+  // respondió: es contexto, no trabajo por hacer. Sin esta distinción el
+  // coordinador leía cada frase suelta de una llamada como un pedido nuevo y
+  // delegaba una tarea por cada una.
+  if (source === "realtime_chat") {
+    return `<hive:voice_context>\n` +
+      `Fragmento de una conversación hablada que la voz de Hive YA respondió en el momento. ` +
+      `Es contexto de lo que vinieron hablando, NO un pedido pendiente: no ejecutes ni delegues nada por esto. ` +
+      `El trabajo real llega siempre como un mensaje aparte y explícito.\n\n` +
+      `${content}\n` +
+      `</hive:voice_context>`
+  }
+
   return `<hive:internal_event source="${source}">\n` +
     `Evento interno del sistema — NO es un mensaje del usuario. No lo cites literalmente, no expongas IDs internos (task_id, worker_id) ni JSON crudo. Respondé al usuario de forma natural y breve.\n\n` +
     `${content}\n` +

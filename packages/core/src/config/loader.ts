@@ -127,11 +127,13 @@ const BrowserConfigSchema = z.object({
   headless: z.boolean().optional(),
   timeoutMs: z.number().optional(),
   sessionName: z.string().optional(),
-  // "agent-browser" (default) usa Chrome via CLI y sirve headless/Docker.
-  // "webview" usa Bun.WebView in-process — mucho más rápido y sin instalación,
-  // pero requiere entorno gráfico. "auto" toma webview sólo si hay display.
-  // Lo pisa HIVE_BROWSER_BACKEND.
+  // Queda un solo backend: Bun.WebView in-process. La clave sobrevive para no
+  // romper configs viejas —"agent-browser" se acepta, avisa y usa el WebView—
+  // y se puede quitar sin más. Lo pisa HIVE_BROWSER_BACKEND.
   backend: z.enum(["agent-browser", "webview", "auto"]).optional(),
+  // Guarda las cookies para que los logins sobrevivan a un reinicio. Default
+  // activo; apagarlo hace que cada arranque empiece sin historia.
+  persistSession: z.boolean().optional(),
 });
 
 const CanvasConfigSchema = z.object({

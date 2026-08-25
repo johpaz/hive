@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-gateway-info"
+description = "Enables the gateway_info command without any pre-configured scope."
+commands.allow = ["gateway_info"]
+
+[[permission]]
+identifier = "deny-gateway-info"
+description = "Denies the gateway_info command without any pre-configured scope."
+commands.deny = ["gateway_info"]

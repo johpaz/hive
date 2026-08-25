@@ -2,9 +2,9 @@
  * BrowserBackend — selección de backend y el WebViewBackend real.
  *
  * Los tests marcados como "vivos" abren un navegador de verdad y se saltan solos
- * donde no hay motor (sin Chrome y sin macOS). Los de selección son puros y
- * corren siempre: son los que evitan que un cambio de default mande el gateway
- * headless a un backend que necesita display.
+ * donde no hay motor (sin Chromium y sin macOS). Los puros corren siempre: son
+ * los que cuidan la detección del navegador y que una config vieja no deje al
+ * gateway sin browser tools.
  */
 
 process.env.HIVE_DB_PATH = ":memory:";
@@ -15,8 +15,15 @@ import {
   isWebViewSupported,
   resolveWebViewEngine,
   findChrome,
+  browserInstallHint,
 } from "../packages/core/src/tools/web/browser-backend.ts";
 import { WebViewBackend } from "../packages/core/src/tools/web/webview-backend.ts";
+import {
+  clearStoredSession,
+  loadStoredCookies,
+  normalizeCookies,
+  sessionPersistenceEnabled,
+} from "../packages/core/src/tools/web/browser-session.ts";
 
 const ORIGINAL_ENV = process.env.HIVE_BROWSER_BACKEND;
 
@@ -35,44 +42,38 @@ afterAll(() => {
 // ─── selección de backend ─────────────────────────────────────────────────────
 
 describe("resolveBackendKind", () => {
-  test("el default es agent-browser — es el único que corre headless sin Chrome", () => {
+  test("siempre resuelve al WebView: es el único backend que queda", () => {
     delete process.env.HIVE_BROWSER_BACKEND;
-    expect(resolveBackendKind(undefined)).toBe("agent-browser");
-  });
-
-  test("respeta la preferencia de config", () => {
-    delete process.env.HIVE_BROWSER_BACKEND;
+    expect(resolveBackendKind(undefined)).toBe("webview");
+    expect(resolveBackendKind("auto")).toBe("webview");
     expect(resolveBackendKind("webview")).toBe("webview");
-    expect(resolveBackendKind("agent-browser")).toBe("agent-browser");
   });
 
-  test("HIVE_BROWSER_BACKEND pisa la config", () => {
-    process.env.HIVE_BROWSER_BACKEND = "webview";
+  test('una config vieja con "agent-browser" no rompe el arranque', () => {
+    // El backend por CLI se retiró. Un `hive.json` que todavía lo pida tiene que
+    // arrancar igual —avisando— y no dejar al usuario sin navegador.
+    delete process.env.HIVE_BROWSER_BACKEND;
     expect(resolveBackendKind("agent-browser")).toBe("webview");
 
     process.env.HIVE_BROWSER_BACKEND = "agent-browser";
-    expect(resolveBackendKind("webview")).toBe("agent-browser");
+    expect(resolveBackendKind(undefined)).toBe("webview");
   });
 
-  test("'auto' nunca elige webview si no hay motor disponible", () => {
-    delete process.env.HIVE_BROWSER_BACKEND;
-    const kind = resolveBackendKind("auto");
-    expect(kind).toBe(isWebViewSupported() ? "webview" : "agent-browser");
-  });
-
-  test("un valor desconocido cae al default en vez de romper", () => {
+  test("un valor desconocido tampoco rompe", () => {
     process.env.HIVE_BROWSER_BACKEND = "netscape";
-    expect(resolveBackendKind("webview")).toBe("agent-browser");
+    expect(resolveBackendKind("webview")).toBe("webview");
   });
 });
 
 describe("detección de motor", () => {
-  test("resolveWebViewEngine devuelve webkit en macOS y chrome sólo si hay binario", () => {
+  test("chrome gana sobre webkit cuando hay un Chromium instalado", () => {
+    // De CDP dependen el árbol de accesibilidad, la sesión persistente y los
+    // clics reales, así que WebKit es el último recurso, no la opción de macOS.
     const engine = resolveWebViewEngine();
-    if (process.platform === "darwin") {
-      expect(engine).toBe("webkit");
+    if (findChrome()) {
+      expect(engine).toBe("chrome");
     } else {
-      expect(engine).toBe(findChrome() ? "chrome" : null);
+      expect(engine).toBe(process.platform === "darwin" ? "webkit" : null);
     }
   });
 
@@ -81,10 +82,17 @@ describe("detección de motor", () => {
     process.env.BUN_CHROME_PATH = "/ruta/propia/chrome";
     try {
       expect(findChrome()).toBe("/ruta/propia/chrome");
+      expect(resolveWebViewEngine()).toBe("chrome");
     } finally {
       if (previous === undefined) delete process.env.BUN_CHROME_PATH;
       else process.env.BUN_CHROME_PATH = previous;
     }
+  });
+
+  test("el hint de instalación habla del sistema donde corre", () => {
+    const hint = browserInstallHint();
+    expect(hint).toContain("BUN_CHROME_PATH");
+    if (process.platform === "linux") expect(hint).toContain("Chromium");
   });
 });
 
@@ -157,7 +165,30 @@ describe.skipIf(!LIVE)("WebViewBackend (navegador real)", () => {
     await expect(backend.fill("#no-existe", "x")).rejects.toThrow(/no encontrado/);
   });
 
-  test("la navegación hacia atrás usa goBack — los tipos de bun-types dicen back()", async () => {
+  test("un click a un selector inexistente falla en vez de colgar el navegador", async () => {
+    // `WebView.click()` sobre algo que no está se queda esperando para siempre,
+    // y la cola es de una sola vía: sin la guarda previa, ese cuelgue se lleva
+    // puesto al navegador entero y las tools siguientes nunca responden.
+    await backend.navigate(page("<h1>sin botones</h1>"));
+
+    await expect(backend.click("#no-existe")).rejects.toThrow(/no encontrado/);
+    // Y lo que viene después sigue funcionando, que es la mitad importante.
+    expect(await backend.evaluate<string>("document.querySelector('h1').textContent")).toBe("sin botones");
+  });
+
+  test("acepta los nombres de tecla de siempre, no sólo los del motor", async () => {
+    // El motor sólo entiende "Enter" y lanza con "Return", que es lo que
+    // escriben los modelos y el código viejo.
+    await backend.navigate(
+      page(`<form onsubmit="document.title='enviado'; return false"><input id="i"></form>`),
+    );
+    await backend.typeIn("#i", "hola");
+    await backend.press("Return");
+
+    expect(await backend.evaluate<string>("document.title")).toBe("enviado");
+  });
+
+  test("la navegación hacia atrás va por el historial de CDP", async () => {
     await backend.navigate(page("<h1>primera</h1>"));
     await backend.navigate(page("<h1>segunda</h1>"));
     expect(await backend.evaluate<string>("document.querySelector('h1').textContent")).toBe("segunda");
@@ -304,5 +335,203 @@ describe.skipIf(!LIVE)("WebViewBackend.snapshot", () => {
   test("una página vacía devuelve string vacío, no una excepción", async () => {
     await backend.navigate(page("<body></body>"));
     expect(await backend.snapshot()).toBe("");
+  });
+});
+
+// ─── snapshot por árbol de accesibilidad ──────────────────────────────────────
+
+describe.skipIf(!LIVE)("WebViewBackend.snapshot vía CDP", () => {
+  let backend: WebViewBackend;
+
+  beforeEach(() => {
+    backend = new WebViewBackend({ persistSession: false });
+  });
+
+  afterEach(() => {
+    backend.close();
+  });
+
+  test("usa el árbol de accesibilidad de Chrome, no el recorrido del DOM", async () => {
+    await backend.navigate(page(`<img src="x.png" alt="Un gato">`));
+    const snapshot = await backend.snapshot();
+
+    // La firma del AX tree: Chrome llama "image" a lo que el recorrido del DOM
+    // etiquetaba "img". Si esto vuelve a decir "img", el fallback se comió la
+    // ruta buena y nadie se entera.
+    expect(snapshot).toContain('- image "Un gato"');
+    expect(snapshot).not.toContain("- img ");
+  });
+
+  test("expone el puente CDP crudo para quien lo necesite", async () => {
+    await backend.navigate(page("<h1>x</h1>"));
+    const res = await backend.cdp<{ nodes?: unknown[] }>("Accessibility.getFullAXTree");
+    expect(Array.isArray(res.nodes)).toBe(true);
+  });
+});
+
+// ─── capturas con opciones ────────────────────────────────────────────────────
+
+describe.skipIf(!LIVE)("WebViewBackend.screenshot", () => {
+  let backend: WebViewBackend;
+
+  beforeEach(() => {
+    backend = new WebViewBackend({ persistSession: false });
+  });
+
+  afterEach(() => {
+    backend.close();
+  });
+
+  test("honra format y quality en vez de devolver siempre un PNG", async () => {
+    await backend.navigate(page("<h1>foto</h1>"));
+    const jpeg = await backend.screenshot({ format: "jpeg", quality: 40 });
+    // Cabecera JPEG (\xFF\xD8\xFF) en base64.
+    expect(jpeg.startsWith("/9j/")).toBe(true);
+  });
+
+  test("honra clip: la captura recortada pesa menos que el viewport entero", async () => {
+    await backend.navigate(page("<h1>foto</h1><div style='height:900px'></div>"));
+    const completa = await backend.screenshot();
+    const recorte = await backend.screenshot({
+      format: "png",
+      clip: { x: 0, y: 0, width: 80, height: 40, scale: 1 },
+    });
+
+    expect(recorte.startsWith("iVBORw0KGgo")).toBe(true);
+    expect(recorte.length).toBeLessThan(completa.length);
+  });
+});
+
+// ─── sesión persistente ───────────────────────────────────────────────────────
+
+describe("normalizeCookies", () => {
+  const futuro = Date.now() / 1000 + 3600;
+
+  test("conserva las de sesión (expires -1), que son las del login", () => {
+    const out = normalizeCookies([{ name: "sid", value: "abc", domain: "x.com", expires: -1 }]);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.expires).toBeUndefined();
+  });
+
+  test("descarta las ya vencidas", () => {
+    const out = normalizeCookies([
+      { name: "vieja", value: "1", domain: "x.com", expires: Date.now() / 1000 - 10 },
+      { name: "viva", value: "2", domain: "x.com", expires: futuro },
+    ]);
+    expect(out.map((c) => c.name)).toEqual(["viva"]);
+  });
+
+  test("descarta lo que no es una cookie utilizable", () => {
+    expect(normalizeCookies([{ value: "sin nombre", domain: "x.com" }, null, 7, "x"])).toEqual([]);
+    expect(normalizeCookies("no es una lista")).toEqual([]);
+  });
+
+  test("se queda sólo con los campos que setCookies acepta de vuelta", () => {
+    const [cookie] = normalizeCookies([
+      { name: "a", value: "b", domain: "x.com", path: "/", secure: true, httpOnly: true, size: 99, priority: "Medium" },
+    ]);
+    expect(cookie).toEqual({
+      name: "a",
+      value: "b",
+      domain: "x.com",
+      path: "/",
+      expires: undefined,
+      httpOnly: true,
+      secure: true,
+      sameSite: undefined,
+    });
+  });
+});
+
+describe("sessionPersistenceEnabled", () => {
+  const PREVIO = process.env.HIVE_BROWSER_PERSIST_SESSION;
+
+  afterEach(() => {
+    if (PREVIO === undefined) delete process.env.HIVE_BROWSER_PERSIST_SESSION;
+    else process.env.HIVE_BROWSER_PERSIST_SESSION = PREVIO;
+  });
+
+  test("viene activa y la config la puede apagar", () => {
+    delete process.env.HIVE_BROWSER_PERSIST_SESSION;
+    expect(sessionPersistenceEnabled(undefined)).toBe(true);
+    expect(sessionPersistenceEnabled(false)).toBe(false);
+  });
+
+  test("la variable de entorno pisa la config", () => {
+    process.env.HIVE_BROWSER_PERSIST_SESSION = "0";
+    expect(sessionPersistenceEnabled(true)).toBe(false);
+    process.env.HIVE_BROWSER_PERSIST_SESSION = "1";
+    expect(sessionPersistenceEnabled(false)).toBe(true);
+  });
+});
+
+describe.skipIf(!LIVE)("sesión del navegador entre vistas", () => {
+  // El keychain del sistema no es lugar para basura de test: se sustituye por
+  // un doble, que es un caso que `storage/crypto.ts` ya contempla. El resto del
+  // guardado va a la BD en memoria de este archivo.
+  const SECRETS_REAL = (Bun as unknown as { secrets: unknown }).secrets;
+
+  beforeEach(() => {
+    (Bun as unknown as { secrets: unknown }).secrets = {
+      get: async () => null,
+      set: async () => {},
+      delete: async () => {},
+    };
+  });
+
+  afterEach(async () => {
+    await clearStoredSession();
+    (Bun as unknown as { secrets: unknown }).secrets = SECRETS_REAL;
+  });
+
+  test("las cookies vuelven en una vista nueva — el perfil de Bun es efímero", async () => {
+    // Hace falta un servidor de verdad: una data: URL no tiene origen donde
+    // guardar cookies.
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => new Response("<html><body>ok</body></html>", { headers: { "content-type": "text/html" } }),
+    });
+    const url = `http://localhost:${server.port}/`;
+
+    const primera = new WebViewBackend({ persistSession: true });
+    const segunda = new WebViewBackend({ persistSession: true });
+    try {
+      await primera.navigate(url);
+      await primera.evaluate(`(() => { document.cookie = "hive_sesion=abc123; path=/"; return 1; })()`);
+      await primera.flushSession();
+      primera.close();
+
+      await segunda.navigate(url);
+      expect(await segunda.evaluate<string>("document.cookie")).toContain("hive_sesion=abc123");
+    } finally {
+      primera.close();
+      segunda.close();
+      server.stop(true);
+    }
+  });
+
+  // Ojo con lo que este test NO puede afirmar: mientras haya otra vista abierta
+  // en el mismo proceso, Bun reusa el mismo perfil de Chrome, así que dos
+  // vistas hermanas ven las cookies de la otra sin que nadie las restaure. Lo
+  // que sí está en nuestras manos —y es lo que se verifica— es que apagada la
+  // persistencia no quede nada guardado para el proceso siguiente.
+  test("con la persistencia apagada no se guarda nada en el almacén", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => new Response("<html><body>ok</body></html>", { headers: { "content-type": "text/html" } }),
+    });
+    const url = `http://localhost:${server.port}/`;
+
+    const vista = new WebViewBackend({ persistSession: false });
+    try {
+      await vista.navigate(url);
+      await vista.evaluate(`(() => { document.cookie = "hive_sesion=nope; path=/"; return 1; })()`);
+      await vista.flushSession();
+
+      expect(await loadStoredCookies()).toEqual([]);
+    } finally {
+      vista.close();
+      server.stop(true);
+    }
   });
 });

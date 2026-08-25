@@ -348,7 +348,7 @@ export function ModelFormDialog({ open, onOpenChange, providerId, model, onSubmi
               </div>
             </div>
             <p className="text-[10px] text-white/25 mt-1">
-              Poné <span className="font-mono text-white/40">0</span> si el endpoint es gratuito: dejarlo vacío marca el
+              Pon <span className="font-mono text-white/40">0</span> si el endpoint es gratuito: dejarlo vacío marca el
               modelo como “sin tarifa” y su consumo se contabiliza como $0 sin avisar en el dashboard.
             </p>
           </div>

@@ -101,6 +101,14 @@ export interface CanvasWorkEvent {
 
 interface CanvasState {
   isConnected: boolean;
+  /**
+   * Código que el servidor da a ESTA ventana al suscribirse al lienzo.
+   *
+   * Dos ventanas del mismo usuario —la app de escritorio y una pestaña del
+   * navegador— comparten sesión pero son clientes distintos; el código las
+   * separa y es lo que se devuelve en cada latido.
+   */
+  canvasConnId: string | null;
   graphNodes: GraphNode[];
   graphEdges: GraphEdge[];
   workEvents: CanvasWorkEvent[];
@@ -132,6 +140,7 @@ interface CanvasState {
 }
 
 export const useCanvasStore = create<CanvasState>((set, get) => ({
+  canvasConnId: null,
   isConnected: false,
   graphNodes: [],
   graphEdges: [],
@@ -248,6 +257,21 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const unsubs = [
       useWebSocketStore.subscribe((state) => {
         set({ isConnected: state.status === "connected" });
+      }),
+
+      // Código de esta ventana, que el servidor asigna al registrarla. Dos
+      // ventanas del mismo usuario son dos clientes distintos.
+      ws.subscribe("canvas:connected", (msg) => {
+        const connId = (msg as Record<string, unknown>).connId as string | undefined;
+        if (connId) set({ canvasConnId: connId });
+      }),
+
+      // Contestar el latido es lo que mantiene viva la suscripción: el servidor
+      // retira a quien deja de responder, para no mandar superficies al vacío.
+      ws.subscribe("canvas:ping", (msg) => {
+        const connId =
+          ((msg as Record<string, unknown>).connId as string | undefined) ?? get().canvasConnId;
+        useWebSocketStore.getState().send({ type: "canvas:pong", connId });
       }),
 
       ws.subscribe("canvas:snapshot", (msg) => {

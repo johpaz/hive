@@ -97,7 +97,7 @@ const DEFAULT_MODELS: Record<string, string> = {
   nvidia: "nvidia/nvidia/nemotron-3-super-120b-a12b",
   "z-ai": "glm-5.2",
   minimax: "MiniMax-M3",
-  hiveagents: "Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf",
+  hiveagents: "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
 };
 
 const PROVIDER_BASE_URLS: Record<string, string> = {
@@ -208,7 +208,9 @@ const AVAILABLE_MODELS: Record<string, Array<{ value: string; label: string; hin
     { value: "MiniMax-M2.7", label: "MiniMax M2.7", hint: "200K contexto" },
   ],
   hiveagents: [
-    { value: "Qwen-AgentWorld-35B-A3B-UD-Q4_K_M.gguf", label: "Qwen-AgentWorld 35B MoE (Recomendado)", hint: "MoE 22.1GB — optimizado para agentes, tool use y MCP" },
+    { value: "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf", label: "Qwen3.6 35B MoE (Recomendado)", hint: "MoE 22.7GB — el más rápido: 62.7 t/s, carga en 8s" },
+    { value: "Qwen3.8-27B-UD-Q4_K_XL.gguf", label: "Qwen3.8 27B Dense + MTP", hint: "Denso 17.9GB — 25.3 t/s, carga en 8s" },
+    { value: "DeepSeek-V4-Flash-UD-IQ2_XXS-00001-of-00003.gguf", label: "DeepSeek V4 Flash 90 GB", hint: "MoE 90.9GB, sólo texto — 12.8 t/s y ~91s de carga" },
   ],
 };
 

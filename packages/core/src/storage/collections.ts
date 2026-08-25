@@ -40,7 +40,8 @@ export interface ModelDoc {
   id: string
   provider_id: string
   name: string
-  model_type: "llm" | "stt" | "tts" | "vision" | "embedding"
+  /** "realtime": voz full-duplex (Live API), no confundir con stt+tts encadenados. */
+  model_type: "llm" | "stt" | "tts" | "vision" | "embedding" | "realtime"
   context_window: number
   capabilities: string | null
   enabled: boolean
@@ -269,6 +270,14 @@ export interface RefreshTokenDoc {
 export type TurnSource =
   | "message" | "audio" | "a2ui" | "canvas" | "api"
   | "task_complete" | "delegation_summary"
+  /** Turno hablado en una sesión de voz en tiempo real. A diferencia de "audio"
+   *  (nota de voz: STT → turno → TTS) la voz la pone el modelo realtime, así que
+   *  el turno nunca sintetiza audio al final. */
+  | "realtime"
+  /** Charla hablada que la voz YA resolvió sin tocar la colmena. Se guarda como
+   *  contexto del hilo, nunca como pedido pendiente: tratarla como accionable
+   *  hacía que el coordinador re-delegara todo lo que se había dicho en voz. */
+  | "realtime_chat"
 
 /** What gets persisted — adds the synthetic marker for rows written before `source` existed. */
 export type MessageSource = TurnSource | "legacy_internal"

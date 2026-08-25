@@ -109,7 +109,7 @@ const STOPWORDS = new Set([
     "más", "mas", "ya", "yo", "tu", "te", "ti", "mi", "me",
     "hola", "hi", "hello", "hey", "gracias", "thank", "please",
     "ok", "okay", "yes", "si", "no", "bien", "good", "great",
-    "puedes", "necesito", "quiero", "podés", "necesitás", "querés",
+    "puedes", "necesito", "quiero", "puedes", "necesitás", "quieres",
 ])
 
 /** Conversational patterns that should return empty skill list */

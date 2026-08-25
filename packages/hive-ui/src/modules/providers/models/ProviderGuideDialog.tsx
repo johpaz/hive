@@ -105,7 +105,7 @@ export function ProviderGuideDialog({ open, onOpenChange, providers, models, ini
                 </p>
                 <h4 className={H}>3. Endpoint</h4>
                 <p className={P}>
-                  Cada provider trae su <span className={CODE}>base_url</span> por defecto. Cambialo sólo si usás un
+                  Cada provider trae su <span className={CODE}>base_url</span> por defecto. Cámbialo solo si usas un
                   proxy propio o un gateway corporativo. El verificador de key y el descubrimiento de modelos usan
                   ese mismo endpoint, así que apuntar a un proxy funciona de punta a punta.
                 </p>
@@ -162,7 +162,7 @@ export function ProviderGuideDialog({ open, onOpenChange, providers, models, ini
                   <span className={CODE}>410 Gone</span>.
                 </p>
                 <p className={`${P} mt-2`}>
-                  Los modelos que ya tenés cargados aparecen marcados para que no los dupliques.
+                  Los modelos que ya tienes cargados aparecen marcados para que no los dupliques.
                 </p>
                 <h4 className={H}>Manual</h4>
                 <p className={P}>
@@ -193,7 +193,7 @@ export function ProviderGuideDialog({ open, onOpenChange, providers, models, ini
                 </p>
                 <h4 className={H}>No los escribas a mano</h4>
                 <p className={P}>
-                  El botón de sincronizar de la tarjeta lee los modelos que ya tenés instalados y los carga solo. Si
+                  El botón de sincronizar de la tarjeta lee los modelos que ya tienes instalados y los carga solo. Si
                   un modelo no aparece, primero bajalo en tu máquina con{" "}
                   <span className={CODE}>ollama pull llama3.3:8b</span> y volvé a sincronizar.
                 </p>
@@ -201,7 +201,7 @@ export function ProviderGuideDialog({ open, onOpenChange, providers, models, ini
                 <p className={P}>
                   Los modelos descubiertos entran con contexto 0 porque Ollama no lo reporta en el listado. Editalo
                   con el valor real del modelo: si queda en 0, Hive usa un valor por defecto que puede no
-                  corresponder al que tenés cargado.
+                  corresponder al que tienes cargado.
                 </p>
                 <h4 className={H}>Costo</h4>
                 <p className={P}>
@@ -222,7 +222,7 @@ export function ProviderGuideDialog({ open, onOpenChange, providers, models, ini
                 <p className={`${P} mt-2`}>
                   Lo confuso: <b className="text-white/70">el listado de modelos responde 200 en los dos</b>, porque es
                   público y no valida la key. El 401 aparece recién al invocar un modelo. Si te pasa eso, no es la key
-                  — es el dominio. Hive viene apuntando al internacional (<span className={CODE}>.ai</span>); cambialo
+                  — es el dominio. Hive viene apuntando al internacional (<span className={CODE}>.ai</span>); cámbialo
                   desde CONFIG si tu cuenta es la china.
                 </p>
                 <h4 className={H}>ModelScope no es DashScope</h4>
@@ -241,7 +241,7 @@ export function ProviderGuideDialog({ open, onOpenChange, providers, models, ini
                 <p className={P}>
                   Los <span className={CODE}>Qwen-Ambassador/*</span> (3.7-Plus, 3.7-Max, 3.8-Max) aparecen en el
                   listado para todo el mundo, pero sólo los puede invocar una cuenta del programa de embajadores. Si
-                  no sos parte, el provider devuelve un error de autorización al usarlos.
+                  no eres parte, el provider devuelve un error de autorización al usarlos.
                 </p>
               </div>
             )}
@@ -263,7 +263,7 @@ export function ProviderGuideDialog({ open, onOpenChange, providers, models, ini
                 <h4 className={H}>«Sin tarifa» vs. 0</h4>
                 <p className={P}>
                   Dejar el precio vacío marca el modelo como sin tarifa y su consumo se cuenta como $0 — lo cual
-                  ensucia el total sin avisar. Si el endpoint es realmente gratuito, poné{" "}
+                  ensucia el total sin avisar. Si el endpoint es realmente gratuito, pon{" "}
                   <span className={CODE}>0</span> explícito.
                 </p>
                 <h4 className={H}>Gasto por provider</h4>

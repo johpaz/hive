@@ -8,10 +8,11 @@ import { SkillsTab } from "@/modules/agent-config/skills/SkillsTab";
 import { NotesPanel } from "@/components/NotesPanel";
 import { CronJobsPanel } from "@/components/CronJobsPanel";
 import { DesktopUpdateCard } from "@/components/DesktopUpdateCard";
+import { PantallaAudioCard } from "@/components/PantallaAudioCard";
 import { useSkills, useTools, useMCPServers } from "@/hooks/useProviders";
 import { splitPanelTitle } from "./settingsTitle";
 
-export type PanelId = "etica" | "herramientas" | "mcp" | "skills" | "perfil" | "notas" | "cron-jobs" | "actualizaciones";
+export type PanelId = "etica" | "herramientas" | "mcp" | "skills" | "perfil" | "notas" | "cron-jobs" | "actualizaciones" | "pantalla";
 
 function PanelContent({ panel }: { panel: PanelId }) {
   switch (panel) {
@@ -63,6 +64,12 @@ function PanelContent({ panel }: { panel: PanelId }) {
           <DesktopUpdateCard />
         </div>
       );
+    case "pantalla":
+      return (
+        <div className="p-4">
+          <PantallaAudioCard />
+        </div>
+      );
   default:
       return null;
   }
@@ -70,7 +77,7 @@ function PanelContent({ panel }: { panel: PanelId }) {
 
 // Esta lista decide si la URL es válida: un panel que falte acá cae en
 // "herramientas" y el ítem del menú parece no hacer nada.
-export const VALID_PANELS: PanelId[] = ["etica", "herramientas", "mcp", "skills", "perfil", "notas", "cron-jobs", "actualizaciones"];
+export const VALID_PANELS: PanelId[] = ["etica", "herramientas", "mcp", "skills", "perfil", "notas", "cron-jobs", "actualizaciones", "pantalla"];
 
 export function SettingsPage({ forcePanel }: { forcePanel?: PanelId }) {
   const { panel } = useParams<{ panel: string }>();
@@ -128,7 +135,12 @@ export function SettingsPage({ forcePanel }: { forcePanel?: PanelId }) {
     actualizaciones: {
       eyebrow: "MANTENIMIENTO",
       title: "Actualizaciones",
-      subtitle: "Consultá tu versión, buscá una nueva e instalala sin salir de la app."
+      subtitle: "Consulta tu versión, busca una nueva e instálala sin salir de la app."
+    },
+    pantalla: {
+      eyebrow: "APARIENCIA Y SONIDO",
+      title: "Pantalla & Audio",
+      subtitle: "Ajusta el tamaño de la vista y elige por dónde se oye la voz en vivo."
     }
 };
 

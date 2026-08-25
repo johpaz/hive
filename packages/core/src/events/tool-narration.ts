@@ -43,6 +43,7 @@ const TOOL_NARRATIONS: Record<string, string> = {
   browser_click: "Haciendo clic...",
   browser_type: "Escribiendo en la página...",
   browser_screenshot: "Tomando captura de pantalla...",
+  computer_use_task: "Operando el navegador...",
   browser_extract: "Extrayendo información de la página...",
   // Artefactos
   artifact_inspect: "Verificando el archivo generado...",

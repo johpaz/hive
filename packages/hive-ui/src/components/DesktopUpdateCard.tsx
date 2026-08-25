@@ -94,7 +94,7 @@ export function DesktopUpdateCard() {
                 <a className="underline" href={RELEASES_URL} target="_blank" rel="noreferrer">
                   la página de releases
                 </a>{" "}
-                e instalalo encima: conserva tus datos, agentes y claves.
+                e instálalo encima: conserva tus datos, agentes y claves.
               </span>
             </p>
           )}

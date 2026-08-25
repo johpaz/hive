@@ -26,6 +26,11 @@ jobs:
           bun-version: "1.3.14"
       - run: bun install --frozen-lockfile
       - run: bun run lint
+      # `tsc -p packages/hive-ui` no comprueba NADA: ese tsconfig lleva
+      # "files": [] y sólo referencias, así que sale 0 con la UI rota. Hay que
+      # apuntar al proyecto real. Se coló un `prefs` sin declarar hasta un
+      # instalador por confiar en el atajo.
+      - run: bun run --cwd packages/hive-ui typecheck
 
   test:
     name: Tests (core)

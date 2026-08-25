@@ -8,7 +8,7 @@ export interface ChatAttachment {
 }
 
 interface ChatInputProps {
-  onSendMessage: (content: string, options?: { audio?: string, attachments?: ChatAttachment[] }) => void;
+  onSendMessage: (content: string, options?: { audio?: string, audioMimeType?: string, attachments?: ChatAttachment[] }) => void;
   onStop?: () => void;
   disabled?: boolean;
   isStreaming?: boolean;
@@ -16,9 +16,46 @@ interface ChatInputProps {
 
 import { SendHorizontal, Mic, Square, Paperclip, X, FileText, Image as ImageIcon } from "lucide-react";
 
+/**
+ * Formatos que aceptan los proveedores STT (Whisper de Groq/OpenAI), en orden de
+ * preferencia. Cada motor soporta un subconjunto distinto: Chromium y WebKitGTK
+ * dan webm/opus, Safari sólo mp4. Fijar "audio/webm" a ciegas —como estaba—
+ * hacía que `new MediaRecorder` lanzara NotSupportedError en Safari.
+ */
+const RECORDING_MIME_TYPES = [
+  "audio/webm;codecs=opus",
+  "audio/webm",
+  "audio/ogg;codecs=opus",
+  "audio/ogg",
+  "audio/mp4",
+];
+
+function pickRecordingMimeType(): string | undefined {
+  if (typeof MediaRecorder === "undefined" || !MediaRecorder.isTypeSupported) return undefined;
+  return RECORDING_MIME_TYPES.find((type) => MediaRecorder.isTypeSupported(type));
+}
+
+/** Traduce el fallo de getUserMedia a algo accionable para el usuario. */
+function describeMicError(error: unknown): string {
+  const name = (error as { name?: string })?.name;
+  switch (name) {
+    case "NotAllowedError":
+    case "SecurityError":
+      return "Permiso de micrófono denegado. Habilítalo para este sitio y vuelve a intentar.";
+    case "NotFoundError":
+    case "OverconstrainedError":
+      return "No se encontró ningún micrófono conectado.";
+    case "NotReadableError":
+      return "Otra aplicación está usando el micrófono.";
+    default:
+      return `No se pudo acceder al micrófono: ${(error as Error)?.message ?? "error desconocido"}`;
+  }
+}
+
 export function ChatInput({ onSendMessage, onStop, disabled = false, isStreaming = false }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [isRecording, setIsRecording] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -83,9 +120,34 @@ export function ChatInput({ onSendMessage, onStop, disabled = false, isStreaming
   };
 
   const startRecording = async () => {
+    setMicError(null);
+
+    // `mediaDevices` no existe en contextos inseguros (http:// que no sea
+    // localhost) ni cuando el WebView llega con la captura de medios apagada.
+    // Antes esto reventaba dentro del try y sólo se veía en la consola: el botón
+    // parecía muerto.
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setMicError(
+        window.isSecureContext === false
+          ? "El micrófono solo funciona sobre HTTPS o en localhost. Abre Hive en 127.0.0.1 o pon un proxy TLS delante."
+          : "Este navegador no permite grabar audio."
+      );
+      return;
+    }
+
+    let stream: MediaStream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (error) {
+      setMicError(describeMicError(error));
+      return;
+    }
+
+    const stopTracks = () => stream.getTracks().forEach((track) => track.stop());
+
+    try {
+      const mimeType = pickRecordingMimeType();
+      const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
 
@@ -95,21 +157,38 @@ export function ChatInput({ onSendMessage, onStop, disabled = false, isStreaming
         }
       };
 
+      mediaRecorder.onerror = () => {
+        setIsRecording(false);
+        setMicError("La grabación falló. Intenta de nuevo.");
+        stopTracks();
+      };
+
       mediaRecorder.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        // El tipo real lo dicta el motor: pedimos webm pero WebKit puede
+        // entregar ogg o mp4, y el backend elige la extensión del archivo que
+        // manda a Whisper a partir de este valor.
+        const type = mediaRecorder.mimeType || mimeType || "audio/webm";
+        const blob = new Blob(chunksRef.current, { type });
+        stopTracks();
+
+        if (blob.size === 0) {
+          setMicError("No se capturó audio. Revisa que el micrófono no esté silenciado.");
+          return;
+        }
+
         const reader = new FileReader();
         reader.readAsDataURL(blob);
         reader.onloadend = () => {
           const base64 = (reader.result as string).split(",")[1];
-          onSendMessage("[Audio mensaje]", { audio: base64 });
+          onSendMessage("[Audio mensaje]", { audio: base64, audioMimeType: type });
         };
-        stream.getTracks().forEach((track) => track.stop());
       };
 
       mediaRecorder.start();
       setIsRecording(true);
     } catch (error) {
-      console.error("Error accessing microphone:", error);
+      stopTracks();
+      setMicError(describeMicError(error));
     }
   };
 
@@ -207,11 +286,28 @@ export function ChatInput({ onSendMessage, onStop, disabled = false, isStreaming
             </button>
           )}
         </div>
-        <p className="text-[11px] font-medium text-white/30 mt-2.5 text-center font-manrope tracking-wide">
-          {isRecording
-            ? "Grabando... haz clic para enviar"
-            : "Enter para enviar · Shift+Enter nueva línea"}
-        </p>
+        {micError ? (
+          <p
+            role="alert"
+            className="mt-2.5 flex items-center justify-center gap-2 text-center text-[11px] font-medium text-rose-300/90 font-manrope"
+          >
+            {micError}
+            <button
+              type="button"
+              onClick={() => setMicError(null)}
+              className="text-rose-300/60 transition-colors hover:text-rose-200"
+              aria-label="Descartar aviso"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </p>
+        ) : (
+          <p className="text-[11px] font-medium text-white/30 mt-2.5 text-center font-manrope tracking-wide">
+            {isRecording
+              ? "Grabando... haz clic para enviar"
+              : "Enter para enviar · Shift+Enter nueva línea"}
+          </p>
+        )}
       </div>
     </div>
   );

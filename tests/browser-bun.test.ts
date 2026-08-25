@@ -1,6 +1,6 @@
 /**
- * Real browser test: navegación por bun.sh usando agent-browser
- * Requiere: BROWSER_TESTS=1
+ * Real browser test: navegación por bun.sh con el navegador de Hive.
+ * Requiere: BROWSER_TESTS=1 (sale a internet)
  */
 
 // BrowserService arrastra los módulos de storage, que resuelven la ruta de la BD
@@ -13,13 +13,13 @@ import { BrowserService } from "../packages/core/src/tools/web/browser-service.t
 
 const BROWSER_TESTS = process.env.BROWSER_TESTS === "1";
 
-describe.skipIf(!BROWSER_TESTS)("bun.sh — navegación real con agent-browser", () => {
+describe.skipIf(!BROWSER_TESTS)("bun.sh — navegación real", () => {
   let service: BrowserService;
 
   beforeAll(async () => {
     service = BrowserService.getInstance({} as any);
     const ok = await service.start();
-    if (!ok) throw new Error("BrowserService could not start agent-browser");
+    if (!ok) throw new Error("BrowserService no pudo arrancar (¿hay un Chromium instalado?)");
   }, 60000);
 
   afterAll(async () => {

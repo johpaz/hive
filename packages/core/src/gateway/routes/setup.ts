@@ -245,7 +245,7 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
       if (!baseUrl) {
         return Response.json({
           success: false,
-          error: `El provider "${provider}" no tiene base_url configurada. Agregala en su configuración.`,
+          error: `El provider "${provider}" no tiene base_url configurada. Agrégala en su configuración.`,
         })
       }
       // Modelos que ya verificamos manualmente como chat/tool-calling en el
@@ -316,7 +316,7 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
       if (!baseUrl) {
         return Response.json({
           success: false,
-          error: `El provider "${provider}" no tiene base_url configurada. Agregala en su configuración.`,
+          error: `El provider "${provider}" no tiene base_url configurada. Agrégala en su configuración.`,
         })
       }
       testUrl = `${baseUrl}/models`
@@ -378,7 +378,7 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
     return Response.json({
       success: false,
       error: isHeaderError
-        ? "La API key tiene caracteres inválidos (revisá que no tenga saltos de línea o espacios raros al copiarla)."
+        ? "La API key tiene caracteres inválidos (revisa que no tenga saltos de línea o espacios raros al copiarla)."
         : `Connection error: ${message}`,
     })
   }

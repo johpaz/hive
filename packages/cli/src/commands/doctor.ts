@@ -1,4 +1,3 @@
-import * as p from "@clack/prompts";
 import * as fs from "fs";
 import * as path from "path";
 import { execSync } from "child_process";
@@ -169,7 +168,7 @@ export async function doctor(): Promise<void> {
         name: "Componentes",
         status: "error",
         message: `faltan: ${faltantes.join(", ")}`,
-        hint: "La base está incompleta. Restaurá una copia o reiniciá para re-sembrar.",
+        hint: "La base está incompleta. Restaura una copia o reinicia para volver a sembrar.",
       });
     } else {
       const bytes = dirSize(getDbFile());
@@ -181,22 +180,49 @@ export async function doctor(): Promise<void> {
       });
     }
 
-    // Lectura real: que los archivos existan no prueba que se puedan leer.
+    // Datos reales: que los archivos existan y se puedan leer no prueba que
+    // haya algo adentro. Una base vacía abre perfecto y deja a Hive sin
+    // agentes, sin modelos y sin tools — que es la falla que el usuario ve
+    // como "no responde", no como "la BD está mal".
     try {
-      const { ensureHiveDb } = await import("@johpaz/hive-agents-core/storage/bootstrap");
+      // Sólo lectura: se abre la base tal como está. Sembrarla acá haría que
+      // el diagnóstico se aprobara a sí mismo, además de reescribir datos.
       const { col } = await import("@johpaz/hive-agents-core/storage/hive");
-      await ensureHiveDb();
 
-      let filas = 0;
-      for (const nombre of ["agents", "models", "providers", "tools", "skills"]) {
-        filas += await (await col(nombre)).count();
+      const esenciales = ["agents", "models", "providers", "tools", "skills"];
+      const conteos: Record<string, number> = {};
+      for (const nombre of esenciales) {
+        conteos[nombre] = await (await col(nombre)).count();
       }
-      checks.push({
-        category: "Integridad",
-        name: "Lectura",
-        status: "ok",
-        message: `${filas} filas leídas de 5 colecciones`,
-      });
+
+      const total = Object.values(conteos).reduce((a, b) => a + b, 0);
+      const vacias = esenciales.filter((nombre) => conteos[nombre] === 0);
+      const detalle = esenciales.map((nombre) => `${conteos[nombre]} ${nombre}`).join(", ");
+
+      if (total === 0) {
+        checks.push({
+          category: "Integridad",
+          name: "Datos",
+          status: "error",
+          message: "la base está vacía",
+          hint: "Arranca el gateway con 'hive start': siembra los datos por defecto al iniciar.",
+        });
+      } else if (vacias.length > 0) {
+        checks.push({
+          category: "Integridad",
+          name: "Datos",
+          status: "warn",
+          message: `${detalle} — sin registros en: ${vacias.join(", ")}`,
+          hint: "Ejecuta 'hive migrate' para volver a sembrar lo que falta.",
+        });
+      } else {
+        checks.push({
+          category: "Integridad",
+          name: "Datos",
+          status: "ok",
+          message: detalle,
+        });
+      }
     } catch (e) {
       const mensaje = (e as Error).message;
       // "Cannot acquire lock" significa que otro proceso la tiene abierta —el
@@ -205,12 +231,12 @@ export async function doctor(): Promise<void> {
       const enUso = /already open|acquire lock|locked/i.test(mensaje);
       checks.push({
         category: "Integridad",
-        name: "Lectura",
+        name: "Datos",
         status: enUso ? "warn" : "error",
         message: enUso ? "en uso por otro proceso — no se pudo verificar" : `la base no se pudo leer: ${mensaje}`,
         hint: enUso
-          ? "Detené el gateway (hive stop) y volvé a correr el diagnóstico."
-          : "Puede haber quedado corrupta. Si tenés una copia de <HIVE_HOME>/data, restaurala.",
+          ? "Detén el gateway (hive stop) y vuelve a correr el diagnóstico."
+          : "Puede haber quedado corrupta. Si tienes una copia de <HIVE_HOME>/data, restáurala.",
       });
     }
 
@@ -251,9 +277,7 @@ export async function doctor(): Promise<void> {
   // Workspace — leer desde agents.workspace en la BD
   let workspacePath: string | null = null;
   try {
-    const { ensureHiveDb } = await import("@johpaz/hive-agents-core/storage/bootstrap");
     const { col } = await import("@johpaz/hive-agents-core/storage/hive");
-    await ensureHiveDb();
     const agentsCol = await col<{ role: string; workspace: string | null }>("agents");
     const coordinator = (await agentsCol.findBy("role", "coordinator"))[0];
     const ws = coordinator?.doc.workspace;
@@ -270,9 +294,7 @@ export async function doctor(): Promise<void> {
 
   // Seed Data — verificar que los datos del seed estén actualizados
   try {
-    const { ensureHiveDb } = await import("@johpaz/hive-agents-core/storage/bootstrap");
     const { col } = await import("@johpaz/hive-agents-core/storage/hive");
-    await ensureHiveDb();
     const { SEED_DATA } = await import("@johpaz/hive-agents-core/storage/seed");
 
     // Tools: comparar count en BD vs seed
@@ -368,9 +390,7 @@ export async function doctor(): Promise<void> {
   // para que una persona decida. Nada la resuelve automáticamente, así que
   // se acumulan hasta que alguien las revisa — doctor las saca a la luz.
   try {
-    const { ensureHiveDb } = await import("@johpaz/hive-agents-core/storage/bootstrap");
     const { col } = await import("@johpaz/hive-agents-core/storage/hive");
-    await ensureHiveDb();
 
     const proposalsCol = await col<{ status: string; type: string; agent_id: string }>("agentProposals");
     const pending = (await proposalsCol.scan({})).filter(
@@ -406,25 +426,51 @@ export async function doctor(): Promise<void> {
     });
   }
 
-  // Navegador — qué backend va a usar el agente y si el elegido es viable acá.
+  // Navegador — las browser tools necesitan un Chromium instalado.
   try {
-    const { resolveBackendKind, isWebViewSupported, findChrome } = await import(
-      "@johpaz/hive-agents-core/tools/web/browser-backend"
-    );
+    const { resolveBackendKind, isWebViewSupported, resolveWebViewEngine, findChrome, browserInstallHint } =
+      await import("@johpaz/hive-agents-core/tools/web/browser-backend");
     const config = loadConfig();
-    const kind = resolveBackendKind(config.tools?.browser?.backend);
+    // Con una config vieja (`backend: "agent-browser"`) esto deja el aviso en el log.
+    resolveBackendKind(config.tools?.browser?.backend);
 
-    if (kind === "webview" && !isWebViewSupported()) {
+    if (!isWebViewSupported()) {
       checks.push({
         category: "Navegador",
-        name: "Backend",
+        name: "Motor",
         status: "error",
-        message: "webview elegido pero no hay motor disponible",
-        hint: "WebKit sólo existe en macOS. Instalá Chrome, definí BUN_CHROME_PATH, o usá el backend agent-browser.",
+        message: "no se encontró ningún navegador",
+        hint: browserInstallHint(),
+      });
+    } else if (resolveWebViewEngine() === "webkit") {
+      // Sin CDP: el snapshot cae al recorrido del DOM, no hay sesión persistente
+      // y computer_use_task vuelve a los eventos sintéticos.
+      checks.push({
+        category: "Navegador",
+        name: "Motor",
+        status: "warn",
+        message: "WebKit (sin CDP: sin sesión persistente ni clics reales)",
+        hint: "Instala Chrome o Chromium para tener el motor completo.",
       });
     } else {
-      const detalle = kind === "webview" ? `motor ${findChrome() ? "chrome" : "webkit"}, in-process` : "Chrome via CLI";
-      checks.push({ category: "Navegador", name: "Backend", status: "ok", message: `${kind} (${detalle})` });
+      checks.push({
+        category: "Navegador",
+        name: "Motor",
+        status: "ok",
+        message: `Bun.WebView · chrome (${findChrome()})`,
+      });
+    }
+
+    // agent-browser se retiró: lo que dejó ocupando disco no lo borra el doctor.
+    const cacheViejo = path.join(getHiveDirConst(), "agent-browser");
+    if (fs.existsSync(cacheViejo)) {
+      checks.push({
+        category: "Navegador",
+        name: "Caché de agent-browser",
+        status: "warn",
+        message: "quedó el caché del backend retirado",
+        hint: `Ya no se usa; puedes borrar ${cacheViejo} (y ~/.cache/puppeteer si sólo lo usaba él).`,
+      });
     }
   } catch (e) {
     checks.push({
@@ -460,20 +506,29 @@ export async function doctor(): Promise<void> {
   const warns = checks.filter((c) => c.status === "warn");
 
   if (errors.length > 0) {
+    // Acá se ofrecía ejecutar el onboarding. Ese comando ya no existe —la
+    // configuración inicial se hace desde la UI al arrancar el gateway—, así
+    // que preguntarlo dejaba el diagnóstico colgado esperando una respuesta
+    // que no llevaba a ninguna parte, y encima rompía cualquier uso en CI.
     console.log(`❌ ${errors.length} error(es) encontrado(s)`);
-
-    const fix = await p.confirm({
-      message: "¿Deseas ejecutar el onboarding para reparar?",
-      initialValue: false,
-    });
-
-    if (fix) {
-      const { onboard } = await import("./onboard");
-      await onboard();
-    }
+    console.log("   Revisa las pistas 💡 de arriba. La configuración inicial se completa");
+    console.log("   arrancando el gateway con 'hive start' y abriendo la UI.");
   } else if (warns.length > 0) {
     console.log(`⚠️  ${warns.length} advertencia(s)`);
   } else {
     console.log("✅ Todo en orden");
   }
+
+  // El diagnóstico terminó, pero el proceso no: quedan la base abierta y la
+  // conexión keep-alive del health check del gateway. Sin esto, `hive doctor`
+  // imprime todo y se cuelga para siempre — invisible a ojo, letal en un script.
+  try {
+    const { closeHiveDb } = await import("@johpaz/hive-agents-core/storage/hivedb");
+    closeHiveDb();
+  } catch {
+    /* la base ni se abrió */
+  }
+
+  // Y sale con el veredicto: 1 si encontró errores, para que sirva en CI.
+  process.exit(errors.length > 0 ? 1 : 0);
 }

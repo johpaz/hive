@@ -217,16 +217,16 @@ export function describeProviderFailure(
   if (status === 404 || status === 410) {
     return `El modelo "${cleanModel}" ya no existe en ${provider} (HTTP ${status}). `
       + `El proveedor lo retiró de su catálogo; reintentar no sirve. `
-      + `Elegí otro modelo en Ajustes → Proveedores.`
+      + `Elige otro modelo en Ajustes → Proveedores.`
   }
   if (status === 429) {
     return `${provider} está limitando las peticiones (HTTP 429) y los reintentos tampoco pasaron. `
       + `Es el límite de uso de tu cuenta, no un problema del modelo: esperá unos minutos, `
-      + `revisá tu cuota con el proveedor, o cambiá de modelo en Ajustes → Proveedores.`
+      + `revisa tu cuota con el proveedor, o cambiá de modelo en Ajustes → Proveedores.`
   }
   if (status === 401 || status === 403) {
     return `${provider} rechazó la API key (HTTP ${status}). `
-      + `Revisá que siga siendo válida y tenga acceso a "${cleanModel}" en Ajustes → Proveedores.`
+      + `Revisa que siga siendo válida y tenga acceso a "${cleanModel}" en Ajustes → Proveedores.`
   }
   return (err as Error).message
 }

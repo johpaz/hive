@@ -21,5 +21,17 @@ tauri-plugin-updater = "2"
 # Reiniciar la app después de instalar una actualización (relaunch()).
 tauri-plugin-process = "2"
 
+# Sólo para activar la captura de micrófono/cámara sobre el WebView de
+# WebKitGTK — ver `enable_media_capture` en main.rs. La versión y las features
+# tienen que ser las mismas que usa tauri, o `PlatformWebview::inner()` devuelve
+# un tipo de otra copia del crate y no compila.
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = { version = "2", features = ["v2_40"] }
+
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+
+[dev-dependencies]
+# Para resolver la ACL en una prueba igual que lo hace el runtime: es la única
+# forma de comprobar sin abrir la ventana que los invoke llegan de verdad.
+tauri-utils = { version = "2", features = ["build"] }

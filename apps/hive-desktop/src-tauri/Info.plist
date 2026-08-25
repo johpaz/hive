@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Claves extra que la CLI de Tauri mezcla sobre el Info.plist generado
+  (`<src-tauri>/Info.plist` se toma automáticamente en los bundles de macOS).
+
+  Sin NSMicrophoneUsageDescription, macOS mata el proceso en cuanto la ventana
+  pide el micrófono para las notas de voz del webchat: no es un permiso que se
+  pueda denegar y seguir, es un crash del sistema (TCC).
+
+  Lo mismo vale para la cámara desde que HiveLive permite darle vista a la voz:
+  pulsar el botón de cámara sin NSCameraUsageDescription cierra la app de golpe.
+-->
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Hive usa el micrófono para transcribir tus notas de voz en el chat y para hablar con la colmena en HiveLive.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Hive usa la cámara solo si la activas en HiveLive, para que la voz de la colmena pueda ver lo que le muestras.</string>
+</dict>
+</plist>

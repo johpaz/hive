@@ -54,8 +54,12 @@ describe("saveAgentConfig", () => {
     expect(prompt).toContain("## 2. MAPA RÁPIDO DE ESPECIALISTAS");
     expect(prompt).toContain("`a2ui_builder`: construye formularios, dashboards y flujos interactivos A2UI.");
     expect(prompt).toContain("`software_engineer`: implementa, depura y prueba software en un repositorio.");
-    expect(prompt).toContain("primero elegí un agente de este mapa");
-    expect(prompt).toContain("verificá antes que aparezca activo en la COLMENA");
+    expect(prompt).toContain("primero elige un agente de este mapa");
+    // El prompt no lleva el nombre escrito: la identidad la inyecta
+    // prompt-builder desde `agents.name`, que es lo que el usuario configuró.
+    expect(prompt).not.toContain("Sos Bee");
+    expect(prompt).toContain("Eres el coordinador de Hive");
+    expect(prompt).toContain("verifica antes que aparezca activo en la COLMENA");
     expect(prompt.indexOf("task_delegate")).toBeLessThan(prompt.indexOf("search_knowledge"));
   });
 

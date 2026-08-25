@@ -7,6 +7,7 @@ const FRIENDLY_TOOL_LABELS: Record<string, string> = {
   browser_click: "Haciendo clic",
   browser_type: "Escribiendo en la página",
   browser_screenshot: "Tomando captura",
+  computer_use_task: "Operando el navegador",
   browser_extract: "Extrayendo datos",
   fs_read: "Leyendo archivo",
   fs_write: "Escribiendo archivo",

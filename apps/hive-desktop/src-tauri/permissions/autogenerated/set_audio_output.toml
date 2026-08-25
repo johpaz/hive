@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-audio-output"
+description = "Enables the set_audio_output command without any pre-configured scope."
+commands.allow = ["set_audio_output"]
+
+[[permission]]
+identifier = "deny-set-audio-output"
+description = "Denies the set_audio_output command without any pre-configured scope."
+commands.deny = ["set_audio_output"]

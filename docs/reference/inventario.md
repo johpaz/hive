@@ -17,7 +17,7 @@ Generado desde el código fuente para Hive **1.0.4**.
 | `@johpaz/hive-desktop` | `1.0.4` |
 | `apps/hive-desktop/src-tauri/tauri.conf.json` | `1.0.4` |
 
-## Herramientas (59)
+## Herramientas (60)
 
 | Herramienta | Categoría | Descripción |
 |---|---|---|
@@ -41,6 +41,7 @@ Generado desde el código fuente para Hive **1.0.4**.
 | `bus_publish` | agents | Publish a message to the Agent Bus for worker-to-worker communication. Spanish: publicar mensaje, comunicar workers, enviar bus |
 | `bus_read` | agents | Read unread messages from the Agent Bus. Spanish: leer mensajes bus, recibir mensajes, verificar bus |
 | `cli_exec` | cli | Execute shell/bash commands in the agent workspace. NOTE: do NOT use for scheduling tasks, use cron.create instead. Spanish: ejecutar comando, terminal, bash, script, consola |
+| `computer_use_task` | web | Opera el navegador de Hive mirando la pantalla: hace clic, escribe y navega guiado por lo que ve. Úsalo cuando la página no tenga selectores estables o cuando browser_click/browser_type no basten. Actúa sobre el navegador de Hive, NUNCA sobre la pantalla del usuario. Spanish: usar el navegador, hacer clic, operar una página, rellenar un formulario |
 | `cron.create` | cron | Create a Hive scheduled automation: a recurring cron job or one-shot future execution. Spanish: crear automatización programada, programar tarea recurrente, ejecutar después, programar reporte |
 | `cron.delete` | cron | Delete a cron job permanently. Spanish: eliminar tarea programada, cancelar recordatorio |
 | `cron.history` | cron | Get execution history for a cron job. Spanish: historial de ejecuciones, logs de tarea |

@@ -1,4 +1,5 @@
 import {
+  AudioLines,
   LayoutDashboard,
   Bot,
   Layers,
@@ -17,6 +18,7 @@ import {
   Globe,
   Hexagon,
   ArrowUpCircle,
+  MonitorCog,
   type LucideProps,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
@@ -44,6 +46,7 @@ function Icon({ icon: IconComponent, ...props }: { icon: React.ComponentType<Luc
 const navItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Web Chat", url: "/chat", icon: MessageSquare },
+  { title: "HiveLive", url: "/voz", icon: AudioLines },
   { title: "Agentes", url: "/agents", icon: Bot },
   { title: "Canales", url: "/channels", icon: MessageSquare },
   { title: "Providers", url: "/providers", icon: Brain },
@@ -73,6 +76,7 @@ export const configGroups = [
   {
     label: "Sistema",
     items: [
+      { id: "pantalla", label: "Pantalla y audio", icon: MonitorCog },
       { id: "actualizaciones", label: "Actualizaciones", icon: ArrowUpCircle },
     ],
   },

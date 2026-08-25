@@ -93,7 +93,7 @@ export function ModelSelector({
       const contextWindow = modelOptions.find((m) => m.id === modelId)?.contextWindow;
       if (!contextWindow) {
         toast.error("No se pudo determinar el context_window del modelo", {
-          description: "Revisá la configuración del modelo en la base de datos.",
+          description: "Revisa la configuración del modelo en la base de datos.",
         });
         return;
       }

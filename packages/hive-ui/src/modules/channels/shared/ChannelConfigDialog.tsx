@@ -1085,25 +1085,37 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
 
     if (!isOpen) return null;
 
+    const footer = renderFooter();
+
     return (
         <div
-            className="fixed inset-0 z-9999 bg-black/80 flex items-center justify-center"
+            className="fixed inset-0 z-9999 bg-black/80 flex items-center justify-center p-4"
             onClick={handleClose}
         >
+            {/*
+              El ancho lo fija `max-w-[480px]`, con corchetes: `max-w-480px` (sin ellos)
+              no es una clase de Tailwind y no generaba ninguna regla, así que la tarjeta
+              quedaba en `w-full` + `mx-4` = 100% del viewport + 32px y se salía de la
+              ventana por los dos lados. El padding va ahora en el overlay.
+
+              La altura se limita al viewport y sólo scrollea el contenido: cabecera y
+              botones quedan siempre visibles, que era el otro problema — con formularios
+              largos (WhatsApp, QR) "Guardar Cambios" caía fuera de la pantalla.
+            */}
             <div
-                className="relative w-full max-w-480px mx-4 hive-card border-white/10 overflow-hidden"
+                className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-[480px] flex-col hive-card border-white/10"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Close button */}
                 <button
                     onClick={handleClose}
-                    className="absolute right-4 top-4 z-10 text-white/40 hover:text-white transition-colors"
+                    className="absolute right-4 top-4 z-20 text-white/40 hover:text-white transition-colors"
                 >
                     <X className="h-4 w-4" />
                 </button>
 
                 {/* Header with glow */}
-                <div className="p-6 border-b border-white/5 bg-white/5 relative overflow-hidden">
+                <div className="shrink-0 p-6 border-b border-white/5 bg-white/5 relative overflow-hidden">
                     <div className="hive-glow-blob hive-glow-blob--blue -top-10 -right-10 h-32 w-32 opacity-20" />
                     <h2 className="text-xl font-black text-white uppercase tracking-tighter relative z-10 flex items-center gap-2">
                         <Settings className="h-4 w-4 text-blue-400" />
@@ -1123,14 +1135,16 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                 </div>
 
                 {/* Content */}
-                <div className="p-6">
+                <div className="min-h-0 flex-1 overflow-y-auto p-6">
                     {channel && step === "settings" ? renderSettingsContent() : renderNewChannelContent()}
                 </div>
 
                 {/* Footer */}
-                <div className="p-6 pt-4 flex gap-2">
-                    {renderFooter()}
-                </div>
+                {footer && (
+                    <div className="shrink-0 border-t border-white/5 p-6 pt-4 flex gap-2">
+                        {footer}
+                    </div>
+                )}
             </div>
         </div>
     );

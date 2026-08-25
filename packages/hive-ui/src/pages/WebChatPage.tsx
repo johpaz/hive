@@ -63,6 +63,24 @@ export function WebChatPage() {
     fetchHistory();
   }, [sessionId, agentId, setMessages]);
 
+  // El gateway manda `type: "error"` cuando el turno no se puede procesar —el
+  // caso típico es una nota de voz con el canal sin STT configurado o con la
+  // transcripción fallando—. Nadie escuchaba ese evento: la burbuja se quedaba
+  // en "Pensando" para siempre y el motivo sólo existía en los logs.
+  const handleGatewayError = useCallback(
+    (payload: { error?: string }) => {
+      useChatStore.getState().setLoading(false);
+      addMessage({
+        id: generateId(),
+        conversationId: sessionId,
+        type: "error" as const,
+        content: payload?.error || "El gateway no pudo procesar el mensaje.",
+        timestamp: new Date().toISOString(),
+      });
+    },
+    [addMessage, sessionId]
+  );
+
   useEffect(() => {
     const unsubMsg = subscribe("message", handleStreamingChunk);
     const unsubResp = subscribe("response", handleStreamingChunk);
@@ -71,6 +89,7 @@ export function WebChatPage() {
     const unsubProgress = subscribe("progress", handleProgress);
     const unsubProcess = subscribe("process", handleProcess);
     const unsubTyping = subscribe("typing", handleTyping);
+    const unsubError = subscribe("error", handleGatewayError);
     return () => {
       unsubMsg();
       unsubResp();
@@ -79,8 +98,9 @@ export function WebChatPage() {
       unsubProgress();
       unsubProcess();
       unsubTyping();
+      unsubError();
     };
-  }, [subscribe, handleStreamingChunk, handleReasoningChunk, handleAudioMessage, handleProgress, handleProcess, handleTyping]);
+  }, [subscribe, handleStreamingChunk, handleReasoningChunk, handleAudioMessage, handleProgress, handleProcess, handleTyping, handleGatewayError]);
 
   useEffect(() => {
     if (isConnected) {
@@ -91,11 +111,12 @@ export function WebChatPage() {
   }, [isConnected, isConnecting, setConnectionWarning]);
 
   const handleSendMessage = useCallback(
-    (content: string, options?: { audio?: string, attachments?: ChatAttachment[] }) => {
+    (content: string, options?: { audio?: string, audioMimeType?: string, attachments?: ChatAttachment[] }) => {
       const messageId = generateId();
       narration.stop();
 
       const audioBase64 = options?.audio;
+      const audioMimeType = options?.audioMimeType || "audio/webm";
       const attachments = options?.attachments;
 
       // Prepare local message for store
@@ -109,7 +130,7 @@ export function WebChatPage() {
       };
 
       if (audioBase64) {
-        newMessage.audio = { base64: audioBase64, mimeType: "audio/webm" };
+        newMessage.audio = { base64: audioBase64, mimeType: audioMimeType };
       }
 
       if (attachments && attachments.length > 0) {
@@ -129,7 +150,7 @@ export function WebChatPage() {
 
       if (isConnected) {
         if (audioBase64) {
-          send({ type: "audio", audio: audioBase64, sessionId, timestamp: new Date().toISOString() });
+          send({ type: "audio", audio: audioBase64, mimeType: audioMimeType, sessionId, timestamp: new Date().toISOString() });
         } else {
           const payload: any = { type: "message", content, sessionId, timestamp: new Date().toISOString() };
           if (attachments && attachments.length > 0) {

@@ -7,6 +7,15 @@ export interface WebSocketLike {
   close(code?: number, reason?: string): void;
 }
 
+/** Una conexión concreta a una sesión de lienzo. */
+export interface CanvasClient {
+  /** Código único de esta conexión: dos ventanas del mismo usuario son dos. */
+  id: string;
+  ws: WebSocketLike;
+  /** Última señal de vida, en ms. La refresca el pong del latido. */
+  lastSeen: number;
+}
+
 export interface A2UISurfaceInfo {
   surfaceId: string;
   catalogId?: string;
@@ -14,6 +23,11 @@ export interface A2UISurfaceInfo {
   hasComponents: boolean;
   hasDataModel: boolean;
 }
+
+/** Cada cuánto se pregunta si el cliente sigue ahí. */
+const PING_MS = 30_000;
+/** Latidos sin respuesta que se toleran antes de retirar una conexión. */
+const TOLERANCIA_LATIDOS = 3;
 
 export const WebSocketState = {
   CONNECTING: 0,
@@ -29,7 +43,23 @@ interface A2UISurfaceCache {
 }
 
 export class CanvasManager {
-  private sessions: Map<string, WebSocketLike> = new Map();
+  /**
+   * Clientes por sesión, no *un* cliente por sesión.
+   *
+   * El identificador de sesión es `canvas:<usuario>`, el mismo para la app de
+   * escritorio, para la pestaña del navegador y para cada reconexión. Con un
+   * único socket guardado, el que se conectaba después le robaba el sitio al
+   * anterior: la ventana perdedora se quedaba con el panel vacío para siempre
+   * mientras el servidor anotaba "enviado" sin un solo error.
+   *
+   * Indexado por el propio socket para que registrarse dos veces —el cliente
+   * pide `canvas_subscribe` al conectar y al arrancar la tienda— no cuente como
+   * dos clientes.
+   */
+  private sessions: Map<string, Map<WebSocketLike, CanvasClient>> = new Map();
+  /** Todos los clientes por su código, para responder al latido en O(1). */
+  private clients: Map<string, CanvasClient> = new Map();
+  private nextClientId = 1;
   // Surfaces belong to a canvas session. Keeping this scoped prevents a
   // desktop reconnect (or another user) from receiving a surface addressed
   // to a different session and makes surface discovery deterministic.
@@ -44,19 +74,27 @@ export class CanvasManager {
   private startHeartbeat(): void {
     if (this.heartbeatInterval) return;
 
-    // Enviar ping a todas las sesiones cada 30 segundos
+    // Un latido que sólo saluda no sirve: éste también entierra. Un socket que
+    // se fue sin avisar —la máquina suspendida, la red caída— se queda en
+    // estado OPEN por el lado del servidor y seguiría recibiendo superficies
+    // que no va a pintar nadie.
     this.heartbeatInterval = setInterval(() => {
-      for (const [sessionId, ws] of this.sessions) {
-        if (ws.readyState === WebSocketState.OPEN) {
+      const limite = Date.now() - PING_MS * TOLERANCIA_LATIDOS;
+      for (const sessionId of Array.from(this.sessions.keys())) {
+        for (const cliente of this.clientesDe(sessionId)) {
+          if (cliente.lastSeen < limite) {
+            this.log.info(`Canvas client ${cliente.id} sin señales de vida; se retira`);
+            this.olvidar(sessionId, cliente);
+            continue;
+          }
           try {
-            ws.send(JSON.stringify({ type: "canvas:ping", sessionId }));
-            this.log.debug(`Heartbeat sent to ${sessionId}`);
-          } catch (e) {
-            this.log.error(`Failed to send heartbeat to ${sessionId}`);
+            cliente.ws.send(JSON.stringify({ type: "canvas:ping", sessionId, connId: cliente.id }));
+          } catch {
+            this.olvidar(sessionId, cliente);
           }
         }
       }
-    }, 30000);
+    }, PING_MS);
   }
 
   private stopHeartbeat(): void {
@@ -66,9 +104,23 @@ export class CanvasManager {
     }
   }
 
-  registerSession(sessionId: string, ws: WebSocketLike): void {
-    this.sessions.set(sessionId, ws);
-    this.log.info(`Canvas session registered: ${sessionId}`);
+  /** @returns el código de esta conexión, que el cliente usa para el latido. */
+  registerSession(sessionId: string, ws: WebSocketLike): string {
+    const clientes = this.sessions.get(sessionId) ?? new Map<WebSocketLike, CanvasClient>();
+    this.sessions.set(sessionId, clientes);
+
+    const yaEstaba = clientes.get(ws);
+    const cliente: CanvasClient = yaEstaba ?? {
+      id: `c${this.nextClientId++}`,
+      ws,
+      lastSeen: Date.now(),
+    };
+    cliente.lastSeen = Date.now();
+    clientes.set(ws, cliente);
+    this.clients.set(cliente.id, cliente);
+    this.log.info(
+      `Canvas session registered: ${sessionId} (cliente ${cliente.id}, ${clientes.size} en esta sesión)`,
+    );
 
     eventBus.emit("tool:completed" as any, {
       toolName: "canvas:session:register",
@@ -78,7 +130,7 @@ export class CanvasManager {
     });
 
     // Notify the client that the session is registered
-    ws.send(JSON.stringify({ type: "canvas:connected", sessionId }));
+    ws.send(JSON.stringify({ type: "canvas:connected", sessionId, connId: cliente.id }));
 
     // Replay cached A2UI surfaces for this session so late-connecting clients
     // get current state without leaking another session's surfaces.
@@ -98,12 +150,51 @@ export class CanvasManager {
         this.log.warn(`Failed to replay A2UI surface '${surfaceId}' to ${sessionId}`);
       }
     }
+    return cliente.id;
+  }
+
+  /** El cliente sigue ahí: contestó al latido. */
+  markAlive(connId: string): void {
+    const cliente = this.clients.get(connId);
+    if (cliente) cliente.lastSeen = Date.now();
+  }
+
+  /** Clientes vivos de una sesión; de paso retira los sockets ya cerrados. */
+  private clientesDe(sessionId: string): CanvasClient[] {
+    const clientes = this.sessions.get(sessionId);
+    if (!clientes) return [];
+    const vivos: CanvasClient[] = [];
+    for (const cliente of Array.from(clientes.values())) {
+      if (cliente.ws.readyState === WebSocketState.OPEN) vivos.push(cliente);
+      else this.olvidar(sessionId, cliente);
+    }
+    return vivos;
+  }
+
+  private olvidar(sessionId: string, cliente: CanvasClient): void {
+    this.clients.delete(cliente.id);
+    const clientes = this.sessions.get(sessionId);
+    clientes?.delete(cliente.ws);
+    if (clientes && clientes.size === 0) this.sessions.delete(sessionId);
   }
 
   unregisterSession(sessionId: string, ws?: WebSocketLike): void {
-    if (ws && this.sessions.get(sessionId) !== ws) return;
-    this.sessions.delete(sessionId);
-    this.log.info(`Canvas session disconnected: ${sessionId}`);
+    const clientes = this.sessions.get(sessionId);
+    if (!clientes) return;
+    // Sin socket concreto se cierra la sesión entera; con él se va sólo esa
+    // ventana, y las demás siguen recibiendo.
+    if (!ws) {
+      for (const cliente of clientes.values()) this.clients.delete(cliente.id);
+      this.sessions.delete(sessionId);
+      this.log.info(`Canvas session disconnected: ${sessionId}`);
+      return;
+    }
+    const cliente = clientes.get(ws);
+    if (!cliente) return;
+    this.olvidar(sessionId, cliente);
+    this.log.info(
+      `Canvas client ${cliente.id} disconnected from ${sessionId} (quedan ${this.sessions.get(sessionId)?.size ?? 0})`,
+    );
   }
 
   async sendA2UIMessage(sessionId: string, messageType: string, data: Record<string, unknown>): Promise<void> {
@@ -136,27 +227,37 @@ export class CanvasManager {
       }
     }
 
-    const ws = this.sessions.get(sessionId);
-
-    if (!ws || ws.readyState !== WebSocketState.OPEN) {
+    const clientes = this.clientesDe(sessionId);
+    if (clientes.length === 0) {
       const connected = this.getConnectedSessions();
       this.log.warn(`Session ${sessionId} NOT connected for A2UI message. Cached for replay. Available: ${connected.join(", ")}`);
       return;
     }
 
-    ws.send(JSON.stringify({ type: messageType, data }));
-    this.log.debug(`Sent A2UI message '${messageType}' to session ${sessionId}`);
+    // A todas las ventanas de esa sesión: el escritorio y la pestaña del
+    // navegador son la misma persona mirando lo mismo desde dos sitios.
+    const mensaje = JSON.stringify({ type: messageType, data });
+    for (const cliente of clientes) {
+      try {
+        cliente.ws.send(mensaje);
+      } catch {
+        this.olvidar(sessionId, cliente);
+      }
+    }
+    this.log.debug(`Sent A2UI message '${messageType}' to ${clientes.length} client(s) of ${sessionId}`);
   }
 
   isSessionConnected(sessionId: string): boolean {
-    const ws = this.sessions.get(sessionId);
-    return ws !== undefined && ws.readyState === WebSocketState.OPEN;
+    return this.clientesDe(sessionId).length > 0;
   }
 
   getConnectedSessions(): string[] {
-    return Array.from(this.sessions.entries())
-      .filter(([_, ws]) => ws.readyState === WebSocketState.OPEN)
-      .map(([id]) => id);
+    return Array.from(this.sessions.keys()).filter((id) => this.clientesDe(id).length > 0);
+  }
+
+  /** Cuántas ventanas miran esta sesión. Para diagnóstico. */
+  countClients(sessionId: string): number {
+    return this.clientesDe(sessionId).length;
   }
 
   getStats(): { totalSessions: number; activeSessions: number } {
@@ -181,6 +282,7 @@ export class CanvasManager {
 
   clearAll(): void {
     this.stopHeartbeat();
+    this.clients.clear();
     this.sessions.clear();
     this.a2uiCache.clear();
     this.log.info("Canvas manager cleared");

@@ -1,23 +1,23 @@
 /**
- * Integration test — CDPClient / Bun WebView
+ * Integration test — WebViewBackend contra un sitio local
  *
- * Prueba REAL del motor de browser: lanza Chrome/Brave visible y ejercita
- * cada feature del CDPClient + las 7 herramientas del agente.
+ * Prueba REAL del motor: abre un navegador de verdad y ejercita cada feature
+ * del backend más las 7 herramientas del agente.
  *
- * Requiere Chrome, Brave, Chromium o Edge instalado (nativo o Flatpak).
- *
- * Correr:
- *   BROWSER_TESTS=1 bun test tests/browser-cdp.test.ts
- *   BROWSER_TESTS=1 bun test tests/browser-cdp.test.ts --timeout 60000
+ * Antes esto corría sobre `CDPClient` (agent-browser) y sólo con
+ * `BROWSER_TESTS=1`, porque arrancarlo costaba una instalación y ~2 s. Ahora el
+ * WebView abre en menos de un segundo sin instalar nada, así que corre siempre
+ * que haya un Chromium; `BROWSER_TESTS=0` lo apaga.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import {
-  CDPClient,
   waitForSelector,
   waitForCondition,
   screenshotElement,
+  isWebViewSupported,
 } from "../packages/core/src/tools/web/browser-service.ts";
+import { WebViewBackend } from "../packages/core/src/tools/web/webview-backend.ts";
 
 // ─── Setup: servidor HTML local ───────────────────────────────────────────────
 
@@ -37,7 +37,7 @@ const HOME_HTML = `<!DOCTYPE html>
 <body>
   <div id="hero">
     <h1 id="main-title">Hive Browser Test</h1>
-    <p class="subtitle">CDPClient Integration Test</p>
+    <p class="subtitle">WebViewBackend Integration Test</p>
   </div>
 
   <!-- click test -->
@@ -100,13 +100,13 @@ const PAGE2_HTML = `<!DOCTYPE html>
 
 // ─── Guard: solo corre con BROWSER_TESTS=1 ───────────────────────────────────
 
-const RUN = process.env.BROWSER_TESTS === "1";
+const RUN = isWebViewSupported() && process.env.BROWSER_TESTS !== "0";
 
 // ─── Estado compartido ────────────────────────────────────────────────────────
 
 let server: ReturnType<typeof Bun.serve>;
 let BASE: string;
-let client: CDPClient;
+let client: WebViewBackend;
 
 // ─── beforeAll / afterAll ─────────────────────────────────────────────────────
 
@@ -130,10 +130,10 @@ beforeAll(async () => {
   BASE = `http://localhost:${(server as any).port}`;
   console.log(`\n  Servidor local: ${BASE}`);
 
-  // 2. Lanzar agent-browser
-  client = new CDPClient();
-  await client.launch();
-  console.log(`  agent-browser listo\n`);
+  // 2. Abrir el navegador. No hay `launch()`: la vista se crea sola en el
+  //    primer navigate. La sesión persistente se apaga para no ensuciar el
+  //    almacén de secretos con cookies de test.
+  client = new WebViewBackend({ persistSession: false });
 });
 
 afterAll(async () => {
@@ -144,7 +144,7 @@ afterAll(async () => {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe.skipIf(!RUN)("CDPClient — features del motor", () => {
+describe.skipIf(!RUN)("WebViewBackend — features del motor", () => {
 
   // ── 1. navigate ─────────────────────────────────────────────────────────────
   describe("navigate", () => {
@@ -297,7 +297,7 @@ describe.skipIf(!RUN)("CDPClient — features del motor", () => {
     });
 
     it.skip("screenshot con clip captura región específica", async () => {
-      // agent-browser CLI does not support clip via screenshot command
+      // El recorte lo resuelve el backend (por CDP cuando puede).
       const full = await client.screenshot({ format: "png" });
       const clipped = await client.screenshot({
         format: "png",
@@ -394,7 +394,10 @@ describe.skipIf(!RUN)("CDPClient — features del motor", () => {
   });
 
   // ── 11. cdp raw ─────────────────────────────────────────────────────────────
-  describe.skip("cdp raw (not fully supported by agent-browser CLI)", () => {
+  // Este bloque estaba en `describe.skip`: el `cdp()` de agent-browser era un
+  // stub que devolvía una nota en vez de hablar con el navegador. El WebView
+  // expone CDP de verdad, así que ahora corre.
+  describe("cdp raw", () => {
     it("Page.getNavigationHistory retorna historial", async () => {
       const res = await client.cdp<{ currentIndex: number; entries: unknown[] }>(
         "Page.getNavigationHistory"

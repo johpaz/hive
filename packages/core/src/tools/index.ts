@@ -118,6 +118,7 @@ export {
   webFetchTool,
   browserNavigateTool,
   browserScreenshotTool,
+  computerUseTaskTool,
   browserClickTool,
   browserTypeTool,
   browserExtractTool,

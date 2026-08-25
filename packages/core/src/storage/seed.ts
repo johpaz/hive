@@ -54,6 +54,7 @@ export const SEED_DATA: SeedData = {
     { id: "web_fetch", name: "web_fetch", category: "web", description: "Obtener contenido de texto de una URL (ligero, sin JS). Sinónimos: descargar página, extraer texto, obtener contenido, leer url" },
     { id: "browser_navigate", name: "browser_navigate", category: "web", description: "Navegar a una URL y obtener contenido renderizado (soporta JS). Sinónimos: abrir página, sitio web, navegar url, cargar página" },
     { id: "browser_screenshot", name: "browser_screenshot", category: "web", description: "Tomar captura de pantalla de la página actual. Sinónimos: screenshot, imagen de página, capturar pantalla, foto página" },
+    { id: "computer_use_task", name: "computer_use_task", category: "web", description: "Operar el navegador de Hive mirando la pantalla: clic por coordenadas, escribir y navegar cuando no hay selector estable. Sinónimos: usar el navegador, hacer clic, operar una página, rellenar formulario, computer use" },
     { id: "artifact_inspect", name: "artifact_inspect", category: "web", description: "Inspeccionar integridad y metadatos de un artefacto administrado sin modificarlo. Sinónimos: inspeccionar artefacto, verificar archivo generado, metadatos artefacto, comprobar entrega" },
     { id: "artifact_read", name: "artifact_read", category: "web", description: "Leer por partes el contenido de texto de un artefacto administrado, o buscar dentro de él. Sinónimos: leer artefacto, ver contenido del artefacto, abrir resultado grande, buscar dentro del artefacto, leer artifact_ref" },
     { id: "browser_click", name: "browser_click", category: "web", description: "Hacer clic en un elemento de la página web. Sinónimos: botón, enlace, interactuar, presionar, seleccionar" },
@@ -184,6 +185,11 @@ export const SEED_DATA: SeedData = {
     { id: "gemini-3.5-flash-lite", providerId: "gemini", name: "Gemini 3.5 Flash Lite", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.3, outputPer1M: 2.5 },
     { id: "gemini-3.1-pro-preview", providerId: "gemini", name: "Gemini 3.1 Pro Preview", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 2, outputPer1M: 12 },
     { id: "gemini-3.1-flash-lite", providerId: "gemini", name: "Gemini 3.1 Flash Lite", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.25, outputPer1M: 1.5 },
+
+    // Realtime (voz en tiempo real, `bidiGenerateContent`). Audio nativo bidireccional:
+    // no es un pipeline STT→LLM→TTS, el modelo oye y habla directo.
+    { id: "gemini-3.1-flash-live-preview", providerId: "gemini", name: "Gemini 3.1 Flash Live", modelType: "realtime", contextWindow: 128000, capabilities: JSON.stringify(["realtime", "audio_in", "audio_out", "function_calling", "transcription"]), inputPer1M: 3, outputPer1M: 12 },
+    { id: "gemini-2.5-flash-native-audio-latest", providerId: "gemini", name: "Gemini 2.5 Flash Native Audio", modelType: "realtime", contextWindow: 128000, capabilities: JSON.stringify(["realtime", "audio_in", "audio_out", "function_calling", "async_function_calling", "transcription"]), inputPer1M: 3, outputPer1M: 12 },
 
     // TTS
     { id: "gemini-2.5-flash-preview-tts", providerId: "gemini", name: "Gemini 2.5 Flash TTS", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
@@ -350,14 +356,26 @@ export const SEED_DATA: SeedData = {
     { id: "hy3-preview", providerId: "opencode-go", name: "Hunyuan 3 Preview", modelType: "llm", contextWindow: 128000, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
 
     // ── HiveAgents (llama.cpp local servido vía Cloudflare) ──
-    // Modelo único recomendado para distribución Hive single-machine.
-    // Ver API.md para detalles de carga e inferencia.
+    // Los tres GGUF instalados en /data/models al 2026-08-18. `GET /api/models`
+    // del backend es la fuente de verdad si el inventario cambia; ver API.md
+    // (carga e inferencia) y BENCHMARK.md (cifras medidas).
+    //
+    // Sólo se puede tener UN modelo montado a la vez: seleccionar otro descarga
+    // el anterior para todos los clientes (ver CAPACITY.md).
     //
     // El id ES el nombre del archivo .gguf que sirve llama.cpp, así que cambia
     // con cada bump del modelo. Al renombrarlo, el re-seed borra la fila vieja y
     // crea la nueva desactivada, y desvincula a los agentes que apuntaban a la
     // anterior: hay que volver a elegir el modelo en la UI una vez.
+    //
+    // context_window es el ctx que se pide en POST /api/load, no un tope del
+    // modelo: DeepSeek va a 32K porque sus 90.9 GB de pesos dejan poco margen
+    // de memoria para el KV cache.
     { id: "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf", providerId: "hiveagents", name: "Qwen3.6 35B MoE (Recomendado)", modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "reasoning", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "Qwen3.8-27B-UD-Q4_K_XL.gguf", providerId: "hiveagents", name: "Qwen3.8 27B Dense + MTP", modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "reasoning", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },
+    // Se carga por el primer shard: llama.cpp descubre los otros dos solo.
+    // Sólo texto, y el más lento del inventario: ~91 s de carga y 12.8 t/s.
+    { id: "DeepSeek-V4-Flash-UD-IQ2_XXS-00001-of-00003.gguf", providerId: "hiveagents", name: "DeepSeek V4 Flash 90 GB (lento)", modelType: "llm", contextWindow: 32768, capabilities: JSON.stringify(["chat", "streaming", "reasoning", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },
   ],
 
 

@@ -262,20 +262,27 @@ export async function initializeGateway(
     const agent = createAgentService();
     await agent.initialize();
 
-    // 5b. Initialize Browser Service (agent-browser CLI)
+    // 5b. Initialize Browser Service (Bun.WebView, in-process)
     let browserAvailable = false;
 
     try {
-      log.info("Initializing browser automation (agent-browser)...");
+      log.info("Initializing browser automation (Bun.WebView)...");
 
-      const browserService = initializeBrowserService(config);
-      browserAvailable = await browserService.start();
-
-      if (browserAvailable) {
-        activateBrowserTools();
+      const { isWebViewSupported, browserInstallHint } = await import("../tools/web/browser-backend");
+      if (!isWebViewSupported()) {
+        // Sin navegador no hay nada que activar. Se dice acá, en el arranque,
+        // en vez de dejar que cada tool falle una por una en su primer uso.
+        log.warn("⚠️  No se encontró navegador — browser tools desactivadas");
+        log.warn(`   ${browserInstallHint()}`);
       } else {
-        log.warn("⚠️  agent-browser no disponible - browser tools desactivadas");
-        log.warn("   Se instalará automáticamente en primer uso o manual: bun add -g agent-browser");
+        const browserService = initializeBrowserService(config);
+        browserAvailable = await browserService.start();
+
+        if (browserAvailable) {
+          activateBrowserTools();
+        } else {
+          log.warn("⚠️  Browser tools desactivadas por configuración (tools.browser.enabled)");
+        }
       }
     } catch (error) {
       log.warn(`Browser Service initialization skipped: ${(error as Error).message}`);

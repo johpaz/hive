@@ -1,12 +1,24 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-capability",
-  "description": "Permisos mínimos para la ventana principal de Hive Agents",
-  "windows": ["main"],
+  "description": "Permisos mínimos para la ventana principal de Hive Agents. La ventana no carga archivos empaquetados: apunta al gateway en http://127.0.0.1:<puerto>, que para Tauri es un origen REMOTO. Sin declararlo aquí, la ACL rechaza todos los invoke con 'Command X not allowed by ACL' —incluidos los propios de la app— y la interfaz se queda sin salidas de audio ni zoom, en silencio. El puerto va con comodín porque si el 18790 está ocupado se toma otro libre.",
+  "windows": [
+    "main"
+  ],
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:*",
+      "http://localhost:*"
+    ]
+  },
   "permissions": [
     "core:default",
     "updater:default",
     "process:allow-restart",
+    "allow-gateway-info",
+    "allow-audio-outputs",
+    "allow-set-audio-output",
+    "allow-set-zoom",
     {
       "identifier": "shell:allow-spawn",
       "allow": [

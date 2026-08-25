@@ -2,7 +2,14 @@ import { useCallback, useRef } from "react";
 import { useGlobalConfigStore } from "@/stores/useGlobalConfigStore";
 
 const HIVEAGENTS_POLL_INTERVAL_MS = 2500;
-const HIVEAGENTS_LOAD_TIMEOUT_MS = 300000;
+/**
+ * El reloj arranca antes del POST /api/load, y ese fetch puede consumir hasta
+ * 90 s por su cuenta (el gateway corta ahí para no chocar con el límite de
+ * Cloudflare). Lo que queda es el presupuesto real de polling, así que el
+ * total tiene que cubrir con margen la peor carga observada de DeepSeek V4
+ * Flash — 90.8 s en la última medición, 259.6 s en la histórica (BENCHMARK.md).
+ */
+const HIVEAGENTS_LOAD_TIMEOUT_MS = 480000;
 
 /**
  * Shared state machine for mounting a HiveAgents (local llama.cpp) model: triggers

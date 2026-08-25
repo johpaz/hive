@@ -1,0 +1,869 @@
+/**
+ * BIA — la voz de Hive.
+ *
+ * La escena 3D ocupa la pantalla y la interfaz flota encima, igual que en la
+ * Oficina 3D: capa sin `pointer-events` con hijos que sí los reciben, panel
+ * derecho colapsable y nada que tape el centro.
+ *
+ * Tipografía mono-first a propósito: es un instrumento de telemetría, no una
+ * pantalla de chat. Mantiene los números alineados mientras cambian 60 veces por
+ * segundo y no exige empaquetar una webfont (Hive corre offline en escritorio).
+ */
+
+@property --vx-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+/** Permite animar hacia `auto` y `fit-content`, imposible hasta hace poco. */
+:root {
+  interpolate-size: allow-keywords;
+}
+
+.vx {
+  --vx-mono: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", "Segoe UI Mono",
+    "Roboto Mono", Menlo, Consolas, monospace;
+
+  /* La paleta de BIA: grafito y oro, con el cian de Hive para su voz.
+     En OKLCH ámbar y cian comparten luminosidad, así ninguna de las dos voces
+     domina visualmente a la otra. */
+  --vx-honey: oklch(0.82 0.15 78);
+  --vx-gold: oklch(0.78 0.13 82);
+  --vx-cyan: oklch(0.82 0.13 218);
+  --vx-violet: oklch(0.68 0.18 292);
+  --vx-ink: oklch(0.16 0.03 258);
+  --vx-line: color-mix(in oklab, var(--vx-cyan) 22%, transparent);
+  --vx-dim: color-mix(in oklab, white 42%, transparent);
+  --vx-faint: color-mix(in oklab, white 14%, transparent);
+
+  font-family: var(--vx-mono);
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklab, white 88%, transparent);
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  background: var(--vx-ink);
+  isolation: isolate;
+}
+
+.vx__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Sin WebGL la escena no se monta: el fondo lo sostiene este degradado y la
+   llamada sigue siendo usable, sólo se pierde la lectura visual del audio. */
+.vx__stage-fallback {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 42%, color-mix(in oklab, var(--vx-cyan) 16%, transparent), transparent 55%),
+    radial-gradient(circle at 50% 42%, color-mix(in oklab, var(--vx-honey) 12%, transparent), transparent 32%);
+  animation: vx-breathe 6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes vx-breathe {
+  50% { opacity: 0.55; }
+}
+
+/* ── Capa flotante ───────────────────────────────────────────────────────── */
+.vx__hud {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.vx__hud :is(button, aside, .vx__transcript) {
+  pointer-events: auto;
+}
+
+.vx__glass {
+  background: color-mix(in oklab, var(--vx-ink) 62%, transparent);
+  backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid var(--vx-faint);
+  border-radius: 0.9rem;
+}
+
+/* ── Cabecera ────────────────────────────────────────────────────────────── */
+.vx__head {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  right: 1rem;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.85rem 1.15rem;
+  animation: vx-drop 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes vx-drop {
+  from { opacity: 0; transform: translateY(-12px); }
+}
+
+.vx__title {
+  font-size: 0.66rem;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--vx-gold);
+  margin: 0;
+}
+
+.vx__subtitle {
+  font-size: 0.92rem;
+  letter-spacing: -0.01em;
+  margin: 0.3rem 0 0;
+  text-wrap: balance;
+  color: color-mix(in oklab, white 82%, transparent);
+}
+
+/* ── Estado ──────────────────────────────────────────────────────────────── */
+.vx__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  /* Ancla para colgar de aquí el detalle de estado sin cálculos en JS. */
+  anchor-name: --vx-estado;
+}
+
+/**
+ * Detalle del estado.
+ *
+ * El estilo base va fuera de @supports a propósito: WebKit todavía no tiene
+ * anchor positioning, y la app de escritorio en Linux corre sobre WebKitGTK. Sin
+ * esta regla, allí el elemento caía como texto suelto dentro de la cabecera.
+ */
+.vx__state-detail {
+  align-self: center;
+  margin-left: 0.75rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 0.4rem;
+  font-size: 0.58rem;
+  letter-spacing: 0.14em;
+  color: var(--vx-dim);
+  background: color-mix(in oklab, var(--vx-ink) 80%, transparent);
+  border: 1px solid var(--vx-faint);
+  white-space: nowrap;
+}
+
+/**
+ * Donde sí existe, se ancla al indicador y el navegador resuelve posición y
+ * volteo. La alternativa era medir con getBoundingClientRect en cada render, y
+ * con una escena 3D corriendo esas medidas fuerzan reflow.
+ */
+@supports (anchor-name: --a) {
+  .vx__state-detail {
+    position: absolute;
+    position-anchor: --vx-estado;
+    top: anchor(bottom);
+    right: anchor(right);
+    margin-top: 0.45rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 0.4rem;
+    font-size: 0.58rem;
+    letter-spacing: 0.14em;
+    color: var(--vx-dim);
+    background: color-mix(in oklab, var(--vx-ink) 80%, transparent);
+    border: 1px solid var(--vx-faint);
+    backdrop-filter: blur(8px);
+    position-try-fallbacks: flip-block;
+    white-space: nowrap;
+  }
+}
+
+.vx__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: currentColor;
+  animation: vx-ping 2.4s ease-out infinite;
+}
+
+@keyframes vx-ping {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklab, currentColor 55%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 0.65rem transparent; }
+}
+
+.vx--listening { color: var(--vx-honey); }
+.vx--speaking { color: var(--vx-cyan); }
+.vx--working { color: var(--vx-violet); }
+.vx--idle { color: color-mix(in oklab, white 45%, transparent); }
+.vx--error { color: oklch(0.72 0.19 22); }
+
+/* ── Controles de llamada ────────────────────────────────────────────────── */
+/**
+ * Fila compacta abajo al centro. El texto de ayuda iba debajo del botón y caía
+ * justo encima del cuerpo de BIA, ilegible sobre el traje negro; ahora vive en
+ * su propia píldora con fondo, separada de la figura.
+ */
+.vx__dock {
+  position: absolute;
+  left: 50%;
+  bottom: 1.4rem;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.vx__dock-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.vx__call {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 4.4rem;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  border: 1px solid var(--vx-line);
+  background: color-mix(in oklab, var(--vx-ink) 70%, transparent);
+  backdrop-filter: blur(8px);
+  color: inherit;
+  cursor: pointer;
+  transition: transform 220ms cubic-bezier(0.2, 0.9, 0.3, 1), border-color 220ms;
+}
+
+.vx__call:hover:not(:disabled) { transform: scale(1.05); border-color: var(--vx-cyan); }
+.vx__call:active:not(:disabled) { transform: scale(0.97); }
+.vx__call:disabled { opacity: 0.5; cursor: progress; }
+.vx__call:focus-visible { outline: 2px solid var(--vx-cyan); outline-offset: 6px; }
+
+/* Anillo cónico que gira mientras la llamada está viva. */
+.vx__call::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--vx-angle),
+    transparent 0deg,
+    var(--vx-gold) 40deg,
+    var(--vx-cyan) 140deg,
+    transparent 210deg,
+    transparent 360deg
+  );
+  mask: linear-gradient(black, black) content-box exclude, linear-gradient(black, black);
+  -webkit-mask: linear-gradient(black, black) content-box, linear-gradient(black, black);
+  -webkit-mask-composite: xor;
+  opacity: 0;
+  transition: opacity 400ms;
+}
+
+.vx__call[data-live="true"]::before {
+  opacity: 1;
+  animation: vx-spin 5.5s linear infinite;
+}
+
+@keyframes vx-spin {
+  to { --vx-angle: 360deg; }
+}
+
+.vx__aux {
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--vx-faint);
+  background: color-mix(in oklab, var(--vx-ink) 70%, transparent);
+  color: var(--vx-dim);
+  cursor: pointer;
+  transition: color 180ms, border-color 180ms;
+}
+
+.vx__aux:hover:not(:disabled) { color: white; border-color: var(--vx-line); }
+.vx__aux:disabled { opacity: 0.3; cursor: not-allowed; }
+.vx__aux.is-on {
+  color: var(--vx-gold);
+  border-color: color-mix(in oklab, var(--vx-gold) 45%, transparent);
+  box-shadow: 0 0 14px color-mix(in oklab, var(--vx-gold) 25%, transparent);
+}
+
+.vx__hint {
+  margin: 0;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.68rem;
+  color: var(--vx-dim);
+  text-align: center;
+  max-width: 40ch;
+  text-wrap: pretty;
+  line-height: 1.5;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--vx-ink) 72%, transparent);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--vx-faint);
+}
+
+.vx__warn {
+  margin: 0;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.7rem;
+  color: oklch(0.85 0.14 22);
+  text-align: center;
+  text-wrap: pretty;
+  border-radius: 999px;
+  background: color-mix(in oklab, oklch(0.3 0.12 22) 60%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+/* ── Micrófono y sonido ──────────────────────────────────────────────────── */
+/**
+ * Sale hacia arriba desde el dique, como el menú de dispositivos de cualquier
+ * videollamada. Ancho fijo: los nombres de aparato que reporta el sistema son
+ * largos y desiguales, y un panel que cambia de ancho al conectar un auricular
+ * se lee como un salto.
+ */
+.vx__audio {
+  position: absolute;
+  bottom: calc(100% + 0.7rem);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 19rem;
+  max-width: calc(100vw - 2rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.85rem 0.9rem 0.9rem;
+  pointer-events: auto;
+  z-index: 2;
+}
+
+.vx__audio-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.vx__audio-x {
+  display: grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--vx-dim);
+  cursor: pointer;
+}
+
+.vx__audio-x:hover { color: white; }
+
+/* Barra de nivel: la prueba de que el micrófono elegido capta algo. */
+.vx__meter {
+  height: 0.3rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, white 10%, transparent);
+  overflow: hidden;
+}
+
+.vx__meter-fill {
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  transform: scaleX(0);
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--vx-cyan), var(--vx-gold));
+  /* Sin transición la barra tiembla; con una larga va por detrás de la voz. */
+  transition: transform 90ms linear;
+}
+
+.vx__audio-test {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--vx-faint);
+  background: transparent;
+  color: var(--vx-dim);
+  font-family: inherit;
+  font-size: 0.68rem;
+  cursor: pointer;
+  transition: color 180ms, border-color 180ms;
+}
+
+.vx__audio-test:hover { color: white; border-color: var(--vx-line); }
+
+.vx__switch {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  color: color-mix(in oklab, white 82%, transparent);
+  cursor: pointer;
+}
+
+/* `accent-color` es lo único que WebKitGTK respeta de una casilla nativa; sin
+   esto se pinta con el gris del tema del sistema y no se ve si está marcada. */
+.vx__switch input {
+  accent-color: var(--vx-gold);
+  width: 0.9rem;
+  height: 0.9rem;
+  cursor: pointer;
+}
+
+/* ── Transcripción ───────────────────────────────────────────────────────── */
+.vx__transcript {
+  position: absolute;
+  left: 1rem;
+  bottom: 1.5rem;
+  width: min(26rem, 34vw);
+  max-height: 34vh;
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  background: color-mix(in oklab, var(--vx-ink) 62%, transparent);
+  backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid var(--vx-faint);
+  border-radius: 0.9rem;
+  mask-image: linear-gradient(to bottom, transparent, black 10%);
+}
+
+.vx__line {
+  display: grid;
+  grid-template-columns: 3.2rem 1fr;
+  gap: 0.75rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  margin: 0;
+  transition: opacity 420ms, translate 420ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+@starting-style {
+  .vx__line {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+
+@keyframes vx-rise {
+  from { opacity: 0; transform: translateY(6px); }
+}
+
+.vx__who {
+  font-size: 0.58rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding-top: 0.25rem;
+}
+
+.vx__line--user .vx__who { color: var(--vx-honey); }
+.vx__line--assistant .vx__who { color: var(--vx-cyan); }
+.vx__said { text-wrap: pretty; }
+
+/* ── Panel de instrumentos: flotante y colapsable ────────────────────────── */
+.vx__rail {
+  position: absolute;
+  top: 5.5rem;
+  right: 1rem;
+  bottom: 1.5rem;
+  width: min(21rem, 30vw);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  container-type: inline-size;
+  animation: vx-slide 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition: width 200ms ease, bottom 200ms ease;
+}
+
+@keyframes vx-slide {
+  from { opacity: 0; transform: translateX(22px); }
+}
+
+.vx__rail.is-collapsed {
+  width: 3rem;
+  bottom: auto;
+}
+
+.vx__rail.is-collapsed .vx__rail-body { display: none; }
+
+.vx__rail-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem;
+  border-bottom: 1px solid var(--vx-faint);
+}
+
+.vx__rail.is-collapsed .vx__rail-head { border-bottom: none; justify-content: center; }
+
+.vx__rail-toggle {
+  display: grid;
+  place-items: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  flex: none;
+  border-radius: 0.48rem;
+  border: 1px solid var(--vx-faint);
+  background: color-mix(in oklab, white 4%, transparent);
+  color: var(--vx-dim);
+  cursor: pointer;
+  transition: color 160ms, border-color 160ms;
+}
+
+.vx__rail-toggle:hover {
+  color: var(--vx-gold);
+  border-color: color-mix(in oklab, var(--vx-gold) 35%, transparent);
+}
+
+.vx__rail-title {
+  font-size: 0.58rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--vx-dim);
+}
+
+.vx__rail-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.vx__gauges {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  border-bottom: 1px solid var(--vx-faint);
+}
+
+@container (min-width: 22rem) {
+  .vx__gauges { grid-template-columns: repeat(4, 1fr); }
+}
+
+.vx__gauge {
+  padding: 0.7rem 0.75rem;
+  border-right: 1px solid var(--vx-faint);
+}
+
+.vx__gauge:last-child { border-right: none; }
+
+.vx__gauge-label {
+  font-size: 0.53rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--vx-dim);
+}
+
+.vx__gauge-value {
+  font-size: 1.15rem;
+  margin-top: 0.3rem;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.vx__gauge-unit {
+  font-size: 0.6rem;
+  color: var(--vx-dim);
+  margin-left: 0.18rem;
+}
+
+/* ── Vista previa de cámara ──────────────────────────────────────────────── */
+.vx__cam {
+  position: absolute;
+  left: 1rem;
+  top: 5.5rem;
+  margin: 0;
+  width: min(11rem, 22vw);
+  pointer-events: auto;
+  transition: opacity 320ms, translate 320ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+@starting-style {
+  .vx__cam {
+    opacity: 0;
+    translate: -12px 0;
+  }
+}
+
+.vx__cam-frame {
+  aspect-ratio: 4 / 3;
+  border-radius: 0.7rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--vx-gold) 40%, transparent);
+  background: color-mix(in oklab, var(--vx-ink) 85%, transparent);
+  box-shadow: 0 0 18px color-mix(in oklab, var(--vx-gold) 18%, transparent);
+}
+
+.vx__cam-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  /* Espejo: verse invertido resulta desconcertante. */
+  transform: scaleX(-1);
+}
+
+/* La pantalla nunca se refleja: invertida sería ilegible. Y se muestra entera,
+   no recortada, porque lo que importa puede estar en cualquier esquina. */
+.vx__cam-video--plano {
+  transform: none;
+  object-fit: contain;
+  background: color-mix(in oklab, var(--vx-ink) 90%, transparent);
+}
+
+/* Con las dos activas, la pantalla se apila bajo la cámara. */
+.vx__cam--pantalla {
+  top: auto;
+  bottom: 9.5rem;
+  width: min(14rem, 26vw);
+}
+
+.vx__cam--pantalla .vx__cam-frame {
+  aspect-ratio: 16 / 10;
+  border-color: color-mix(in oklab, var(--vx-cyan) 40%, transparent);
+  box-shadow: 0 0 18px color-mix(in oklab, var(--vx-cyan) 16%, transparent);
+}
+
+.vx__cam--pantalla .vx__cam-label { color: var(--vx-cyan); }
+
+.vx__cam-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+  font-size: 0.55rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--vx-gold);
+}
+
+/* ── Botón de recentrar vista ────────────────────────────────────────────── */
+.vx__recenter {
+  position: absolute;
+  right: 1rem;
+  bottom: 1.4rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.8rem;
+  font-family: inherit;
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--vx-dim);
+  border-radius: 999px;
+  border: 1px solid var(--vx-faint);
+  background: color-mix(in oklab, var(--vx-ink) 72%, transparent);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: color 180ms, border-color 180ms;
+}
+
+.vx__recenter:hover {
+  color: var(--vx-gold);
+  border-color: color-mix(in oklab, var(--vx-gold) 40%, transparent);
+}
+
+/* ── Preferencias de voz e idioma ────────────────────────────────────────── */
+.vx__prefs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.85rem 0.9rem;
+  border-bottom: 1px solid var(--vx-faint);
+}
+
+.vx__pref {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.vx__pref-label {
+  font-size: 0.53rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--vx-dim);
+}
+
+/*
+ * `appearance: none` no es cosmético: sin él, WebKitGTK —el motor de la app de
+ * escritorio en Linux— dibuja el widget nativo de GTK, con su fondo claro del
+ * tema del sistema, y le aplica encima el `color` heredado (blanco). El
+ * resultado era texto blanco sobre fondo blanco: los selectores de avatar, voz
+ * e idioma quedaban ilegibles en la app mientras se veían bien en el navegador.
+ *
+ * Por lo mismo el fondo va OPACO y el color explícito: con un fondo
+ * semitransparente se sigue viendo el del widget nativo por detrás.
+ * `color-scheme: dark` hace que el desplegable que abre el sistema también
+ * salga oscuro, que es lo único de ese menú que el CSS no controla.
+ */
+.vx__select {
+  width: 100%;
+  padding: 0.4rem 1.5rem 0.4rem 0.5rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--vx-faint);
+  appearance: none;
+  -webkit-appearance: none;
+  color-scheme: dark;
+  background-color: var(--vx-ink);
+  /* La flecha nativa se va con `appearance: none`, así que se repone a mano. */
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='rgba(255,255,255,0.55)' stroke-width='1.6'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 0.62rem;
+  color: color-mix(in oklab, white 88%, transparent);
+  font-family: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.vx__select:focus-visible { outline: 1px solid var(--vx-cyan); outline-offset: 1px; }
+.vx__select option { background: oklch(0.16 0.03 258); color: white; }
+.vx__select:hover { border-color: color-mix(in oklab, white 26%, transparent); }
+
+.vx__pref-note {
+  margin: 0;
+  font-size: 0.58rem;
+  color: var(--vx-dim);
+}
+
+/* ── Línea de tiempo de la colmena ───────────────────────────────────────── */
+.vx__timeline {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.9rem;
+  scrollbar-width: thin;
+  display: flex;
+  flex-direction: column;
+}
+
+.vx__timeline-head {
+  font-size: 0.53rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--vx-dim);
+  padding: 0 0.2rem 0.7rem;
+  position: sticky;
+  top: 0;
+  background: linear-gradient(to bottom, var(--vx-ink) 55%, transparent);
+  z-index: 1;
+  margin: 0;
+}
+
+.vx__event {
+  display: grid;
+  grid-template-columns: 1.1rem 1fr;
+  gap: 0.7rem;
+  padding: 0.5rem 0.2rem;
+  position: relative;
+  /* La lista crece durante toda la llamada; saltarse el layout de lo que está
+     fuera de la vista mantiene el hilo de render libre para la escena 3D. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 3rem;
+  transition: opacity 380ms, translate 380ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+/**
+ * Los hitos se atenúan al salir del encuadre según su propia posición de scroll.
+ * `animation-timeline: view()` corre en el hilo del compositor, así que la lista
+ * puede desvanecerse a 60 fps sin robarle un milisegundo a la escena 3D — que es
+ * justo lo que pasaría resolviéndolo con un IntersectionObserver.
+ */
+@supports (animation-timeline: view()) {
+  .vx__event {
+    animation: vx-fade-edges linear both;
+    animation-timeline: view(block);
+    animation-range: entry 0% entry 22%, exit 78% exit 100%;
+  }
+
+  @keyframes vx-fade-edges {
+    0% { opacity: 0.15; }
+    100% { opacity: 1; }
+  }
+}
+
+/* Cada hito entra desde su estado inicial en vez de con un keyframe: el
+   navegador anima la aparición real del nodo, sin parpadeo en el primer frame. */
+@starting-style {
+  .vx__event {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+/* Hilo que une los hitos: la delegación se lee como una secuencia. */
+.vx__event:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 0.52rem;
+  top: 1.4rem;
+  bottom: -0.2rem;
+  width: 1px;
+  background: var(--vx-faint);
+}
+
+.vx__event-mark {
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  display: grid;
+  place-items: center;
+  font-size: 0.55rem;
+  margin-top: 0.15rem;
+  background: var(--vx-ink);
+  z-index: 1;
+}
+
+.vx__event-label {
+  font-size: 0.72rem;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
+.vx__event-meta {
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--vx-dim);
+  margin-top: 0.18rem;
+}
+
+.vx__empty {
+  font-size: 0.7rem;
+  color: var(--vx-dim);
+  line-height: 1.55;
+  padding: 0.3rem 0.2rem;
+  text-wrap: pretty;
+  margin: 0;
+}
+
+/* ── Pantallas angostas: el panel se va abajo y la transcripción se achica ── */
+@media (max-width: 60rem) {
+  .vx__rail { top: auto; bottom: 1rem; right: 1rem; width: min(18rem, 70vw); max-height: 48vh; }
+  .vx__transcript { display: none; }
+  .vx__dock { bottom: 1rem; left: 1.25rem; transform: none; width: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vx__dot,
+  .vx__call[data-live="true"]::before,
+  .vx__stage-fallback { animation: none; }
+  .vx__line,
+  .vx__event,
+  .vx__head,
+  .vx__rail { animation-duration: 1ms; }
+}

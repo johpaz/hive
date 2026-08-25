@@ -43,6 +43,14 @@ import { resolveContext } from "./resolver";
 import { voiceService } from "../voice/index";
 import { multimodalService } from "../multimodal/index";
 import { initializeGateway, type GatewayInitializationResult } from "./initializer";
+import {
+  REALTIME_PREFIX,
+  buildUpgradeData as buildRealtimeUpgradeData,
+  deliverNarrationToVoice,
+  handleRealtimeClose,
+  handleRealtimeMessage,
+  handleRealtimeOpen,
+} from "./realtime/index";
 import { handleSetupStatus, handleVerifyProvider, handleCompleteSetup, handleSetupProviders, handleSetupEthics, handleSetupOllamaModels } from "./routes/setup";
 import { handleAuthStatus, handleLogin, handleSetupCredentials, handleChangePassword, handleRecover, handleDisableAuth, handleRecoveryKey } from "./routes/auth";
 import { resolveUserId } from "../storage/onboarding";
@@ -235,6 +243,11 @@ export async function startGateway(
       }, metadata?.accountId);
     });
     setNarrationDelivery(async (event) => {
+      // Voz en tiempo real: el hito se le inyecta al modelo para que lo cuente
+      // hablando. No corta el resto de la entrega — el usuario ve el proceso
+      // escrito en el chat y lo escucha a la vez.
+      deliverNarrationToVoice(event);
+
       if (event.channel === "webchat" && event.session_id) {
         const session = sessionManager.get(event.session_id);
         if (session?.ws && session.ws.readyState === 1) {
@@ -828,6 +841,40 @@ export async function startGateway(
 
 
 
+
+        // ── Realtime voice WebSocket upgrade ─────────────────────────────────
+        // Misma autenticación que /ws: la sesión de voz habla con el hilo real
+        // del usuario y puede ejecutar trabajo en la colmena, así que no se
+        // abre sin credencial (a diferencia de /meeting-stream).
+        if (url.pathname === "/realtime" || url.pathname === "/realtime/") {
+          let userId = url.searchParams.get("session") || (await resolveUserId({})) || "default";
+          if (!isDev && !gatewaySetupMode) {
+            const tokenParam = url.searchParams.get("token");
+            const activeToken = process.env.HIVE_AUTH_TOKEN;
+            const usersColForRt = await col<UserDoc>("users");
+            if (tokenParam && activeToken && tokenParam === activeToken) {
+              const user = (await usersColForRt.scan({ limit: 1 }))[0];
+              if (user) userId = user.id;
+            }
+            try {
+              if (!(await usersColForRt.get(userId))) return new Response("Unauthorized", { status: 401 });
+            } catch {
+              return new Response("Unauthorized", { status: 401 });
+            }
+          }
+          if (!userId) return new Response("Missing session or user ID", { status: 400 });
+
+          const success = server.upgrade(req, {
+            data: buildRealtimeUpgradeData(
+              userId,
+              url.searchParams.get("voice"),
+              url.searchParams.get("lang"),
+              url.searchParams.get("altavoz"),
+            ),
+          });
+          if (success) return undefined;
+          return new Response("Realtime WebSocket upgrade failed", { status: 400 });
+        }
 
         // ── Meeting Stream WebSocket upgrade ───────────────────────────────────
         if (url.pathname === "/meeting-stream" || url.pathname === "/meeting-stream/") {
@@ -2025,6 +2072,12 @@ export async function startGateway(
         }, 25_000);
         (data as any)._hbInterval = hbInterval;
 
+        // ── Voz en tiempo real ─────────────────────────────────────────────
+        if (data.sessionId.startsWith(REALTIME_PREFIX)) {
+          await handleRealtimeOpen(ws);
+          return;
+        }
+
         // ── Meeting Stream ─────────────────────────────────────────────────────
         if (data.sessionId.startsWith("meeting:")) {
           log.info(`Meeting stream client connected: ${data.sessionId}`);
@@ -2086,6 +2139,14 @@ export async function startGateway(
       async message(ws, message) {
         const data = ws.data;
         (data as any)._lastSeen = Date.now();
+
+        // Voz en tiempo real: va primero porque es la única rama que recibe
+        // frames binarios (PCM crudo). El resto del handler hace toString() sin
+        // discriminar, que sobre binario devolvería basura.
+        if (data.sessionId.startsWith(REALTIME_PREFIX)) {
+          handleRealtimeMessage(ws, message as string | Buffer);
+          return;
+        }
 
         // Bridge events clients are read-only; only respond to ping keepalive
         if (data.sessionId.startsWith("bridge:")) {
@@ -2186,6 +2247,13 @@ export async function startGateway(
           return;
         }
 
+        // El cliente contesta `pong` al keepalive que el servidor manda cada
+        // 30 s. Es sólo señal de vida — `sessionManager.touch()` ya corrió
+        // arriba — así que aquí no hay nada que hacer. Sin esta rama el pong
+        // caía hasta el final del handler y el gateway devolvía
+        // "Unknown message type", que el chat pintaba como burbuja de error.
+        if (msg.type === "pong") return;
+
         if (msg.type === "notification_sync") {
           const pending = await listPendingNotifications(data.sessionId, "webchat");
           for (const notification of pending) {
@@ -2216,6 +2284,15 @@ export async function startGateway(
             type: "canvas:snapshot",
             data: await getCanvasSnapshot(),
           }));
+          return;
+        }
+
+        // Latido del lienzo: la prueba de que esa ventana sigue ahí. Sin esto,
+        // un cliente que se fue sin avisar —máquina suspendida, red caída—
+        // seguiría recibiendo superficies que no va a pintar nadie.
+        if (msg.type === "canvas:pong") {
+          const connId = (msg.connId ?? (msg.data as any)?.connId) as string | undefined;
+          if (connId) canvasManager.markAlive(connId);
           return;
         }
 
@@ -2324,7 +2401,10 @@ export async function startGateway(
           } as OutboundMessage));
 
           try {
-            const audioInput = { type: "base64" as const, data: msg.audio, mimeType: "audio/webm" };
+            // El cliente manda el tipo real que produjo su MediaRecorder; de él
+            // sale la extensión del archivo que se sube a Whisper, y Whisper
+            // rechaza el audio si no coincide con el contenido.
+            const audioInput = { type: "base64" as const, data: msg.audio, mimeType: msg.mimeType || "audio/webm" };
             const sttProvider = voiceConfig.sttProvider || "groq-whisper";
             const messageContent = await voiceService.transcribe(audioInput, sttProvider);
 
@@ -2432,6 +2512,11 @@ export async function startGateway(
           clearInterval((data as any)._hbInterval);
           (data as any)._hbInterval = null;
         }
+        if (data.sessionId.startsWith(REALTIME_PREFIX)) {
+          handleRealtimeClose(ws);
+          return;
+        }
+
         if (data.sessionId.startsWith("meeting:")) {
           log.info(`Meeting stream client disconnected: ${data.sessionId}`);
           return;
