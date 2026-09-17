@@ -16,8 +16,9 @@ import { loadProviderApiKey } from "../../storage/crypto";
 import { col } from "../../storage/hive";
 import type { AgentDoc, ModelDoc, NarrationEventDoc, UserDoc } from "../../storage/collections";
 import { logger } from "../../utils/logger";
-import { resolveContext } from "../resolver";
-import { buildVoicePrompt } from "./prompt";
+import { resolveWebThread } from "../webchat-turn";
+import { getRecentMessages, getSummary, isInternalSource } from "../../agent/conversation-store";
+import { buildVoicePrompt, type VoiceHistory } from "./prompt";
 import { parseClientFrame } from "./protocol";
 import { RealtimeVoiceSession } from "./voice-session";
 
@@ -82,11 +83,56 @@ function compactForSpeech(detail: string): string {
   return flat.length <= 140 ? flat : `${flat.slice(0, 139)}…`;
 }
 
+/**
+ * Contexto previo para la llamada, recortado a lo que vale la pena pagar.
+ *
+ * El system instruction de la Live API se manda entero al conectar y no se puede
+ * cambiar después, así que esto se cobra una vez por llamada: pocos turnos y
+ * cortos. Se excluyen los eventos internos (fan-in de delegación), que no son
+ * palabras de nadie.
+ */
+const VOICE_HISTORY_TURNS = 12;
+const VOICE_HISTORY_CHARS = 220;
+const VOICE_SUMMARY_CHARS = 800;
+
+async function loadVoiceHistory(threadId: string): Promise<VoiceHistory | null> {
+  try {
+    const [mensajes, resumen] = await Promise.all([
+      getRecentMessages(threadId, VOICE_HISTORY_TURNS),
+      getSummary(threadId).catch(() => null),
+    ]);
+
+    const turnos = mensajes
+      .filter((m) => (m.role === "user" || m.role === "assistant") && !isInternalSource(m.source))
+      .map((m) => ({
+        role: m.role as "user" | "assistant",
+        // El chat antepone `[Timestamp: ...]` a cada mensaje del usuario: hablado
+        // no aporta nada y ocupa la mitad de la línea.
+        text: truncar(m.content.replace(/^\[Timestamp:[^\]]*\]\s*/, ""), VOICE_HISTORY_CHARS),
+      }))
+      .filter((t) => t.text.length > 0);
+
+    if (!turnos.length && !resumen?.summary) return null;
+    return { resumen: resumen?.summary?.slice(0, VOICE_SUMMARY_CHARS) ?? null, turnos };
+  } catch (error) {
+    // Sin contexto se habla igual: nunca impedir que la llamada abra.
+    log.warn(`no pude cargar el contexto de ${threadId}: ${(error as Error).message}`);
+    return null;
+  }
+}
+
+function truncar(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`;
+}
+
 // ─── Handlers llamados desde server.ts ───────────────────────────────────────
 
 export interface RealtimeUpgradeData {
   sessionId: string;
   webchatSessionId: string;
+  /** Conversación de la web que continúa esta llamada. Vacío = la más reciente. */
+  threadId?: string;
   voice: string;
   /** BCP-47 con acento regional (es-CO, es-MX…), elegido en la consola de voz. */
   language: string;
@@ -101,10 +147,12 @@ export function buildUpgradeData(
   voice?: string | null,
   language?: string | null,
   speakerMode?: string | null,
+  threadId?: string | null,
 ): RealtimeUpgradeData {
   return {
     sessionId: `${REALTIME_PREFIX}${userId}`,
     webchatSessionId: userId,
+    threadId: threadId?.trim() || undefined,
     voice: voice?.trim() || DEFAULT_VOICE,
     language: language?.trim() || DEFAULT_LANGUAGE,
     speakerMode: speakerMode === "1",
@@ -125,18 +173,25 @@ export async function handleRealtimeOpen(ws: ServerWebSocket<any>): Promise<void
       );
     }
 
-    const ctx = await resolveContext({ channel: "webchat", channelUserId: webchatSessionId });
+    // Misma conversación que el chat escrito: si la consola mandó una, se usa esa;
+    // si no, la más reciente de la web. Hablar y escribir son el mismo hilo.
+    const { userId, threadId } = await resolveWebThread(webchatSessionId, data.threadId);
     const [agentsCol, usersCol] = await Promise.all([col<AgentDoc>("agents"), col<UserDoc>("users")]);
+    const coordinators = await agentsCol.findBy("role", "coordinator", { limit: 1 });
     const [agent, user] = await Promise.all([
-      agentsCol.get(ctx.agentId).catch(() => null),
-      usersCol.get(ctx.userId).catch(() => null),
+      agentsCol.get(coordinators[0]?.id || "bee").catch(() => null),
+      usersCol.get(userId).catch(() => null),
     ]);
+
+    // Lo ya hablado/escrito en esta conversación. BIA lo escribía pero no lo leía:
+    // cada llamada empezaba en blanco aunque el chat de texto sí recordara.
+    const historial = await loadVoiceHistory(threadId);
 
     const session = new RealtimeVoiceSession({
       ws,
       sessionId: webchatSessionId,
-      userId: ctx.userId,
-      threadId: ctx.threadId,
+      userId,
+      threadId,
       providerId: REALTIME_PROVIDER,
       model: await resolveRealtimeModel(),
       apiKey,
@@ -153,6 +208,7 @@ export async function handleRealtimeOpen(ws: ServerWebSocket<any>): Promise<void
         language: data.language,
         tone: agent?.doc.tone ?? null,
         userNotes: user?.doc.notes ?? null,
+        historial,
       }),
     });
 

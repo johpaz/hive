@@ -286,16 +286,27 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
       let lastStatus = 0
       let lastBody = ""
       for (const candidate of candidates) {
-        const pingRes = await fetch(`${baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-          body: JSON.stringify({
-            model: candidate,
-            max_tokens: 10,
-            messages: [{ role: "user", content: "Say 'ok' if you can read this." }],
-          }),
-          signal: AbortSignal.timeout(10000),
-        })
+        let pingRes: Response
+        try {
+          pingRes = await fetch(`${baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+            body: JSON.stringify({
+              model: candidate,
+              max_tokens: 10,
+              messages: [{ role: "user", content: "Say 'ok' if you can read this." }],
+            }),
+            signal: AbortSignal.timeout(10000),
+          })
+        } catch (err) {
+          // Un candidato lento (los modelos grandes de NIM pueden pasar del
+          // timeout) o caído no dice nada de la key: cuenta igual que un
+          // 404/410 y se prueba el siguiente, en vez de abortar la verificación.
+          lastStatus = 0
+          lastBody = (err as Error).message
+          log.warn(`verify-provider ${provider}: modelo=${candidate} excepción=${lastBody} — probando siguiente candidato`)
+          continue
+        }
         if (pingRes.ok) return Response.json({ success: true, error: null })
         lastStatus = pingRes.status
         lastBody = (await pingRes.text()).slice(0, 300)
@@ -305,7 +316,7 @@ export async function handleVerifyProvider(req: Request): Promise<Response> {
       log.warn(`verify-provider ${provider} falló tras ${candidates.length} candidato(s): último status=${lastStatus} body=${lastBody}`)
       return Response.json({
         success: false,
-        error: `API error: ${lastStatus}`,
+        error: lastStatus ? `API error: ${lastStatus}` : `Connection error: ${lastBody}`,
       })
     } else if (OPENAI_COMPAT_PING.has(provider)) {
       // Resto de providers OpenAI-compatibles: mismo shape de request, sólo

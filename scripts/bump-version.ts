@@ -13,7 +13,7 @@ if (!bumpType || (!["patch", "minor", "major"].includes(bumpType) && !explicitVe
   console.log("  bun scripts/bump-version.ts 1.0.5 [--push] [--dry-run]");
   console.log("");
   console.log("  (sin flags)  Solo actualiza archivos locales (package.json, README, docs).");
-  console.log("               No toca git. Revisá el diff vos mismo.");
+  console.log("               No toca git. Revisa el diff tú mismo.");
   console.log("  --dry-run    Muestra qué cambiaría, sin escribir nada.");
   console.log("  --push       Además de bumpear, commitea, tagea y publica (git push + tag),");
   console.log("               con confirmación antes de publicar.");
@@ -201,7 +201,7 @@ async function main() {
   console.log(`\n✨ Archivos actualizados. Versión: ${newVersion}\n`);
 
   if (!shouldPush) {
-    console.log("Sin --push: no se tocó git. Revisá `git diff`, y cuando estés conforme:");
+    console.log("Sin --push: no se tocó git. Revisa `git diff`, y cuando estés conforme:");
     console.log(`  bun scripts/bump-version.ts ${explicitVersion || bumpType} --push\n`);
     return;
   }
@@ -221,8 +221,8 @@ async function main() {
 
   if (tagExists) {
     console.log(`\n⚠️  El tag v${newVersion} ya existe localmente. Esto suele indicar que esta`);
-    console.log(`   versión ya se publicó antes. Abortando — si es intencional, borrá el tag`);
-    console.log(`   primero (git tag -d v${newVersion}) y volvé a correr con --push.`);
+    console.log(`   versión ya se publicó antes. Abortando — si es intencional, borra el tag`);
+    console.log(`   primero (git tag -d v${newVersion}) y vuelve a correr con --push.`);
     process.exit(1);
   }
 

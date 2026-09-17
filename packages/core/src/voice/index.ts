@@ -1,3 +1,4 @@
+import { resolvePort } from "../utils/port";
 import { col } from "../storage/hive";
 import type { ChannelDoc, ModelDoc } from "../storage/collections";
 import { loadProviderApiKey } from "../storage/crypto";
@@ -311,7 +312,7 @@ class VoiceService {
 
   private async speakWithPiper(text: string, voiceId?: string): Promise<AudioOutput> {
     const cleanText = cleanTextForTTS(text);
-    const port = Number(process.env.TTS_PORT ?? 5500);
+    const port = resolvePort(process.env.TTS_PORT, 5500);
     const res = await fetch(`http://localhost:${port}/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

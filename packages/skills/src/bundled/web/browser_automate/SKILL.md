@@ -8,21 +8,21 @@ category: web
 permissions:
   - browser_control
 dependencies: []
-tools: [browser_navigate, browser_click, browser_type, browser_screenshot]
+tools: [browser_navigate, browser_wait, browser_click, browser_type, browser_screenshot, browser_script, computer_use_task]
 
 # Structured skill fields
 triggers:
-  - "automatizá el navegador"
+  - "automatiza el navegador"
   - "automate browser"
-  - "completá el formulario"
+  - "completa el formulario"
   - "fill form"
-  - "hacé clic en"
+  - "haz clic en"
   - "click on"
-  - "iniciá sesión"
+  - "inicia sesión"
   - "login"
-  - "registrate"
+  - "regístrate"
   - "sign up"
-  - "interactuá con la web"
+  - "interactúa con la web"
   - "interact with website"
   - "flujo web"
   - "web workflow"
@@ -38,13 +38,20 @@ steps:
     output: page_loaded
 
   - step: 2
+    action: browser_wait
+    instruction: "Wait for the element before acting on it. Clicking or typing before the element exists is the most common failure in web automation, and it fails silently"
+    params:
+      selector: "CSS selector of the element about to be used"
+    output: element_ready
+
+  - step: 3
     action: browser_click
     instruction: "Click on elements (buttons, links) to navigate or trigger actions"
     params:
       selector: "CSS selector for element"
     output: click_result
 
-  - step: 3
+  - step: 4
     action: browser_type
     instruction: "Type text into form fields (inputs, textareas)"
     params:
@@ -52,12 +59,14 @@ steps:
       text: "text to type"
     output: type_result
 
-  - step: 4
+  - step: 5
     action: browser_screenshot
     instruction: "Take screenshot to verify state after interactions"
     output: verification_screenshot
 
 rules:
+  - "Escalar sólo cuando haga falta, en este orden: `browser_click`/`browser_type` con un selector → `browser_script` si el elemento no se puede alcanzar con un selector estable → `computer_use_task` si la página no tiene selectores usables. Empezar por el último es lento y caro: mira la pantalla y razona en cada paso."
+  - "Esperar con `browser_wait` antes de cada clic o tipeo, no confiar en que la página ya cargó: es la falla más común de la automatización web, y falla en silencio."
   - "Wait for page to fully load after each navigation or significant interaction"
   - "Use specific, stable CSS selectors (IDs preferred over classes)"
   - "Take screenshots after critical steps for verification"
@@ -73,13 +82,13 @@ output_format:
   max_length: "Summary of automation flow"
 
 examples:
-  - user_input: "automatizá el login en example.com"
+  - user_input: "automatiza el login en example.com"
     expected_behavior: "Navigate → type credentials → click submit → screenshot verification"
 
-  - user_input: "completá el formulario de contacto"
+  - user_input: "completa el formulario de contacto"
     expected_behavior: "Navigate → type name/email/message → click submit → verify submission"
 
-  - user_input: "hacé clic en todos los enlaces del menú"
+  - user_input: "haz clic en todos los enlaces del menú"
     expected_behavior: "Navigate → click each menu item → screenshot each page"
 ---
 

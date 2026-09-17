@@ -166,7 +166,7 @@ async function judgeCriteriaWithLLM(
       ...clearOldToolResults(messages),
       {
         role: "user",
-        content: `Evaluá si cada uno de los siguientes criterios de aceptación se cumplió, basándote en la conversación anterior.\n\nCriterios:\n${criteria.map((c) => `- ${c.id}: ${c.description}`).join("\n")}\n\nRespondé en JSON estricto, un resultado por criterio:\n{"results":[{"id":"...","met":true/false,"reason":"explicación breve"}]}`,
+        content: `Evalúa si cada uno de los siguientes criterios de aceptación se cumplió, basándote en la conversación anterior.\n\nCriterios:\n${criteria.map((c) => `- ${c.id}: ${c.description}`).join("\n")}\n\nResponde en JSON estricto, un resultado por criterio:\n{"results":[{"id":"...","met":true/false,"reason":"explicación breve"}]}`,
       },
     ];
 
@@ -253,7 +253,7 @@ export async function verifyGoal(
       ...clearOldToolResults(messages),
       {
         role: "user",
-        content: `Evaluá si el siguiente objetivo ha sido cumplido basándote en la conversación anterior.\n\nObjetivo: "${goal}"\n\nRespondé en JSON:\n{"met": true/false, "reason": "explicación breve"}`,
+        content: `Evalúa si el siguiente objetivo ha sido cumplido basándote en la conversación anterior.\n\nObjetivo: "${goal}"\n\nResponde en JSON:\n{"met": true/false, "reason": "explicación breve"}`,
       },
     ];
 

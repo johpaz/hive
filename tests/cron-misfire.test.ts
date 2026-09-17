@@ -5,7 +5,7 @@
  * 2. one-shot outside grace → status "failed", never executes
  * 3. one-shot with skip policy → status "failed", never executes
  * 4. recurring with next_run_at in the past (skip) → stays active with
- *    last_error, re-schedules via Croner
+ *    last_error, y vuelve a agendar
  */
 
 process.env.HIVE_DB_PATH = ":memory:";

@@ -8,6 +8,8 @@ export * from "./agent/agent-loop.ts";
 export * from "./agent/context-compiler.ts";
 export * from "./agent/prompt-builder.ts";
 export * from "./agent/conversation-store.ts";
+export * from "./agent/thread-id.ts";
+export * from "./agent/thread-store.ts";
 export * from "./agent/tool-selector.ts";
 export * from "./agent/skill-selector.ts";
 export * from "./agent/playbook-selector.ts";

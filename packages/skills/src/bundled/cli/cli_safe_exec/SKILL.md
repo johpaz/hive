@@ -12,9 +12,9 @@ tools: [cli_exec]
 
 # Structured skill fields
 triggers:
-  - "ejecutá este comando"
+  - "ejecuta este comando"
   - "run this command"
-  - "corré el comando"
+  - "corre el comando"
   - "execute command"
   - "terminal"
   - "bash"
@@ -72,13 +72,13 @@ output_format:
   max_length: "Full output with analysis"
 
 examples:
-  - user_input: "ejecutá npm install"
+  - user_input: "ejecuta npm install"
     expected_behavior: "exec({ command: 'npm install', timeout: 120 }) → check exitCode → return installation summary"
 
-  - user_input: "corré los tests"
+  - user_input: "corre los tests"
     expected_behavior: "exec({ command: 'npm test', timeout: 180 }) → parse results → report pass/fail count"
 
-  - user_input: "hacé git status"
+  - user_input: "haz git status"
     expected_behavior: "exec({ command: 'git status' }) → return current branch and changes"
 ---
 

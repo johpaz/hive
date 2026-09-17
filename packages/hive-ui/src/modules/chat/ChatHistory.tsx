@@ -17,7 +17,7 @@ interface ChatHistoryProps {
 const SUGGESTIONS = [
   { icon: Sparkles, text: "Que puedes hacer?" },
   { icon: Zap, text: "Dame un resumen" },
-  { icon: Bot, text: "Ayudame con una tarea" },
+  { icon: Bot, text: "Ayúdame con una tarea" },
 ];
 
 const EMPTY_STEPS: string[] = [];

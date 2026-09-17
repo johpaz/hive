@@ -1,11 +1,11 @@
 /**
  * Hive Scheduler - Type Definitions
  * 
- * Type interfaces for the Croner-based scheduling system.
+ * Type interfaces for the scheduling system.
  * All names use "CronJob" terminology (formerly ScheduledTask).
  */
 
-import type { Cron } from "croner";
+import type { Cron } from "./cron";
 
 /**
  * Task type: recurring uses cron expression, one_shot uses fire_at
@@ -146,24 +146,9 @@ export interface CronJobExecutionResult {
 }
 
 /**
- * Internal job wrapper holding Croner instance and metadata
+ * Internal job wrapper holding the scheduled job and its metadata
  */
 export interface CronJobEntry {
   job: CronJob;
   cron: Cron;
-}
-
-/**
- * Options for Croner job creation
- */
-export interface CronerOptions {
-  timezone: string;
-  protect: boolean;
-  catch: boolean | ((error: Error) => void);
-  name: string;
-  maxRuns?: number;
-  interval?: number;
-  startAt?: string;
-  stopAt?: string;
-  domAndDow?: boolean;
 }

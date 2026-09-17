@@ -434,7 +434,7 @@ export async function* runAgent(
             const pending = JSON.parse(existing.pending_tool_calls_json)
             const interruptedMsgs = pending.map((tc: any) => ({
               role: "tool" as const,
-              content: "[interrupted] El proceso se reinició mientras esta herramienta corría. El resultado no está disponible — decidí si reintentar o continuar sin él.",
+              content: "[interrupted] El proceso se reinició mientras esta herramienta corría. El resultado no está disponible — decide si reintentar o continuar sin él.",
               tool_call_id: tc.id,
             }))
             messages.push(...interruptedMsgs)
@@ -513,6 +513,7 @@ export async function* runAgent(
         messages: clearOldToolResults(messages) as LLMMessage[],
         tools: ctx.tools.length > 0 ? ctx.tools : undefined,
         signal: opts.signal,
+        sessionId: opts.threadId,
         onToken: opts.onToken && !delegationGroupAtCall
           ? (token: string) => {
             streamedThisCall = true
@@ -527,7 +528,7 @@ export async function* runAgent(
     } catch (err) {
       if (err instanceof LLMCallTimeoutError) {
         log.warn(`[agent-loop] ${err.message} at iteration ${iterations}. Breaking.`)
-        finalContent = "El modelo tardó demasiado en responder. Intentá de nuevo o simplificá la consulta."
+        finalContent = "El modelo tardó demasiado en responder. Intenta de nuevo o simplifica la consulta."
         break
       }
       throw err
@@ -1125,6 +1126,7 @@ export async function* runAgent(
         ...providerCfg,
         messages: clearOldToolResults(messages) as LLMMessage[],
         tools: undefined, // no tools — force text response
+        sessionId: opts.threadId,
       })
       if (synthesis.usage) {
         totalInputTokens += synthesis.usage.input_tokens

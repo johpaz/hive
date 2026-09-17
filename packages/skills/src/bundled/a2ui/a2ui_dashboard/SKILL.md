@@ -93,10 +93,10 @@ output_format:
   max_length: "Structured JSON components"
 
 examples:
-  - user_input: "mostrá el dashboard del proyecto"
+  - user_input: "muestra el dashboard del proyecto"
     expected_behavior: "a2ui_create_surface(surfaceId:'project_dash', theme:{primaryColor:'#10B981'}) → a2ui_update_components with Row[Column[Card[metrics]],Column[tasks]] → a2ui_update_data_model(path:'/', value:{metrics:{...}})"
 
-  - user_input: "actualizá las métricas del dashboard"
+  - user_input: "actualiza las métricas del dashboard"
     expected_behavior: "a2ui_update_data_model(surfaceId:'project_dash', path:'/metrics/completionRate', value:75)"
 
   - user_input: "show a real-time dashboard with server metrics"

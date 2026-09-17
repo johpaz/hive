@@ -26,7 +26,7 @@ let resolveProviderConfigSpy: ReturnType<typeof spyOn>;
 let executeToolBatchSpy: ReturnType<typeof spyOn>;
 let queue: DurableLaneQueue | null = null;
 
-const VERIFIER_MARKER = "Evaluá si el siguiente objetivo";
+const VERIFIER_MARKER = "Evalúa si el siguiente objetivo";
 
 async function seedTestAgent() {
   const usersCol = await col<UserDoc>("users");

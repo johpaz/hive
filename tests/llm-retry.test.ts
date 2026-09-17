@@ -124,6 +124,20 @@ describe("llm-client: mensajes de falla del proveedor", () => {
     expect(msg).toContain("moonshotai/kimi-k2.6");
   });
 
+  // NVIDIA responde 404 "Not found for account" para modelos que figuran en su
+  // catálogo público pero no están habilitados para esa key (verificado el
+  // 2026-09-10 con moonshotai/kimi-k2.6). Decir que "se retiró" mandaba al
+  // usuario a buscar un modelo que sí existe.
+  test("un 404 por cuenta dice que el modelo no está habilitado, no que se retiró", () => {
+    const err = new Error(`404 {"type":"about:blank","title":"Not Found","status":404,"detail":"Function '23d4f03a': Not found for account 'ffXBHyDNUF'"}`);
+    const msg = describeProviderFailure(err, 404, "nvidia", "moonshotai/kimi-k2.6");
+    expect(msg).toContain("no tiene habilitado");
+    expect(msg).toContain("moonshotai/kimi-k2.6");
+    expect(msg).toContain("Ajustes → Proveedores");
+    expect(msg).not.toContain("retiró");
+    expect(msg).not.toContain("ffXBHyDNUF");
+  });
+
   test("un status sin mapeo conserva el mensaje original en vez de inventar una causa", () => {
     const msg = describeProviderFailure(new Error("socket hang up"), 502, "nvidia", "z-ai/glm-5.2");
     expect(msg).toBe("socket hang up");

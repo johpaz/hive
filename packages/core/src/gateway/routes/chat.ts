@@ -16,6 +16,7 @@ import { getDefaultLLM } from "../../agent/llm-client";
 import { logger } from "../../utils/logger";
 import { saveScratchpadNote, listAllScratchpadNotes, isInternalSource } from "../../agent/conversation-store";
 import { col, fromIndexable } from "../../storage/hive";
+import { mostRecentWebThread } from "../../agent/thread-store";
 import type { UserDoc, AgentDoc, ConversationDoc } from "../../storage/collections";
 
 const log = logger.child("api:chat");
@@ -36,9 +37,18 @@ export interface ChatResponse {
   error?: string;
 }
 
-export function resolveChatThreadId(finalUserId: string, requestedThreadId?: string): string {
+/**
+ * El hilo pedido manda; si no viene ninguno se usa la conversación activa de la web
+ * y, sólo si tampoco la hay, el hilo del usuario (el previo a la separación por
+ * canal). Nunca se genera un hilo por petición: sería una conversación sin pasado.
+ */
+export function resolveChatThreadId(
+  finalUserId: string,
+  requestedThreadId?: string,
+  activeThreadId?: string,
+): string {
   const trimmedThreadId = requestedThreadId?.trim();
-  return trimmedThreadId || finalUserId || "default";
+  return trimmedThreadId || activeThreadId || finalUserId || "default";
 }
 
 export async function handleChat(
@@ -66,7 +76,8 @@ export async function handleChat(
     const finalAgentId = agentId || (await resolveAgentId(null)) || "main";
 
     // conversations.thread_id is the context key; never generate a per-request thread.
-    const threadId = resolveChatThreadId(finalUserId, thread_id);
+    const active = channel === "webchat" ? await mostRecentWebThread(finalUserId) : null;
+    const threadId = resolveChatThreadId(finalUserId, thread_id, active?.id);
 
     log.info(`[chat] Processing message from user=${finalUserId} agent=${finalAgentId} thread=${threadId}`);
 
@@ -114,6 +125,7 @@ export async function handleChat(
       payload: {
         source: "api",
         sessionId: threadId,
+        threadId,
         content: messageContent,
         rawContent: message,
         userId: finalUserId,
@@ -190,7 +202,11 @@ export async function handleChat(
 
 export async function handleGetChatHistory(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const url = new URL(req.url)
-  const threadId = url.searchParams.get("sessionId") || url.searchParams.get("threadId") || "default"
+  const requested = url.searchParams.get("threadId") || url.searchParams.get("sessionId")
+  // Sin hilo pedido, el historial es el de la conversación activa de la web —igual
+  // que el que verá el siguiente turno—, no el de un hilo "default" inexistente.
+  const active = requested ? null : await mostRecentWebThread((await resolveUserId({ channel: "webchat" })) || "")
+  const threadId = requested || active?.id || "default"
   const limit = parseInt(url.searchParams.get("limit") || String(DEFAULT_CHAT_HISTORY_LIMIT))
 
   const conversationsCol = await col<ConversationDoc>("conversations")

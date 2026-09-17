@@ -12,14 +12,14 @@ tools: [fs_read, fs_exists]
 
 # Structured skill fields
 triggers:
-  - "leé este archivo"
+  - "lee este archivo"
   - "read this file"
-  - "mostrame el contenido"
+  - "muéstrame el contenido"
   - "show content"
   - "qué dice este archivo"
-  - "resumí este archivo"
+  - "resume este archivo"
   - "summarize this file"
-  - "entendé este código"
+  - "entiende este código"
   - "understand this code"
 
 preferred_agents: []
@@ -62,10 +62,10 @@ output_format:
   max_length: "500 words for summary, full content if requested"
 
 examples:
-  - user_input: "leé el archivo package.json"
+  - user_input: "lee el archivo package.json"
     expected_behavior: "Check exists → fs_read({ path: 'package.json' }) → return full content (small file)"
 
-  - user_input: "resumí el archivo src/main.ts"
+  - user_input: "resume el archivo src/main.ts"
     expected_behavior: "fs_read with offset/limit → identify main exports and functions → summarize structure"
 
   - user_input: "qué dice este archivo de configuración"
@@ -79,7 +79,7 @@ examples:
 Esta skill se activa cuando el usuario necesita leer y entender el contenido de un archivo, especialmente cuando:
 - El archivo es grande y necesita resumen
 - Se requiere comprensión del contenido (no solo lectura)
-- El usuario pide "qué dice", "resumí", "entendé"
+- El usuario pide "qué dice", "resume", "entiende"
 
 ## Herramientas Disponibles
 

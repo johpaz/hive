@@ -29,9 +29,14 @@ beforeEach(async () => {
   await ensureHiveDb();
 });
 
+// Restaurar, no borrar: el preload aísla HIVE_HOME para toda la suite, y un
+// delete devolvía los tests siguientes a la carpeta real del usuario.
+const previousHiveHome = process.env.HIVE_HOME;
+
 afterEach(() => {
   closeHiveDb();
-  delete process.env.HIVE_HOME;
+  if (previousHiveHome === undefined) delete process.env.HIVE_HOME;
+  else process.env.HIVE_HOME = previousHiveHome;
 });
 
 // A tiny real PNG (1x1 transparent pixel) so detectedMime() sniffing succeeds.

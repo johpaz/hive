@@ -12,7 +12,7 @@ tools: [cron.create, notify]
 
 # Structured skill fields
 triggers:
-  - "recordame"
+  - "recuérdame"
   - "remind me"
   - "recordatorio"
   - "reminder"
@@ -20,7 +20,7 @@ triggers:
   - "alert"
   - "avísame"
   - "notify me"
-  - "programá"
+  - "programa un"
   - "schedule"
   - "para mañana"
   - "for tomorrow"
@@ -67,13 +67,13 @@ output_format:
   max_length: "Short confirmation"
 
 examples:
-  - user_input: "recordame revisar el informe a las 3pm"
+  - user_input: "recuérdame revisar el informe a las 3pm"
     expected_behavior: "cron.create({ name: 'report-reminder', task: 'Revisar el informe pendiente', task_type: 'one_shot', fire_at: '2026-04-20T15:00:00', channel: 'telegram' })"
 
   - user_input: "avísame en 30 minutos"
     expected_behavior: "cron.create({ name: 'quick-reminder', task: 'Revisa el email', task_type: 'one_shot', fire_at: '<30-min-from-now>', channel: 'telegram' })"
 
-  - user_input: "recordame mañana a las 9am revisar las métricas"
+  - user_input: "recuérdame mañana a las 9am revisar las métricas"
     expected_behavior: "cron.create({ name: 'metrics-reminder', task: 'Revisar las métricas', task_type: 'one_shot', fire_at: '<tomorrow-9am>', channel: 'telegram' })"
 ---
 
@@ -81,7 +81,7 @@ examples:
 
 ## Cuándo se Activa
 
-Para crear recordatorios de una sola ejecución (one_shot): "recuerdame a las 3pm", "avísame en 30 minutos", etc.
+Para crear recordatorios de una sola ejecución (one_shot): "recuérdame a las 3pm", "avísame en 30 minutos", etc.
 
 ## Herramientas
 

@@ -240,7 +240,7 @@ export async function doctor(): Promise<void> {
       });
     }
 
-    // No hay backup automático: hive-db 0.3.1 no expone snapshot ni checkpoint,
+    // No hay backup automático: hive-db 0.5.1 no expone snapshot ni checkpoint,
     // y copiar el directorio con el gateway corriendo puede dar una copia
     // desgarrada entre collections.redb y los índices. Mejor decirlo que
     // simularlo.
@@ -407,7 +407,7 @@ export async function doctor(): Promise<void> {
         name: "Propuestas del curador",
         status: "warn",
         message: `${pending.length} agente(s) marcado(s) para revisión: ${names.join(", ")}`,
-        hint: "Revisá el panel 'Salud del Enjambre' en el Dashboard — no hay todavía un comando para aprobar/descartar propuestas.",
+        hint: "Revisa el panel 'Salud del Enjambre' en el Dashboard — no hay todavía un comando para aprobar/descartar propuestas.",
       });
     } else {
       checks.push({

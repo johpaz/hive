@@ -1,4 +1,5 @@
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 // CORRECCIÓN 1 — quitar extensión .ts de los imports
@@ -18,13 +19,35 @@ export interface StdioTransportConfig {
   env?: Record<string, string>;
 }
 
-export type TransportType = "stdio" | "sse" | "websocket";
+/**
+ * Streamable HTTP: el transporte remoto ESTÁNDAR de MCP hoy.
+ *
+ * No es lo mismo que `sse`. Aquel es el transporte HTTP+SSE original, de dos
+ * endpoints (un GET que abre el stream y un POST aparte para enviar), que la
+ * especificación reemplazó por éste: un único endpoint que acepta POST y
+ * devuelve JSON o un stream SSE según haga falta.
+ *
+ * Sin este caso, un servidor MCP remoto moderno es inalcanzable: no expone el
+ * `/sse` de dos endpoints que espera `SSETransport` y la conexión muere en un
+ * 404.
+ */
+export interface HttpTransportConfig {
+  /** URL del endpoint MCP, normalmente terminado en `/mcp`. */
+  url: string;
+  /** Cabeceras extra en cada petición — típicamente la autorización. */
+  headers?: Record<string, string>;
+  /** Sesión previa a reanudar, si el servidor emitió un id de sesión. */
+  sessionId?: string;
+}
+
+export type TransportType = "stdio" | "sse" | "websocket" | "http";
 
 export interface TransportOptions {
   type: TransportType;
   stdio?: StdioTransportConfig;
   sse?: SSETransportConfig;
   websocket?: WebSocketTransportConfig;
+  http?: HttpTransportConfig;
 }
 
 export function createTransport(options: TransportOptions): Transport {
@@ -56,6 +79,24 @@ export function createTransport(options: TransportOptions): Transport {
       }
       // Igual — WebSocketTransport ahora implementa Transport directamente
       return new WebSocketTransport(options.websocket);
+    }
+
+    case "http": {
+      if (!options.http) {
+        throw new Error("http config required for Streamable HTTP transport");
+      }
+      // La implementación la pone el SDK oficial de MCP, que ya es dependencia
+      // nuestra: no hay nada que reescribir acá, sólo faltaba el caso.
+      let url: URL;
+      try {
+        url = new URL(options.http.url);
+      } catch {
+        throw new Error(`Invalid MCP endpoint URL: ${options.http.url}`);
+      }
+      return new StreamableHTTPClientTransport(url, {
+        requestInit: options.http.headers ? { headers: options.http.headers } : undefined,
+        sessionId: options.http.sessionId,
+      });
     }
 
     default: {

@@ -133,7 +133,7 @@ describe("context-compiler: G9 causal context window", () => {
     const ctx = await compileContext({
       agentId: "test-agent",
       threadId: "thread-ctx-1",
-      userMessage: "Seguí con el deploy",
+      userMessage: "Sigue con el deploy",
       causalStreamId: streamId,
     });
 
@@ -165,7 +165,7 @@ describe("context-compiler: G9 causal context window", () => {
     const ctx = await compileContext({
       agentId: "test-agent",
       threadId: "thread-ctx-2",
-      userMessage: "Seguí con el deploy",
+      userMessage: "Sigue con el deploy",
       causalStreamId: streamId,
     });
 
@@ -246,7 +246,7 @@ describe("context-compiler: conversation summary + internal events", () => {
 
   test("an internal event keeps its chronological position and role:user in ctx.messages", async () => {
     const threadId = "thread-internal-1";
-    await addMessage(threadId, "user", "Delegá esto a un worker");
+    await addMessage(threadId, "user", "Delega esto a un worker");
     await addMessage(threadId, "assistant", "Listo, delegado.");
     await addMessage(threadId, "user", "El agente completó la tarea X.", { source: "task_complete" });
     await addMessage(threadId, "assistant", "El worker terminó la tarea X exitosamente.");

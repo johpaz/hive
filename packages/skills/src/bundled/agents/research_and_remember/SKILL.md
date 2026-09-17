@@ -13,15 +13,15 @@ tools: [web_search, web_fetch, memory_write]
 
 # Structured skill fields
 triggers:
-  - "investigá y guardá"
+  - "investiga y guarda"
   - "research and save"
-  - "buscá y recordá"
+  - "busca y recuerda"
   - "find and remember"
-  - "aprendé sobre"
+  - "aprende sobre"
   - "learn about"
-  - "estudiá esto"
+  - "estudia esto"
   - "study this"
-  - "documentate y guardá"
+  - "documéntate y guarda"
   - "research and store"
 
 preferred_agents: []
@@ -74,13 +74,13 @@ output_format:
   max_length: "Comprehensive but concise knowledge entry"
 
 examples:
-  - user_input: "investigá y guardá información sobre transformers en ML"
+  - user_input: "investiga y guarda información sobre transformers en ML"
     expected_behavior: "web_search → web_fetch top sources → synthesize → memory_write({ title: 'Transformers ML', content: '...' })"
 
-  - user_input: "aprendé sobre las mejores prácticas de React 2025"
+  - user_input: "aprende sobre las mejores prácticas de React 2025"
     expected_behavior: "Search 'React best practices 2025' → fetch docs → synthesize → memory_write"
 
-  - user_input: "buscá y recordá las tendencias de IA actuales"
+  - user_input: "busca y recuerda las tendencias de IA actuales"
     expected_behavior: "Search 'AI trends 2025' → fetch multiple sources → compile trends → memory_write"
 ---
 

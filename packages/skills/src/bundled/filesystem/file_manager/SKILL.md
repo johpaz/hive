@@ -14,13 +14,13 @@ tools: [fs_list, fs_glob, fs_exists]
 triggers:
   - "lista los archivos"
   - "list files"
-  - "buscá archivos"
+  - "busca archivos"
   - "find files"
-  - "explorá el proyecto"
+  - "explora el proyecto"
   - "explore project"
   - "qué archivos hay"
   - "what files exist"
-  - "buscá por patrón"
+  - "busca por patrón"
   - "search by pattern"
   - "existe este archivo"
   - "file exists"
@@ -70,7 +70,7 @@ examples:
   - user_input: "lista los archivos del proyecto"
     expected_behavior: "fs_list({ path: '.' }) → return root directory structure"
 
-  - user_input: "buscá todos los archivos TypeScript"
+  - user_input: "busca todos los archivos TypeScript"
     expected_behavior: "fs_glob({ pattern: '**/*.ts' }) → return list of .ts files"
 
   - user_input: "existe el archivo src/config.ts"

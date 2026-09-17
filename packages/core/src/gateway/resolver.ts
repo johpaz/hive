@@ -1,5 +1,6 @@
 import { col } from "../storage/hive"
 import type { UserIdentityDoc, UserDoc, AgentDoc } from "../storage/collections"
+import { ensureThread, mostRecentWebThread, createWebConversation } from "../agent/thread-store"
 
 export interface ResolveContextResult {
   userId: string
@@ -13,6 +14,13 @@ export interface ResolveContextOptions {
   channelUserId: string
   /** Channel account the message arrived on — persisted so replies can be routed back to it. */
   accountId?: string
+  /**
+   * Conversación concreta dentro del canal: el contacto o grupo en mensajería, el id
+   * de conversación en la web. Si falta, en los canales se usa `channelUserId` y en
+   * la web la conversación más reciente (o una nueva, si no hay ninguna).
+   */
+  peerId?: string
+  peerKind?: "direct" | "group"
 }
 
 export async function resolveContext(options: ResolveContextOptions): Promise<ResolveContextResult> {
@@ -57,10 +65,29 @@ export async function resolveContext(options: ResolveContextOptions): Promise<Re
 
   const coordinators = await agentsCol.findBy("role", "coordinator", { limit: 1 })
   const agentId = coordinators[0]?.id || "bee"
-  // One canonical conversation thread is shared across channels. Transport
-  // session IDs route replies; conversations.thread_id owns agent context.
-  const threadId = userId
+
+  // Un hilo por canal Y por contacto (`${user}/${canal}/${peer}` — ver
+  // agent/thread-id.ts). Antes todos los canales compartían un único hilo
+  // (`threadId = userId`), así que lo hablado por Telegram entraba en el mismo
+  // contexto que la web y un grupo de WhatsApp escribía en el chat privado del
+  // dueño. Los session IDs de transporte siguen enrutando las respuestas.
+  const threadId = options.peerId
+    ? await ensureThread({
+        userId,
+        channel,
+        peerId: options.peerId,
+        peerKind: options.peerKind,
+      })
+    : channel === "webchat"
+      // Sin conversación indicada, la web sigue donde se quedó: la más reciente
+      // —que puede ser el hilo previo a la separación por canal— o una nueva.
+      ? ((await mostRecentWebThread(userId))?.id ?? (await createWebConversation(userId)).id)
+      : await ensureThread({
+          userId,
+          channel,
+          peerId: channelUserId,
+          peerKind: options.peerKind,
+        })
 
   return { userId, threadId, agentId, isNewUser }
 }
-

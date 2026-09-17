@@ -2,7 +2,7 @@
  * Descubrimiento de modelos del provider (pestaña "Descubrir" del alta).
  *
  * Es sólo lectura a propósito: el sync persiste TODO lo que devuelve el provider
- * (102 modelos en NVIDIA), que no es lo que querés al explorar para agregar uno.
+ * (102 modelos en NVIDIA), que no es lo que quieres al explorar para agregar uno.
  */
 
 process.env.HIVE_DB_PATH = ":memory:";

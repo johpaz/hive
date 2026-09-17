@@ -34,7 +34,7 @@ Solo muestra eventos nuevos desde que arranca el comando — sin replay
 histórico. Requiere causalLog.enabled=true (HIVE_CAUSAL_LOG=true) para que
 haya algo que mostrar.
 
-⚠️  No podés correr esto en paralelo con un \`hive dev\`/\`hive start\` activo
+⚠️  No puedes correr esto en paralelo con un \`hive dev\`/\`hive start\` activo
 sobre la misma DB — HiveDB solo permite un proceso con la base abierta a la
 vez, sin modo de solo-lectura compartido.
 

@@ -81,7 +81,7 @@ export function describeCameraError(error: unknown): string {
   switch (name) {
     case "NotAllowedError":
     case "SecurityError":
-      return "Permiso de cámara denegado. Habilitalo para este sitio y volvé a intentar.";
+      return "Permiso de cámara denegado. Habilítalo para este sitio y vuelve a intentar.";
     case "NotFoundError":
     case "OverconstrainedError":
       return "No se encontró ninguna cámara conectada.";

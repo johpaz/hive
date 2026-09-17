@@ -11,6 +11,7 @@ import { logger } from "../utils/logger"
 import type { LLMMessage, ContentPart } from "./llm-client"
 import { estimateTokens } from "../utils/toon"
 import type { ConversationDoc, SummaryDoc, MessageSource } from "../storage/collections"
+import { touchThread } from "./thread-store"
 
 const log = logger.child("conv-store")
 
@@ -66,7 +67,7 @@ export function formatInternalEvent(source: string, content: string): string {
   }
 
   return `<hive:internal_event source="${source}">\n` +
-    `Evento interno del sistema — NO es un mensaje del usuario. No lo cites literalmente, no expongas IDs internos (task_id, worker_id) ni JSON crudo. Respondé al usuario de forma natural y breve.\n\n` +
+    `Evento interno del sistema — NO es un mensaje del usuario. No lo cites literalmente, no expongas IDs internos (task_id, worker_id) ni JSON crudo. Responde al usuario de forma natural y breve.\n\n` +
     `${content}\n` +
     `</hive:internal_event>`
 }
@@ -158,6 +159,16 @@ export async function addMessage(
   const hour = new Date(now).toISOString().slice(0, 13)
   bumpRollup("activityRollups", hour, { messageCount: 1 }).catch(() => {})
   recentMessageTimestamps.push(now)
+
+  // Igual de opcional: el registro de conversaciones es el catálogo que alimenta la
+  // lista de la web (título, orden, contador). Se actualiza acá y no en cada llamador
+  // para que todo camino que escriba un mensaje —canales, webchat, API, voz— lo
+  // mantenga al día sin repetir la llamada.
+  touchThread(threadId, {
+    role,
+    text: textContent,
+    internal: isInternalSource(opts?.source),
+  }).catch(() => {})
 
   return seq
 }

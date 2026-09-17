@@ -13,7 +13,7 @@ const MAX_RUNTIME_MS = 10 * 60_000;
 const NOTICE_GRACE_MS = 45_000;
 
 const prompt = `
-Esta es una prueba E2E real del harness de larga duración. Ejecutá exactamente dos
+Esta es una prueba E2E real del harness de larga duración. Ejecuta exactamente dos
 delegaciones independientes en paralelo usando task_delegate con mode="async":
 
 1. worker_id="api_operator": hacer un único GET idempotente a
@@ -23,12 +23,12 @@ delegaciones independientes en paralelo usando task_delegate con mode="async":
    comprobar el título exacto "Example Domain" y producir una captura administrada
    como evidencia (artifact_id; no pedir ni crear un archivo en el workspace).
 
-Para cada delegación incluí criterios de aceptación verificables. No hagas vos el
-trabajo de los workers. Informá que quedan en background solo si task_delegate
+Para cada delegación incluye criterios de aceptación verificables. No hagas tú el
+trabajo de los workers. Informa que quedan en background solo si task_delegate
 devuelve task_id/job_id/run_id reales. No afirmes que terminaron en esta primera
-respuesta. Cuando lleguen resultados automáticos, comunicá solamente lo que los
+respuesta. Cuando lleguen resultados automáticos, comunica solamente lo que los
 checks y tu propia revisión de la entrega respalden; si una tarea falla o no
-cumple sus criterios, decilo explícitamente. Narra de forma factual las fases y
+cumple sus criterios, dilo explícitamente. Narra de forma factual las fases y
 herramientas usadas.
 `.trim();
 

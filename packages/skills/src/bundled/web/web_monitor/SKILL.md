@@ -14,11 +14,11 @@ tools: [web_search, web_fetch, memory_write, memory_read]
 
 # Structured skill fields
 triggers:
-  - "monitoreá"
+  - "monitorea"
   - "monitor"
-  - "seguí los cambios"
+  - "sigue los cambios"
   - "track changes"
-  - "avisame si cambia"
+  - "avísame si cambia"
   - "notify if changes"
   - "actualización de"
   - "update on"
@@ -79,13 +79,13 @@ output_format:
   max_length: "Brief summary of changes"
 
 examples:
-  - user_input: "monitoreá cambios en https://example.com/pricing"
+  - user_input: "monitorea cambios en https://example.com/pricing"
     expected_behavior: "Fetch current pricing → store as baseline → on next check, compare and notify if changed"
 
-  - user_input: "avisame si hay novedades sobre IA"
+  - user_input: "avísame si hay novedades sobre IA"
     expected_behavior: "web_search('IA news') → compare with stored results → notify if new significant news"
 
-  - user_input: "seguí los cambios en la documentación de React"
+  - user_input: "sigue los cambios en la documentación de React"
     expected_behavior: "Fetch React docs → store baseline → periodic checks → notify on content changes"
 ---
 

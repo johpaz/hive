@@ -194,6 +194,18 @@ describe("tool runtime worker pool", () => {
       { name: "timeout", execute: async () => { await delay(400); return { late: true } } },
     ]
 
+    // El timer de cada tool arranca al despacharla, y en un pool frío eso
+    // incluye levantar el worker: con la suite en paralelo cargando la CPU, ese
+    // arranque solo ya pasaba de los 150 ms y "fast" salía como timeout. Se
+    // calientan los dos workers antes, así los 150 ms miden sólo la ejecución.
+    await executeToolBatch({
+      toolCalls: [toolCall("w1", "fast"), toolCall("w2", "fast")],
+      allTools: tools,
+      toolConfig: {},
+      hiveConfig: loadConfig(),
+      workerPool: { enabled: true, maxWorkers: 2, toolTimeoutMs: 5000, parallelToolCalls: true },
+    })
+
     const results = await executeToolBatch({
       toolCalls: [toolCall("1", "fast"), toolCall("2", "timeout")],
       allTools: tools,

@@ -83,7 +83,7 @@ describe("internal turns: serialization (toAPIMessages)", () => {
   });
 
   test("regression guard: a mix of user/assistant/internal rows never yields role:system", async () => {
-    await addMessage("thread-e", "user", "Delegá esto");
+    await addMessage("thread-e", "user", "Delega esto");
     await addMessage("thread-e", "assistant", "Listo, delegado.");
     await addMessage("thread-e", "user", "El agente completó la tarea X.", {
       source: "task_complete",

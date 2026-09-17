@@ -353,7 +353,9 @@ export const notifyTool: Tool = {
 
     log.info(`[notify] Sending to ${channel}/${userId}: ${message.substring(0, 80)}`);
 
-    const result = await sendToUserChannel(channel, userId, message)
+    const threadId = config?.configurable?.thread_id as string | undefined;
+
+    const result = await sendToUserChannel(channel, userId, message, { threadId })
     if (!result.ok) throw new Error(`Channel send failed: ${result.error}`)
     return result
   },
@@ -448,7 +450,9 @@ export const reportProgressTool: Tool = {
 
     // Send real-time update to the user's channel
     const progressEmoji = progress >= 100 ? "✅" : progress >= 50 ? "⚙️" : "🔄";
-    const result = await sendToUserChannel(channel, userId, `${progressEmoji} ${progress}% — ${message}`)
+    const result = await sendToUserChannel(channel, userId, `${progressEmoji} ${progress}% — ${message}`, {
+      threadId: config?.configurable?.thread_id as string | undefined,
+    })
     if (!result.ok) throw new Error(`Channel send failed: ${result.error}`)
 
     return { ok: true, progress, message, task_id: taskId };

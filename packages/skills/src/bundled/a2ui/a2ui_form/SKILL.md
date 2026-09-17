@@ -82,13 +82,13 @@ output_format:
   max_length: "Structured JSON components"
 
 examples:
-  - user_input: "creá un formulario de contacto"
+  - user_input: "crea un formulario de contacto"
     expected_behavior: "a2ui_create_surface(surfaceId:'contact_form', theme:{primaryColor:'#3B82F6',agentDisplayName:'Asistente'}) → a2ui_update_components(surfaceId:'contact_form', components:[root,Column,hdr,name_fld,email_fld,msg_fld,submit_btn]) → a2ui_update_data_model(surfaceId:'contact_form', path:'/form', value:{name:'',email:'',message:''})"
 
   - user_input: "I need a signup form with email validation"
     expected_behavior: "a2ui_create_surface → a2ui_update_components with TextField({value:{path:'/form/email'}, checks:[{call:'required',...},{call:'email',...}]}) → a2ui_update_data_model"
 
-  - user_input: "creá un formulario multi-paso"
+  - user_input: "crea un formulario multi-paso"
     expected_behavior: "a2ui_create_surface → a2ui_update_components with Tabs+Column per step → a2ui_update_data_model for all fields"
 ---
 

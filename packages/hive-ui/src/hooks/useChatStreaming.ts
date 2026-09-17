@@ -10,7 +10,13 @@ function imageAttachment(data: any): Pick<Message, "image"> | Record<string, nev
   return { image: { url: `${getApiBaseUrl()}${data.image}`, mimeType: data.imageMimeType } };
 }
 
-export function useChatStreaming(agentId: string, sessionId: string) {
+/**
+ * @param threadId Conversación abierta. Los frames del gateway vienen marcados con
+ *   la suya: mientras uno está en vuelo el usuario puede cambiar de conversación
+ *   (o tener dos respondiendo a la vez), y sin descartar los ajenos la respuesta de
+ *   una acabaría pintada dentro de otra.
+ */
+export function useChatStreaming(agentId: string, threadId: string) {
   const addMessage = useChatStore((s) => s.addMessage);
   const updateMessage = useChatStore((s) => s.updateMessage);
   const setLoading = useChatStore((s) => s.setLoading);
@@ -18,6 +24,12 @@ export function useChatStreaming(agentId: string, sessionId: string) {
   const clearSteps = useChatStore((s) => s.clearSteps);
   const setStreamingMessageId = useChatStore((s) => s.setStreamingMessageId);
   const streamingMessageIdRef = useRef<string | null>(null);
+
+  /** Los frames sin `threadId` son de versiones anteriores del gateway: se aceptan. */
+  const esDeOtraConversacion = useCallback(
+    (data: any) => !!data?.threadId && !!threadId && data.threadId !== threadId,
+    [threadId]
+  );
 
   const ensureAgentMessage = useCallback(
     (messageId: string, timestamp?: string) => {
@@ -27,7 +39,7 @@ export function useChatStreaming(agentId: string, sessionId: string) {
 
       const message: Message = {
         id: messageId,
-        conversationId: sessionId,
+        conversationId: threadId,
         type: "agent" as const,
         content: "",
         agentId,
@@ -36,7 +48,7 @@ export function useChatStreaming(agentId: string, sessionId: string) {
       state.addMessage(message);
       return message;
     },
-    [agentId, sessionId]
+    [agentId, threadId]
   );
 
   const upsertProcessItem = useCallback(
@@ -75,6 +87,7 @@ export function useChatStreaming(agentId: string, sessionId: string) {
 
   const handleStreamingChunk = useCallback(
     (data: any) => {
+      if (esDeOtraConversacion(data)) return;
       const isTranscription = data.content?.startsWith("🎙️ Transcripción:");
       if (isTranscription) {
         setLoading(true);
@@ -95,7 +108,7 @@ export function useChatStreaming(agentId: string, sessionId: string) {
         setStreamingMessageId(messageId);
         addMessage({
           id: messageId,
-          conversationId: sessionId,
+          conversationId: threadId,
           type: "agent" as const,
           content: data.content || "",
           agentId,
@@ -111,7 +124,7 @@ export function useChatStreaming(agentId: string, sessionId: string) {
       } else {
         addMessage({
           id: messageId,
-          conversationId: sessionId,
+          conversationId: threadId,
           type: "agent" as const,
           content: data.content || data.message || "",
           agentId,
@@ -128,7 +141,7 @@ export function useChatStreaming(agentId: string, sessionId: string) {
         setLoading(false);
       }
     },
-    [agentId, sessionId, addMessage, updateMessage, setLoading, clearSteps, setStreamingMessageId]
+    [agentId, threadId, esDeOtraConversacion, addMessage, updateMessage, setLoading, clearSteps, setStreamingMessageId]
   );
 
   // Reasoning always precedes the final answer's content chunks for a turn, so
@@ -136,7 +149,7 @@ export function useChatStreaming(agentId: string, sessionId: string) {
   // still owns "the whole turn is done".
   const handleReasoningChunk = useCallback(
     (data: any) => {
-      if (!data.content) return;
+      if (!data.content || esDeOtraConversacion(data)) return;
       const messageId = streamingMessageIdRef.current || data.id || generateId();
       const existingMessage = ensureAgentMessage(messageId, data.timestamp);
 
@@ -146,15 +159,16 @@ export function useChatStreaming(agentId: string, sessionId: string) {
         reasoning: (existingMessage.reasoning || "") + data.content,
       });
     },
-    [ensureAgentMessage, updateMessage, setStreamingMessageId]
+    [esDeOtraConversacion, ensureAgentMessage, updateMessage, setStreamingMessageId]
   );
 
   const handleAudioMessage = useCallback(
     (data: any) => {
+      if (esDeOtraConversacion(data)) return;
       const messageId = data.id || generateId();
       addMessage({
         id: messageId,
-        conversationId: sessionId,
+        conversationId: threadId,
         type: "agent" as const,
         content: data.content || "",
         agentId,
@@ -164,10 +178,11 @@ export function useChatStreaming(agentId: string, sessionId: string) {
       clearSteps();
       setLoading(false);
     },
-    [agentId, sessionId, addMessage, clearSteps, setLoading]
+    [agentId, threadId, esDeOtraConversacion, addMessage, clearSteps, setLoading]
   );
 
   const handleProgress = useCallback((data: any) => {
+    if (esDeOtraConversacion(data)) return;
     if (data.content) {
       let messageId = streamingMessageIdRef.current;
       const state = useChatStore.getState();
@@ -178,7 +193,7 @@ export function useChatStreaming(agentId: string, sessionId: string) {
         state.setStreamingMessageId(messageId);
         state.addMessage({
           id: messageId,
-          conversationId: sessionId,
+          conversationId: threadId,
           type: "agent" as const,
           content: "",
           agentId,
@@ -195,9 +210,10 @@ export function useChatStreaming(agentId: string, sessionId: string) {
       state.addStep(data.content);
       state.setLoading(true);
     }
-  }, [agentId, sessionId, upsertProcessItem]);
+  }, [agentId, threadId, esDeOtraConversacion, upsertProcessItem]);
 
   const handleProcess = useCallback((data: any) => {
+    if (esDeOtraConversacion(data)) return;
     const messageId = data.messageId || data.id || streamingMessageIdRef.current || generateId();
     const status = (data.processStatus || data.status || "thinking") as MessageProcessStatus;
     const kind = (data.processKind || data.kind || "analysis") as MessageProcessKind;
@@ -228,9 +244,10 @@ export function useChatStreaming(agentId: string, sessionId: string) {
       clearSteps();
       setLoading(false);
     }
-  }, [clearSteps, setLoading, setStreamingMessageId, upsertProcessItem]);
+  }, [esDeOtraConversacion, clearSteps, setLoading, setStreamingMessageId, upsertProcessItem]);
 
   const handleTyping = useCallback((data: any) => {
+    if (esDeOtraConversacion(data)) return;
     if (data.isTyping === true) {
       useChatStore.getState().setLoading(true);
     } else if (data.isTyping === false) {
@@ -239,7 +256,7 @@ export function useChatStreaming(agentId: string, sessionId: string) {
       useChatStore.getState().clearSteps();
       useChatStore.getState().setLoading(false);
     }
-  }, []);
+  }, [esDeOtraConversacion]);
 
   const resetStreamingRef = useCallback(() => {
     streamingMessageIdRef.current = null;

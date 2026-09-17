@@ -56,7 +56,7 @@ El volumen conserva HiveDB, configuración, credenciales de canales y artefactos
 
 ### Despliegue en VPS
 
-Para un servidor con dominio propio (por ejemplo detrás de Traefik), usa `docker-compose.hostinguer.yml` como referencia: agrega las labels de enrutamiento, TLS automático (`certresolver`) y cabeceras HSTS sobre el mismo `docker-compose.yml` base. Asume una red Docker externa ya creada (`n8n_evoapi` en el archivo de ejemplo — cambiala por la tuya) y toma `HIVE_DOMAIN` y opcionalmente `HIVE_PUBLIC_URL` del entorno:
+Para un servidor con dominio propio (por ejemplo detrás de Traefik), usa `docker-compose.hostinguer.yml` como referencia: agrega las labels de enrutamiento, TLS automático (`certresolver`) y cabeceras HSTS sobre el mismo `docker-compose.yml` base. Asume una red Docker externa ya creada (`n8n_evoapi` en el archivo de ejemplo — cámbiala por la tuya) y toma `HIVE_DOMAIN` y opcionalmente `HIVE_PUBLIC_URL` del entorno:
 
 ```bash
 docker network create n8n_evoapi   # si todavía no existe
@@ -64,7 +64,7 @@ HIVE_DOMAIN=hive.tu-dominio.com HIVE_PUBLIC_URL=https://hive.tu-dominio.com \
   docker compose -f docker-compose.hostinguer.yml up -d
 ```
 
-El repo también trae utilidades de conveniencia para arrancar localmente (`hive-docker.sh`, `start.sh`) y para construir y publicar la imagen a mano (`build.sh`). Sobre `build.sh --push`: construye **solo para la arquitectura de la máquina donde corre** (sin `buildx`, sin multi-arch) — si lo corrés desde un Mac ARM, el `latest` que sube pisa el manifiesto `linux/amd64,linux/arm64` que produce el release oficial. Para un VPS, preferí siempre la imagen publicada por el pipeline de release (`johpaz/hive-agents:<versión>`) en vez de reconstruir localmente.
+El repo también trae utilidades de conveniencia para arrancar localmente (`hive-docker.sh`, `start.sh`) y para construir y publicar la imagen a mano (`build.sh`). Sobre `build.sh --push`: construye **solo para la arquitectura de la máquina donde corre** (sin `buildx`, sin multi-arch) — si lo corres desde un Mac ARM, el `latest` que sube pisa el manifiesto `linux/amd64,linux/arm64` que produce el release oficial. Para un VPS, prefiere siempre la imagen publicada por el pipeline de release (`johpaz/hive-agents:<versión>`) en vez de reconstruir localmente.
 
 ## App de escritorio
 
@@ -92,8 +92,8 @@ Los instaladores **no están firmados con un certificado de plataforma** (Apple 
   ```bash
   xattr -dr com.apple.quarantine "/Applications/Hive Agents.app"
   ```
-  o hacé clic derecho sobre la app → "Abrir" → confirmar en el diálogo.
-- **Windows**: SmartScreen muestra "Windows protegió tu PC". Hacé clic en "Más información" → "Ejecutar de todas formas".
+  o haz clic derecho sobre la app → "Abrir" → confirmar en el diálogo.
+- **Windows**: SmartScreen muestra "Windows protegió tu PC". Haz clic en "Más información" → "Ejecutar de todas formas".
 - **Linux**: no aplica — deb/rpm/Flatpak no pasan por ningún gatekeeper del sistema.
 
 ## Migrar desde 0.0.x

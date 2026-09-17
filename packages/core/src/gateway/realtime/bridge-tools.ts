@@ -61,7 +61,7 @@ export const BRIDGE_TOOLS: LLMToolDef[] = [
       name: STATUS_TOOL,
       description:
         "Devuelve qué está haciendo la colmena en este momento: tareas en curso y qué especialista " +
-        "tiene cada una. Úsala cuando el usuario pregunte cómo va lo pedido o si seguís trabajando.",
+        "tiene cada una. Úsala cuando el usuario pregunte cómo va lo pedido o si sigues trabajando.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -111,7 +111,7 @@ export async function executeBridgeTool(
 /**
  * Peticiones vivas por sesión. La sesión de voz reintenta con facilidad: cada
  * hito narrado vuelve a entrar como turno y el modelo, viendo un pedido "sin
- * responder", delega otra vez. Sin esta guarda, un solo "listame los archivos"
+ * responder", delega otra vez. Sin esta guarda, un solo "lístame los archivos"
  * terminaba en tres tareas idénticas gastando tokens en paralelo.
  */
 const enCurso = new Map<string, Array<{ peticion: string; jobId: string; at: number }>>();
@@ -141,7 +141,7 @@ const MINIMO_COMUNES = 3;
  * Solapamiento (Szymkiewicz–Simpson), no Jaccard.
  *
  * Lo que se compara son dos reformulaciones que hizo el propio modelo del mismo
- * pedido, y suelen tener largos muy distintos ("listá los archivos" vs "El
+ * pedido, y suelen tener largos muy distintos ("lista los archivos" vs "El
  * usuario pide que liste los archivos del espacio de trabajo"). Jaccard castiga
  * esa asimetría y daba 0.3 a pedidos idénticos; el solapamiento la ignora.
  *
@@ -384,7 +384,7 @@ async function cancelarTarea(ctx: BridgeContext): Promise<Record<string, unknown
   try {
     const cancelados = await getDurableQueue().cancelLane(ctx.sessionId);
     return cancelados > 0
-      ? { ok: true, cancelados, nota: "Trabajo cancelado. Confirmalo en una frase corta." }
+      ? { ok: true, cancelados, nota: "Trabajo cancelado. Confírmalo en una frase corta." }
       : { ok: true, cancelados: 0, nota: "No había nada en curso para cancelar." };
   } catch (error) {
     return { ok: false, error: `No pude cancelar: ${(error as Error).message}` };

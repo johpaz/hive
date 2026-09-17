@@ -13,15 +13,15 @@ tools: [get_available_models, task_delegate, task_list, task_status, agent_find,
 
 # Structured skill fields
 triggers:
-  - "delegá esta tarea"
+  - "delega esta tarea"
   - "delegate task"
-  - "orquestá los workers"
+  - "orquesta los workers"
   - "orchestrate workers"
-  - "coordiná el equipo"
+  - "coordina el equipo"
   - "coordinate team"
   - "estado de las tareas"
   - "task status"
-  - "comunicá los workers"
+  - "comunica los workers"
   - "communicate workers"
   - "mensaje al bus"
   - "bus message"
@@ -38,9 +38,9 @@ La doctrina de orquestación (descomponer → delegar en paralelo → terminar e
 
 | Tool | Qué hace | Cuándo |
 |------|----------|--------|
-| `task_delegate` | Persiste y asigna una tarea a un worker | Delegar. Preferí `mode="async"` |
+| `task_delegate` | Persiste y asigna una tarea a un worker | Delegar. Prefiere `mode="async"` |
 | `agent_find` | Descubre workers del catálogo y propios | Antes de delegar. Nunca para comprobar ejecución |
-| `task_list` | Lista ejecuciones reales persistidas | El usuario pregunta y no conocés IDs |
+| `task_list` | Lista ejecuciones reales persistidas | El usuario pregunta y no conoces IDs |
 | `task_status` | Estado de tareas por ID | El usuario pide estado antes del fan-in |
 | `get_available_models` | Providers y modelos activos | Antes de crear un worker |
 | `agent_create` | Crea un worker nuevo | Último recurso: nada del catálogo sirve |
@@ -66,7 +66,7 @@ Hive te reinvoca con:
 [{ task_id, worker_id, task, ok, result, error }, ...]
 ```
 
-Sintetizá una sola respuesta. Las entradas con `ok: false` se reportan con su motivo real.
+Sintetiza una sola respuesta. Las entradas con `ok: false` se reportan con su motivo real.
 
 ## Crear un worker (último recurso)
 
@@ -84,7 +84,7 @@ agent_create({
 })
 ```
 
-Para una integración MCP sin especialista, pedí autorización primero. Si el usuario acepta, creá un worker con `mcp_server_id`; si participan varios servidores, creá o reutilizá uno por servidor. Nunca pases servidores MCP dinámicos a `task_delegate`.
+Para una integración MCP sin especialista, pide autorización primero. Si el usuario acepta, crea un worker con `mcp_server_id`; si participan varios servidores, crea o reutiliza uno por servidor. Nunca pases servidores MCP dinámicos a `task_delegate`.
 
 ## Errores a evitar
 

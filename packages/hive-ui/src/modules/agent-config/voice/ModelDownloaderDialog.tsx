@@ -37,17 +37,17 @@ export function ModelDownloaderDialog({ open, onOpenChange }: ModelDownloaderDia
   
   const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    if (open) {
-      loadModels();
-    }
-  }, [open]);
-
   const loadModels = async () => {
     setIsLoading(true);
     await fetchAvailableTTSModels();
     setIsLoading(false);
   };
+
+  useEffect(() => {
+    if (open) {
+      loadModels();
+    }
+  }, [open]);
 
   const handleDownload = async (modelId: string) => {
     await downloadTTSModel(modelId);

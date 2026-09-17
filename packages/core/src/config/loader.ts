@@ -1,3 +1,4 @@
+import { resolvePort } from "../utils/port";
 import * as z from "zod";
 import { mkdirSync, existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
@@ -5,7 +6,7 @@ import { availableParallelism, homedir } from "node:os";
 
 const LogLevelSchema = z.enum(["debug", "info", "warn", "error"]);
 const DMPolicySchema = z.enum(["open", "pairing", "allowlist"]);
-const TransportSchema = z.enum(["stdio", "sse", "websocket"]);
+const TransportSchema = z.enum(["stdio", "sse", "websocket", "http"]);
 
 export function loadEnv(hiveDir: string): void {
   const envPath = path.join(hiveDir, ".env");
@@ -407,7 +408,7 @@ function buildDefaultConfig(): Config {
   return {
     gateway: {
       host: process.env.HIVE_HOST || "127.0.0.1",
-      port: parseInt(process.env.HIVE_PORT || "18790", 10),
+      port: resolvePort(process.env.HIVE_PORT, 18790),
       pidFile: path.join(hiveDir, "gateway.pid"),
       authToken: process.env.HIVE_AUTH_TOKEN || undefined,
       tools: {

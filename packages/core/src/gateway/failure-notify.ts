@@ -34,6 +34,7 @@ async function notifyChatTurnFailure(job: JobDoc, outcome: JobTerminalOutcome): 
   const payload = JSON.parse(job.payload_json) as WebchatTurnPayload;
   const channel = payload.channel ?? "webchat";
   let userId = payload.userId;
+  let threadId = payload.threadId;
 
   if (!userId) {
     // Live webchat turns ("message"/"audio"/"a2ui") never carry userId in the
@@ -41,6 +42,9 @@ async function notifyChatTurnFailure(job: JobDoc, outcome: JobTerminalOutcome): 
     try {
       const ctx = await resolveContext({ channel: "webchat", channelUserId: payload.sessionId });
       userId = ctx.userId;
+      // El hilo sólo afina a qué chat del canal vuelve el aviso: si no se puede
+      // averiguar, se manda igual por la identidad del canal.
+      threadId = threadId ?? ctx.threadId;
     } catch (err) {
       log.warn(`[notifyChatTurnFailure] Could not resolve a recipient for job ${job.id}: ${(err as Error).message}`);
       return;
@@ -50,7 +54,8 @@ async function notifyChatTurnFailure(job: JobDoc, outcome: JobTerminalOutcome): 
   await sendToUserChannel(
     channel,
     userId,
-    "No pude completar tu solicitud por un error interno. Por favor intentá de nuevo."
+    "No pude completar tu solicitud por un error interno. Por favor intenta de nuevo.",
+    { threadId }
   ).catch((err) => log.warn(`[notifyChatTurnFailure] Delivery failed for job ${job.id}: ${(err as Error).message}`));
 }
 
@@ -63,7 +68,8 @@ async function notifyGoalRunFailure(job: JobDoc, outcome: JobTerminalOutcome): P
   await sendToUserChannel(
     run.channel,
     run.user_id,
-    `No pude completar la tarea. Motivo: ${outcome.error ?? "error desconocido"}`
+    `No pude completar la tarea. Motivo: ${outcome.error ?? "error desconocido"}`,
+    { threadId: run.thread_id }
   ).catch((err) => log.warn(`[notifyGoalRunFailure] Delivery failed for job ${job.id}: ${(err as Error).message}`));
 }
 

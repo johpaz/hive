@@ -12,13 +12,13 @@ tools: [web_search, web_fetch]
 
 # Structured skill fields
 triggers:
-  - "investigá sobre"
+  - "investiga sobre"
   - "research"
-  - "buscá información de"
+  - "busca información de"
   - "find information about"
   - "qué es"
   - "what is"
-  - "explicame"
+  - "explícame"
   - "explain"
   - "últimos avances"
   - "latest advances"
@@ -74,13 +74,13 @@ output_format:
   max_length: "500 words unless user requests more"
 
 examples:
-  - user_input: "investigá sobre los últimos avances en IA"
+  - user_input: "investiga sobre los últimos avances en IA"
     expected_behavior: "Search 'latest AI advances 2025' → fetch top 2-3 results → synthesize into structured report"
 
   - user_input: "qué es un transformer en machine learning"
     expected_behavior: "Search 'transformer machine learning explained' → fetch educational content → return clear summary"
 
-  - user_input: "buscá tendencias de quantum computing"
+  - user_input: "busca tendencias de quantum computing"
     expected_behavior: "Search 'quantum computing trends 2025' → fetch authoritative sources → compile 5-7 key trends"
 ---
 

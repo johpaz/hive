@@ -25,7 +25,7 @@ import type { AgentDoc, ProviderDoc, ModelDoc, UserDoc } from "../packages/core/
 
 const TEST_AGENT_ID = "bench-causal-log-agent";
 const THREAD_PREFIX = "bench-causal-log-";
-const TEST_PROMPT = "¿Cuánto es el 15% de 240? Respondé solo el número.";
+const TEST_PROMPT = "¿Cuánto es el 15% de 240? Responde solo el número.";
 
 function flagValue(argv: string[], name: string): string | undefined {
   const flag = argv.find((a) => a === name || a.startsWith(`${name}=`));
@@ -55,7 +55,7 @@ async function setupTestAgent(providerId: string, modelId: string, userId: strin
     user_id: userId,
     name: "Bench Causal Log (temporal)",
     description: "Agente temporal para scripts/bench-causal-log.ts — borrar si queda huérfano",
-    system_prompt: "Sos un asistente de prueba. Respondé breve y directo.",
+    system_prompt: "Eres un asistente de prueba. Responde breve y directo.",
     tone: "friendly",
     role: "coordinator",
     status: "idle",
@@ -144,7 +144,7 @@ async function main(): Promise<void> {
   if (!providerId || !modelId) {
     const found = await findWorkingProvider();
     if (!found) {
-      console.error("No se encontró un provider LLM activo+habilitado en esta DB. Configurá uno o pasá --provider/--model.");
+      console.error("No se encontró un provider LLM activo+habilitado en esta DB. Configura uno o pasa --provider/--model.");
       process.exit(1);
     }
     providerId = found.providerId;
@@ -155,7 +155,7 @@ async function main(): Promise<void> {
   const usersCol = await col<UserDoc>("users");
   const anyUser = (await usersCol.scan({ limit: 1 }))[0];
   if (!anyUser) {
-    console.error("No hay ningún usuario en esta DB — corré `hive onboard` primero.");
+    console.error("No hay ningún usuario en esta DB — corre `hive onboard` primero.");
     process.exit(1);
   }
 

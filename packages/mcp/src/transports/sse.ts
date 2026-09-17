@@ -96,11 +96,17 @@ export class SSETransport implements Transport {
       this.sessionId = sessionId;
     }
 
-    // Track cookies for session affinity (important for n8n/proxies)
-    const setCookie = response.headers.get("set-cookie");
-    if (setCookie) {
-      // Simple cookie extraction: just keep the keys and values
-      const newCookies = setCookie.split(',').map(c => c.split(';')[0].trim());
+    // Track cookies for session affinity (important for n8n/proxies).
+    //
+    // `getSetCookie()` y no `get("set-cookie")`: Set-Cookie es la única cabecera
+    // que puede repetirse sin combinarse, y `get()` devuelve las repeticiones
+    // unidas con ", " (Bun 1.4 lo alineó con la spec de Fetch). Partir eso por
+    // coma rompe cualquier cookie cuyo valor lleve una —`Expires=Wed, 09 Jun
+    // 2027 10:18:14 GMT` es el caso de todos los días— y dejaba fragmentos como
+    // "09 Jun 2027 10:18:14 GMT" haciéndose pasar por cookies.
+    const setCookies = response.headers.getSetCookie();
+    if (setCookies.length > 0) {
+      const newCookies = setCookies.map(c => c.split(";")[0].trim());
       this.cookies = [...new Set([...this.cookies, ...newCookies])];
     }
   }

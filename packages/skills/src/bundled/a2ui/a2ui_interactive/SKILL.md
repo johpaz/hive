@@ -96,13 +96,13 @@ output_format:
   max_length: "Structured JSON components"
 
 examples:
-  - user_input: "creá un asistente de reserva"
+  - user_input: "crea un asistente de reserva"
     expected_behavior: "a2ui_create_surface(surfaceId:'booking', theme:{primaryColor:'#8B5CF6'}) → a2ui_update_components with Tabs[step1:service, step2:datetime, step3:confirm] → a2ui_update_data_model(path:'/', value:{service:'', date:'', time:''})"
 
   - user_input: "I need a multi-step onboarding flow"
     expected_behavior: "a2ui_create_surface → a2ui_update_components with Column[step indicator, step content, nav buttons] → a2ui_update_data_model with empty state → on action: a2ui_update_components for next step"
 
-  - user_input: "creá un wizard con selección de opciones"
+  - user_input: "crea un wizard con selección de opciones"
     expected_behavior: "a2ui_create_surface → a2ui_update_components with ChoicePicker for options, Button for navigation → a2ui_update_data_model with initial state"
 ---
 
@@ -154,7 +154,7 @@ Para crear flujos interactivos multi-paso usando A2UI v0.9. Usar cuando se neces
     {title: "Confirmar", child: "step3"}
   ]},
   {id: "step1", component: "Column", children: ["svc_label", "svc_picker"]},
-  {id: "svc_label", component: "Text", text: "Seleccioná un servicio", variant: "h3"},
+  {id: "svc_label", component: "Text", text: "Selecciona un servicio", variant: "h3"},
   {id: "svc_picker", component: "ChoicePicker", variant: "mutuallyExclusive", options: [...], value: {path: "/data/service"}},
   // ... más pasos
 ]
@@ -168,7 +168,7 @@ Para crear flujos interactivos multi-paso usando A2UI v0.9. Usar cuando se neces
   {id: "confirm_btn", component: "Button", child: "confirm_btn_text", action: {}},
   {id: "confirm_btn_text", component: "Text", text: "Confirmar Reserva"},
   {id: "confirm_dialog", component: "Column", children: ["confirm_msg", "confirm_yes", "confirm_no"]},
-  {id: "confirm_msg", component: "Text", text: "¿Confirmás tu reserva?"},
+  {id: "confirm_msg", component: "Text", text: "¿Confirmas tu reserva?"},
   {id: "confirm_yes", component: "Button", child: "yes_text", variant: "primary", action: {event: {name: "confirm_booking", context: {service: {path: "/data/service"}}}}},
   {id: "yes_text", component: "Text", text: "Sí, confirmar"},
   {id: "confirm_no", component: "Button", child: "no_text", variant: "borderless", action: {event: {name: "cancel"}}}},

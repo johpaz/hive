@@ -1,11 +1,23 @@
 /**
  * Hive CronScheduler
  *
- * Croner-based scheduler for Hive with HiveDB persistence.
+ * Scheduler propio con persistencia en HiveDB, sin dependencias: el motor de
+ * cron vive en `./cron` y usa sólo `setTimeout` e `Intl` del runtime. Antes era
+ * `croner`.
+ *
+ * `Bun.cron()` no sirve como reemplazo —reevaluado contra el runtime 1.4.2—:
+ * acepta sólo 5 campos y rechaza el sexto, no admite una fecha ISO como patrón
+ * (que es como se agendan los jobs `one_shot`), no toma una zona por job (usa la
+ * local del proceso desde 1.4; antes era UTC, y ese cambio silencioso es
+ * justamente por qué no conviene delegarle la conversión), y su
+ * handle no expone la próxima corrida, que es de donde sale `next_run_at` y con
+ * lo que se detectan las corridas perdidas al arrancar. Tampoco tiene
+ * equivalente de `protect`, `maxRuns`, `interval`, `startAt`/`stopAt` ni
+ * `domAndDow`, todos campos persistidos de `CronJobDoc`.
  * Manages recurring and one-shot cron jobs that execute through the agent pipeline.
  */
 
-import { Cron } from "croner";
+import { Cron } from "./cron";
 import { logger } from "../utils/logger";
 import { notifyTaskCompletion } from "./integration";
 import { col, toIndexable, fromIndexable } from "../storage/hive";
@@ -76,7 +88,7 @@ export class CronScheduler {
 
         if (misfirePolicy === "fire_once" && withinGrace) {
           log.info(`[boot:misfire] Job "${task.name}" (${task.id}) misfired at ${misfireTime.toISOString()} — executing now (fire_once, within grace)`);
-          // Activate the job first (so the Croner handle exists for future runs)
+          // Activate the job first (so it stays scheduled for future runs)
           await this.activate(task);
           // Then execute it immediately
           this.execute(task.id).catch((err) => {
@@ -100,7 +112,7 @@ export class CronScheduler {
           });
           await this.activate(task);
         } else {
-          // skip policy — recurring re-schedules its next occurrence via Croner
+          // skip policy — recurring re-schedules its next occurrence on its own
           log.info(`[boot:misfire] Job "${task.name}" (${task.id}) misfired at ${misfireTime.toISOString()} — skipping (misfire_policy=skip)`);
           await this.updateJob(task.id, {
             last_error: `Missed run at ${misfireTime.toISOString()} (policy: skip)`,
@@ -120,7 +132,7 @@ export class CronScheduler {
   }
 
   /**
-   * Activate a cron job - create or recreate its Croner instance
+   * Activate a cron job - create or recreate its scheduled instance
    */
   async activate(task: CronJob): Promise<void> {
     const existingJob = this.jobs.get(task.id);
@@ -358,12 +370,12 @@ export class CronScheduler {
   }
 
   /**
-   * Handle errors from Croner
+   * Handle errors raised by the scheduled job
    */
   private handleError(task: CronJob, error: Error): void {
     log.error(`[error] Job "${task.name}" (${task.id}) error: ${error.message}`);
 
-    // Fix 3: record Croner-level errors in task_runs for full history
+    // Fix 3: record scheduler-level errors in task_runs for full history
     Promise.resolve().then(async () => {
       const runId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
       const now = new Date().toISOString();
@@ -431,7 +443,7 @@ export class CronScheduler {
   }
 
   /**
-   * Deactivate a cron job - stop Croner instance but keep in DB
+   * Deactivate a cron job - stop the scheduled instance but keep it in DB
    */
   deactivate(taskId: string): void {
     const job = this.jobs.get(taskId);

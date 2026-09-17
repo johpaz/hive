@@ -13,19 +13,19 @@ tools: [memory_write, memory_read, memory_list, memory_search, memory_delete]
 
 # Structured skill fields
 triggers:
-  - "guardá en memoria"
+  - "guarda en memoria"
   - "save to memory"
-  - "recordá esto"
+  - "recuerda esto"
   - "remember this"
-  - "leé la memoria"
+  - "lee la memoria"
   - "read memory"
   - "qué hay en memoria"
   - "what's in memory"
-  - "buscá en memoria"
+  - "busca en memoria"
   - "search memory"
   - "lista las memorias"
   - "list memories"
-  - "eliminá de memoria"
+  - "elimina de memoria"
   - "delete from memory"
   - "preferencias"
   - "preferences"
@@ -73,7 +73,7 @@ output_format:
   max_length: "1000 characters per entry"
 
 examples:
-  - user_input: "guardá en memoria que prefiero TypeScript"
+  - user_input: "guarda en memoria que prefiero TypeScript"
     expected_behavior: "memory_write({ title: 'Preferencias de Desarrollo', content: 'El usuario prefiere TypeScript' })"
 
   - user_input: "qué guardaste sobre mis preferencias"
@@ -82,7 +82,7 @@ examples:
   - user_input: "lista todas las memorias"
     expected_behavior: "memory_list({}) → return all memory titles"
 
-  - user_input: "buscá en memoria información sobre la DB"
+  - user_input: "busca en memoria información sobre la DB"
     expected_behavior: "memory_search({ query: 'DB database' }) → return relevant entries"
 ---
 
@@ -97,9 +97,9 @@ Para guardar, recuperar, buscar, listar o eliminar información persistente entr
 | Tool | Qué hace | Cuándo usarla |
 |------|----------|---------------|
 | `memory_write` | Almacena con título único | Guardar preferencias, datos |
-| `memory_read` | Recupera por título exacto | Cuando conocés el título |
+| `memory_read` | Recupera por título exacto | Cuando conoces el título |
 | `memory_list` | Lista todos los títulos | Explorar qué hay guardado |
-| `memory_search` | Busca por keywords | Cuando no recordás título exacto |
+| `memory_search` | Busca por keywords | Cuando no recuerdas título exacto |
 | `memory_delete` | Elimina entrada | Limpiar datos obsoletos |
 
 ## Workflow

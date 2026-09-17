@@ -82,7 +82,7 @@ Generado desde el código fuente para Hive **1.0.5**.
 | `web_fetch` | web | Fetch plain content from a URL (lightweight, no JS). Spanish: obtener página, descargar contenido, extraer texto de url |
 | `web_search` | web | Search the web for current information and research. Spanish: buscar en internet, búsqueda web, noticias, información |
 
-## Skills incluidas (23)
+## Skills incluidas (24)
 
 | Skill | Categoría | Versión | Herramientas | Agentes preferidos |
 |---|---|---:|---|---|
@@ -91,8 +91,9 @@ Generado desde el código fuente para Hive **1.0.5**.
 | `a2ui_interactive` | a2ui | 1.0.0 | `a2ui_create_surface`, `a2ui_update_components`, `a2ui_update_data_model`, `a2ui_delete_surface` | — |
 | `agent_spawner` | agents | 1.1.0 | `get_available_models`, `agent_find`, `agent_create`, `agent_archive` | — |
 | `api_client` | api | 1.0.0 | `api_request` | — |
-| `browser_automate` | web | 1.0.0 | `browser_navigate`, `browser_click`, `browser_type`, `browser_screenshot` | — |
-| `browser_scrape` | web | 1.0.0 | `browser_navigate`, `browser_screenshot`, `web_fetch` | — |
+| `artifact_reader` | artifacts | 1.0.0 | `artifact_read`, `artifact_inspect` | — |
+| `browser_automate` | web | 1.0.0 | `browser_navigate`, `browser_wait`, `browser_click`, `browser_type`, `browser_screenshot`, `browser_script`, `computer_use_task` | — |
+| `browser_scrape` | web | 1.0.0 | `browser_navigate`, `browser_screenshot`, `browser_extract`, `browser_wait` | — |
 | `capability_discovery` | core | 1.2.0 | `search_knowledge` | — |
 | `cli_pipeline` | cli | 1.0.0 | `cli_exec`, `fs_write` | — |
 | `cli_safe_exec` | cli | 1.0.0 | `cli_exec` | — |
@@ -134,6 +135,8 @@ Generado desde el código fuente para Hive **1.0.5**.
 | `@johpaz/hive-agents` | `./agent/context-compiler` | `./packages/core/src/agent/context-compiler.ts` |
 | `@johpaz/hive-agents` | `./agent/prompt-builder` | `./packages/core/src/agent/prompt-builder.ts` |
 | `@johpaz/hive-agents` | `./agent/conversation-store` | `./packages/core/src/agent/conversation-store.ts` |
+| `@johpaz/hive-agents` | `./agent/thread-id` | `./packages/core/src/agent/thread-id.ts` |
+| `@johpaz/hive-agents` | `./agent/thread-store` | `./packages/core/src/agent/thread-store.ts` |
 | `@johpaz/hive-agents` | `./agent/tool-selector` | `./packages/core/src/agent/tool-selector.ts` |
 | `@johpaz/hive-agents` | `./agent/skill-selector` | `./packages/core/src/agent/skill-selector.ts` |
 | `@johpaz/hive-agents` | `./agent/playbook-selector` | `./packages/core/src/agent/playbook-selector.ts` |

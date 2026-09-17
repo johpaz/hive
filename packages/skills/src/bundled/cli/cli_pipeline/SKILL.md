@@ -13,15 +13,15 @@ tools: [cli_exec, fs_write]
 
 # Structured skill fields
 triggers:
-  - "guardá el output"
+  - "guarda el output"
   - "save output"
   - "pipeline"
   - "pipe to file"
-  - "redireccioná el output"
+  - "redirecciona el output"
   - "redirect output"
   - "log del comando"
   - "command log"
-  - "ejecutá y guardá"
+  - "ejecuta y guarda"
   - "run and save"
   - "resultado en archivo"
   - "result to file"
@@ -73,13 +73,13 @@ output_format:
   max_length: "Full logged output"
 
 examples:
-  - user_input: "ejecutá npm install y guardá el output en logs/install.log"
+  - user_input: "ejecuta npm install y guarda el output en logs/install.log"
     expected_behavior: "cli_exec({ command: 'npm install' }) → format with metadata → fs_write({ path: 'logs/install.log' })"
 
-  - user_input: "corré los tests y guardá el resultado"
+  - user_input: "corre los tests y guarda el resultado"
     expected_behavior: "cli_exec({ command: 'npm test' }) → capture full output → write to timestamped log file"
 
-  - user_input: "hacé un pipeline de git log a archivo"
+  - user_input: "haz un pipeline de git log a archivo"
     expected_behavior: "cli_exec({ command: 'git log --oneline' }) → write to 'logs/git_log_YYYY-MM-DD.md'"
 ---
 

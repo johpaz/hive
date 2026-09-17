@@ -100,7 +100,12 @@ export async function reconcileOnBoot(bootId: string): Promise<ReconcileResult> 
         result.runsInterrupted++;
         try {
           if (run.channel && run.user_id) {
-            await sendToUserChannel(run.channel, run.user_id, "Se interrumpió un turno en progreso por un reinicio del proceso.");
+            await sendToUserChannel(
+              run.channel,
+              run.user_id,
+              "Se interrumpió un turno en progreso por un reinicio del proceso.",
+              { threadId: run.thread_id }
+            );
           }
         } catch {
           // non-critical

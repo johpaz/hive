@@ -307,6 +307,28 @@ export interface SummaryDoc {
   last_message_id: string | null
 }
 
+/**
+ * Una conversación: el registro de un `conversations.thread_id`, con lo necesario
+ * para listarla en la web sin escanear los mensajes. `id` ES el threadId
+ * (`${user}/${canal}/${peer}` — ver agent/thread-id.ts), salvo la fila del hilo
+ * legacy anterior a la separación por canal, cuyo id es el userId pelado.
+ */
+export interface ConversationThreadDoc {
+  id: string
+  user_id: string
+  channel: string
+  /** Contacto/grupo del canal, o el id de conversación en la web. */
+  peer_id: string
+  peer_kind: "direct" | "group"
+  /** null hasta el primer mensaje del usuario, de donde se deriva. */
+  title: string | null
+  /** Borrado suave: sigue en la base pero no se lista ni se reabre. */
+  archived: boolean
+  created_at: number
+  last_message_at: number
+  message_count: number
+}
+
 export interface TraceDoc {
   id: string
   thread_id: string

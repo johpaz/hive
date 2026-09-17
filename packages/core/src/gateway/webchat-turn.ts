@@ -22,6 +22,7 @@ import { getNarration } from "./helpers";
 import { createRun, getRun } from "../agent/run-store";
 import { getDurableQueue } from "./durable-queue";
 import { sessionManager } from "./session";
+import { getThread } from "../agent/thread-store";
 import { publishNarration } from "../events/narration";
 import { LLM_ERROR_PREFIX } from "../agent/llm-client";
 import type { JobDoc, TurnSource } from "../storage/collections";
@@ -33,6 +34,12 @@ export interface WebchatTurnPayload {
   source: TurnSource;
   /** webchat channelUserId for WS sources; canonical threadId for "api". */
   sessionId: string;
+  /**
+   * Conversación de este turno, ya resuelta y validada por el punto de entrada
+   * (resolveWebThread). Cuando falta —jobs encolados antes de que existiera el
+   * campo— se resuelve dentro del turno como siempre.
+   */
+  threadId?: string;
   /** User text / audio transcript / interaction description. */
   content: string;
   /** Clean text without the timestamp prefix (search selectors); api source. */
@@ -78,7 +85,12 @@ export function initWebchatTurnRunner(d: WebchatTurnDeps): void {
 type ProcessKind = "analysis" | "tool" | "observation" | "writing";
 type ProcessStatus = "thinking" | "done" | "error";
 
-function createProcessReporter(sendRaw: (payload: string) => void, sessionId: string, messageId: string) {
+function createProcessReporter(
+  sendRaw: (payload: string) => void,
+  sessionId: string,
+  messageId: string,
+  threadId: string,
+) {
   const sent = new Set<string>();
 
   const send = (event: {
@@ -91,6 +103,7 @@ function createProcessReporter(sendRaw: (payload: string) => void, sessionId: st
     sendRaw(JSON.stringify({
       type: "process",
       sessionId,
+      threadId,
       id: messageId,
       messageId,
       processKind: event.kind,
@@ -166,10 +179,17 @@ export async function runWebchatTurn(
   const sessionId = payload.sessionId;
   const hasLive = !!live?.sendRaw;
 
+  // Se resuelve unas líneas más abajo, pero se declara acá porque `send` la
+  // adjunta a cada frame (y el early return de `signal.aborted` ya manda frames).
+  let threadId: string = payload.threadId ?? payload.sessionId;
+
   const sendRaw = (frame: string) => {
     try { live?.sendRaw?.(frame); } catch { /* socket gone mid-turn */ }
   };
-  const send = (obj: unknown) => sendRaw(JSON.stringify(obj));
+  // Cada frame lleva la conversación a la que pertenece. El navegador puede tener
+  // otra abierta cuando llega la respuesta (o dos turnos en vuelo a la vez), y sin
+  // esta marca pintaría la respuesta de una conversación dentro de otra.
+  const send = (obj: Record<string, unknown>) => sendRaw(JSON.stringify({ ...obj, threadId }));
 
   if (signal.aborted) {
     send({ type: "typing", isTyping: false, sessionId });
@@ -181,9 +201,13 @@ export async function runWebchatTurn(
 
   // ── Context ────────────────────────────────────────────────────────────────
   let userId: string;
-  let threadId: string;
   const channel = payload.channel ?? "webchat";
-  if (payload.source === "api" || payload.source === "delegation_summary") {
+  if (payload.threadId) {
+    // Resuelto en el punto de entrada, que es quien sabe qué conversación eligió
+    // el cliente y ya comprobó que le pertenece.
+    threadId = payload.threadId;
+    userId = payload.userId ?? (await resolveContext({ channel: "webchat", channelUserId: sessionId })).userId;
+  } else if (payload.source === "api" || payload.source === "delegation_summary") {
     userId = payload.userId ?? "default";
     threadId = payload.sessionId;
   } else {
@@ -204,7 +228,7 @@ export async function runWebchatTurn(
   const messageId = crypto.randomUUID();
   const withReporter = payload.source === "message" || payload.source === "audio";
   const processReporter = withReporter && hasLive
-    ? createProcessReporter(sendRaw, sessionId, messageId)
+    ? createProcessReporter(sendRaw, sessionId, messageId, threadId)
     : null;
 
   try {
@@ -443,11 +467,11 @@ export async function runWebchatTurn(
       const liveWs = liveSession?.ws?.readyState === 1 ? liveSession.ws : null;
       if (liveWs) {
         try {
-          liveWs.send(JSON.stringify({ type: "message", id: messageId, sessionId, content, isStep: false }));
-          liveWs.send(JSON.stringify({ type: "typing", isTyping: false, sessionId }));
+          liveWs.send(JSON.stringify({ type: "message", id: messageId, sessionId, threadId, content, isStep: false }));
+          liveWs.send(JSON.stringify({ type: "typing", isTyping: false, sessionId, threadId }));
         } catch (err) {
           log.warn(`[runWebchatTurn] Live push to open session failed, falling back to notification: ${(err as Error).message}`);
-          await sendToUserChannel(channel, userId, content).catch((err2) =>
+          await sendToUserChannel(channel, userId, content, { threadId }).catch((err2) =>
             log.warn(`[runWebchatTurn] Failed to deliver response: ${(err2 as Error).message}`)
           );
         }
@@ -455,7 +479,7 @@ export async function runWebchatTurn(
         // Rehydrated turn (crash recovery), or the user's browser isn't
         // connected right now: deliver the final content through the user's
         // channel (persisted notification for webchat; push API for the rest).
-        await sendToUserChannel(channel, userId, content).catch((err) =>
+        await sendToUserChannel(channel, userId, content, { threadId }).catch((err) =>
           log.warn(`[runWebchatTurn] Failed to deliver crash-recovered response: ${(err as Error).message}`)
         );
       }
@@ -475,6 +499,7 @@ export async function runWebchatTurn(
         type: "message",
         id: messageId,
         sessionId,
+        threadId,
         content: "",
         image: `/api/artifacts/${img.artifactId}/download`,
         imageMimeType: img.mimeType,
@@ -542,6 +567,35 @@ export async function runWebchatTurn(
   }
 }
 
+// ─── Conversation resolution ─────────────────────────────────────────────────
+
+/**
+ * Traduce la conversación que pide el cliente web a un threadId, o elige la activa
+ * si no pide ninguna.
+ *
+ * El id llega opaco (es el mismo que devuelve /api/conversations) y se comprueba
+ * contra el registro: tiene que existir y ser del usuario autenticado en el socket.
+ * Sin esa comprobación, un id inventado abriría conversaciones fantasma —y el hilo
+ * anterior a la separación por canal, cuyo id es el userId pelado, no se podría
+ * direccionar de ninguna otra forma.
+ */
+export async function resolveWebThread(
+  sessionId: string,
+  requestedThreadId?: string,
+): Promise<{ userId: string; threadId: string }> {
+  const ctx = await resolveContext({ channel: "webchat", channelUserId: sessionId });
+  const requested = requestedThreadId?.trim();
+  if (!requested || requested === ctx.threadId) {
+    return { userId: ctx.userId, threadId: ctx.threadId };
+  }
+
+  const thread = await getThread(requested);
+  if (!thread || thread.user_id !== ctx.userId || thread.archived) {
+    throw new Error(`Conversación desconocida: ${requested}`);
+  }
+  return { userId: ctx.userId, threadId: thread.id };
+}
+
 // ─── Enqueue helper ──────────────────────────────────────────────────────────
 
 /**
@@ -556,7 +610,11 @@ export async function enqueueChatTurn(input: {
 }): Promise<JobDoc> {
   input.payload.turnId ??= crypto.randomUUID();
   const run = await createRun({
-    thread_id: input.payload.source === "api" ? input.payload.sessionId : `webchat:${input.payload.sessionId}`,
+    // El threadId canónico, sin prefijos: `agentRuns.thread_id` y
+    // `conversations.thread_id` viven ahora en el mismo espacio de nombres, así
+    // que findRunsByThread encuentra los runs de una conversación y
+    // delegation-notify puede derivar el destino con parseThreadId.
+    thread_id: input.payload.threadId ?? input.payload.sessionId,
     agent_id: input.payload.agentId ?? "",
     user_id: input.payload.userId ?? "",
     channel: input.payload.channel ?? "webchat",

@@ -12,17 +12,17 @@ tools: [get_available_models, agent_find, agent_create, agent_archive]
 
 # Structured skill fields
 triggers:
-  - "creá un agente"
+  - "crea un agente"
   - "create agent"
-  - "creá un worker"
+  - "crea un worker"
   - "create worker"
   - "nuevo agente"
   - "new agent"
   - "agente especializado"
   - "specialized agent"
-  - "buscá un agente"
+  - "busca un agente"
   - "find agent"
-  - "archivá agente"
+  - "archiva agente"
   - "archive agent"
   - "worker inactivo"
   - "inactive worker"
@@ -93,13 +93,13 @@ output_format:
   max_length: "Agent creation/management summary"
 
 examples:
-  - user_input: "creá un agente para investigación web"
+  - user_input: "crea un agente para investigación web"
     expected_behavior: "agent_find('researcher') → if not exists, agent_create({ name: 'ai_researcher', tools: ['web_search', 'web_fetch'] })"
 
   - user_input: "hay un worker para escribir contenido"
     expected_behavior: "agent_find({ search: 'writer' }) → return existing writer agents"
 
-  - user_input: "archivá los agentes inactivos"
+  - user_input: "archiva los agentes inactivos"
     expected_behavior: "Confirm the exact user-selected workers → agent_archive only those IDs"
 ---
 
@@ -128,7 +128,7 @@ Para crear nuevos workers especializados o gestionar el ciclo de vida de agents 
 3. **Si no existe** → `get_available_models({ capabilities })` — seleccionar modelo óptimo
 4. **Crear** → `agent_create({...})` con providerId y modelId seleccionados
 
-Para MCP, incluí `mcp_server_id` y creá un agente por servidor. La tool rechaza duplicados y nunca debe llamarse antes de la confirmación del usuario.
+Para MCP, incluye `mcp_server_id` y crea un agente por servidor. La tool rechaza duplicados y nunca debe llamarse antes de la confirmación del usuario.
 
 ### Create Agent Config
 ```javascript

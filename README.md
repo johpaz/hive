@@ -13,9 +13,9 @@
 
 # Hive 1.0
 
-**Tu propio equipo de agentes de IA, corriendo en tu computadora o tu servidor — no alquilado a una nube ajena.** Hive coordina un enjambre de agentes especializados (investigación, archivos, código, documentos de oficina, automatizaciones cron, APIs) que trabajan para vos desde WhatsApp, Telegram, Slack, Discord o el navegador, mientras los ves operar en vivo en un mapa 3D.
+**Tu propio equipo de agentes de IA, corriendo en tu computadora o tu servidor — no alquilado a una nube ajena.** Hive coordina un enjambre de agentes especializados (investigación, archivos, código, documentos de oficina, automatizaciones cron, APIs) que trabajan para ti desde WhatsApp, Telegram, Slack, Discord o el navegador, mientras los ves operar en vivo en un mapa 3D.
 
-La instalación son 2 comandos de terminal; de ahí en más un asistente visual configura todo — no hace falta tocar código para usarlo día a día. Si además programás, tenés un runtime local-first, multi-canal y open source completo para construir encima.
+La instalación son 2 comandos de terminal; a partir de ahí un asistente visual configura todo — no hace falta tocar código para usarlo día a día. Si además programas, tienes un runtime local-first, multi-canal y open source completo para construir encima.
 
 <p align="center">
   <img src="docs/assets/office3d-screenshot.jpg" alt="Oficina 3D de Hive mostrando el enjambre de agentes en vivo" width="100%">

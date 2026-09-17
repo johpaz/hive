@@ -12,7 +12,7 @@ import type { Tool } from "../types";
 import { col, toIndexable } from "../../storage/hive";
 import type { UserDoc, UserIdentityDoc, ChannelDoc, CronJobDoc, TaskRunDoc } from "../../storage/collections";
 import { logger } from "../../utils/logger";
-import { Cron } from "croner";
+import { Cron } from "../../scheduler/cron";
 
 const log = logger.child("CronTools");
 
@@ -114,9 +114,9 @@ export const cronCreateTool: Tool = {
       tool_name: { type: "string", description: "Specific tool to execute (optional)" },
       max_runs: { type: "number", description: "Maximum executions (optional, null = unlimited)" },
       channel: { type: "string", description: "Notification channel (system, telegram, discord, whatsapp, cli)" },
-      start_at: { type: "string", description: "ISO 8601 datetime: start of execution window (Croner startAt). Optional." },
-      stop_at: { type: "string", description: "ISO 8601 datetime: end of execution window (Croner stopAt). Optional." },
-      dom_and_dow: { type: "boolean", description: "If true, both day-of-month AND day-of-week must match (Croner domAndDow). Default: false (OR logic)" },
+      start_at: { type: "string", description: "ISO 8601 datetime: start of execution window. Optional." },
+      stop_at: { type: "string", description: "ISO 8601 datetime: end of execution window. Optional." },
+      dom_and_dow: { type: "boolean", description: "If true, both day-of-month AND day-of-week must match. Default: false (OR logic)" },
     },
     required: ["name", "task", "task_type"],
   },

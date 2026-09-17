@@ -12,6 +12,7 @@ import {
   createNotification,
   markNotificationDelivered,
 } from "./notification-inbox"
+import { parseThreadId } from "../agent/thread-id"
 
 const log = logger.child("channel-notify")
 
@@ -36,17 +37,33 @@ export function setChannelSendFn(fn: SendFn): void {
  * tipo conectadas, la respuesta debe salir por la misma.
  * Necesario porque config.thread_id es el userId interno, no el chat ID externo.
  */
-async function resolveSession(userId: string, channel: string): Promise<{ sessionId: string; accountId?: string }> {
+async function resolveSession(
+  userId: string,
+  channel: string,
+  threadId?: string
+): Promise<{ sessionId: string; accountId?: string }> {
+  let accountId: string | undefined
   try {
     const identitiesCol = await col<UserIdentityDoc>("userIdentities")
     const identity = await identitiesCol.get(`${userId}:${channel}`)
+    accountId = identity?.doc.account_id
+
+    // El hilo manda sobre la identidad: `userIdentities` guarda UNA fila por
+    // (usuario, canal), así que con varios chats o grupos del mismo canal apunta
+    // siempre al último que escribió. El threadId sí sabe de qué conversación
+    // salió el aviso, y su peerId es justo el destino del canal.
+    const parts = threadId ? parseThreadId(threadId) : null
+    if (parts && parts.channel === channel && channel !== "webchat") {
+      return { sessionId: parts.peerId, accountId }
+    }
+
     if (identity?.doc.channel_user_id) {
-      return { sessionId: identity.doc.channel_user_id, accountId: identity.doc.account_id }
+      return { sessionId: identity.doc.channel_user_id, accountId }
     }
   } catch {
     // DB no lista — fallback al userId
   }
-  return { sessionId: userId }
+  return { sessionId: userId, accountId }
 }
 
 /**
@@ -56,7 +73,9 @@ async function resolveSession(userId: string, channel: string): Promise<{ sessio
 export async function sendToUserChannel(
   channel: string,
   userId: string,
-  message: string
+  message: string,
+  /** Conversación de origen — decide a qué chat o grupo del canal vuelve el aviso. */
+  opts?: { threadId?: string }
 ): Promise<{ ok: boolean; queued?: boolean; notificationId?: string; error?: string }> {
   let notificationId: string | undefined
   if (channel === "webchat") {
@@ -79,7 +98,7 @@ export async function sendToUserChannel(
     return { ok: false, error: "Channel send not initialized" }
   }
 
-  const { sessionId, accountId } = await resolveSession(userId, channel)
+  const { sessionId, accountId } = await resolveSession(userId, channel, opts?.threadId)
   log.info(`[channel-notify] Sending to ${channel}/${sessionId}: ${message.substring(0, 80)}`)
 
   try {

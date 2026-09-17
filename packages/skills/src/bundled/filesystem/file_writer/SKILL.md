@@ -13,19 +13,19 @@ tools: [fs_read, fs_write, fs_edit, fs_exists]
 
 # Structured skill fields
 triggers:
-  - "creá un archivo"
+  - "crea un archivo"
   - "create a file"
-  - "escribí en"
+  - "escribe en"
   - "write to"
-  - "editá este archivo"
+  - "edita este archivo"
   - "edit this file"
-  - "modificá"
+  - "modifica el archivo"
   - "modify"
-  - "eliminá el archivo"
+  - "elimina el archivo"
   - "delete file"
-  - "guardá esto"
+  - "guarda esto"
   - "save this"
-  - "actualizá el archivo"
+  - "actualiza el archivo"
   - "update file"
 
 preferred_agents: []
@@ -68,13 +68,13 @@ output_format:
   max_length: "Brief summary of changes"
 
 examples:
-  - user_input: "creá un archivo README.md con la descripción del proyecto"
+  - user_input: "crea un archivo README.md con la descripción del proyecto"
     expected_behavior: "fs_exists (false) → fs_write({ path: 'README.md', content: '...' })"
 
-  - user_input: "editá el package.json para agregar la dependencia lodash"
+  - user_input: "edita el package.json para agregar la dependencia lodash"
     expected_behavior: "fs_read → fs_edit with old_string/new_string for dependencies"
 
-  - user_input: "eliminá el archivo temporal.log"
+  - user_input: "elimina el archivo temporal.log"
     expected_behavior: "after explicit authorization: fs_exists → fs_delete"
 ---
 

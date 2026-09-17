@@ -8,19 +8,19 @@ category: web
 permissions:
   - browser_control
 dependencies: []
-tools: [browser_navigate, browser_screenshot, web_fetch]
+tools: [browser_navigate, browser_screenshot, browser_extract, browser_wait]
 
 # Structured skill fields
 triggers:
-  - "capturá el contenido"
+  - "captura el contenido"
   - "scrape content"
-  - "obtené la página renderizada"
+  - "obtén la página renderizada"
   - "get rendered page"
   - "sitios dinámicos"
   - "dynamic sites"
   - "web con javascript"
   - "javascript websites"
-  - "tomá screenshot y contenido"
+  - "toma screenshot y contenido"
   - "screenshot and content"
 
 preferred_agents: []
@@ -39,16 +39,26 @@ steps:
     output: screenshot
 
   - step: 3
-    action: web_fetch
-    instruction: "Extract text content from rendered page as markdown"
-    output: extracted_content
+    action: browser_wait
+    instruction: "Wait for the content selector before extracting — an SPA renders after load fires"
+    params:
+      selector: "CSS selector of the content that must be present"
+    output: content_ready
 
   - step: 4
+    action: browser_extract
+    instruction: "Extract the rendered DOM. Omit the selector for a compact accessibility snapshot of the whole page"
+    params:
+      selector: "CSS selector, or 'body' for the whole page"
+    output: extracted_content
+
+  - step: 5
     action: synthesize
     instruction: "Combine screenshot and text content for comprehensive capture"
     output: scraped_data
 
 rules:
+  - "Extraer con `browser_extract`, NUNCA con `web_fetch`: web_fetch vuelve a pedir la URL al servidor y recibe el HTML sin renderizar, que es justamente lo que esta skill existe para evitar. En un SPA devuelve una cáscara vacía."
   - "Wait for full page load including JavaScript-rendered content"
   - "Take screenshot before extracting text to capture initial state"
   - "For infinite scroll pages, scroll down and capture multiple screenshots"
@@ -65,13 +75,13 @@ output_format:
   max_length: "Full content extraction"
 
 examples:
-  - user_input: "capturá el contenido de https://example.com/dashboard"
-    expected_behavior: "browser_navigate → wait for JS render → browser_screenshot → browser_fetch → return both"
+  - user_input: "captura el contenido de https://example.com/dashboard"
+    expected_behavior: "browser_navigate → browser_wait → browser_screenshot → browser_extract → return both"
 
-  - user_input: "obtené la página renderizada de la app"
-    expected_behavior: "Navigate → wait for SPA to load → screenshot + fetch content"
+  - user_input: "obtén la página renderizada de la app"
+    expected_behavior: "Navigate → browser_wait for the SPA root → screenshot + browser_extract"
 
-  - user_input: "scrapeá este sitio con javascript"
+  - user_input: "scrapea este sitio con javascript"
     expected_behavior: "Full browser render → capture visual and text content"
 ---
 
@@ -87,7 +97,12 @@ Esta skill se activa para sitios web dinámicos que requieren JavaScript renderi
 |------|----------|---------------|
 | `browser_navigate` | Navega y renderiza página completa | Sitios con JavaScript/SPA |
 | `browser_screenshot` | Captura estado visual | Evidencia de contenido renderizado |
-| `web_fetch` | Extrae texto como markdown | Contenido textual de página renderizada |
+| `browser_extract` | Extrae del DOM ya renderizado | Contenido textual o estructurado del SPA |
+| `browser_wait` | Espera a que aparezca un selector | Antes de extraer, en páginas que cargan por partes |
+
+> **No usar `web_fetch` acá.** Vuelve a pedir la URL al servidor y recibe el HTML
+> sin JavaScript ejecutado — en un SPA, una cáscara vacía. Para eso está
+> `browser_extract`, que lee el DOM que el navegador ya renderizó.
 
 ## Workflow
 

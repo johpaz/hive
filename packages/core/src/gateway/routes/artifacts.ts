@@ -41,11 +41,24 @@ export async function handleDownloadArtifact(
       return addCorsHeaders(Response.json({ ok: false, error: "Artifact binary is missing" }, { status: 404 }), req);
     }
 
+    // Los artefactos son inmutables y ya traen su sha256, así que sirve tal cual
+    // de ETag fuerte. Sin esto, cada recarga del cliente se traía el binario
+    // entero de nuevo: `new Response(BunFile)` resuelve los rangos (206) por su
+    // cuenta, pero no emite ETag ni Last-Modified, así que no había forma de
+    // contestar 304.
+    const etag = `"${entry.doc.sha256}"`;
+    const ifNoneMatch = req.headers.get("if-none-match");
+    if (ifNoneMatch && ifNoneMatch.split(",").some((t) => t.trim() === etag)) {
+      return addCorsHeaders(new Response(null, { status: 304, headers: { ETag: etag } }), req);
+    }
+
     return addCorsHeaders(
       new Response(file, {
         headers: {
           "Content-Type": entry.doc.mime_type,
           "Cache-Control": "private, max-age=3600",
+          ETag: etag,
+          "Accept-Ranges": "bytes",
         },
       }),
       req,

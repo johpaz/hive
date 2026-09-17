@@ -89,7 +89,7 @@ export function DesktopUpdater() {
                 <>
                   <p>{error}</p>
                   <p className="text-xs text-muted-foreground">
-                    Podés instalarla a mano desde{" "}
+                    Puedes instalarla a mano desde{" "}
                     <a className="underline" href={RELEASES_URL} target="_blank" rel="noreferrer">
                       la página de releases
                     </a>

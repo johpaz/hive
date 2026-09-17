@@ -650,7 +650,7 @@ export async function compileContext(opts: {
       `Arrancas con herramientas básicas. Si tu tarea requiere herramientas adicionales (web_search, fs_read, browser_navigate, etc.):\n` +
       `1. Usá \`search_knowledge(type="tools", query="<herramienta o tarea>")\` para encontrarlas.\n` +
       `2. Las herramientas que encuentres estarán disponibles para usar inmediatamente.\n` +
-      `Si el coordinador te indicó herramientas específicas, buscalas primero con search_knowledge antes de ejecutar tu tarea.\n` +
+      `Si el coordinador te indicó herramientas específicas, búscalas primero con search_knowledge antes de ejecutar tu tarea.\n` +
       `\n# CURRENT TASK\n${opts.taskContext}\n\nFocus ONLY on this task. Do not deviate.`
   } else if (isWorker && opts.taskContext) {
     systemPrompt += `\n\n# CURRENT TASK\n${opts.taskContext}\n\nFocus ONLY on this task and return the required structured delivery.`

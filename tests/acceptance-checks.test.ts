@@ -4,7 +4,7 @@
  * Es el punto donde se decide si la entrega de un worker se acepta, se rechaza o
  * se manda a juicio del coordinador, y corre sin una sola llamada al LLM. El
  * tri-estado importa: "unchecked" NO es un fallo, es "acá no aplicó nada
- * determinístico, decidilo vos" — confundirlo con "failed" haría que el
+ * determinístico, decídelo tú" — confundirlo con "failed" haría que el
  * coordinador reabra tareas que estaban bien.
  *
  * Usa HIVE_DB_PATH=":memory:".

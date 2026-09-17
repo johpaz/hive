@@ -57,7 +57,7 @@ export async function calculateCost(
     const key = `${provider}/${model}`;
     if (!unpricedModels.has(key)) {
       unpricedModels.add(key);
-      log.warn(`[usage] Sin tarifa para ${key} — su costo se contará como $0. Agregá inputPer1M/outputPer1M en SEED_DATA.models (storage/seed.ts).`);
+      log.warn(`[usage] Sin tarifa para ${key} — su costo se contará como $0. Agrega inputPer1M/outputPer1M en SEED_DATA.models (storage/seed.ts).`);
     }
     return 0;
   }

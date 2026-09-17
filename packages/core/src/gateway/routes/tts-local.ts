@@ -1,3 +1,4 @@
+import { resolvePort } from "../../utils/port";
 import { existsSync, readdirSync, readFileSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
@@ -11,7 +12,7 @@ const TTS_ROOT =
   join(process.env.HIVE_HOME ?? join(homedir(), ".hive"), "tts")
 const BIN_PATH = join(TTS_ROOT, "bin", process.platform === "win32" ? "piper.exe" : "piper")
 const VOICES_DIR = join(TTS_ROOT, "voices")
-const TTS_PORT = Number(process.env.TTS_PORT ?? 5500)
+const TTS_PORT = resolvePort(process.env.TTS_PORT, 5500)
 
 let ttsServer: ReturnType<typeof Bun.serve> | null = null
 let installing = false

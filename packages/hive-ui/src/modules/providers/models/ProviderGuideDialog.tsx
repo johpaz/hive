@@ -93,12 +93,12 @@ export function ProviderGuideDialog({ open, onOpenChange, providers, models, ini
           <div className="flex-1 p-5 overflow-y-auto hive-scroll">
             {guide === "configurar" && (
               <div>
-                <h4 className={H}>1. Activá el provider</h4>
+                <h4 className={H}>1. Activa el provider</h4>
                 <p className={P}>
                   El switch de la tarjeta activa el provider y, en cascada, sus modelos. Un provider apagado no se
                   ofrece a los agentes aunque tenga la key cargada.
                 </p>
-                <h4 className={H}>2. Cargá la API key</h4>
+                <h4 className={H}>2. Carga la API key</h4>
                 <p className={P}>
                   Botón <span className={CODE}>CONFIG</span>. La key se guarda cifrada, separada del resto de la
                   configuración, y nunca se devuelve entera: la tarjeta sólo muestra una versión enmascarada.
@@ -156,7 +156,7 @@ export function ProviderGuideDialog({ open, onOpenChange, providers, models, ini
               <div>
                 <h4 className={H}>Descubrir (recomendado)</h4>
                 <p className={P}>
-                  Trae la lista real de modelos que el provider sirve en este momento y elegís de ahí. Es la forma
+                  Trae la lista real de modelos que el provider sirve en este momento y eliges de ahí. Es la forma
                   segura: un ID escrito a mano puede estar mal o haber sido retirado, y eso no falla al guardar —
                   falla mucho después, en plena conversación, con un <span className={CODE}>404</span> o un{" "}
                   <span className={CODE}>410 Gone</span>.
@@ -194,8 +194,8 @@ export function ProviderGuideDialog({ open, onOpenChange, providers, models, ini
                 <h4 className={H}>No los escribas a mano</h4>
                 <p className={P}>
                   El botón de sincronizar de la tarjeta lee los modelos que ya tienes instalados y los carga solo. Si
-                  un modelo no aparece, primero bajalo en tu máquina con{" "}
-                  <span className={CODE}>ollama pull llama3.3:8b</span> y volvé a sincronizar.
+                  un modelo no aparece, primero bájalo en tu máquina con{" "}
+                  <span className={CODE}>ollama pull llama3.3:8b</span> y vuelve a sincronizar.
                 </p>
                 <h4 className={H}>Contexto</h4>
                 <p className={P}>

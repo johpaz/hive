@@ -103,14 +103,22 @@ export function mergeEnv(...envs: Array<Record<string, string>>): Record<string,
  * Find a free port starting from the given port
  */
 export async function findFreePort(startPort: number, maxAttempts: number = 100): Promise<number> {
-  for (let port = startPort; port < startPort + maxAttempts; port++) {
+  // El tope evita sondear por encima de 65535: desde Bun 1.4 `Bun.serve` lanza
+  // RangeError con un puerto fuera de rango en vez de recortarlo, y el catch de
+  // abajo lo confundiría con "ocupado", gastando vueltas contra puertos que no
+  // existen.
+  const ultimo = Math.min(startPort + maxAttempts, 65536);
+  for (let port = startPort; port < ultimo; port++) {
     try {
       const server = Bun.serve({
         port,
         hostname: "0.0.0.0",
         fetch: () => new Response(""),
       });
-      server.stop();
+      // `stop()` es grácil desde 1.4 y devuelve una promesa. El socket de escucha
+      // se libera al llamarlo, pero se espera igual para no devolver el puerto
+      // como libre con el apagado a medias.
+      await server.stop(true);
       return port;
     } catch {
       // Port is in use, try next
@@ -129,7 +137,7 @@ export async function isPortAvailable(port: number): Promise<boolean> {
       hostname: "0.0.0.0",
       fetch: () => new Response(""),
     });
-    server.stop();
+    await server.stop(true);
     return true;
   } catch {
     return false;

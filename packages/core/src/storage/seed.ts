@@ -64,7 +64,7 @@ export const SEED_DATA: SeedData = {
     { id: "browser_wait", name: "browser_wait", category: "web", description: "Esperar a que aparezca un elemento o se cumpla una condición. Sinónimos: esperar, condición, elemento, selector, pausa" },
 
     // ─────────────────────────────────────────
-    // 3. CRON — Tareas programadas (Croner-based)
+    // 3. CRON — Tareas programadas
     // ─────────────────────────────────────────
     { id: "cron.create", name: "cron.create", category: "cron", description: "Crear una automatización de Hive programada: recurrente (expresión cron) o ejecución futura única (fire_at). Requiere 'task'. Sinónimos: programar tarea, crear automatización, ejecutar después, tarea recurrente, una vez" },
     { id: "cron.list", name: "cron.list", category: "cron", description: "Listar todas las tareas programadas con próximos horarios de ejecución. Sinónimos: ver tareas programadas, listar cronograma, próximas ejecuciones" },
@@ -243,7 +243,9 @@ export const SEED_DATA: SeedData = {
     // Z.ai / GLM
     { id: "z-ai/glm-5.2", providerId: "openrouter", name: "GLM 5.2 (OR)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "code", "reasoning"]), inputPer1M: 0.63, outputPer1M: 1.98 },
     // Qwen
-    { id: "qwen/qwen3.8-max", providerId: "openrouter", name: "Qwen3.8 Max (OR)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 2, outputPer1M: 6 },
+    // OpenRouter renombró qwen/qwen3.8-max a su versión fechada: mismo contexto
+    // y precio, ahora también con imagen. Verificado 2026-09-10.
+    { id: "qwen/qwen3.8-max-0902", providerId: "openrouter", name: "Qwen3.8 Max (OR)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 2, outputPer1M: 6 },
     { id: "qwen/qwen3.7-flash", providerId: "openrouter", name: "Qwen3.7 Flash (OR)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.03, outputPer1M: 0.13 },
     // xAI
     { id: "x-ai/grok-4.5", providerId: "openrouter", name: "Grok 4.5 (OR)", modelType: "llm", contextWindow: 500000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 2, outputPer1M: 6 },
@@ -303,9 +305,17 @@ export const SEED_DATA: SeedData = {
     // DeepSeek V4 Pro (deepseek-ai/deepseek-v4-pro) se sacó: devuelve 404
     // "Function not found for account" en cuentas normales — no está habilitado
     // de forma general aunque figure en el listado público de /v1/models.
-    { id: "z-ai/glm-5.2", providerId: "nvidia", name: "GLM 5.2 (NVIDIA)", modelType: "llm", contextWindow: 200000, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
-    { id: "moonshotai/kimi-k2.6", providerId: "nvidia", name: "Kimi K2.6 (NVIDIA)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "vision", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
-    { id: "minimaxai/minimax-m3", providerId: "nvidia", name: "MiniMax M3 (NVIDIA)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    // GLM 5.2 (z-ai/glm-5.2) y MiniMax M3 (minimaxai/minimax-m3) se sacaron:
+    // NVIDIA los retiró, responden 410 Gone y ya no figuran en /v1/models.
+    // Kimi K2.6 (moonshotai/kimi-k2.6) se sacó por lo mismo que DeepSeek V4 Pro:
+    // 404 "Function not found for account" en dos cuentas distintas.
+    // Kimi K3, DeepSeek V4 Flash 0731 y Muse Glimmer entraron: publicados en
+    // julio/agosto con "Free Endpoint" en el catálogo de NGC, y responden con
+    // tool calling en una cuenta gratuita. Contexto según la referencia de la API
+    // de NVIDIA (Kimi K3) y OpenRouter (el resto). Verificado 2026-09-10.
+    { id: "moonshotai/kimi-k3", providerId: "nvidia", name: "Kimi K3 (NVIDIA)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "code", "vision", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "deepseek-ai/deepseek-v4-flash-0731", providerId: "nvidia", name: "DeepSeek V4 Flash (NVIDIA)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "meta/muse-glimmer-30b", providerId: "nvidia", name: "Muse Glimmer 30B (NVIDIA)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "vision", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "nvidia/nemotron-3-ultra-550b-a55b", providerId: "nvidia", name: "Nemotron 3 Ultra 550B", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "nvidia/nemotron-3-super-120b-a12b", providerId: "nvidia", name: "Nemotron 3 Super 120B", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
 
@@ -587,6 +597,38 @@ function migrateLegacyCatalogPersona(existing: AgentDoc, current: AgentDoc): Age
   };
 }
 
+// Stock catalog prompts used Rioplatense voseo up to 1.0.5. Only the words that
+// appeared in those prompts; the migration below validates every rewrite.
+const VOSEO_TO_NEUTRAL: Record<string, string> = {
+  pedís: "pides", ampliás: "amplías", usás: "usas", declarás: "declaras", hablás: "hablas",
+  inventás: "inventas", exponés: "expones", automatizás: "automatizas", realizás: "realizas",
+  confirmás: "confirmas", ejecutás: "ejecutas", modificás: "modificas", sobrescribís: "sobrescribes",
+  publicás: "publicas", editás: "editas", interpretás: "interpretas", conversás: "conversas",
+  creás: "creas", consultás: "consultas", repetís: "repites", cambiás: "cambias",
+  Devolvé: "Devuelve", Convertí: "Convierte", Contrastá: "Contrasta", Inspeccioná: "Inspecciona",
+  Aplicá: "Aplica", Volvé: "Vuelve", Determiná: "Determina", modificá: "modifica",
+  Generá: "Genera", extraé: "extrae", Diseñá: "Diseña", Enviá: "Envía", liberá: "libera",
+  Normalizá: "Normaliza", Consultá: "Consulta", Validá: "Valida",
+};
+const VOSEO_PATTERN = new RegExp(`(?<!\\p{L})(${Object.keys(VOSEO_TO_NEUTRAL).join("|")})(?!\\p{L})`, "gu");
+
+/**
+ * Rewrites a stored catalog prompt line only when dropping the voseo turns it
+ * into a line of the current stock prompt, so user-written lines stay as they are.
+ */
+function migrateVoseoCatalogPrompt(existing: AgentDoc, current: AgentDoc): AgentDoc {
+  const stockLines = new Set(current.system_prompt.split("\n"));
+  const systemPrompt = existing.system_prompt
+    .split("\n")
+    .map((line) => {
+      if (stockLines.has(line)) return line;
+      const neutral = line.replace(VOSEO_PATTERN, (word) => VOSEO_TO_NEUTRAL[word]!);
+      return stockLines.has(neutral) ? neutral : line;
+    })
+    .join("\n");
+  return systemPrompt === existing.system_prompt ? existing : { ...existing, system_prompt: systemPrompt };
+}
+
 async function pruneRetired(): Promise<void> {
   const toolsCol = await col<ToolDoc>("tools");
   let removed = 0;
@@ -838,7 +880,10 @@ export async function seedAllData(): Promise<void> {
         continue;
       }
 
-      let reconciled = migrateLegacyCatalogPersona(existing.doc, catalogAgent);
+      let reconciled = migrateVoseoCatalogPrompt(
+        migrateLegacyCatalogPersona(existing.doc, catalogAgent),
+        catalogAgent,
+      );
       // Older releases could mark permanent catalog capabilities as archived.
       // Archiving is no longer automatic, and catalog rows are never valid
       // archive targets, so repair only that stale status on every boot while

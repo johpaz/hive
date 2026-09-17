@@ -222,7 +222,7 @@ export async function handleTriggerUpdate(
           instructions: [
             "1. La app revisa si hay versión nueva al abrirse y cada 6 horas",
             "2. Cuando la encuentra te muestra un aviso con las notas y un botón para instalarla; al terminar se reinicia sola",
-            "3. Si preferís hacerlo a mano, descargá el instalador de tu sistema desde https://github.com/johpaz/hive/releases/latest — conserva tus datos y agentes"
+            "3. Si prefieres hacerlo a mano, descarga el instalador de tu sistema desde https://github.com/johpaz/hive/releases/latest — conserva tus datos y agentes"
           ]
         }), req)
         

@@ -1,10 +1,17 @@
 import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+import react, { reactCompilerPreset } from "@vitejs/plugin-react";
+import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    // React Compiler 1.0 vía Babel. target "18" porque seguimos en React 18
+    // (usa react-compiler-runtime). El port en Rust sería react({ compiler: ... }).
+    babel({ presets: [reactCompilerPreset({ target: "18" })] }),
+    tailwindcss(),
+  ],
   clearScreen: false,
   resolve: {
     alias: {
@@ -61,7 +68,7 @@ export default defineConfig({
           if (id.includes("@tanstack/")) return "vendor-query";
           if (id.includes("react-hook-form") || id.includes("@hookform/") || id.includes("/zod/")) return "vendor-forms";
           if (id.includes("react-router") || id.includes("@remix-run/")) return "vendor-router";
-          if (id.includes("/react-dom/") || id.includes("/react/")) return "vendor-react";
+          if (id.includes("/react-dom/") || id.includes("/react/") || id.includes("/react-compiler-runtime/")) return "vendor-react";
         },
       },
     },

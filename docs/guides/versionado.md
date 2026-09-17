@@ -41,7 +41,7 @@ bun scripts/bump-version.ts major
 bun scripts/bump-version.ts 1.2.0
 ```
 
-Sin flags, el script **no toca git**: solo edita los 9 archivos + la prosa, y regenera `docs/reference/inventario.md`. Revisá el diff vos mismo.
+Sin flags, el script **no toca git**: solo edita los 9 archivos + la prosa, y regenera `docs/reference/inventario.md`. Revisa el diff tú mismo.
 
 ```bash
 bun scripts/bump-version.ts 1.0.1 --dry-run   # solo muestra qué cambiaría
@@ -83,7 +83,7 @@ El GitHub Release debe traer únicamente instaladores de escritorio (`.deb`, `.r
 
 El primer job (`resolve-tag`) resuelve el tag pedido y lo usa en el resto del pipeline — no hace falta re-taggear ni forzar push para reintentar.
 
-Si en cambio el problema está en los archivos (versión mal sincronizada, un manifest mal armado), corregí el código, y solo si el tag fallido **nunca llegó a publicar nada** (sin paquete npm, sin imagen Docker, sin GitHub Release), es seguro borrarlo y recrearlo:
+Si en cambio el problema está en los archivos (versión mal sincronizada, un manifest mal armado), corrige el código, y solo si el tag fallido **nunca llegó a publicar nada** (sin paquete npm, sin imagen Docker, sin GitHub Release), es seguro borrarlo y recrearlo:
 
 ```bash
 git push origin :refs/tags/v1.0.1   # borra el tag remoto
@@ -92,4 +92,4 @@ git tag -d v1.0.1                   # borra el tag local
 git tag v1.0.1 && git push origin master && git push origin v1.0.1
 ```
 
-Si el tag **sí** llegó a publicar algo (aunque sea parcialmente), no lo reescribas: publicá una versión nueva en su lugar. Un tag que ya fue consumido (por `npm install`, un `docker pull`, o alguien que ya se bajó un instalador) no debe cambiar de contenido bajo el mismo número.
+Si el tag **sí** llegó a publicar algo (aunque sea parcialmente), no lo reescribas: publica una versión nueva en su lugar. Un tag que ya fue consumido (por `npm install`, un `docker pull`, o alguien que ya se bajó un instalador) no debe cambiar de contenido bajo el mismo número.

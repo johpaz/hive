@@ -14,7 +14,7 @@ import * as filesystem from "./filesystem/index.ts";
 // Web (11)
 import * as web from "./web/index.ts";
 
-// Cron (8) - Croner-based scheduler tools
+// Cron (8) - scheduler tools
 import * as cron from "./cron/index.ts";
 
 // CLI (1)

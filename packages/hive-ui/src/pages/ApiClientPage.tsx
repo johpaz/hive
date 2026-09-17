@@ -342,7 +342,7 @@ export function ApiClientPage() {
                     className="min-h-[140px] font-mono text-xs bg-background/50"
                   />
                   <p className="text-[10px] text-muted-foreground mt-2">
-                    Se enviará como string crudo. Para JSON, asegurate de que sea válido.
+                    Se enviará como string crudo. Para JSON, asegúrate de que sea válido.
                   </p>
                 </TabsContent>
               </Tabs>

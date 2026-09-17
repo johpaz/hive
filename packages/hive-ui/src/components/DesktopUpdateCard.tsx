@@ -70,7 +70,7 @@ export function DesktopUpdateCard() {
       {desktop && (
         <>
           <p className="text-sm text-muted-foreground">
-            La app revisa si hay versión nueva al abrirse y cada 6 horas. Cuando la instalás, se
+            La app revisa si hay versión nueva al abrirse y cada 6 horas. Cuando la instalas, se
             descarga, se verifica su firma y Hive se reinicia solo. Tus datos y agentes no se tocan.
           </p>
 
@@ -90,7 +90,7 @@ export function DesktopUpdateCard() {
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
               <span>
                 La actualización automática de Linux se publica como .deb, y este sistema no puede
-                instalarlo. Descargá el .rpm desde{" "}
+                instalarlo. Descarga el .rpm desde{" "}
                 <a className="underline" href={RELEASES_URL} target="_blank" rel="noreferrer">
                   la página de releases
                 </a>{" "}

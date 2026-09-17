@@ -32,7 +32,7 @@ const { clearStoredSession, loadStoredCookies } = await import(
 const LIVE = isWebViewSupported();
 const COOKIE = "sid=secreto-de-sesion-123";
 
-/** Un sitio con login: `/entrar` deja la cookie, `/` dice quién sos. */
+/** Un sitio con login: `/entrar` deja la cookie, `/` dice quién eres. */
 function levantarSitio() {
   return Bun.serve({
     port: 0,

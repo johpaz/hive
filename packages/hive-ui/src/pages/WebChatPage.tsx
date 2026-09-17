@@ -1,5 +1,6 @@
 import { useEffect, useCallback } from "react";
 import { useChatStore } from "@/stores/chatStore";
+import { useConversationsStore } from "@/stores/conversationsStore";
 import { useWebSocketStore } from "@/stores/useWebSocketStore";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useUserStore } from "@/stores/userStore";
@@ -7,6 +8,7 @@ import { useGlobalConfigStore } from "@/stores/useGlobalConfigStore";
 import { useChatStreaming } from "@/hooks/useChatStreaming";
 import { useNarration } from "@/hooks/useNarration";
 import { ChatHistory } from "@/modules/chat/ChatHistory";
+import { ConversationList } from "@/modules/chat/ConversationList";
 import { ChatInput, type ChatAttachment } from "@/modules/chat/ChatInput";
 import { apiClient } from "@/lib/api";
 import { generateId } from "@/lib/utils";
@@ -16,13 +18,22 @@ const WEBCHAT_HISTORY_LIMIT = 40;
 
 export function WebChatPage() {
   const agentId = "main";
-  const { messages, addMessage, setMessages, isLoading, currentSteps, streamingMessageId, connectionWarning, setConnectionWarning } = useChatStore();
+  const { messages, addMessage, setMessages, clearMessages, isLoading, currentSteps, streamingMessageId, connectionWarning, setConnectionWarning } = useChatStore();
   const { status, send, subscribe } = useWebSocket();
   const { currentUser, fetchUser } = useUserStore();
   const agents = useGlobalConfigStore((s) => s.agents);
   const fetchAgents = useGlobalConfigStore((s) => s.fetchAgents);
+  // sessionId identifica el socket (y al usuario); threadId, la conversación
+  // abierta. Antes eran lo mismo y por eso sólo existía una conversación posible.
   const sessionId = currentUser?.id || "default";
-  const { handleStreamingChunk, handleReasoningChunk, handleAudioMessage, handleProgress, handleProcess, handleTyping, resetStreamingRef } = useChatStreaming(agentId, sessionId);
+  const {
+    activeId: threadId,
+    conversations,
+    isLoading: isLoadingConversations,
+    fetchConversations,
+    createConversation,
+  } = useConversationsStore();
+  const { handleStreamingChunk, handleReasoningChunk, handleAudioMessage, handleProgress, handleProcess, handleTyping, resetStreamingRef } = useChatStreaming(agentId, threadId ?? sessionId);
   const narration = useNarration();
 
   const isConnected = status === "connected";
@@ -34,21 +45,37 @@ export function WebChatPage() {
   useEffect(() => {
     if (!currentUser) fetchUser();
     if (agents.length === 0) fetchAgents();
+    fetchConversations();
   }, []);
 
+  // Primera visita (o después de borrar la última): siempre tiene que haber una
+  // conversación abierta donde escribir.
   useEffect(() => {
-    if (!sessionId) return;
+    if (!isLoadingConversations && conversations.length === 0 && !threadId) {
+      createConversation();
+    }
+  }, [isLoadingConversations, conversations.length, threadId, createConversation]);
+
+  // El historial se recarga al cambiar de conversación. clearMessages() primero:
+  // el store persiste los últimos mensajes en localStorage y sin limpiarlo se vería
+  // por un instante la conversación anterior dentro de la nueva.
+  useEffect(() => {
+    if (!threadId) return;
+    let cancelled = false;
+
     const fetchHistory = async () => {
+      clearMessages();
       try {
         const response = await apiClient<{ messages: any[] }>(
-          `/api/chat/history?sessionId=${sessionId}&limit=${WEBCHAT_HISTORY_LIMIT}`
+          `/api/chat/history?threadId=${encodeURIComponent(threadId)}&limit=${WEBCHAT_HISTORY_LIMIT}`
         );
+        if (cancelled) return;
         if (response.messages) {
           const formattedMessages = response.messages
             .filter((m: any) => m.role === "user" || m.role === "assistant")
             .map((m: any) => ({
               id: m.id,
-              conversationId: m.session_id || m.thread_id,
+              conversationId: m.thread_id,
               type: (m.role === "user" ? "user" : "agent") as any,
               content: m.content,
               agentId,
@@ -61,7 +88,9 @@ export function WebChatPage() {
       }
     };
     fetchHistory();
-  }, [sessionId, agentId, setMessages]);
+
+    return () => { cancelled = true; };
+  }, [threadId, agentId, setMessages, clearMessages]);
 
   // El gateway manda `type: "error"` cuando el turno no se puede procesar —el
   // caso típico es una nota de voz con el canal sin STT configurado o con la
@@ -72,13 +101,13 @@ export function WebChatPage() {
       useChatStore.getState().setLoading(false);
       addMessage({
         id: generateId(),
-        conversationId: sessionId,
+        conversationId: threadId ?? sessionId,
         type: "error" as const,
         content: payload?.error || "El gateway no pudo procesar el mensaje.",
         timestamp: new Date().toISOString(),
       });
     },
-    [addMessage, sessionId]
+    [addMessage, sessionId, threadId]
   );
 
   useEffect(() => {
@@ -122,7 +151,7 @@ export function WebChatPage() {
       // Prepare local message for store
       const newMessage: any = {
         id: messageId,
-        conversationId: sessionId,
+        conversationId: threadId ?? sessionId,
         type: "user" as const,
         content,
         agentId,
@@ -150,9 +179,11 @@ export function WebChatPage() {
 
       if (isConnected) {
         if (audioBase64) {
-          send({ type: "audio", audio: audioBase64, mimeType: audioMimeType, sessionId, timestamp: new Date().toISOString() });
+          send({ type: "audio", audio: audioBase64, mimeType: audioMimeType, sessionId, threadId, timestamp: new Date().toISOString() });
         } else {
-          const payload: any = { type: "message", content, sessionId, timestamp: new Date().toISOString() };
+          // threadId dice en qué conversación escribir; sin él, el gateway usa la
+          // más reciente del usuario.
+          const payload: any = { type: "message", content, sessionId, threadId, timestamp: new Date().toISOString() };
           if (attachments && attachments.length > 0) {
             const firstImage = attachments.find(a => a.type === "image");
             const firstDoc = attachments.find(a => a.type === "document");
@@ -164,7 +195,7 @@ export function WebChatPage() {
       } else {
         addMessage({
           id: generateId(),
-          conversationId: sessionId,
+          conversationId: threadId ?? sessionId,
           type: "error" as const,
           content: "No se pudo conectar al agente. Verifica que el gateway este funcionando.",
           timestamp: new Date().toISOString(),
@@ -172,7 +203,7 @@ export function WebChatPage() {
         useChatStore.getState().setLoading(false);
       }
     },
-    [isConnected, sessionId, agentId, addMessage, send, narration, resetStreamingRef]
+    [isConnected, sessionId, threadId, agentId, addMessage, send, narration, resetStreamingRef]
   );
 
   const handleNarrateMessage = useCallback(
@@ -187,7 +218,10 @@ export function WebChatPage() {
   );
 
   return (
-    <div className="flex-1 flex flex-col w-full min-h-0 bg-transparent overflow-hidden">
+    <div className="flex-1 flex w-full min-h-0 bg-transparent overflow-hidden">
+      <ConversationList />
+
+      <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
       {/* ── Minimal Header ────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-3 shrink-0 z-10 bg-transparent border-b border-white/5">
         <div className="flex items-center gap-3">
@@ -268,11 +302,12 @@ export function WebChatPage() {
       <ChatInput
         onSendMessage={handleSendMessage}
         onStop={() => {
-          if (isConnected) send({ type: "stop", sessionId });
+          if (isConnected) send({ type: "stop", sessionId, threadId });
         }}
         disabled={!isConnected && !isConnecting}
         isStreaming={isLoading}
       />
+      </div>
     </div>
   );
 }

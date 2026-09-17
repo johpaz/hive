@@ -165,9 +165,11 @@ function matchTriggers(message: string, triggersJson: string | null): boolean {
         const triggers: string[] = triggersJson.split(",").map(t => t.trim()).filter(t => t.length > 0)
         if (triggers.length === 0) return false
 
-        const lowerMessage = message.toLowerCase()
+        // Accent-insensitive: "recuérdame" must match "recuerdame" typed without tildes
+        const fold = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase()
+        const foldedMessage = fold(message)
         return triggers.some(trigger =>
-            lowerMessage.includes(trigger.toLowerCase())
+            foldedMessage.includes(fold(trigger))
         )
     } catch (err) {
         log.warn(`[skill-selector] Failed to parse triggers: ${(err as Error).message}`)

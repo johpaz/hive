@@ -118,7 +118,7 @@ export function renderTranscript(rows: StoredMessage[], maxMsgChars = MAX_MSG_CH
 /**
  * Compress a thread's history into a summary.
  */
-async function compactThread(
+export async function compactThread(
   threadId: string,
   notify?: { channel: string; userId: string }
 ): Promise<void> {
@@ -191,7 +191,8 @@ async function compactThread(
       await sendToUserChannel(
         notify.channel,
         notify.userId,
-        `🗜️ Resumí ${toSummarize.length} mensajes anteriores para mantener el contexto limpio.`
+        `🗜️ Resumí ${toSummarize.length} mensajes anteriores para mantener el contexto limpio.`,
+        { threadId }
       )
     } catch {
       // Non-critical — don't break the flow if notification fails

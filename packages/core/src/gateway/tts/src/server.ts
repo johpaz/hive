@@ -9,6 +9,7 @@
  * GET  /voices   → { voices: string[] }
  */
 
+import { resolvePort } from "../../../utils/port";
 import { existsSync, readdirSync, readFileSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
@@ -25,7 +26,7 @@ const TTS_ROOT =
   join(process.env.HIVE_HOME ?? join(homedir(), ".hive"), "tts")
 const BIN_DIR = join(TTS_ROOT, "bin")
 const VOICES_DIR = join(TTS_ROOT, "voices")
-const PORT = Number(process.env.TTS_PORT ?? 5500)
+const PORT = resolvePort(process.env.TTS_PORT, 5500)
 const DEFAULT_VOICE_ENV = process.env.TTS_VOICE ?? DEFAULT_VOICE
 
 function getPiperPath(): string {

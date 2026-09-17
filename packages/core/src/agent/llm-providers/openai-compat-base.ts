@@ -78,8 +78,8 @@ export abstract class OpenAICompatBase implements LLMProvider {
   /** Override to true for providers running on localhost. */
   protected isLocalProvider(): boolean { return false }
 
-  /** Override to customize the OpenAI client (e.g. strip unwanted headers, add custom fetch). */
-  protected async resolveOpenAIClient(apiKey: string, baseURL: string | undefined): Promise<any> {
+  /** Override to customize the OpenAI client (e.g. strip unwanted headers, add custom fetch, per-call headers). */
+  protected async resolveOpenAIClient(apiKey: string, baseURL: string | undefined, _options?: LLMCallOptions): Promise<any> {
     const { default: OpenAI } = await import("openai")
     return new OpenAI({ apiKey, baseURL })
   }
@@ -131,7 +131,7 @@ export abstract class OpenAICompatBase implements LLMProvider {
       throw new Error(`API key missing for provider: ${this.providerName}. Configure it in Settings → Providers.`)
     }
 
-    const client = await this.resolveOpenAIClient(apiKey, baseURL)
+    const client = await this.resolveOpenAIClient(apiKey, baseURL, options)
 
     const sanitized = sanitizeMessages(options.messages)
     const rawMessages = this.needsReasoningRoundtrip()

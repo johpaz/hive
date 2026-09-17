@@ -165,7 +165,25 @@ export class TelegramChannel extends BaseChannel {
     }
 
     if (text === "/new" || text?.startsWith("/new@")) {
-      await ctx.reply("🔄 Sesión reiniciada.", { parse_mode: "HTML" });
+      // Antes sólo contestaba: el contexto seguía intacto y la conversación
+      // continuaba como si nada. Ahora borra de verdad el hilo de ESTE chat —los
+      // demás canales y las conversaciones de la web no se tocan.
+      try {
+        const { resolveContext } = await import("../gateway/resolver");
+        const { deleteThread } = await import("../agent/thread-store");
+        const { threadId } = await resolveContext({
+          channel: this.name,
+          channelUserId: peerId,
+          accountId: this.accountId,
+          peerId,
+          peerKind: kind,
+        });
+        await deleteThread(threadId);
+        await ctx.reply("🔄 Listo, empezamos de cero.", { parse_mode: "HTML" });
+      } catch (err) {
+        this.log.warn(`No pude reiniciar el hilo de ${peerId}: ${(err as Error).message}`);
+        await ctx.reply("No pude reiniciar la conversación.", { parse_mode: "HTML" });
+      }
       return;
     }
 

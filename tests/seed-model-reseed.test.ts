@@ -108,16 +108,18 @@ describe("re-seed de modelos", () => {
   test("los ids de revendedor quedan prefijados y no colisionan", async () => {
     const modelsCol = await col<ModelDoc>("models");
 
-    // z-ai/glm-5.2 se sirve desde NVIDIA y desde OpenRouter: antes una fila
-    // pisaba a la otra porque la colección se indexaba sólo por model id.
-    const nvidia = await modelsCol.get("nvidia/z-ai/glm-5.2");
-    const openrouter = await modelsCol.get("openrouter/z-ai/glm-5.2");
+    // kimi-k2.6 se sirve directo desde Moonshot y revendido por OpenCode Go:
+    // antes una fila pisaba a la otra porque la colección se indexaba sólo por
+    // model id. (El caso original era z-ai/glm-5.2 en NVIDIA y OpenRouter, pero
+    // NVIDIA lo retiró y salió del catálogo.)
+    const direct = await modelsCol.get("kimi-k2.6");
+    const reseller = await modelsCol.get("opencode-go/kimi-k2.6");
 
-    expect(nvidia?.doc.provider_id).toBe("nvidia");
-    expect(openrouter?.doc.provider_id).toBe("openrouter");
-    // Endpoint gratuito de NVIDIA vs. OpenRouter de pago — el costo ya no se confunde.
-    expect(nvidia!.doc.input_per_1m).toBe(0);
-    expect(openrouter!.doc.input_per_1m).toBeGreaterThan(0);
+    expect(direct?.doc.provider_id).toBe("kimi");
+    expect(reseller?.doc.provider_id).toBe("opencode-go");
+    // Suscripción de OpenCode Go vs. Moonshot por token — el costo ya no se confunde.
+    expect(reseller!.doc.input_per_1m).toBe(0);
+    expect(direct!.doc.input_per_1m).toBeGreaterThan(0);
   });
 });
 

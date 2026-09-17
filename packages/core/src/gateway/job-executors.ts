@@ -361,7 +361,7 @@ const goalRunExecutor: JobExecutor = async (job, signal) => {
 
   const notify = async (text: string) => {
     if (channel && notifyUserId) {
-      await sendToUserChannel(channel, notifyUserId, text).catch(() => {});
+      await sendToUserChannel(channel, notifyUserId, text, { threadId }).catch(() => {});
     }
   };
 
@@ -404,8 +404,8 @@ const goalRunExecutor: JobExecutor = async (job, signal) => {
       }
 
       const turnMessage = attempts === 0
-        ? `Meta: ${goal}\n\nTrabajá hasta cumplir esta meta. Explicá el resultado al terminar.`
-        : `La meta aún no se verificó como cumplida.\nMeta: "${goal}"\nRazón del verificador: ${lastReason}\nPresupuesto restante: ${maxAttempts - attempts} intento(s), ${maxTurns - turnsUsed} turno(s).\nContinuá trabajando para cumplirla.`;
+        ? `Meta: ${goal}\n\nTrabaja hasta cumplir esta meta. Explica el resultado al terminar.`
+        : `La meta aún no se verificó como cumplida.\nMeta: "${goal}"\nRazón del verificador: ${lastReason}\nPresupuesto restante: ${maxAttempts - attempts} intento(s), ${maxTurns - turnsUsed} turno(s).\nContinúa trabajando para cumplirla.`;
 
       // One turn (non-durable: the goal row carries the durable state)
       let turnTokens = 0;

@@ -14,6 +14,7 @@
 import { getHiveDb, getOpenHiveDb } from "./hivedb";
 import { col } from "./hive";
 import { seedAllData } from "./seed";
+import { ensureLegacyThread } from "../agent/thread-store";
 import { ensureSecretsBackend } from "./crypto";
 
 interface IndexSpec {
@@ -60,6 +61,9 @@ const INDEXES: IndexSpec[] = [
   { collection: "traces", field: "success" },
   { collection: "playbook", field: "active" },
   { collection: "playbook", field: "category" },
+  { collection: "conversationThreads", field: "user_id" },
+  { collection: "conversationThreads", field: "channel" },
+  { collection: "conversationThreads", field: "archived" },
   // Stage 5 — scheduler
   { collection: "cronJobs", field: "status" },
   { collection: "cronJobs", field: "task_type" },
@@ -129,6 +133,23 @@ async function ensureSeedData(): Promise<void> {
 let bootstrappedDb: Awaited<ReturnType<typeof getHiveDb>> | null = null;
 
 /**
+ * Antes de la separación por canal todos los canales compartían un solo hilo cuyo
+ * `thread_id` era el `userId`. Esa conversación se registra —sin mover un solo
+ * mensaje— como una conversación más de la web, para que siga siendo legible desde
+ * la lista. Idempotente: no hace nada si ya está registrada o si no hay historial.
+ */
+async function ensureLegacyThreads(): Promise<void> {
+  try {
+    const users = await col<{ id: string }>("users");
+    for (const user of await users.scan({})) {
+      await ensureLegacyThread(user.id);
+    }
+  } catch {
+    // Base sin usuarios todavía (onboarding pendiente) — nada que registrar.
+  }
+}
+
+/**
  * Idempotent entry point: opens the database, ensures indexes, reseeds the
  * static catalogs, and records the schema version. Safe to call on every
  * gateway boot.
@@ -141,6 +162,8 @@ export async function ensureHiveDb(): Promise<void> {
   // has already dropped the secret.
   ensureSecretsBackend();
   await ensureSeedData();
+
+  await ensureLegacyThreads();
 
   const meta = await col<{ value: number }>("meta");
   const existing = await meta.get("schemaVersion");

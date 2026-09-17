@@ -185,6 +185,15 @@ export class MCPClientManager {
         });
       }
 
+      case "http": {
+        const url = state.config.url;
+        if (!url) throw new Error("Streamable HTTP transport requires 'url' config");
+        return createTransport({
+          type: "http",
+          http: { url, headers: state.config.headers },
+        });
+      }
+
       default:
         throw new Error(`Unknown transport type: ${transportType}`);
     }

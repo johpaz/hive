@@ -6,6 +6,11 @@ import { logger } from "../utils/logger.ts";
 export interface InboundMessage {
   type: "message" | "command" | "ping" | "pong" | "join" | "canvas_subscribe" | "canvas_unsubscribe" | "canvas:pong" | "logs_subscribe" | "logs_unsubscribe" | "audio" | "a2ui:action" | "stop" | "notification_sync" | "notification_ack";
   sessionId: string;
+  /**
+   * Conversación de la web en la que escribir. Opaco: es el id que devuelve
+   * /api/conversations. Sin él, el turno va a la conversación más reciente.
+   */
+  threadId?: string;
   content?: string;
   audio?: string;
   /** Tipo real del audio grabado: el motor del navegador decide si es webm, ogg o mp4. */
@@ -171,28 +176,57 @@ registerSlashCommand({
 
 registerSlashCommand({
   name: "new",
-  description: "Start a new session",
+  description: "Abrir una conversación nueva",
   handler: async (sessionId) => {
-    sessionManager.delete(sessionId);
-    return { success: true, message: "Session reset" };
+    // Antes esto sólo borraba la entrada del socket en memoria y contestaba
+    // "Session reset": el contexto seguía intacto y el siguiente mensaje
+    // continuaba la misma conversación. Ahora abre una de verdad.
+    const { createWebConversation } = await import("../agent/thread-store");
+    const { resolveContext } = await import("./resolver");
+    try {
+      const { userId } = await resolveContext({ channel: "webchat", channelUserId: sessionId });
+      const conversation = await createWebConversation(userId);
+      return {
+        success: true,
+        message: "Conversación nueva abierta.",
+        threadId: conversation.id,
+      };
+    } catch (error) {
+      return { success: false, message: `No pude abrir la conversación: ${(error as Error).message}` };
+    }
   },
 });
 
 registerSlashCommand({
   name: "compact",
-  description: "Force context compaction",
+  description: "Resumir los turnos anteriores para liberar contexto",
   handler: async (sessionId) => {
-    logger.info(`Compaction requested for session: ${sessionId}`);
-    return { success: true, message: "Compaction triggered" };
+    const { compactThread } = await import("../agent/compaction");
+    const { resolveContext } = await import("./resolver");
+    try {
+      const { userId, threadId } = await resolveContext({ channel: "webchat", channelUserId: sessionId });
+      await compactThread(threadId, { channel: "webchat", userId });
+      return { success: true, message: "Listo: resumí los turnos anteriores." };
+    } catch (error) {
+      return { success: false, message: `No pude compactar: ${(error as Error).message}` };
+    }
   },
 });
 
 registerSlashCommand({
   name: "reset",
-  description: "Reset the current context",
+  description: "Borrar el historial de esta conversación",
   handler: async (sessionId) => {
-    logger.info(`Context reset requested for session: ${sessionId}`);
-    return { success: true, message: "Context reset" };
+    const { deleteThread } = await import("../agent/thread-store");
+    const { resolveContext } = await import("./resolver");
+    try {
+      const { threadId } = await resolveContext({ channel: "webchat", channelUserId: sessionId });
+      await deleteThread(threadId);
+      logger.info(`Contexto borrado para el hilo ${threadId}`);
+      return { success: true, message: "Historial borrado. Empezamos de cero." };
+    } catch (error) {
+      return { success: false, message: `No pude borrar el historial: ${(error as Error).message}` };
+    }
   },
 });
 

@@ -106,7 +106,7 @@ describe("selectTools con tools registradas en runtime", () => {
     await registerRuntimeTool();
     await syncToolCatalogToIndex();
 
-    const selected = await selectTools("buscá en la web información sobre tarifas de envío");
+    const selected = await selectTools("busca en la web información sobre tarifas de envío");
 
     expect(selected.length).toBeGreaterThan(0);
     for (const tool of selected) {

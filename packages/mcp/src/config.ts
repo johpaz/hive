@@ -3,7 +3,8 @@ export interface MCPConfig {
 }
 
 export interface MCPServerConfig {
-  transport: "stdio" | "sse" | "websocket";
+  /** "http" es Streamable HTTP, el transporte remoto estándar de MCP. "sse" es el HTTP+SSE original, de dos endpoints. */
+  transport: "stdio" | "sse" | "websocket" | "http";
   enabled?: boolean;
   command?: string;
   args?: string[];

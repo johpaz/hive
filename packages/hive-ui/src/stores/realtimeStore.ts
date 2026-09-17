@@ -13,6 +13,7 @@ import { RealtimeMic, RealtimePlayer, describeMicError, type SpectrumTap } from 
 import { RealtimeCamera, describeCameraError } from "@/lib/realtime/camera";
 import { RealtimeScreen, describeScreenError } from "@/lib/realtime/screen";
 import { esAltavozAbierto } from "@/lib/realtime/dispositivos";
+import { useConversationsStore } from "@/stores/conversationsStore";
 
 export type VoiceStatus = "idle" | "connecting" | "listening" | "speaking" | "error";
 
@@ -214,6 +215,7 @@ function buildRealtimeUrl(
   voice?: string,
   language?: string,
   modoAltavoz?: boolean,
+  threadId?: string | null,
 ): string {
   const url = new URL(`${getWsBaseUrl()}/realtime`);
   url.searchParams.set("session", sessionId);
@@ -222,6 +224,9 @@ function buildRealtimeUrl(
   if (voice) url.searchParams.set("voice", voice);
   if (language) url.searchParams.set("lang", language);
   if (modoAltavoz) url.searchParams.set("altavoz", "1");
+  // La llamada continúa la conversación abierta en el chat: BIA arranca sabiendo
+  // de qué se venía hablando en vez de empezar en blanco.
+  if (threadId) url.searchParams.set("conv", threadId);
   return url.toString();
 }
 
@@ -412,6 +417,7 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => ({
         voice ?? prefs.voice,
         language ?? prefs.language,
         get().modoAltavoz,
+        useConversationsStore.getState().activeId,
       ),
     );
     ws.binaryType = "arraybuffer";

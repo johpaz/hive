@@ -130,10 +130,10 @@ function summaryPrompt(group: DelegationGroupDoc): string {
   return [
     "Todas las tareas delegadas de este turno alcanzaron estado terminal.",
     "Para cada una, comprueba la entrega contra sus criterios de aceptación (`acceptance`):",
-    '- checks.status="passed" → verificado determinísticamente, aceptá.',
+    '- checks.status="passed" → verificado determinísticamente, acepta.',
     '- checks.status="failed" → NO cumplió (ok=false). No lo reportes como éxito.',
-    '- checks.status="unchecked" o ausente → juzgalo tú con el contenido y la evidencia adjunta.',
-    "Si una entrega no cumple sus criterios: usa `task_revise` con el task_id y un feedback concreto, o arreglala tú si es trivial y tienes las tools. No inventes trabajo ni evidencia, y no declares éxito para ok=false.",
+    '- checks.status="unchecked" o ausente → júzgalo tú con el contenido y la evidencia adjunta.',
+    "Si una entrega no cumple sus criterios: usa `task_revise` con el task_id y un feedback concreto, o arréglala tú si es trivial y tienes las tools. No inventes trabajo ni evidencia, y no declares éxito para ok=false.",
     "Si todas cumplen, escribe UNA sola respuesta final para el usuario, en lenguaje natural: nunca expongas task_id, worker_id, nombres de tools ni JSON crudo.",
     JSON.stringify(factual),
   ].join("\n\n");

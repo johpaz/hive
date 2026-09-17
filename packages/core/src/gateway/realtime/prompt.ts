@@ -68,6 +68,42 @@ export interface VoicePromptInput {
   tone?: string | null;
   /** Preferencias de comunicación en texto libre (users.notes). */
   userNotes?: string | null;
+  /**
+   * Lo que ya se habló o escribió en esta conversación, para que la llamada no
+   * empiece en blanco. Antes no existía: BIA escribía en el hilo pero nunca lo
+   * leía, así que colgar y volver a llamar borraba todo lo anterior aunque el
+   * chat escrito sí lo recordara.
+   *
+   * Va en el system instruction —y no como turnos— porque la Live API declara el
+   * setup al conectar y no admite cambiarlo a mitad de sesión. Se paga entero una
+   * vez por llamada: por eso llega ya recortado desde realtime/index.ts.
+   */
+  historial?: VoiceHistory | null;
+}
+
+export interface VoiceHistory {
+  /** Resumen de los turnos ya compactados, si lo hay. */
+  resumen?: string | null;
+  /** Últimos turnos, del más viejo al más nuevo. */
+  turnos: Array<{ role: "user" | "assistant"; text: string }>;
+}
+
+/** Bloque de contexto previo. Vacío cuando la conversación no tiene pasado. */
+function seccionHistorial(historial?: VoiceHistory | null): string[] {
+  if (!historial) return [];
+  const turnos = historial.turnos.filter((t) => t.text.trim());
+  if (!turnos.length && !historial.resumen?.trim()) return [];
+
+  const quien = (role: "user" | "assistant") => (role === "user" ? "La persona" : "Hive");
+  return [
+    "",
+    "LO QUE VIENEN HABLANDO",
+    "- Esto ya pasó, en esta misma conversación (por voz o escribiendo). Es contexto para que sepas",
+    "  de qué se está hablando: NO son pedidos pendientes y no tienes que responderlos ni delegarlos.",
+    "- No lo recites ni digas que lo leíste. Úsalo como quien retoma una charla a medias.",
+    historial.resumen?.trim() ? `- Antes de esto: ${historial.resumen.trim()}` : null,
+    ...turnos.map((t) => `- ${quien(t.role)}: ${t.text.trim()}`),
+  ].filter((l): l is string => typeof l === "string");
 }
 
 export function buildVoicePrompt(input: VoicePromptInput): string {
@@ -131,6 +167,7 @@ export function buildVoicePrompt(input: VoicePromptInput): string {
     "LÍMITES",
     "- No prometas lo que la colmena todavía no hizo.",
     "- Si no sabes algo y no amerita delegar, dilo.",
+    ...seccionHistorial(input.historial),
   ]
     .filter((linea): linea is string => typeof linea === "string" && linea !== null)
     .join("\n");
