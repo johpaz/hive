@@ -31,9 +31,18 @@ curl -H "Authorization: Bearer $HIVE_AUTH_TOKEN" \
 
 `/ws` transporta chat streaming, estado de agentes, narración y A2UI. Los consumidores deben tolerar eventos adicionales y correlacionar por IDs en lugar de depender del orden global.
 
+Un mismo usuario puede tener varios sockets abiertos a la vez (la app de escritorio y una pestaña del navegador, o reconexiones que se solapan tras reiniciar el gateway). Cada respuesta, narración y fin de turno del web chat se envía a todos los sockets abiertos de la sesión. Lo que el gateway respondió mientras no había ningún socket queda en el historial: la UI lo vuelve a leer al reconectarse y cierra el indicador de «pensando» si el último mensaje ya es del agente.
+
 El Panel interactivo recibe eventos `a2ui:createSurface`,
 `a2ui:updateComponents`, `a2ui:updateDataModel` y `a2ui:deleteSurface`. Las
 acciones del usuario regresan como `a2ui:action`.
+
+La Oficina 3D recibe además `canvas:jev_decision`, con cada decisión de Jev
+(agente asesorado, tipo `context`, `iteration` o `parallel`, resumen, tokens
+ahorrados estimados, latencia, costo, especialista recomendado y MCP apagados
+que ese especialista necesita), y `canvas:jev_status` cuando Jev cambia entre
+`ready`, `fallback` y `off`. `GET /api/usage-stats` incluye el bloque `jev` con
+decisiones, costo, ahorro estimado y desglose por agente del período pedido.
 
 La suscripción al grafo de actividad y algunos eventos de sesión conservan
 nombres internos con el prefijo `canvas` por compatibilidad. Ese prefijo no

@@ -46,6 +46,8 @@ export type ExecuteToolBatchOptions = {
   }
   hiveConfig?: Config
   workerPool?: ToolRuntimeConfig
+  /** Per-batch decision. Undefined preserves the configured legacy behavior. */
+  parallelToolCalls?: boolean
   mainThreadToolNames?: string[]
   signal?: AbortSignal
 }
@@ -198,6 +200,7 @@ const DEFAULT_MAIN_THREAD_TOOL_NAMES = new Set([
   // These tools depend on process-local singleton state (HiveDB handle, live
   // channel senders, schedulers, browser sessions, or in-memory services).
   "search_knowledge",
+  "conversation_read",
   "save_note",
   "memory_write",
   "memory_read",
@@ -597,6 +600,7 @@ function getPool(maxWorkers: number): ToolWorkerPool | null {
 
 export async function executeToolBatch(options: ExecuteToolBatchOptions): Promise<ToolBatchResult[]> {
   const runtimeConfig = resolveRuntimeConfig(options.workerPool)
+  const parallelToolCalls = options.parallelToolCalls ?? runtimeConfig.parallelToolCalls
   const hiveConfig = options.hiveConfig ?? loadConfig()
   const mainThreadToolNames = [
     ...DEFAULT_MAIN_THREAD_TOOL_NAMES,
@@ -617,11 +621,25 @@ export async function executeToolBatch(options: ExecuteToolBatchOptions): Promis
 
   // A null pool means workers are disabled, unnecessary (single call), or
   // unavailable in this build — all three degrade to the main thread.
-  const pool = runtimeConfig.enabled && runtimeConfig.parallelToolCalls && options.toolCalls.length > 1
+  const pool = runtimeConfig.enabled && parallelToolCalls && options.toolCalls.length > 1
     ? getPool(runtimeConfig.maxWorkers)
     : null
 
   if (!pool) {
+    if (options.parallelToolCalls === true && options.toolCalls.length > 1) {
+      return Promise.all(options.toolCalls.map(async (toolCall) => {
+        const startedAt = performance.now()
+        const effectiveTimeout = resolveToolTimeout(toolCall.function.name, options.allTools, hiveConfig, runtimeConfig.toolTimeoutMs)
+        const result = await executeInMainThreadWithTimeout({
+          toolCall, allTools: options.allTools, toolConfig: options.toolConfig, signal: options.signal,
+        }, effectiveTimeout)
+        return {
+          toolCall, toolName: toolCall.function.name, result,
+          ok: !(result && typeof result === "object" && (result as any).error === true),
+          durationMs: Math.round(performance.now() - startedAt),
+        }
+      }))
+    }
     const results: ToolBatchResult[] = []
     for (const toolCall of options.toolCalls) {
       const startedAt = performance.now()

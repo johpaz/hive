@@ -20,7 +20,13 @@ export class WebChatChannel extends BaseChannel {
   config: WebChatConfig;
 
   private explicitAccountId?: string;
-  private connections: Map<string, ServerWebSocket<WebSocketData>> = new Map();
+  /**
+   * Every open socket of a session. One user can hold several at once — the
+   * desktop app and a browser tab, or overlapping reconnects after a gateway
+   * restart. Keeping only the last one meant that closing it orphaned the
+   * sockets still open: the UI stayed "connected" while every reply was lost.
+   */
+  private connections: Map<string, Set<ServerWebSocket<WebSocketData>>> = new Map();
   private log = logger.child("webchat");
 
   constructor(config: WebChatConfig) {
@@ -47,14 +53,39 @@ export class WebChatChannel extends BaseChannel {
 
   registerConnection(ws: ServerWebSocket<WebSocketData>): void {
     const data = ws.data as WebSocketData;
-    this.connections.set(data.sessionId, ws);
-    this.log.debug(`WebChat connection registered: ${data.sessionId}`);
+    const sockets = this.connections.get(data.sessionId) ?? new Set();
+    sockets.add(ws);
+    this.connections.set(data.sessionId, sockets);
+    this.log.debug(`WebChat connection registered: ${data.sessionId} (${sockets.size} open)`);
   }
 
+  /** Without `ws`, forgets every socket of the session. */
   unregisterConnection(sessionId: string, ws?: ServerWebSocket<WebSocketData>): void {
-    if (ws && this.connections.get(sessionId) !== ws) return;
-    this.connections.delete(sessionId);
-    this.log.debug(`WebChat connection unregistered: ${sessionId}`);
+    const sockets = this.connections.get(sessionId);
+    if (!sockets) return;
+    if (ws) sockets.delete(ws);
+    if (!ws || sockets.size === 0) this.connections.delete(sessionId);
+    this.log.debug(`WebChat connection unregistered: ${sessionId} (${ws ? sockets.size : 0} open)`);
+  }
+
+  /**
+   * Sends `payload` to every open socket of the session; a socket that throws
+   * is dropped. Returns how many received it.
+   */
+  private broadcast(sessionId: string, payload: string): number {
+    const sockets = this.connections.get(sessionId);
+    if (!sockets) return 0;
+    let delivered = 0;
+    for (const ws of [...sockets]) {
+      try {
+        ws.send(payload);
+        delivered++;
+      } catch {
+        sockets.delete(ws);
+      }
+    }
+    if (sockets.size === 0) this.connections.delete(sessionId);
+    return delivered;
   }
 
   /** Returns the first active WebChat session ID, or undefined if no one is connected */
@@ -67,56 +98,27 @@ export class WebChatChannel extends BaseChannel {
   }
 
   async startTyping(sessionId: string): Promise<void> {
-    const ws = this.connections.get(sessionId);
-    if (!ws) return;
-
-    try {
-      ws.send(JSON.stringify({ type: "typing", isTyping: true }));
-    } catch {
-      // Connection closed
-    }
+    this.broadcast(sessionId, JSON.stringify({ type: "typing", isTyping: true }));
   }
 
   async stopTyping(sessionId: string): Promise<void> {
-    const ws = this.connections.get(sessionId);
-    if (!ws) return;
-
-    try {
-      ws.send(JSON.stringify({ type: "typing", isTyping: false }));
-    } catch {
-      // Connection closed
-    }
+    this.broadcast(sessionId, JSON.stringify({ type: "typing", isTyping: false }));
   }
 
   async send(sessionId: string, message: OutboundMessage): Promise<void> {
-    const ws = this.connections.get(sessionId);
-
-    if (!ws) {
+    if (this.broadcast(sessionId, JSON.stringify(message)) === 0) {
       throw new Error(`No WebChat connection for session: ${sessionId}`);
     }
-
-    ws.send(JSON.stringify(message));
   }
 
   async sendAudio(sessionId: string, audio: Buffer, mimeType: string): Promise<void> {
-    const ws = this.connections.get(sessionId);
-
-    if (!ws) {
-      this.log.warn(`No WebChat connection for session: ${sessionId}`);
-      return;
-    }
-
-    try {
-      const base64Audio = audio.toString("base64");
-      ws.send(JSON.stringify({
-        type: "audio",
-        sessionId,
-        audio: base64Audio,
-        mimeType,
-      }));
-    } catch (error) {
-      this.log.error(`Failed to send WebChat audio: ${(error as Error).message}`);
-    }
+    const delivered = this.broadcast(sessionId, JSON.stringify({
+      type: "audio",
+      sessionId,
+      audio: audio.toString("base64"),
+      mimeType,
+    }));
+    if (delivered === 0) this.log.warn(`No WebChat connection for session: ${sessionId}`);
   }
 
   createIncomingMessage(

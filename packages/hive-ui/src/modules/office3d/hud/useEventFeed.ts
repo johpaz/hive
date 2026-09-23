@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { GraphNode } from "@/stores/canvasStore";
-import type { CanvasWorkEvent } from "@/stores/canvasStore";
+import type { CanvasJevDecision, CanvasWorkEvent } from "@/stores/canvasStore";
 import type { DeskModel, DeskState, OfficeInteraction } from "@/modules/office3d/state/useOfficeModel";
 import { humanizeTool } from "@/modules/office3d/state/toolLabels";
 import { workPhaseLabel, workPhaseTone } from "../state/presentation";
+import { JEV_COLOR, jevSavingChip } from "../state/jev";
 
 export interface TickerEvent {
   id: number;
@@ -36,10 +37,12 @@ export function useEventFeed(
   interactions: OfficeInteraction[],
   coordinator: GraphNode | null,
   workEvents: CanvasWorkEvent[],
+  jevDecisions: CanvasJevDecision[] = [],
 ): TickerEvent[] {
   const [events, setEvents] = useState<TickerEvent[]>([]);
   const prev = useRef<Map<string, PrevDeskInfo>>(new Map());
   const seenWorkEvents = useRef(new Set<string>());
+  const seenJev = useRef(new Set<string>());
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -70,8 +73,24 @@ export function useEventFeed(
           kind: tone === "alert" ? "warn" : tone === "done" ? "done" : "work",
         });
       }
+      // Only context plans reach the ticker: iteration decisions fire on every
+      // LLM call and would bury the swarm's own work.
+      for (const decision of jevDecisions) {
+        if (seenJev.current.has(decision.eventId)) continue;
+        seenJev.current.add(decision.eventId);
+        if (decision.kind !== "context") continue;
+        const saving = jevSavingChip(decision.savedTokens);
+        fresh.push({
+          id: ++eventSeq,
+          time: new Date(decision.timestamp).toLocaleTimeString("es", { hour12: false }),
+          text: `Jev → ${nameOf(decision.agentId)}: ${decision.summary}${saving ? ` (${saving})` : ""}${decision.recommendedAgentId ? ` · sugiere ${nameOf(decision.recommendedAgentId)}` : ""}${decision.mcpOff?.length ? ` (encender ${decision.mcpOff.join(", ")})` : ""}`,
+          color: JEV_COLOR,
+          kind: "info",
+        });
+      }
     } else {
       workEvents.forEach((event) => seenWorkEvents.current.add(event.eventId));
+      jevDecisions.forEach((decision) => seenJev.current.add(decision.eventId));
       for (const interaction of interactions) {
         fresh.push({
           id: ++eventSeq,
@@ -97,7 +116,7 @@ export function useEventFeed(
     if (fresh.length) {
       setEvents((evs) => [...fresh.reverse(), ...evs].slice(0, 24));
     }
-  }, [desks, interactions, coordinator, workEvents]);
+  }, [desks, interactions, coordinator, workEvents, jevDecisions]);
 
   return events;
 }

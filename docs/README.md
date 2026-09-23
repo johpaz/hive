@@ -1,6 +1,6 @@
-# Documentación de Hive 1.0
+# Documentación de Hive 1.1
 
-Esta es la entrada canónica a la documentación. Todo el contenido operativo está en español y describe el código de la versión 1.0.0.
+Esta es la entrada canónica a la documentación. Todo el contenido operativo está en español y describe el código de la versión 1.1.0.
 
 ## Para empezar
 

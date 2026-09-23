@@ -28,6 +28,23 @@ Mientras no exista una contraseña, el endpoint público de estado no expone el 
 - `hive config show` redacta claves sensibles; aun así, revisa la salida antes de compartirla.
 - Los logs y proof packets deben contener evidencia saneada, no headers de autorización ni cookies.
 
+## Datos enviados a Jev
+
+Jev solo funciona con una clave de OpenRouter. Mientras esté activo, en cada decisión Hive envía a `openrouter.ai/api/alpha/decisions` extractos de la conversación en curso:
+
+| Dato | Límite por decisión |
+|---|---|
+| Objetivo del turno (mensaje del usuario o tarea delegada) | 3.500 caracteres |
+| Mensajes anteriores de la conversación que podrían omitirse | 450 caracteres por mensaje |
+| Resultados recientes de herramientas | 650 caracteres por resultado |
+| Argumentos de herramientas que podrían correr en paralelo | 700 caracteres por llamada |
+| Notas y reglas del playbook | 350 caracteres por elemento |
+| Nombres y descripciones de herramientas, skills y especialistas; nombre y estado de cada servidor MCP | 240 caracteres por descripción |
+
+No se envían claves de proveedores, tokens de canales, archivos completos ni mensajes anteriores a los 15 más recientes de la conversación. Los últimos dos intercambios de la conversación no se le preguntan a Jev (siempre se incluyen), pero la decisión sí recibe el objetivo del turno. Quitar la clave o desactivar OpenRouter detiene el envío de inmediato.
+
+Trata este flujo como el de cualquier proveedor de modelos: si una conversación contiene datos que no deben salir del equipo, no actives Jev o usa un modelo local sin clave de OpenRouter.
+
 ## Herramientas y agentes
 
 El coordinador no entrega todas las tools a cada agente. La delegación expande una allowlist y aplica el scope del workspace. Un especialista MCP es la excepción explícita: después de la autorización del usuario recibe todas las tools de un único servidor persistido, adquiere su lease durante la tarea y no puede acceder a otros servidores. Los agentes de catálogo no pueden delegar de nuevo ni ampliar su propio alcance.

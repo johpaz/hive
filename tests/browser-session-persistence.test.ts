@@ -79,17 +79,28 @@ describe.skipIf(!LIVE)("sesión persistente entre procesos", () => {
   });
 
   /** El segundo proceso: mismo almacén por env, navegador nuevo. */
-  async function preguntarEnOtroProceso(url: string): Promise<{ texto?: string; visibles?: string; error?: string }> {
+  async function preguntarEnOtroProceso(
+    url: string,
+  ): Promise<{ texto?: string; visibles?: string; guardadas?: number; error?: string; log: string }> {
     const proc = Bun.spawn(["bun", "tests/fixtures/browser-session-child.ts", url], {
       env: { ...process.env, HIVE_HOME: HOME_TEST, HIVE_DB_PATH: join(HOME_TEST, "hivedb") },
       stdout: "pipe",
       stderr: "pipe",
     });
-    const salida = await new Response(proc.stdout).text();
+    // Las dos salidas se leen a la vez: el hijo escribe en ambas y un pipe sin
+    // vaciar lo bloquearía a mitad de camino.
+    const [salida, errores] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
     await proc.exited;
 
-    const linea = salida.trim().split("\n").filter(Boolean).at(-1) ?? "{}";
-    return JSON.parse(linea);
+    // El logger del hijo comparte stdout con el resultado, así que se busca la
+    // línea marcada y no la última.
+    const marcada = salida.split("\n").find((l) => l.startsWith("RESULTADO:"));
+    const log = `${salida}${errores}`;
+    if (!marcada) return { error: "el proceso hijo no imprimió resultado", log };
+    return { ...JSON.parse(marcada.slice("RESULTADO:".length)), log };
   }
 
   test("un login sobrevive al reinicio: la cookie vuelve en un proceso nuevo", async () => {
@@ -109,6 +120,13 @@ describe.skipIf(!LIVE)("sesión persistente entre procesos", () => {
     expect(guardadas.some((c) => c.name === "sid" && c.value === "secreto-de-sesion-123")).toBe(true);
 
     const respuesta = await preguntarEnOtroProceso(`${base}/`);
+    // El log del hijo es la única pista cuando esto falla en CI, donde no se
+    // puede reproducir a mano: dice si el almacén llegó vacío o si el navegador
+    // no tomó las cookies.
+    if (respuesta.texto !== "autenticado") {
+      console.log(`── proceso hijo (${respuesta.guardadas ?? "?"} cookies en el almacén) ──`);
+      console.log(respuesta.log);
+    }
     expect(respuesta.error).toBeUndefined();
     expect(respuesta.texto).toBe("autenticado");
     // Sigue siendo HttpOnly del otro lado: se restauró la cookie de verdad, no
@@ -122,6 +140,7 @@ describe.skipIf(!LIVE)("sesión persistente entre procesos", () => {
     await clearStoredSession();
 
     const respuesta = await preguntarEnOtroProceso(`${base}/`);
+    if (respuesta.texto !== "anonimo") console.log(respuesta.log);
     expect(respuesta.error).toBeUndefined();
     expect(respuesta.texto).toBe("anonimo");
   }, 60_000);

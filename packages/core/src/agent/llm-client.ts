@@ -16,7 +16,7 @@ import { loadConfig } from "../config/loader"
 import { withRetry, isRetryableError, type RetryPolicy } from "../resilience/retry"
 import { GeminiProvider } from "./llm-providers/gemini"
 import { AnthropicProvider } from "./llm-providers/anthropic"
-import { OllamaProvider } from "./llm-providers/ollama"
+import { OllamaProvider, ollamaDefaultNumCtx } from "./llm-providers/ollama"
 import { OpenAIProvider } from "./llm-providers/openai"
 import { GroqProvider } from "./llm-providers/groq"
 import { MistralProvider } from "./llm-providers/mistral"
@@ -304,13 +304,20 @@ export async function resolveProviderConfig(
     apiKey = process.env[`${providerId.toUpperCase()}_API_KEY`] || ""
   }
 
+  // The window the model will actually see. Ollama truncates at num_ctx
+  // without an error, so budgeting with the model's nominal window made the
+  // compiler build ~22k-token prompts that arrived cut to 4k.
+  const modelWindow = modelEntry?.doc.context_window || undefined
+  const numCtx = providerRow?.num_ctx ?? (providerId === "ollama" ? ollamaDefaultNumCtx(modelWindow) : undefined)
+  const contextWindow = modelWindow && numCtx ? Math.min(modelWindow, numCtx) : modelWindow ?? numCtx
+
   return {
     provider: providerId,
     model: modelId,
     apiKey,
     baseUrl: providerRow?.base_url || undefined,
-    numCtx: providerRow?.num_ctx ?? undefined,
+    numCtx,
     numGpu: providerRow?.num_gpu ?? undefined,
-    contextWindow: modelEntry?.doc.context_window ?? undefined,
+    contextWindow,
   }
 }

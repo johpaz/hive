@@ -16,7 +16,8 @@
  */
 
 import { col, fromIndexable } from "../../storage/hive";
-import type { AgentRunDoc, JobDoc, TaskDoc } from "../../storage/collections";
+import type { AgentDoc, AgentRunDoc, JobDoc, NarrationEventDoc, TaskDoc } from "../../storage/collections";
+import { getAgentLiveStates } from "../../canvas/emitter";
 import { logger } from "../../utils/logger";
 import type { LLMToolDef } from "../../agent/llm-client";
 import { enqueueChatTurn } from "../webchat-turn";
@@ -60,8 +61,10 @@ export const BRIDGE_TOOLS: LLMToolDef[] = [
     function: {
       name: STATUS_TOOL,
       description:
-        "Devuelve qué está haciendo la colmena en este momento: tareas en curso y qué especialista " +
-        "tiene cada una. Úsala cuando el usuario pregunte cómo va lo pedido o si sigues trabajando.",
+        "Devuelve lo que pasa en la colmena ahora mismo: qué hace Bee, qué especialista tiene cada " +
+        "tarea y con qué herramienta trabaja, qué terminó hace poco con su resultado o error, y los " +
+        "últimos pasos de esta conversación. Es instantánea: úsala siempre que el usuario pregunte " +
+        "qué está pasando, quién trabaja, cómo va, qué salió o por qué tarda, en vez de suponerlo.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -78,8 +81,15 @@ export const BRIDGE_TOOLS: LLMToolDef[] = [
 ];
 
 export interface BridgeContext {
-  /** sessionId del WebChat del usuario: es el lane de la cola y el hilo de conversación. */
+  /** sessionId del WebChat del usuario: identifica al usuario y su socket, no la conversación. */
   sessionId: string;
+  /**
+   * La conversación de la llamada, la misma del chat escrito. Es el lane de la
+   * cola: los turnos de voz iban al lane del sessionId mientras Bee trabajaba en
+   * la conversación, así que corrían en paralelo con los del chat, y el resumen
+   * de lo delegado —que vuelve al lane de la conversación— nunca llegaba a la voz.
+   */
+  threadId: string;
   userId: string;
   /** Inyecta texto en la sesión de voz para que Bee lo diga. */
   speak: (text: string) => void;
@@ -228,17 +238,19 @@ async function consultarABee(
       : undefined;
 
   const job = await enqueueChatTurn({
-    lane: ctx.sessionId,
+    lane: ctx.threadId,
     payload: {
       source: "realtime",
       sessionId: ctx.sessionId,
+      threadId: ctx.threadId,
+      userId: ctx.userId,
       content: peticion,
       // Sin preferAudio: la voz la pone la sesión Live, no el TTS de cascada.
     },
     live,
   });
 
-  log.info(`[${CONSULT_TOOL}] job=${job.id} lane=${ctx.sessionId}`);
+  log.info(`[${CONSULT_TOOL}] job=${job.id} lane=${ctx.threadId}`);
   enCurso.set(ctx.sessionId, [...vivas, { peticion, jobId: job.id, at: Date.now() }]);
   void seguirTurno(job.id, ctx);
 
@@ -282,7 +294,7 @@ async function seguirTurno(jobId: string, ctx: BridgeContext): Promise<void> {
     delay = Math.min(delay * 1.4, 3_000);
     if (!ctx.isAlive()) return;
 
-    const jobs = await jobsDelLaneDesde(ctx.sessionId, t0, jobId);
+    const jobs = await jobsDelLaneDesde(ctx.threadId, t0, jobId);
     if (!jobs.length) return;
 
     for (const job of jobs) {
@@ -351,30 +363,96 @@ function extraerContenido(resultJson: string | null): string {
   }
 }
 
+/** Lo que BIA mira del enjambre: una ronda reciente, no toda la historia. */
+const ESTADO_VENTANA_MS = 15 * 60_000;
+const ESTADO_MAX_PASOS = 8;
+
+const resumirTexto = (text: string | null | undefined, max: number): string | null => {
+  if (!text) return null;
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`;
+};
+
+/**
+ * La foto del enjambre para la voz. La Live API no deja darle contexto sin que
+ * lo diga en voz alta (todo texto inyectado cuenta como turno del usuario), así
+ * que en vez de empujarle cada paso, BIA lo consulta cuando lo necesita: qué
+ * hace Bee, qué hace cada especialista con qué herramienta, qué terminó y los
+ * últimos pasos de esta conversación. Antes sólo veía nombres de tareas.
+ */
 async function estadoDeLaColmena(ctx: BridgeContext): Promise<Record<string, unknown>> {
   try {
-    const [tasksCol, runsCol] = await Promise.all([col<TaskDoc>("tasks"), col<AgentRunDoc>("agentRuns")]);
-    const tasks = (await tasksCol.scan({}))
-      .map((e) => e.doc)
-      .filter((t) => t.status === "pending" || t.status === "in_progress")
+    const now = Date.now();
+    const [tasksCol, runsCol, agentsCol, eventsCol] = await Promise.all([
+      col<TaskDoc>("tasks"), col<AgentRunDoc>("agentRuns"), col<AgentDoc>("agents"), col<NarrationEventDoc>("narrationEvents"),
+    ]);
+    const agents = new Map((await agentsCol.scan({})).map((e) => [e.id, e.doc]));
+    const nameOf = (id: string | null | undefined) => (id ? agents.get(id)?.name ?? id : "sin asignar");
+    const live = new Map(getAgentLiveStates().map((s) => [s.agentId, s]));
+
+    const coordinator = [...agents.values()].find((a) => a.role === "coordinator");
+    const coordLive = coordinator ? live.get(coordinator.id) : undefined;
+    const bee = coordLive && coordLive.status !== "idle"
+      ? { estado: coordLive.status === "tool_call" ? "usando una herramienta" : "pensando", herramienta: coordLive.currentTool }
+      : { estado: "libre" };
+
+    const mine = async (task: TaskDoc) => {
+      const run = task.run_id ? await runsCol.get(task.run_id) : null;
+      return !!run && run.doc.user_id === ctx.userId;
+    };
+    const recent = (await tasksCol.scan({})).map((e) => e.doc)
+      .filter((t) => t.status === "pending" || t.status === "in_progress" || now - t.updated_at < ESTADO_VENTANA_MS)
       .sort((a, b) => b.updated_at - a.updated_at)
-      .slice(0, 10);
+      .slice(0, 20);
 
     const activas: Array<Record<string, unknown>> = [];
-    for (const task of tasks) {
-      const run = task.run_id ? await runsCol.get(task.run_id) : null;
-      if (!run || run.doc.user_id !== ctx.userId) continue;
-      activas.push({
-        tarea: task.name,
-        especialista: fromIndexable(task.agent_id) || "sin asignar",
-        estado: task.status === "in_progress" ? "en curso" : "en cola",
-        progreso: task.progress,
-      });
+    const terminadas: Array<Record<string, unknown>> = [];
+    for (const task of recent) {
+      if (!(await mine(task))) continue;
+      const agentId = fromIndexable(task.agent_id);
+      if (task.status === "pending" || task.status === "in_progress") {
+        const state = agentId ? live.get(agentId) : undefined;
+        activas.push({
+          tarea: task.name,
+          especialista: nameOf(agentId),
+          estado: task.status === "in_progress" ? "en curso" : "en cola",
+          herramienta_actual: state?.currentTool ?? null,
+          progreso: task.progress,
+        });
+      } else if (task.status === "completed" || task.status === "failed") {
+        terminadas.push({
+          tarea: task.name,
+          especialista: nameOf(agentId),
+          resultado: task.status === "completed" ? "completada" : "falló",
+          resumen: resumirTexto(task.status === "completed" ? task.result : task.error, 200),
+          hace_segundos: Math.round((now - task.updated_at) / 1000),
+        });
+      }
     }
 
-    return activas.length
-      ? { ok: true, tareas_activas: activas.length, tareas: activas }
-      : { ok: true, tareas_activas: 0, nota: "No hay nada en curso ahora mismo." };
+    const pasos = (await eventsCol.findBy("thread_id", ctx.threadId)).map((e) => e.doc)
+      .filter((e) => now - e.created_at < ESTADO_VENTANA_MS)
+      .sort((a, b) => b.created_at - a.created_at)
+      .slice(0, ESTADO_MAX_PASOS)
+      .map((e) => ({
+        agente: e.agent_name || nameOf(e.agent_id),
+        paso: e.label,
+        estado: e.status,
+        detalle: resumirTexto(e.detail, 120),
+        hace_segundos: Math.round((now - e.created_at) / 1000),
+      }));
+
+    return {
+      ok: true,
+      bee,
+      tareas_activas: activas.length,
+      tareas: activas,
+      terminadas_recientes: terminadas.slice(0, 8),
+      ultimos_pasos: pasos,
+      nota: activas.length || bee.estado !== "libre"
+        ? "Cuenta con tus palabras lo que está pasando; no leas la lista."
+        : "No hay nada en curso ahora mismo.",
+    };
   } catch (error) {
     return { ok: false, error: `No pude leer el estado: ${(error as Error).message}` };
   }
@@ -382,7 +460,7 @@ async function estadoDeLaColmena(ctx: BridgeContext): Promise<Record<string, unk
 
 async function cancelarTarea(ctx: BridgeContext): Promise<Record<string, unknown>> {
   try {
-    const cancelados = await getDurableQueue().cancelLane(ctx.sessionId);
+    const cancelados = await getDurableQueue().cancelLane(ctx.threadId);
     return cancelados > 0
       ? { ok: true, cancelados, nota: "Trabajo cancelado. Confírmalo en una frase corta." }
       : { ok: true, cancelados: 0, nota: "No había nada en curso para cancelar." };

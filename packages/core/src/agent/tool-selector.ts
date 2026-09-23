@@ -196,6 +196,7 @@ export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
 
     // Capability discovery
     { name: "search_knowledge", description: "Search everything Hive knows: native tools, MCP tools, skills, catalog agents and playbook rules. Spanish keywords: buscar herramienta, descubrir capacidades, qué puedo hacer, buscar skill, buscar conocimiento", category: "core", abstractionLevel: "atomic" },
+    { name: "conversation_read", description: "Read earlier messages from this conversation by ID or search text when context is missing. Spanish keywords: recuperar contexto, leer historial, conversación anterior", category: "core", abstractionLevel: "atomic" },
 
     // HTTP / REST
     { name: "api_request", description: "Perform an authorized HTTP request against a REST endpoint and validate the response. Spanish keywords: llamar api, request rest, consumir endpoint, petición http, hacer get, hacer post", category: "api", abstractionLevel: "atomic" },

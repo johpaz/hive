@@ -114,6 +114,7 @@ export const SEED_DATA: SeedData = {
     { id: "notify", name: "notify", category: "core", description: "Enviar notificación al usuario. Sinónimos: notificar, enviar notificación, alertar, aviso" },
     { id: "save_note", name: "save_note", category: "core", description: "Guardar nota persistente en el scratchpad. Sinónimos: guardar nota, escribir nota, recordatorio rápido, apuntar" },
     { id: "report_progress", name: "report_progress", category: "core", description: "Reportar progreso actual al usuario. Sinónimos: reportar progreso, informar estado, actualizar progreso, porcentaje" },
+    { id: "conversation_read", name: "conversation_read", category: "core", description: "Recuperar mensajes anteriores de esta conversación por ID o búsqueda de texto. Sinónimos: leer conversación, recuperar contexto, historial omitido" },
 
     // ─────────────────────────────────────────
     // 10. OFFICE — Archivos Office (PDF, DOCX, XLSX, PPTX)
@@ -180,6 +181,11 @@ export const SEED_DATA: SeedData = {
     // Solo la generación 3.x: la familia 2.0 ya está apagada y la 2.5 quedó
     // superada. `gemini-3.5-pro` y `gemini-3.1-flash-lite-preview` se quitaron:
     // el primero no existe en el catálogo y el segundo ya salió de preview.
+    // 3.8 Flash tiene precio de lanzamiento hasta el 31-dic-2026 ($0.75 / $3.75).
+    // Desde el 1-ene-2027 pasa a $1.50 / $7.50: actualizar aquí ese día o el
+    // dashboard subestimará el costo y el ahorro de Jev a la mitad.
+    // contextWindow: el que reporta la propia API de modelos de Gemini.
+    { id: "gemini-3.8-flash", providerId: "gemini", name: "Gemini 3.8 Flash", modelType: "llm", contextWindow: 1050000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0.75, outputPer1M: 3.75 },
     { id: "gemini-3.6-flash", providerId: "gemini", name: "Gemini 3.6 Flash", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 1.5, outputPer1M: 7.5 },
     { id: "gemini-3.5-flash", providerId: "gemini", name: "Gemini 3.5 Flash", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 1.5, outputPer1M: 9 },
     { id: "gemini-3.5-flash-lite", providerId: "gemini", name: "Gemini 3.5 Flash Lite", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.3, outputPer1M: 2.5 },
@@ -188,7 +194,11 @@ export const SEED_DATA: SeedData = {
 
     // Realtime (voz en tiempo real, `bidiGenerateContent`). Audio nativo bidireccional:
     // no es un pipeline STT→LLM→TTS, el modelo oye y habla directo.
-    { id: "gemini-3.1-flash-live-preview", providerId: "gemini", name: "Gemini 3.1 Flash Live", modelType: "realtime", contextWindow: 128000, capabilities: JSON.stringify(["realtime", "audio_in", "audio_out", "function_calling", "transcription"]), inputPer1M: 3, outputPer1M: 12 },
+    // Gemini 3.8 Live reemplaza a 3.1 Flash Live (preview, marcado "legacy" por
+    // Google) al mismo precio. Al salir 3.1 del catálogo ninguna fila queda
+    // activa y resolveRealtimeModel toma el default: la voz pasa sola a 3.8.
+    // Para volver atrás basta con restaurar la línea de 3.1.
+    { id: "gemini-3.8-live", providerId: "gemini", name: "Gemini 3.8 Live", modelType: "realtime", contextWindow: 128000, capabilities: JSON.stringify(["realtime", "audio_in", "audio_out", "function_calling", "transcription"]), inputPer1M: 3, outputPer1M: 12 },
     { id: "gemini-2.5-flash-native-audio-latest", providerId: "gemini", name: "Gemini 2.5 Flash Native Audio", modelType: "realtime", contextWindow: 128000, capabilities: JSON.stringify(["realtime", "audio_in", "audio_out", "function_calling", "async_function_calling", "transcription"]), inputPer1M: 3, outputPer1M: 12 },
 
     // TTS
@@ -219,6 +229,7 @@ export const SEED_DATA: SeedData = {
     { id: "kimi-k2.6", providerId: "kimi", name: "Kimi K2.6", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code"]), inputPer1M: 0.6, outputPer1M: 3.41 },
 
     // ── OpenRouter (fuente: GET https://openrouter.ai/api/v1/models) ──
+    { id: "typesafe/jev-1.13", providerId: "openrouter", name: "Jev 1.13 (Decisions)", modelType: "decision", contextWindow: 32000, capabilities: JSON.stringify(["choice", "noul", "score"]), inputPer1M: 0.042, outputPer1M: 0 },
     // Solo modelos vivos con `tools` en supported_parameters y publicados desde
     // 2025-07. contextWindow = context_length reportado por el propio catálogo.
     // Anthropic

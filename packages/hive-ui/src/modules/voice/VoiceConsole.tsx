@@ -45,7 +45,7 @@ import type { BiaState } from "./scene/BiaPortrait";
 import "./voice.css";
 
 /**
- * Precio de gemini-3.1-flash-live por millón de tokens de audio (USD), el mismo
+ * Precio de gemini-3.8-live (igual al de 3.1 Flash Live) por millón de tokens de audio (USD), el mismo
  * que lleva la fila del catálogo en storage/seed.ts. Se calcula en el cliente
  * porque el proveedor reporta tokens, no dinero.
  */

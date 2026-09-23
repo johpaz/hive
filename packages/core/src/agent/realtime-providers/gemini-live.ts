@@ -7,7 +7,10 @@
  *
  * Verificado contra gemini-3.1-flash-live-preview (2026-08): la inyección de
  * texto va por `sendRealtimeInput({text})`; `sendClientContent` quedó restringido
- * al contexto inicial en 3.x, así que no se usa acá.
+ * al contexto inicial en 3.x, así que no se usa acá. La guía actual de la Live
+ * API (2026-09) dice que en 3.8 Live `send_client_content` funciona durante toda
+ * la sesión y que con `turn_complete=false` agrega contexto sin que el modelo
+ * responda: pendiente de verificar con una llamada real antes de usarlo.
  */
 
 import { logger } from "../../utils/logger";
@@ -22,7 +25,7 @@ import type {
 const log = logger.child("realtime:gemini");
 
 /** Modelos con `bidiGenerateContent`. El id vive en la BD; esto es sólo el fallback. */
-export const DEFAULT_GEMINI_LIVE_MODEL = "gemini-3.1-flash-live-preview";
+export const DEFAULT_GEMINI_LIVE_MODEL = "gemini-3.8-live";
 
 class GeminiLiveSession implements RealtimeSession {
   closed = false;

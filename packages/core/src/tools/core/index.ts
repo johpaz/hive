@@ -14,7 +14,7 @@ import {
   type CapabilityType,
 } from "../../agent/capability-search.ts";
 import { CORE_TOOL_CATALOG } from "../../agent/tool-selector.ts";
-import { saveScratchpadNote } from "../../agent/conversation-store.ts";
+import { saveScratchpadNote, getRecentMessages, getScratchpad } from "../../agent/conversation-store.ts";
 
 const log = logger.child("core");
 
@@ -459,6 +459,37 @@ export const reportProgressTool: Tool = {
   },
 };
 
+/** Recover a small, scoped slice of conversation omitted by Jev's context plan. */
+export const conversationReadTool: Tool = {
+  name: "conversation_read",
+  description: "Read earlier messages from the current conversation by message IDs or text query when selected context is insufficient.",
+  parameters: {
+    type: "object",
+    properties: {
+      message_ids: { type: "array", description: "Message IDs shown in the context plan", items: { type: "number" } },
+      note_keys: { type: "array", description: "Scratchpad note keys shown in the context plan", items: { type: "string" } },
+      query: { type: "string", description: "Optional case-insensitive text to search in earlier messages" },
+    },
+  },
+  execute: async (params, config) => {
+    const threadId = config?.configurable?.thread_id as string | undefined
+    if (!threadId) return { ok: false, error: "Conversation scope unavailable" }
+    const ids = new Set(Array.isArray(params.message_ids) ? params.message_ids.map(Number).filter(Number.isFinite) : [])
+    const noteKeys = new Set(Array.isArray(params.note_keys) ? params.note_keys.map(String) : [])
+    const query = String(params.query ?? "").trim().toLocaleLowerCase()
+    if (!ids.size && !noteKeys.size && !query) return { ok: false, error: "Provide message_ids, note_keys or query" }
+    const rows = await getRecentMessages(threadId, 200)
+    const notes = await getScratchpad(threadId)
+    return {
+      ok: true,
+      messages: rows.filter(row => (ids.size && ids.has(row.id)) || (query && row.content.toLocaleLowerCase().includes(query)))
+        .slice(-8).map(row => ({ id: row.id, role: row.role, source: row.source, content: row.content.slice(0, 2000) })),
+      notes: notes.filter(note => noteKeys.has(note.key) || (query && `${note.key} ${note.value}`.toLocaleLowerCase().includes(query)))
+        .slice(0, 8).map(note => ({ key: note.key, value: note.value.slice(0, 2000) })),
+    }
+  },
+};
+
 export function createTools(): Tool[] {
-  return [searchKnowledgeTool, notifyTool, saveNoteTool, reportProgressTool];
+  return [searchKnowledgeTool, notifyTool, saveNoteTool, reportProgressTool, conversationReadTool];
 }

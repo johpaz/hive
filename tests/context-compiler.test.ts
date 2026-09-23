@@ -16,6 +16,7 @@ import { resetBootId } from "../packages/core/src/storage/boot-id";
 import { col, toIndexable } from "../packages/core/src/storage/hive";
 import { addMessage, saveSummary } from "../packages/core/src/agent/conversation-store";
 import { compileContext } from "../packages/core/src/agent/context-compiler";
+import { storeProviderApiKey } from "../packages/core/src/storage/crypto";
 import type { AgentDoc, ModelDoc, ProviderDoc, UserDoc } from "../packages/core/src/storage/collections";
 
 async function seedAgentWithSmallContextWindow() {
@@ -202,6 +203,42 @@ describe("context-compiler: G9 causal context window", () => {
 
     expect(ctx.systemPrompt).not.toContain("# CAUSAL CONTEXT");
   });
+});
+
+test("Jev keeps mandatory instructions and makes omitted history recoverable", async () => {
+  const providers = await col<ProviderDoc>("providers");
+  const openrouter = await providers.get("openrouter");
+  await providers.put("openrouter", { ...openrouter!.doc, enabled: true, active: true }, { expectedVersion: openrouter!.version });
+  await storeProviderApiKey("openrouter", "test-key");
+  const history: Array<["user" | "assistant", string]> = [
+    ["user", "Old unrelated detail"], ["assistant", "Old assistant reply"],
+    ["user", "Previous request"], ["assistant", "Previous answer"],
+    ["user", "Read my current file"], ["assistant", "I will read it"],
+  ];
+  for (const [role, content] of history) await addMessage("jev-context-thread", role, content);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    const answers = Object.fromEntries(Object.entries(body.questions).map(([id, question]) => [id,
+      (question as { type: string }).type === "choice"
+        ? { type: "choice", choice: "coordinator", confidence: 0.9, probabilities: { coordinator: 0.9 } }
+        : { type: "noul", noul: 0.01 },
+    ]));
+    return Response.json({ answers, usage: { input_tokens: 0, output_tokens: 0 } });
+  }) as unknown as typeof fetch;
+  try {
+    const ctx = await compileContext({ agentId: "test-agent", threadId: "jev-context-thread", userId: "test-user", userMessage: "Read my current file" });
+    // agent-loop publishes this to the office and the dashboard once it knows the model.
+    expect(ctx.jevDecision?.summary).toContain("4/6 mensajes");
+    // Tiny fixture: the estimate can round to either side of zero, but must be a number.
+    expect(Number.isFinite(ctx.jevDecision!.savedTokens)).toBe(true);
+    expect(ctx.messages.map(m => m.content)).toEqual(["Previous request", "Previous answer", "Read my current file", "I will read it"]);
+    expect(ctx.systemPrompt).toContain("# ÉTICA Y REGLAS CONSTITUCIONALES");
+    expect(ctx.systemPrompt).toContain("# CONTEXTO RECUPERABLE");
+    expect(ctx.tools.some(t => t.function.name === "conversation_read")).toBe(true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 describe("context-compiler: conversation summary + internal events", () => {

@@ -268,9 +268,23 @@ export abstract class OpenAICompatBase implements LLMProvider {
     sendTools: boolean,
     profile: ReturnType<typeof getProviderProfile>,
   ): Promise<LLMResponse> {
+    // Without stream_options.include_usage an OpenAI-compatible stream reports
+    // no tokens at all: every NVIDIA call was recorded as 0 in / 0 out, so its
+    // cost and Jev's savings on it never reached the dashboard. A server that
+    // does not know the field gets the same request without it.
+    const createStream = async (request: any) => {
+      try {
+        return await client.chat.completions.create({ ...request, stream: true, stream_options: { include_usage: true } }, { signal: options.signal })
+      } catch (err: any) {
+        const message = String(err?.error?.message ?? err?.message ?? "").toLowerCase()
+        if (!message.includes("stream_options") && !message.includes("include_usage")) throw err
+        return await client.chat.completions.create({ ...request, stream: true }, { signal: options.signal })
+      }
+    }
+
     let stream
     try {
-      stream = await client.chat.completions.create({ ...this.modifyRequestBody(body, options), stream: true }, { signal: options.signal })
+      stream = await createStream(this.modifyRequestBody(body, options))
     } catch (err: any) {
       const status = err?.status ?? err?.response?.status
       const errMsg = (err?.error?.message ?? err?.message ?? "").toLowerCase()
@@ -280,17 +294,17 @@ export abstract class OpenAICompatBase implements LLMProvider {
         const originalCount = body.messages.length
         compactBodyForContextOverflow(body, err)
         log.info(`[llm-client] ${this.providerName}: compacted ${originalCount} msgs → ${body.messages.length} msgs, max_tokens=${body.max_tokens}`)
-        stream = await client.chat.completions.create({ ...this.modifyRequestBody(body, options), stream: true }, { signal: options.signal })
+        stream = await createStream(this.modifyRequestBody(body, options))
       } else if (sendTools && profile.retryWithoutToolsOnCodes.includes(status)) {
         log.warn(`[llm-client] ${this.providerName}: tools rejected (HTTP ${status}) — retrying stream without tools`)
         const bodyNoTools = { ...body }
         delete bodyNoTools.tools
         delete bodyNoTools.tool_choice
         delete bodyNoTools.parallel_tool_calls
-        stream = await client.chat.completions.create({ ...stripProviderExtras(this.modifyRequestBody(bodyNoTools, options)), stream: true }, { signal: options.signal })
+        stream = await createStream(stripProviderExtras(this.modifyRequestBody(bodyNoTools, options)))
       } else if (EXTRAS_REJECTED_CODES.includes(status) && this.modifyRequestBody(body, options).chat_template_kwargs) {
         log.warn(`[llm-client] ${this.providerName}: request rejected (HTTP ${status}) — retrying stream without chat_template_kwargs`)
-        stream = await client.chat.completions.create({ ...stripProviderExtras(this.modifyRequestBody(body, options)), stream: true }, { signal: options.signal })
+        stream = await createStream(stripProviderExtras(this.modifyRequestBody(body, options)))
       } else {
         throw err
       }
@@ -304,6 +318,12 @@ export abstract class OpenAICompatBase implements LLMProvider {
     let output_tokens = 0
 
     for await (const chunk of stream) {
+      // Usage arrives in its own final chunk with an empty `choices`: read it
+      // before skipping choice-less chunks, or it is dropped even when sent.
+      if (chunk.usage) {
+        input_tokens = chunk.usage.prompt_tokens ?? input_tokens
+        output_tokens = chunk.usage.completion_tokens ?? output_tokens
+      }
       const choice = chunk.choices?.[0]
       if (!choice) continue
 
@@ -329,11 +349,6 @@ export abstract class OpenAICompatBase implements LLMProvider {
         }
       }
       if (choice.finish_reason) finish_reason = choice.finish_reason
-
-      if (chunk.usage) {
-        input_tokens = chunk.usage.prompt_tokens ?? 0
-        output_tokens = chunk.usage.completion_tokens ?? 0
-      }
     }
 
     const tool_calls: LLMToolCall[] = [...toolCallMap.values()].map((tc) => ({

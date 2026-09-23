@@ -109,6 +109,8 @@ export class DurableLaneQueue {
   private jobRetryPolicy: JobRetryPolicy;
   private runningCount = 0;
   private runningAborts = new Map<string, { lane: string; controller: AbortController }>();
+  /** Lanes with a claim in flight: the gap between findPending and executeJob. */
+  private claimingLanes = new Set<string>();
   private dispatchTimers = new Map<string, ReturnType<typeof setInterval>>();
   private leaseCheckTimer: ReturnType<typeof setInterval> | null = null;
   private bootId: string;
@@ -180,6 +182,12 @@ export class DurableLaneQueue {
       if (entry.lane === lane) {
         entry.controller.abort();
         if (await cancelJob(jobId)) count++;
+        // Free the lane now: an executor can take a while to notice the abort
+        // (a local model mid-generation), and until executeJob's finally ran
+        // the one-job-per-lane rule kept the user's next message waiting behind
+        // a turn they had already cancelled. completeJob ignores cancelled jobs,
+        // so its late result is discarded.
+        this.runningAborts.delete(jobId);
       }
     }
     const pending = await findPendingJobsByLane(lane, 100);
@@ -254,6 +262,20 @@ export class DurableLaneQueue {
    * Dispatch pending jobs for a single lane, respecting global concurrency.
    */
   private async dispatchLane(lane: string): Promise<void> {
+    // One running job per lane. Without this check a job enqueued while another
+    // ran in the same lane started right away: an A2UI action and a delegation
+    // summary ran as two concurrent Bee turns in one conversation, and both
+    // re-delegated the whole swarm. executeJob re-dispatches the lane on finish.
+    if (this.claimingLanes.has(lane) || [...this.runningAborts.values()].some((r) => r.lane === lane)) return;
+    this.claimingLanes.add(lane);
+    try {
+      await this.dispatchNextInLane(lane);
+    } finally {
+      this.claimingLanes.delete(lane);
+    }
+  }
+
+  private async dispatchNextInLane(lane: string): Promise<void> {
     for (;;) {
       const pending = await findPendingJobsByLane(lane, 1);
       if (pending.length === 0) break;

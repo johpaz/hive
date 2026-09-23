@@ -2,22 +2,22 @@
 
 > No edites este archivo manualmente. Ejecuta `bun run docs:generate`.
 
-Generado desde el código fuente para Hive **1.0.5**.
+Generado desde el código fuente para Hive **1.1.0**.
 
 ## Versiones
 
 | Paquete | Versión |
 |---|---:|
-| `@johpaz/hive-agents` | `1.0.5` |
-| `@johpaz/hive-cli` | `1.0.5` |
-| `@johpaz/hive-agents-core` | `1.0.5` |
-| `@johpaz/hive-agents-ui` | `1.0.5` |
-| `@johpaz/hive-agents-mcp` | `1.0.5` |
-| `@johpaz/hive-agents-skills` | `1.0.5` |
-| `@johpaz/hive-desktop` | `1.0.5` |
-| `apps/hive-desktop/src-tauri/tauri.conf.json` | `1.0.5` |
+| `@johpaz/hive-agents` | `1.1.0` |
+| `@johpaz/hive-cli` | `1.1.0` |
+| `@johpaz/hive-agents-core` | `1.1.0` |
+| `@johpaz/hive-agents-ui` | `1.1.0` |
+| `@johpaz/hive-agents-mcp` | `1.1.0` |
+| `@johpaz/hive-agents-skills` | `1.1.0` |
+| `@johpaz/hive-desktop` | `1.1.0` |
+| `apps/hive-desktop/src-tauri/tauri.conf.json` | `1.1.0` |
 
-## Herramientas (60)
+## Herramientas (61)
 
 | Herramienta | Categoría | Descripción |
 |---|---|---|
@@ -42,6 +42,7 @@ Generado desde el código fuente para Hive **1.0.5**.
 | `bus_read` | agents | Read unread messages from the Agent Bus. Spanish: leer mensajes bus, recibir mensajes, verificar bus |
 | `cli_exec` | cli | Execute shell/bash commands in the agent workspace. NOTE: do NOT use for scheduling tasks, use cron.create instead. Spanish: ejecutar comando, terminal, bash, script, consola |
 | `computer_use_task` | web | Opera el navegador de Hive mirando la pantalla: hace clic, escribe y navega guiado por lo que ve. Úsalo cuando la página no tenga selectores estables o cuando browser_click/browser_type no basten. Actúa sobre el navegador de Hive, NUNCA sobre la pantalla del usuario. Spanish: usar el navegador, hacer clic, operar una página, rellenar un formulario |
+| `conversation_read` | core | Read earlier messages from the current conversation by message IDs or text query when selected context is insufficient. |
 | `cron.create` | cron | Create a Hive scheduled automation: a recurring cron job or one-shot future execution. Spanish: crear automatización programada, programar tarea recurrente, ejecutar después, programar reporte |
 | `cron.delete` | cron | Delete a cron job permanently. Spanish: eliminar tarea programada, cancelar recordatorio |
 | `cron.history` | cron | Get execution history for a cron job. Spanish: historial de ejecuciones, logs de tarea |

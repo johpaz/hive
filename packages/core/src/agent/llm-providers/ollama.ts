@@ -3,6 +3,20 @@ import { sanitizeMessages, resolveMaxTokens, ensureArrayItems } from "./interfac
 import type { LLMCallOptions, LLMProvider, LLMResponse, LLMToolCall } from "./interface"
 import type { ContentPart, LLMMessage } from "../llm-client"
 
+/**
+ * Ollama reads only `num_ctx` tokens of a prompt and silently drops the rest,
+ * so this is the window Hive must budget for, not the model's nominal one.
+ * 4096 used to be the default and did not even fit the coordinator's base
+ * prompt (~6k tokens of instructions and tools); 16k fits a real turn while
+ * staying far below what exhausts RAM on 4B–8B models. providers.num_ctx
+ * overrides it.
+ */
+export const OLLAMA_DEFAULT_NUM_CTX = 16384
+
+export function ollamaDefaultNumCtx(modelContextWindow?: number): number {
+  return modelContextWindow ? Math.min(modelContextWindow, OLLAMA_DEFAULT_NUM_CTX) : OLLAMA_DEFAULT_NUM_CTX
+}
+
 const log = logger.child("llm-client")
 
 // Local models known to support Ollama's `think` request flag (returns
@@ -90,11 +104,10 @@ export class OllamaProvider implements LLMProvider {
       },
     }))
 
-    // Default num_ctx to 4096 for local models — prevents OOM on small models (2B-7B)
-    // when Ollama's default (32k+) is too large for available RAM/VRAM.
-    // Users can override via providers.num_ctx in DB.
+    // resolveProviderConfig already sends the window the context was budgeted
+    // for; the fallback only covers callers that build options by hand.
     const runtimeOptions: Record<string, unknown> = {
-      num_ctx: options.numCtx ?? 4096,
+      num_ctx: options.numCtx ?? ollamaDefaultNumCtx(options.contextWindow),
     }
     if (options.numGpu !== undefined) runtimeOptions.num_gpu = options.numGpu
     if (options.temperature !== undefined) runtimeOptions.temperature = options.temperature

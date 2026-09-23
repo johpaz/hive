@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { useChatStore } from "@/stores/chatStore";
 import { useConversationsStore } from "@/stores/conversationsStore";
 import { useWebSocketStore } from "@/stores/useWebSocketStore";
@@ -56,15 +56,27 @@ export function WebChatPage() {
     }
   }, [isLoadingConversations, conversations.length, threadId, createConversation]);
 
+  // Cada reconexión del socket vuelve a leer el historial: lo que el gateway
+  // respondió mientras no había socket sólo existe en la base de datos.
+  const [reconnects, setReconnects] = useState(0);
+  const wasConnected = useRef(isConnected);
+  useEffect(() => {
+    if (isConnected && !wasConnected.current) setReconnects((n) => n + 1);
+    wasConnected.current = isConnected;
+  }, [isConnected]);
+
   // El historial se recarga al cambiar de conversación. clearMessages() primero:
   // el store persiste los últimos mensajes en localStorage y sin limpiarlo se vería
-  // por un instante la conversación anterior dentro de la nueva.
+  // por un instante la conversación anterior dentro de la nueva. En una
+  // reconexión de la misma conversación no se limpia, para no parpadear.
+  const loadedThread = useRef<string | null>(null);
   useEffect(() => {
     if (!threadId) return;
     let cancelled = false;
 
     const fetchHistory = async () => {
-      clearMessages();
+      if (loadedThread.current !== threadId) clearMessages();
+      loadedThread.current = threadId;
       try {
         const response = await apiClient<{ messages: any[] }>(
           `/api/chat/history?threadId=${encodeURIComponent(threadId)}&limit=${WEBCHAT_HISTORY_LIMIT}`
@@ -82,6 +94,16 @@ export function WebChatPage() {
               timestamp: m.created_at,
             }));
           setMessages(formattedMessages);
+          // Si la última palabra es del agente, el turno terminó aunque su
+          // respuesta no haya llegado por el socket: sin esto la burbuja se
+          // quedaba en "pensando" para siempre.
+          if (formattedMessages.at(-1)?.type === "agent") {
+            const chat = useChatStore.getState();
+            chat.setLoading(false);
+            chat.setStreamingMessageId(null);
+            chat.clearSteps();
+            resetStreamingRef();
+          }
         }
       } catch (error) {
         console.error("Failed to fetch chat history:", error);
@@ -90,7 +112,7 @@ export function WebChatPage() {
     fetchHistory();
 
     return () => { cancelled = true; };
-  }, [threadId, agentId, setMessages, clearMessages]);
+  }, [threadId, agentId, setMessages, clearMessages, reconnects, resetStreamingRef]);
 
   // El gateway manda `type: "error"` cuando el turno no se puede procesar —el
   // caso típico es una nota de voz con el canal sin STT configurado o con la

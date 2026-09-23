@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { DollarSign, Hash, Activity, Clock, TrendingUp, Server, Bot, Zap } from "lucide-react";
 import { apiClient } from "@/lib/api";
+import { JevUsageBlock, type JevUsage } from "./JevUsageBlock";
 import {
   AreaChart,
   Area,
@@ -32,6 +33,8 @@ interface UsageStats {
   toonSavingsPercent: number;
   byProvider: Record<string, { tokens: number; costUsd: number; inputTokens: number; outputTokens: number }>;
   byModel: Record<string, { tokens: number; costUsd: number; provider: string; inputTokens: number; outputTokens: number }>;
+  /** Ausente si el gateway es anterior a Jev. */
+  jev?: JevUsage;
 }
 
 const PROVIDER_COLORS: Record<string, string> = {
@@ -220,6 +223,8 @@ export function UsageStatsPanel() {
             </div>
           )}
         </div>
+
+        <JevUsageBlock jev={stats?.jev} />
 
         {!hasData ? (
           <div className="h-32 flex items-center justify-center text-muted-foreground">

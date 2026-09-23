@@ -23,7 +23,7 @@ const Trash2Icon = Trash2 as any;
 
 interface ProviderCardProps {
   provider: Provider;
-  updateProvider: (id: string, data: { apiKey?: string; baseUrl?: string; headers?: Record<string, string>; numCtx?: number | null }) => void;
+  updateProvider: (id: string, data: { apiKey?: string; baseUrl?: string; headers?: Record<string, string>; numCtx?: number | null; clearApiKey?: boolean }) => void;
   onManageModels?: () => void;
   /** Consumo real del provider. `undefined` = todavía sin cargar o sin registros. */
   usage?: ProviderUsage;
@@ -171,7 +171,18 @@ export function ProviderCard({ provider, updateProvider, onManageModels, usage, 
                   : <span className="text-white/25">Sin API key</span>
             }
           </span>
+          {provider.id === "openrouter" && provider.has_api_key ? (
+            <button type="button" onClick={() => updateProvider(provider.id, { clearApiKey: true })} className="ml-auto text-[10px] text-white/40 hover:text-rose-300">
+              Quitar clave
+            </button>
+          ) : null}
         </div>
+
+        {provider.id === "openrouter" && provider.jev ? (
+          <div className="text-[11px] text-white/50" title={provider.jev.lastError ?? undefined}>
+            Jev · {provider.jev.state === "ready" ? "activo" : provider.jev.state === "fallback" ? "usando flujo clásico" : "desactivado"}
+          </div>
+        ) : null}
 
         {/* Base URL row */}
         {baseUrl && (

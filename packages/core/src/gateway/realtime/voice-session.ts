@@ -362,6 +362,7 @@ export class RealtimeVoiceSession {
       try {
         result = await executeBridgeTool(call.name, call.args, {
           sessionId: this.opts.sessionId,
+          threadId: this.opts.threadId,
           userId: this.opts.userId,
           speak: (text) => this.speakUrgent(text),
           isAlive: () => this.isAlive,

@@ -39,6 +39,10 @@ const KEEP_LAST_N_MESSAGES = 5         // always keep most recent N messages
 const TOOL_RESULT_MAX_CHARS = 200      // max chars for old tool results after clearing
 const MAX_TRANSCRIPT_MSGS = 30         // cap messages sent to summarizer (avoids OOM on small models)
 const MAX_MSG_CHARS = 300              // chars per message in transcript
+// Compaction runs before the turn and blocks it. A local model on CPU took
+// minutes here; past this bound the turn goes on uncompacted — the context
+// compiler already trims history to the window, so nothing overflows.
+const COMPACTION_TIMEOUT_MS = 60_000
 
 /**
  * Check if compaction is needed and run it if so.
@@ -46,14 +50,18 @@ const MAX_MSG_CHARS = 300              // chars per message in transcript
  */
 export async function maybeCompact(
   threadId: string,
-  notify?: { channel: string; userId: string }
+  notify?: { channel: string; userId: string },
+  /** The window the provider really reads (resolveProviderConfig); overrides the model row. */
+  contextWindow?: number,
+  /** The turn's abort signal: cancelling the turn also stops its compaction. */
+  signal?: AbortSignal,
 ): Promise<void> {
   try {
     const totalTokens = await getTotalTokens(threadId)
 
     // Use model's context window if available, otherwise use default
-    let effectiveThreshold = COMPACT_TOKEN_THRESHOLD
-    try {
+    let effectiveThreshold = contextWindow ? Math.floor(contextWindow * 0.25) : COMPACT_TOKEN_THRESHOLD
+    if (!contextWindow) try {
       const agentsCol = await col<AgentDoc>("agents")
       const coordinators = await agentsCol.findBy("role", "coordinator", { limit: 1 })
       const modelId = fromIndexable(coordinators[0]?.doc.model_id ?? null)
@@ -78,7 +86,8 @@ export async function maybeCompact(
     if (summary && summary.last_message_id > totalMessages - KEEP_LAST_N_MESSAGES) return
 
     log.info(`[compaction] Compacting thread=${threadId} tokens=${totalTokens}`)
-    await compactThread(threadId, notify)
+    const timeout = AbortSignal.timeout(COMPACTION_TIMEOUT_MS)
+    await compactThread(threadId, notify, signal ? AbortSignal.any([signal, timeout]) : timeout)
   } catch (err) {
     log.warn("[compaction] Error during compaction check:", err)
   }
@@ -120,7 +129,8 @@ export function renderTranscript(rows: StoredMessage[], maxMsgChars = MAX_MSG_CH
  */
 export async function compactThread(
   threadId: string,
-  notify?: { channel: string; userId: string }
+  notify?: { channel: string; userId: string },
+  signal?: AbortSignal,
 ): Promise<void> {
   const allMessages = await getHistory(threadId)
   if (allMessages.length <= KEEP_LAST_N_MESSAGES) return
@@ -150,6 +160,7 @@ export async function compactThread(
 
   const summaryResponse = await callLLM({
     ...providerCfg,
+    signal,
     messages: [
       {
         role: "system",

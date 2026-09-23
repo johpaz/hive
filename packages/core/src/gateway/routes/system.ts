@@ -1,5 +1,5 @@
 import { col } from "../../storage/hive.ts"
-import { getUsageStats, hourBucket } from "../../storage/usage.ts"
+import { getUsageStats, hourBucket, type JevUsageSummary } from "../../storage/usage.ts"
 import type { ActivityRollupDoc } from "../../storage/collections.ts"
 import { loadConfig } from "../../config/loader.ts"
 import { sessionManager } from "../session.ts"
@@ -354,6 +354,7 @@ export async function handleGetUsageStats(req: Request, addCorsHeaders: (r: Resp
     toonSavingsPercent: summary.toonSavingsPercent,
     byProvider: summary.byProvider,
     byModel: summary.byModel,
+    jev: summary.jev,
   }
 
   return addCorsHeaders(Response.json(stats), req)
@@ -374,6 +375,7 @@ interface UsageStats {
   toonSavingsPercent: number;
   byProvider: Record<string, { tokens: number; costUsd: number; inputTokens: number; outputTokens: number }>;
   byModel: Record<string, { tokens: number; costUsd: number; provider: string; inputTokens: number; outputTokens: number }>;
+  jev: JevUsageSummary;
 }
 
 export async function handleSystemReload(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {

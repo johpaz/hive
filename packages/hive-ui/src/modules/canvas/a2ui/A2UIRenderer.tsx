@@ -127,13 +127,35 @@ export interface RenderCtx {
   setDataModel: React.Dispatch<React.SetStateAction<Record<string, unknown>>>;
   scopeData?: Record<string, unknown>;
   onAction: (name: string, context: Record<string, unknown>, sourceId: string) => void;
+  /** Ids from the root down to this component. Set by RenderComponent. */
+  ancestors?: string[];
 }
+
+/**
+ * Deeper than any real layout; a bound for template chains that a cycle check
+ * by id alone would not catch.
+ */
+const MAX_A2UI_DEPTH = 48;
 
 // ─── Component Dispatcher ───────────────────────────────────────────────────
 
-export function RenderComponent(ctx: RenderCtx): React.ReactNode {
-  const def = ctx.compMap.get(ctx.id);
+export function RenderComponent(props: RenderCtx): React.ReactNode {
+  const def = props.compMap.get(props.id);
   if (!def) return null;
+
+  // The agent writes the tree, and it can point a component at itself or an
+  // ancestor ({ id: "card", child: "card" }). Rendering that recursed without
+  // end: the tab froze, memory grew until the browser killed it, and since
+  // the gateway replays surfaces on every connect it froze again on reopen.
+  const ancestors = props.ancestors ?? [];
+  if (ancestors.includes(props.id) || ancestors.length >= MAX_A2UI_DEPTH) {
+    return (
+      <div className="rounded-md border border-dashed border-amber-400/30 px-3 py-2 text-xs text-amber-300/70">
+        Componente "{props.id}" omitido: se contiene a sí mismo
+      </div>
+    );
+  }
+  const ctx: RenderCtx = { ...props, ancestors: [...ancestors, props.id] };
 
   // Normalize type: strip non-ASCII chars (e.g. Gemini appends "项"), trim whitespace
   const type = def.component?.replace(/[^\x00-\x7F]/g, "").trim();

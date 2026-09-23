@@ -66,6 +66,67 @@ describe("durable-queue: dispatch + reclaim", () => {
     expect(finished!.boot_id).toBeNull();
   });
 
+  test("a job enqueued while another runs in the same lane waits for it", async () => {
+    // Real case: an A2UI action arrived while the delegation summary turn ran
+    // in the same conversation; both ran at once and both re-delegated.
+    const events: string[] = [];
+    let releaseFirst!: () => void;
+    const firstMayFinish = new Promise<void>((r) => { releaseFirst = r; });
+    registerExecutor("chat_turn", async (job) => {
+      const name = (JSON.parse(job.payload_json) as { name: string }).name;
+      events.push(`start:${name}`);
+      if (name === "summary") await firstMayFinish;
+      events.push(`end:${name}`);
+      return { ok: true, result: name };
+    });
+
+    queue = new DurableLaneQueue({ maxGlobalConcurrency: 4 });
+    const lane = "user/webchat/conv-1";
+    const first = await queue.enqueue({ lane, type: "chat_turn", run_id: "run-s", payload: { name: "summary" } as never });
+    await waitFor(async () => events.includes("start:summary"));
+    const second = await queue.enqueue({ lane, type: "chat_turn", run_id: "run-a", payload: { name: "a2ui" } as never });
+
+    // Give the dispatcher every chance to start the second one early.
+    await new Promise((r) => setTimeout(r, 150));
+    expect(events).toEqual(["start:summary"]);
+    expect((await getJob(second.id))?.status).toBe("pending");
+
+    releaseFirst();
+    await waitFor(async () => (await getJob(second.id))?.status === "completed");
+    expect(events).toEqual(["start:summary", "end:summary", "start:a2ui", "end:a2ui"]);
+    expect((await getJob(first.id))?.status).toBe("completed");
+  });
+
+  test("cancelling a lane frees it even if the running executor ignores the abort", async () => {
+    // Real case: a local model compacting on CPU kept running after the user
+    // pressed stop, and the next message waited behind the cancelled turn.
+    const events: string[] = [];
+    let releaseStuck!: () => void;
+    const stuck = new Promise<void>((r) => { releaseStuck = r; });
+    registerExecutor("chat_turn", async (job) => {
+      const name = (JSON.parse(job.payload_json) as { name: string }).name;
+      events.push(`start:${name}`);
+      if (name === "stuck") await stuck; // never looks at the abort signal
+      events.push(`end:${name}`);
+      return { ok: true, result: name };
+    });
+
+    queue = new DurableLaneQueue({ maxGlobalConcurrency: 4 });
+    const lane = "user/webchat/conv-2";
+    const first = await queue.enqueue({ lane, type: "chat_turn", run_id: "run-1", payload: { name: "stuck" } as never });
+    await waitFor(async () => events.includes("start:stuck"));
+
+    expect(await queue.cancelLane(lane)).toBe(1);
+    const next = await queue.enqueue({ lane, type: "chat_turn", run_id: "run-2", payload: { name: "next" } as never });
+    await waitFor(async () => (await getJob(next.id))?.status === "completed");
+    expect(events).toEqual(["start:stuck", "start:next", "end:next"]);
+
+    releaseStuck();
+    await new Promise((r) => setTimeout(r, 50));
+    // The late result of the cancelled turn does not resurrect it.
+    expect((await getJob(first.id))?.status).toBe("cancelled");
+  });
+
   test("start() re-dispatches jobs left pending by a previous boot", async () => {
     const executed: string[] = [];
     registerExecutor("worker_task", async (job) => {

@@ -27,6 +27,10 @@ interface SecretDoc {
 // restart in production.
 
 const _mem = new Map<string, string>()
+// Bumped by every write and delete. A read that was already in flight when the
+// secret changed must not cache what it found: that resurrected deleted keys
+// in memory until restart.
+const _epoch = new Map<string, number>()
 let _keychainOk: boolean | null = null // null = untested
 let _keychainApi: unknown = undefined
 
@@ -47,14 +51,19 @@ function _getKeychainApi(): any {
 async function _get(name: string): Promise<string | null> {
   const cached = _mem.get(name)
   if (cached !== undefined) return cached
+  const epoch = _epoch.get(name) ?? 0
+  const cache = (value: string) => { if ((_epoch.get(name) ?? 0) === epoch) _mem.set(name, value) }
 
   // Durable store first — it is the one every write goes to.
   const stored = await _readCollectionSecret(name)
-  if (stored) return stored
+  if (stored) {
+    cache(stored)
+    return stored
+  }
 
   // Legacy/desktop installs may only have the value in the OS keychain.
   const fromKeychain = await _keychainGet(name)
-  if (fromKeychain) _mem.set(name, fromKeychain)
+  if (fromKeychain) cache(fromKeychain)
   return fromKeychain
 }
 
@@ -65,6 +74,7 @@ async function _get(name: string): Promise<string | null> {
  * silently accepting a secret that dies with the process.
  */
 async function _set(name: string, value: string): Promise<boolean> {
+  _epoch.set(name, (_epoch.get(name) ?? 0) + 1)
   _mem.set(name, value)
   const durable = await persistSecretToCollection(name, value)
   const mirrored = await _keychainSet(name, value)
@@ -74,21 +84,13 @@ async function _set(name: string, value: string): Promise<boolean> {
   return durable || mirrored
 }
 
-/**
- * Read a secret from the `secrets` HiveDB collection — the durable store.
- * Decrypted values are cached in memory for the rest of the process.
- */
+/** Read a secret from the `secrets` HiveDB collection — the durable store. `_get` caches it. */
 async function _readCollectionSecret(name: string): Promise<string | null> {
   try {
     const secrets = await col<SecretDoc>("secrets")
     const entry = await secrets.get(name)
     if (!entry) return null
-    const plain = decryptSecret(entry.doc.ciphertext, entry.doc.iv)
-    if (plain) {
-      // Cache in memory for subsequent lookups in this process
-      _mem.set(name, plain)
-    }
-    return plain || null
+    return decryptSecret(entry.doc.ciphertext, entry.doc.iv) || null
   } catch {
     return null
   }
@@ -121,6 +123,7 @@ async function _keychainSet(name: string, value: string): Promise<boolean> {
 }
 
 async function _del(name: string): Promise<void> {
+  _epoch.set(name, (_epoch.get(name) ?? 0) + 1)
   _mem.delete(name)
   try {
     await (Bun as any).secrets.delete({ service: SERVICE, name })
@@ -133,6 +136,10 @@ async function _del(name: string): Promise<void> {
   } catch {
     // ignore — might not exist
   }
+  // Again once the stores are empty: a read that started inside this window
+  // found the old value and must not cache it.
+  _epoch.set(name, (_epoch.get(name) ?? 0) + 1)
+  _mem.delete(name)
 }
 
 /**
@@ -179,6 +186,10 @@ export async function storeProviderApiKey(id: string, apiKey: string): Promise<b
 
 export async function loadProviderApiKey(id: string): Promise<string> {
   return (await _get(`provider:${id}:api_key`)) ?? ""
+}
+
+export async function deleteProviderApiKey(id: string): Promise<void> {
+  await _del(`provider:${id}:api_key`)
 }
 
 export async function storeProviderHeaders(id: string, headers: Record<string, unknown>): Promise<boolean> {

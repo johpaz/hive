@@ -1069,3 +1069,223 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ─── Jev · plano de decisión ─────────────────────────────────────────────── */
+.office3d-jev-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  color: oklch(0.86 0.12 295);
+  background: oklch(0.7 0.16 295 / 0.14);
+  border: 1px solid oklch(0.72 0.16 295 / 0.4);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+.office3d-jev-badge b {
+  color: oklch(0.93 0.07 295);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.office3d-jev-badge.is-fallback {
+  color: oklch(0.78 0.02 264);
+  background: oklch(0.6 0.02 264 / 0.14);
+  border-color: oklch(0.7 0.02 264 / 0.35);
+}
+
+.office3d-jev {
+  position: absolute;
+  top: 5.35rem;
+  left: 1rem;
+  width: min(17rem, 30vw);
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.8rem 0.85rem;
+  border-radius: 0.9rem;
+  border-color: oklch(0.72 0.16 295 / 0.32);
+  box-shadow: inset 0 0 22px oklch(0.7 0.16 295 / 0.08);
+  pointer-events: auto;
+  animation: office3d-drop 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.office3d-jev.is-fallback {
+  border-color: oklch(0.7 0.02 264 / 0.3);
+  box-shadow: none;
+}
+.office3d-jev-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.office3d-jev-head > div {
+  flex: 1;
+  min-width: 0;
+}
+.office3d-jev-head h2 {
+  margin: 0;
+  color: oklch(0.95 0.03 295);
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+.office3d-jev-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 0.55rem;
+  color: oklch(0.88 0.12 295);
+  background: oklch(0.7 0.16 295 / 0.16);
+  box-shadow: inset 0 0 12px oklch(0.7 0.16 295 / 0.2);
+}
+.office3d-jev.is-fallback .office3d-jev-icon {
+  color: oklch(0.78 0.02 264);
+  background: oklch(0.6 0.02 264 / 0.16);
+  box-shadow: none;
+}
+.office3d-jev-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin: 0;
+}
+.office3d-jev-metrics div {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.4rem 0.45rem;
+  border-radius: 0.55rem;
+  background: oklch(1 0 0 / 0.04);
+}
+.office3d-jev-metrics dt {
+  color: oklch(0.66 0.04 264);
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.office3d-jev-metrics dd {
+  margin: 0;
+  color: oklch(0.95 0.04 295);
+  font-size: 0.86rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.office3d-jev-warn {
+  margin: 0;
+  color: oklch(0.82 0.1 60);
+  font-size: 0.6rem;
+  line-height: 1.35;
+}
+.office3d-jev-latest {
+  display: grid;
+  gap: 0.15rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid oklch(1 0 0 / 0.06);
+}
+.office3d-jev-latest span {
+  color: oklch(0.72 0.1 295);
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.office3d-jev-latest p {
+  margin: 0;
+  color: oklch(0.84 0.03 264);
+  font-size: 0.64rem;
+  line-height: 1.35;
+}
+.office3d-jev-agents {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0.5rem 0 0;
+  border-top: 1px solid oklch(1 0 0 / 0.06);
+  list-style: none;
+}
+.office3d-jev-agents li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.64rem;
+}
+.office3d-jev-agents span {
+  overflow: hidden;
+  color: oklch(0.84 0.03 264);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.office3d-jev-agents b {
+  color: oklch(0.9 0.1 295);
+  font-variant-numeric: tabular-nums;
+}
+.office3d-jev-agents small {
+  color: oklch(0.6 0.03 264);
+  font-size: 0.56rem;
+}
+.office3d-jev-note {
+  margin: 0;
+  color: oklch(0.58 0.03 264);
+  font-size: 0.54rem;
+}
+
+.office3d-jev-tag {
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  color: oklch(0.92 0.08 295);
+  background: oklch(0.12 0.04 295 / 0.8);
+  border: 1px solid oklch(0.72 0.16 295 / 0.55);
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+}
+.office3d-jev-tag.is-fallback {
+  color: oklch(0.78 0.02 264);
+  border-color: oklch(0.7 0.02 264 / 0.45);
+}
+.office3d-jev-chip {
+  display: grid;
+  justify-items: center;
+  gap: 0.05rem;
+  padding: 0.28rem 0.5rem;
+  border-radius: 0.55rem;
+  background: oklch(0.1 0.04 295 / 0.88);
+  border: 1px solid oklch(0.72 0.16 295 / 0.5);
+  white-space: nowrap;
+  animation: office3d-ticker-in 0.24s ease both;
+}
+.office3d-jev-chip span {
+  color: oklch(0.8 0.1 295);
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.office3d-jev-chip strong {
+  color: oklch(0.9 0.13 150);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+.office3d-jev-chip strong.is-cost {
+  color: oklch(0.85 0.12 60);
+}
+.office3d-jev-chip small {
+  color: oklch(0.62 0.03 264);
+  font-size: 0.48rem;
+}
+
+@media (max-width: 900px) {
+  /* The topbar badge carries the state and savings; the panel would cover the scene. */
+  .office3d-jev {
+    display: none;
+  }
+}
+@media (max-width: 620px) {
+  .office3d-jev-badge {
+    padding: 0.3rem 0.42rem;
+  }
+  .office3d-jev-badge b {
+    display: none;
+  }
+}

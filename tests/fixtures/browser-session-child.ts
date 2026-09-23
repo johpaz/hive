@@ -8,7 +8,11 @@
  * desde el almacén.
  *
  * Uso: bun tests/fixtures/browser-session-child.ts <url>
- * Imprime una línea JSON con lo que el servidor respondió.
+ * Imprime `RESULTADO:<json>` con lo que el servidor respondió.
+ *
+ * La línea va marcada porque el logger de hive también escribe en stdout: si el
+ * padre se quedara con la última línea, cualquier log posterior al resultado
+ * —un guardado de sesión que cae tarde— le llegaría como JSON inválido.
  */
 
 export {}; // sin esto el archivo no es módulo y su scope se mezcla con el global
@@ -20,15 +24,19 @@ if (!destino) {
 }
 
 const { WebViewBackend } = await import("../../packages/core/src/tools/web/webview-backend.ts");
+const { loadStoredCookies } = await import("../../packages/core/src/tools/web/browser-session.ts");
 
 const backend = new WebViewBackend({ persistSession: true });
 try {
+  // Cuántas cookies vio este proceso en el almacén. Separa las dos causas de un
+  // "anonimo": que no hubiera nada guardado, o que el navegador no las tomara.
+  const guardadas = (await loadStoredCookies()).length;
   await backend.navigate(destino);
   const texto = await backend.evaluate<string>("document.body.innerText.trim()");
   const visibles = await backend.evaluate<string>("document.cookie");
-  console.log(JSON.stringify({ texto, visibles }));
+  console.log(`RESULTADO:${JSON.stringify({ texto, visibles, guardadas })}`);
 } catch (error) {
-  console.log(JSON.stringify({ error: (error as Error).message }));
+  console.log(`RESULTADO:${JSON.stringify({ error: (error as Error).message })}`);
 } finally {
   backend.close();
 }

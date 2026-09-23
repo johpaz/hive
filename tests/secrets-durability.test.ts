@@ -93,6 +93,24 @@ describe("secret durability without an OS keychain", () => {
     const read = await inRestartedProcess(`return await crypto.loadProviderApiKey("openai")`);
     expect(JSON.parse(read)).toBe("");
   }, 30_000);
+
+  test("a read racing a delete cannot resurrect the secret in memory", async () => {
+    const result = JSON.parse(
+      await inRestartedProcess(`
+        await crypto.storeProviderApiKey("race", "sk-race");
+        // A slow keychain keeps the durable copy alive while the delete is in flight.
+        (Bun as any).secrets.delete = () => new Promise((resolve) => setTimeout(resolve, 60));
+        const deleting = crypto.deleteProviderApiKey("race");
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        const during = await crypto.loadProviderApiKey("race");
+        await deleting;
+        return { during, after: await crypto.loadProviderApiKey("race") };
+      `)
+    );
+    // The racing read may still see the old value; it must not keep it alive.
+    expect(result.during).toBe("sk-race");
+    expect(result.after).toBe("");
+  }, 30_000);
 });
 
 describe("keychain compatibility", () => {

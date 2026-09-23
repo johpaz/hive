@@ -42,6 +42,15 @@ interface A2UISurfaceCache {
   dataModel?: Record<string, unknown>;
 }
 
+/** Overlays `incoming` on `current` by component id, keeping the order of first appearance. */
+export function mergeComponentsById(current: unknown[], incoming: unknown[]): unknown[] {
+  const byId = new Map<string, unknown>()
+  const idOf = (c: unknown) => (c && typeof c === "object" ? String((c as { id?: unknown }).id ?? "") : "")
+  for (const c of current) byId.set(idOf(c), c)
+  for (const c of incoming) byId.set(idOf(c), c)
+  return [...byId.values()]
+}
+
 export class CanvasManager {
   /**
    * Clientes por sesión, no *un* cliente por sesión.
@@ -197,6 +206,11 @@ export class CanvasManager {
     );
   }
 
+  /** What the client is rendering for a surface: every component sent so far, merged by id. */
+  getCachedComponents(sessionId: string, surfaceId: string): unknown[] {
+    return this.a2uiCache.get(sessionId)?.get(surfaceId)?.components ?? [];
+  }
+
   async sendA2UIMessage(sessionId: string, messageType: string, data: Record<string, unknown>): Promise<void> {
     // Update A2UI cache so late-connecting clients can receive current state
     const surfaceId = data.surfaceId as string | undefined;
@@ -207,7 +221,9 @@ export class CanvasManager {
         sessionSurfaces.set(surfaceId, { createData: data });
       } else if (messageType === "a2ui:updateComponents") {
         const cached = sessionSurfaces.get(surfaceId);
-        if (cached) cached.components = data.components as unknown[];
+        // Merge by id, like the client: replacing the list made a reconnect
+        // replay a different surface from the one the user was looking at.
+        if (cached) cached.components = mergeComponentsById(cached.components ?? [], data.components as unknown[]);
       } else if (messageType === "a2ui:updateDataModel") {
         const cached = sessionSurfaces.get(surfaceId);
         if (cached) {

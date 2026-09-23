@@ -41,7 +41,7 @@ export interface ModelDoc {
   provider_id: string
   name: string
   /** "realtime": voz full-duplex (Live API), no confundir con stt+tts encadenados. */
-  model_type: "llm" | "stt" | "tts" | "vision" | "embedding" | "realtime"
+  model_type: "llm" | "stt" | "tts" | "vision" | "embedding" | "realtime" | "decision"
   context_window: number
   capabilities: string | null
   enabled: boolean
@@ -704,6 +704,12 @@ export interface UsageRollupDoc {
   toonJsonBytes: number
   byProvider: Record<string, { inputTokens: number; outputTokens: number; costUsd: number }>
   byModel: Record<string, { inputTokens: number; outputTokens: number; costUsd: number }>
+  /** Jev decision plane; absent on hours before it existed. Savings are estimates (chars/4) priced at the advised agent's model. */
+  jevDecisions?: number
+  jevCostUsd?: number
+  jevSavedTokens?: number
+  jevSavedCostUsd?: number
+  jevByAgent?: Record<string, { jevDecisions: number; jevCostUsd: number; jevSavedTokens: number; jevSavedCostUsd: number }>
 }
 
 export interface ActivityRollupDoc {

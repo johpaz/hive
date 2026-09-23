@@ -25,12 +25,15 @@ import { maybeCompact, clearOldToolResults } from "./compaction"
 import { emitCanvas } from "../canvas/emitter"
 import type { MCPClientManager } from "@johpaz/hive-agents-mcp"
 import { compileContext } from "./context-compiler"
+import { MINIMAL_TOOLS } from "./minimal-loadout"
 import { formatToolResult } from "../utils/toon"
 import { redactBinaryStrings } from "../utils/redact-binary"
 import { resolveUserId, resolveAgentId } from "../storage/onboarding"
 import type { ContentPart } from "../multimodal/types"
 import { loadConfig } from "../config/loader"
 import { executeToolBatch } from "../tool-runtime"
+import { jevWantsParallel, planJevIteration } from "./jev-planner"
+import { emitJevDecision } from "./jev-decisions"
 import { createStuckLoopDetector, getInterventionMessage, type StuckLoopState } from "./stuck-loop"
 import {
   createRun as createAgentRun,
@@ -50,6 +53,10 @@ import { publishNarration } from "../events/narration"
 import { getNarration } from "../events/tool-narration"
 
 const log = logger.child("agent-loop")
+
+const JEV_ACTION_LABELS: Record<string, string> = {
+  continue: "Continuar", delegate: "Delegar", discover: "Descubrir", finish: "Cerrar",
+}
 
 // Per-operation budget for a single LLM call — NOT an aggregate deadline for the
 // whole turn. Each call gets its own fresh window; a slow-but-healthy multi-step
@@ -352,7 +359,9 @@ export async function* runAgent(
       opts.threadId,
       opts.channel && opts.userId
         ? { channel: opts.channel, userId: opts.userId }
-        : undefined
+        : undefined,
+      providerCfg.contextWindow,
+      opts.signal,
     )
   }
 
@@ -367,7 +376,12 @@ export async function* runAgent(
     taskContext: opts.taskContext,
     userId: opts.userId,
     causalStreamId,
+    skipJev: !!opts.resume,
+    contextWindow: providerCfg.contextWindow,
   })
+  if (ctx.jevDecision) {
+    emitJevDecision({ ...ctx.jevDecision, agentId: opts.agentId, kind: "context", provider: providerCfg.provider, model: providerCfg.model })
+  }
 
   // Force extra tools into the loadout (tests/evals)
   if (opts.extraTools?.length) {
@@ -399,9 +413,11 @@ export async function* runAgent(
   if (opts.isolated) {
     messages.push({ role: "user", content: opts.userMessage })
   }
+  const jevObjective = typeof opts.userMessage === "string" ? opts.userMessage :
+    opts.userMessage.filter((part) => part.type === "text").map((part) => (part as { text: string }).text).join("\n")
 
   // ── Resume from checkpoint ─────────────────────────────────────────────────
-  let injectedToolNames: string[] = []
+  let injectedToolNames: string[] = ctx.tools.map(t => t.function.name).filter(name => !MINIMAL_TOOLS.has(name))
   let systemPromptSkillSections: string[] = []
   let resumedFromPending = false
   let iterations = 0
@@ -422,6 +438,14 @@ export async function* runAgent(
       if (restored) {
         messages = restored.messages
         injectedToolNames = restored.injectedToolNames ?? []
+        const currentTools = new Set(ctx.tools.map(t => t.function.name))
+        for (const name of injectedToolNames) {
+          const tool = ctx.allTools.find(t => t.name === name)
+          if (tool && !currentTools.has(name)) {
+            ctx.tools.push({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } })
+            currentTools.add(name)
+          }
+        }
         systemPromptSkillSections = restored.systemPromptSkillSections ?? []
         iterations = restored.iterations ?? 0
         totalInputTokens = restored.totalInputTokens ?? 0
@@ -507,11 +531,28 @@ export async function* runAgent(
       : null
     let streamedThisCall = false
     let response: Awaited<ReturnType<typeof callLLM>>
+    const jevIteration = await planJevIteration({ objective: jevObjective, messages, tools: ctx.tools })
+      .catch((err) => { log.warn(`[agent-loop] Jev iteration fallback: ${(err as Error).message}`); return null })
+    const callMessages = jevIteration?.messages ?? messages
+    const callTools = jevIteration?.tools ?? ctx.tools
+    if (jevIteration) {
+      log.info(`[agent-loop] Jev action=${jevIteration.action} omitted_results=${jevIteration.omittedResults} tools=${callTools.map(t => t.function.name).join(",")}`)
+      // Measured on what the provider actually receives, after the usual truncation.
+      const payloadChars = (msgs: LLMMessage[], tools: typeof ctx.tools) =>
+        JSON.stringify(clearOldToolResults(msgs)).length + JSON.stringify(tools).length
+      emitJevDecision({
+        agentId: opts.agentId, kind: "iteration", provider: providerCfg.provider, model: providerCfg.model,
+        summary: `${JEV_ACTION_LABELS[jevIteration.action] ?? jevIteration.action} · ${jevIteration.omittedResults} resultado(s) omitido(s) · ${callTools.length}/${ctx.tools.length} herramientas`,
+        savedTokens: Math.round((payloadChars(messages, ctx.tools) - payloadChars(callMessages, callTools)) / 4),
+        latencyMs: jevIteration.decision.latencyMs, costUsd: jevIteration.decision.costUsd,
+      })
+    }
+    const llmCallStartedAt = performance.now()
     try {
       response = await withTimeout(() => callLLM({
         ...providerCfg,
-        messages: clearOldToolResults(messages) as LLMMessage[],
-        tools: ctx.tools.length > 0 ? ctx.tools : undefined,
+        messages: clearOldToolResults(callMessages) as LLMMessage[],
+        tools: callTools.length > 0 ? callTools : undefined,
         signal: opts.signal,
         sessionId: opts.threadId,
         onToken: opts.onToken && !delegationGroupAtCall
@@ -545,6 +586,9 @@ export async function* runAgent(
     if (response.usage) {
       totalInputTokens += response.usage.input_tokens
       totalOutputTokens += response.usage.output_tokens
+      recordLLMUsage({ provider: providerCfg.provider, model: providerCfg.model,
+        inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens,
+        latencyMs: Math.round(performance.now() - llmCallStartedAt) })
     }
 
     // G9: record this LLM response as a causal "decision", chained off the
@@ -671,6 +715,16 @@ export async function* runAgent(
       }
     }
 
+    const jevParallel = await jevWantsParallel(response.tool_calls)
+      .catch((err) => { log.warn(`[agent-loop] Jev parallel fallback: ${(err as Error).message}`); return null })
+    if (jevParallel?.decision) {
+      log.info(`[agent-loop] Jev parallel=${jevParallel.parallel} calls=${response.tool_calls.length}`)
+      emitJevDecision({
+        agentId: opts.agentId, kind: "parallel", provider: providerCfg.provider, model: providerCfg.model,
+        summary: `${response.tool_calls.length} herramientas ${jevParallel.parallel ? "en paralelo" : "en secuencia"}`,
+        savedTokens: 0, latencyMs: jevParallel.decision.latencyMs, costUsd: jevParallel.decision.costUsd,
+      })
+    }
     const toolResults = await executeToolBatch({
       toolCalls: response.tool_calls,
       allTools: ctx.allTools,
@@ -691,6 +745,7 @@ export async function* runAgent(
       },
       hiveConfig,
       workerPool: hiveConfig.tools?.workerPool,
+      parallelToolCalls: jevParallel?.parallel,
       signal: opts.signal,
     })
 
@@ -1122,6 +1177,7 @@ export async function* runAgent(
       if (synthesisAttempt > 1) {
         log.warn("[agent-loop] Retrying terminal synthesis after an empty or failed response")
       }
+      const synthesisStartedAt = performance.now()
       const synthesis = await callLLM({
         ...providerCfg,
         messages: clearOldToolResults(messages) as LLMMessage[],
@@ -1131,6 +1187,9 @@ export async function* runAgent(
       if (synthesis.usage) {
         totalInputTokens += synthesis.usage.input_tokens
         totalOutputTokens += synthesis.usage.output_tokens
+        recordLLMUsage({ provider: providerCfg.provider, model: providerCfg.model,
+          inputTokens: synthesis.usage.input_tokens, outputTokens: synthesis.usage.output_tokens,
+          latencyMs: Math.round(performance.now() - synthesisStartedAt) })
       }
       // A provider failure comes back as non-empty `content`, which the
       // empty-content check above would happily accept as a valid synthesis and
@@ -1169,14 +1228,6 @@ export async function* runAgent(
   emitCanvas("canvas:node_update", {
     nodeId: opts.agentId,
     changes: { status: "idle", currentTool: null },
-  })
-
-  // Record usage
-  recordLLMUsage({
-    provider: providerCfg.provider,
-    model: providerCfg.model,
-    inputTokens: totalInputTokens,
-    outputTokens: totalOutputTokens,
   })
 
   // Extract text for trace summary

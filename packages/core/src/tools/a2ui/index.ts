@@ -1,7 +1,61 @@
 import type { Tool } from "../types.ts";
 import type { Config } from "../../config/loader.ts";
-import { canvasManager } from "../../canvas/canvas-manager.ts";
+import { canvasManager, mergeComponentsById } from "../../canvas/canvas-manager.ts";
 import { logger } from "../../utils/logger.ts";
+
+/** Ids a component renders, in both the flat and the nested (`{ Card: {...} }`) forms. */
+function childIds(component: Record<string, unknown>): string[] {
+  const nested = component.component && typeof component.component === "object" && !Array.isArray(component.component)
+    ? Object.values(component.component as Record<string, unknown>)[0]
+    : undefined
+  const c = nested && typeof nested === "object" ? { ...component, ...(nested as Record<string, unknown>) } : component
+  const ids: unknown[] = []
+  const children = c.children
+  if (typeof children === "string") ids.push(children)
+  else if (Array.isArray(children)) ids.push(...children)
+  else if (children && typeof children === "object") {
+    const ch = children as Record<string, unknown>
+    if (Array.isArray(ch.explicitList)) ids.push(...ch.explicitList)
+    if (Array.isArray(ch.array)) ids.push(...ch.array)
+    ids.push(ch.componentId, (ch.template as Record<string, unknown> | undefined)?.componentId)
+  }
+  ids.push(c.child, c.trigger, c.content, c.entryPointChild, c.contentChild)
+  for (const tab of [...(Array.isArray(c.tabItems) ? c.tabItems : []), ...(Array.isArray(c.tabs) ? c.tabs : [])]) {
+    ids.push((tab as Record<string, unknown> | null)?.child)
+  }
+  return ids.filter((id): id is string => typeof id === "string" && id.length > 0)
+}
+
+/**
+ * First cycle in the component tree ("card -> card"), or null. A component
+ * that contains itself or an ancestor made the panel recurse until the
+ * browser killed the tab.
+ */
+export function findComponentCycle(components: unknown[]): string[] | null {
+  const graph = new Map<string, string[]>()
+  for (const c of components) {
+    if (c && typeof c === "object" && typeof (c as { id?: unknown }).id === "string") {
+      graph.set((c as { id: string }).id, childIds(c as Record<string, unknown>))
+    }
+  }
+  const done = new Set<string>()
+  const visit = (id: string, path: string[]): string[] | null => {
+    const loop = path.indexOf(id)
+    if (loop >= 0) return [...path.slice(loop), id]
+    if (done.has(id) || !graph.has(id)) return null
+    for (const child of graph.get(id)!) {
+      const cycle = visit(child, [...path, id])
+      if (cycle) return cycle
+    }
+    done.add(id)
+    return null
+  }
+  for (const id of graph.keys()) {
+    const cycle = visit(id, [])
+    if (cycle) return cycle
+  }
+  return null
+}
 
 export function createA2UISurfaceTool(_config: Config): Tool {
   const log = logger.child("a2ui-surface");
@@ -147,6 +201,16 @@ Root component: usar id="root" explícito.`,
       const sessionId = rawSessionId
         ? (rawSessionId.startsWith("canvas:") ? rawSessionId : `canvas:${rawSessionId}`)
         : (userId ? `canvas:${userId}` : (() => { throw new Error("No session or user ID provided"); })());
+
+      if (!Array.isArray(params.components)) throw new Error("components must be an array")
+      // Checked on the merged tree the client will render, not only this batch.
+      const cycle = findComponentCycle(mergeComponentsById(
+        canvasManager.getCachedComponents(sessionId, params.surfaceId as string),
+        params.components,
+      ))
+      if (cycle) {
+        throw new Error(`Ciclo en los componentes: ${cycle.join(" -> ")}. Un componente no puede contenerse a sí mismo ni a un ancestro. Dale al hijo un id propio (por ejemplo "${cycle[0]}_contenido") y vuelve a enviar. No se publicó nada.`)
+      }
 
       await canvasManager.sendA2UIMessage(sessionId, "a2ui:updateComponents", {
         surfaceId: params.surfaceId as string,

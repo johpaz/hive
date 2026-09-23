@@ -22,7 +22,12 @@
 
 import { logger } from "../../utils/logger.ts";
 import { resolveWebViewEngine, type BrowserBackend, type ScreenshotOptions, type SnapshotOptions, type WebViewEngine } from "./browser-backend.ts";
-import { loadStoredCookies, sessionPersistenceEnabled, storeCookies } from "./browser-session.ts";
+import {
+  loadStoredCookies,
+  sessionPersistenceEnabled,
+  storeCookies,
+  type StoredCookie,
+} from "./browser-session.ts";
 
 const log = logger.child("webview-backend");
 
@@ -35,6 +40,85 @@ const SNAPSHOT_CHAR_LIMIT = 20_000;
  * guardar en cada una; con esta ventana se guarda una vez, al final.
  */
 const SESSION_SAVE_DEBOUNCE_MS = 3_000;
+
+/** Intentos de restaurar la sesión dentro de una misma navegación, y la espera entre ellos. */
+const RESTORE_INTENTOS = 3;
+const RESTORE_ESPERA_MS = 150;
+
+/** Navegaciones que pueden pagar un reintento antes de darse por vencido. */
+const RESTORE_LLAMADAS = 2;
+
+/** Identidad de una cookie: nombre + dominio + valor. */
+const clave = (name: string, domain: string, value: string): string =>
+  JSON.stringify([name, domain, value]);
+
+/**
+ * Cuántas de las cookies guardadas quedaron realmente en el navegador.
+ *
+ * `Network.setCookies` puede responder sin error y no dejar nada —el target
+ * todavía no está listo—, así que la única señal confiable es leer de vuelta.
+ * Se comparan nombre, dominio y valor: una cookie con el mismo nombre pero otro
+ * valor es una cookie vieja del perfil, no la sesión que se quería restaurar.
+ */
+export function contarRestauradas(enElNavegador: unknown[] | undefined, esperadas: StoredCookie[]): number {
+  if (!Array.isArray(enElNavegador)) return 0;
+  const presentes = new Set(
+    enElNavegador
+      .filter((c): c is Record<string, unknown> => typeof c === "object" && c !== null)
+      .map((c) => clave(String(c.name), String(c.domain), String(c.value))),
+  );
+  return esperadas.filter((c) => presentes.has(clave(c.name, c.domain, c.value))).length;
+}
+
+/** Lo que la restauración necesita de una vista: navegar y hablar CDP. */
+interface VistaRestaurable {
+  navigate(url: string): Promise<void>;
+  cdp(method: string, params?: Record<string, unknown>): Promise<unknown>;
+}
+
+/**
+ * Pone las cookies guardadas y comprueba que quedaran, reintentando.
+ *
+ * Vive fuera de la clase para poder probarla sin abrir un navegador: el motor
+ * real llega por `correr`, que es la cola de la vista.
+ */
+export async function restaurarCookiesEnVista(
+  cookies: StoredCookie[],
+  correr: <T>(operacion: (vista: VistaRestaurable) => Promise<T>) => Promise<T>,
+): Promise<{ restaurada: boolean; puestas: number; intentos: number }> {
+  let intentos = 0;
+
+  for (let intento = 1; intento <= RESTORE_INTENTOS; intento++) {
+    intentos = intento;
+    try {
+      const puestas = await correr(async (vista) => {
+        // `about:blank` primero: `cdp()` no tiene sesión hasta que la vista
+        // navegó alguna vez, y las cookies tienen que estar antes del destino
+        // para que el primer request ya salga autenticado.
+        await vista.navigate("about:blank");
+        await vista.cdp("Network.setCookies", { cookies });
+        const leidas = (await vista.cdp("Network.getAllCookies")) as { cookies?: unknown[] };
+        return contarRestauradas(leidas?.cookies, cookies);
+      });
+      if (puestas > 0) {
+        log.info(`sesión del navegador restaurada (${puestas}/${cookies.length} cookies)`);
+        return { restaurada: true, puestas, intentos };
+      }
+      log.warn(
+        `el navegador no conservó ninguna de las ${cookies.length} cookies guardadas ` +
+          `(intento ${intento}/${RESTORE_INTENTOS})`,
+      );
+    } catch (err) {
+      log.warn(
+        `no se pudo restaurar la sesión (intento ${intento}/${RESTORE_INTENTOS}): ` +
+          `${(err as Error).message}`,
+      );
+    }
+    if (intento < RESTORE_INTENTOS) await Bun.sleep(RESTORE_ESPERA_MS);
+  }
+
+  return { restaurada: false, puestas: 0, intentos };
+}
 
 /**
  * Tope para las operaciones que el motor puede dejar pendientes para siempre.
@@ -382,6 +466,7 @@ export class WebViewBackend implements BrowserBackend {
   private axEnabled = false;
   /** La sesión guardada se restaura una sola vez, antes de la primera página. */
   private sessionRestored = false;
+  private restoreFallidos = 0;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
@@ -511,23 +596,37 @@ export class WebViewBackend implements BrowserBackend {
    */
   private async restoreSession(): Promise<void> {
     if (this.sessionRestored) return;
-    this.sessionRestored = true;
-    if (!sessionPersistenceEnabled(this.options.persistSession) || !this.hasCdp) return;
-
-    try {
-      const cookies = await loadStoredCookies();
-      if (!cookies.length) return;
-
-      await this.run(async (view) => {
-        await view.navigate("about:blank");
-        await view.cdp("Network.setCookies", { cookies });
-      });
-      log.info(`sesión del navegador restaurada (${cookies.length} cookies)`);
-    } catch (err) {
-      // Una sesión que no se pudo restaurar es un login perdido, no un fallo de
-      // la navegación: el agente sigue, sólo que deslogueado.
-      log.warn(`no se pudo restaurar la sesión: ${(err as Error).message}`);
+    if (!sessionPersistenceEnabled(this.options.persistSession) || !this.hasCdp) {
+      this.sessionRestored = true;
+      return;
     }
+
+    const cookies = await loadStoredCookies();
+    if (!cookies.length) {
+      this.sessionRestored = true;
+      return;
+    }
+
+    // Chrome recién abierto no siempre tiene la sesión CDP lista: `setCookies`
+    // falla, o responde bien y la cookie no queda puesta. Antes se daba por
+    // restaurada igual y el agente navegaba deslogueado sin que nada fallara
+    // (así se caía este test en CI, de forma intermitente). Ahora se comprueba
+    // leyendo de vuelta y se reintenta.
+    const { restaurada } = await restaurarCookiesEnVista(cookies, (op) => this.run(op));
+    if (restaurada) {
+      this.sessionRestored = true;
+      return;
+    }
+
+    // Sin marcar `sessionRestored`: el próximo navigate vuelve a intentarlo, que
+    // para entonces la vista ya está caliente. Después de `RESTORE_LLAMADAS` se
+    // deja de insistir para no pagar un about:blank en cada navegación.
+    this.restoreFallidos++;
+    if (this.restoreFallidos >= RESTORE_LLAMADAS) this.sessionRestored = true;
+    log.warn(
+      `sesión del navegador NO restaurada (${cookies.length} cookies guardadas): ` +
+        "el agente navega deslogueado",
+    );
   }
 
   /** Agenda un volcado de cookies; las llamadas seguidas se funden en una. */
