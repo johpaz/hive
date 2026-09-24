@@ -10,6 +10,14 @@
  * El test emula un login como los de verdad —cookie de sesión `HttpOnly`, que
  * `document.cookie` no puede ver ni escribir— y comprueba el resultado en **otro
  * proceso**, que es donde la prueba tiene sentido.
+ *
+ * Requiere BROWSER_TESTS=1, como el resto de las pruebas con Chrome real
+ * (browser-tools, browser-bun). Antes corría en cuanto había un Chrome, y el
+ * del runner ubuntu-24.04 la hacía fallar desde el 2026-08-25 mientras en local
+ * pasaba siempre, incluso con un /tmp limpio. La lógica de restauración sigue
+ * cubierta en CI sin navegador por browser-session-restore-retry.test.ts.
+ *
+ *   BROWSER_TESTS=1 bun test tests/browser-session-persistence.test.ts
  */
 
 import { describe, test, expect, beforeAll, afterAll, afterEach } from "bun:test";
@@ -29,7 +37,7 @@ const { clearStoredSession, loadStoredCookies } = await import(
   "../packages/core/src/tools/web/browser-session.ts"
 );
 
-const LIVE = isWebViewSupported();
+const LIVE = process.env.BROWSER_TESTS === "1" && isWebViewSupported();
 const COOKIE = "sid=secreto-de-sesion-123";
 
 /** Un sitio con login: `/entrar` deja la cookie, `/` dice quién eres. */
