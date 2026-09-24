@@ -35,7 +35,7 @@
     },
     "packages/cli": {
       "name": "@johpaz/hive-cli",
-      "version": "1.0.5",
+      "version": "1.1.0",
       "bin": {
         "hive": "./dist/hive.js",
       },
@@ -51,7 +51,7 @@
     },
     "packages/core": {
       "name": "@johpaz/hive-agents-core",
-      "version": "1.0.5",
+      "version": "1.1.0",
       "dependencies": {
         "@ag-ui/core": "^0.0.46",
         "@johpaz/hive-agents-mcp": "^1.0.5",
@@ -80,7 +80,7 @@
     },
     "packages/hive-ui": {
       "name": "@johpaz/hive-agents-ui",
-      "version": "1.0.5",
+      "version": "1.1.0",
       "dependencies": {
         "@hookform/resolvers": "^3.10.0",
         "@radix-ui/react-accordion": "^1.2.11",
@@ -171,7 +171,7 @@
     },
     "packages/mcp": {
       "name": "@johpaz/hive-agents-mcp",
-      "version": "1.0.5",
+      "version": "1.1.0",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.26.0",
         "zod": "^4.4.3",
@@ -183,7 +183,7 @@
     },
     "packages/skills": {
       "name": "@johpaz/hive-agents-skills",
-      "version": "1.0.5",
+      "version": "1.1.0",
       "devDependencies": {
         "@types/bun": "^1.4.1",
         "typescript": "7.0.2",

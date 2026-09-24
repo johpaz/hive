@@ -125,7 +125,7 @@ async function main() {
         console.log(`  ⚠️  ${file.path}: ${(e as Error).message}`);
       }
     }
-    console.log(`\n  Luego regeneraría docs/reference/inventario.md (bun run docs:generate).`);
+    console.log(`\n  Luego actualizaría bun.lock (bun install --lockfile-only) y regeneraría docs/reference/inventario.md (bun run docs:generate).`);
     if (shouldPush) {
       console.log(`  Luego: git add -A && git commit -m "chore: release v${newVersion}" && git tag v${newVersion} && git push origin master && git push origin v${newVersion}`);
     } else {
@@ -190,6 +190,16 @@ async function main() {
 
   const { execSync } = await import("child_process");
   const run = (cmd: string) => execSync(cmd, { stdio: "inherit" });
+
+  // bun.lock guarda la versión de cada workspace. Sin esto, el lock quedaba en
+  // la versión anterior y el `bun install --frozen-lockfile` de Docker y CI
+  // fallaba con "lockfile had changes, but lockfile is frozen" (v1.1.0).
+  console.log("\n🔒 Actualizando bun.lock...");
+  try {
+    run("bun install --lockfile-only");
+  } catch (e) {
+    console.log(`⚠️  No se pudo actualizar bun.lock: ${(e as Error).message}`);
+  }
 
   console.log("\n📚 Regenerando docs/reference/inventario.md...");
   try {

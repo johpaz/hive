@@ -1,26 +1,30 @@
 # ─── Stage 1: Build UI ────────────────────────────────────────────────────────
-FROM docker.io/oven/bun:1 AS ui-builder
+# Bun fijo, igual que CI y release: con `oven/bun:1` la imagen subió sola a 1.4
+# y rompió `--frozen-lockfile` sin que cambiara nada del repo.
+FROM docker.io/oven/bun:1.4.2 AS ui-builder
 
 WORKDIR /app
 
 # Copy root manifests
 COPY package.json bun.lock bunfig.toml tsconfig.base.json tsconfig.json ./
 
+# Manifiestos reales de los demás workspaces. Antes se reemplazaban por stubs
+# `{"name","version":"0.0.0"}` para no instalar sus dependencias, pero Bun 1.4
+# compara cada workspace con bun.lock y el stub lo hacía fallar con
+# "lockfile had changes, but lockfile is frozen".
+COPY packages/core/package.json ./packages/core/package.json
+COPY packages/cli/package.json ./packages/cli/package.json
+COPY packages/mcp/package.json ./packages/mcp/package.json
+COPY packages/skills/package.json ./packages/skills/package.json
+
 # Copy hive-ui source
 COPY packages/hive-ui ./packages/hive-ui
 
-# Stub workspace packages with correct names so bun workspace resolution works
-RUN mkdir -p packages/core packages/cli packages/mcp packages/skills && \
-      echo '{"name":"@johpaz/hive-agents-core","version":"0.0.0"}' > packages/core/package.json && \
-      echo '{"name":"@johpaz/hive-agents","version":"0.0.0"}' > packages/cli/package.json && \
-      echo '{"name":"@johpaz/hive-agents-mcp","version":"0.0.0"}' > packages/mcp/package.json && \
-      echo '{"name":"@johpaz/hive-agents-skills","version":"0.0.0"}' > packages/skills/package.json
-
-RUN bun install --frozen-lockfile
+RUN bun install --frozen-lockfile --ignore-scripts
 RUN cd packages/hive-ui && bun run build
 
 # ─── Stage 2: Compile gateway for the image architecture ─────────────────────
-FROM docker.io/oven/bun:1 AS binary-builder
+FROM docker.io/oven/bun:1.4.2 AS binary-builder
 
 WORKDIR /app
 ARG TARGETARCH
