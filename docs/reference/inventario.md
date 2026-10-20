@@ -2,20 +2,20 @@
 
 > No edites este archivo manualmente. Ejecuta `bun run docs:generate`.
 
-Generado desde el código fuente para Hive **1.1.0**.
+Generado desde el código fuente para Hive **1.1.1**.
 
 ## Versiones
 
 | Paquete | Versión |
 |---|---:|
-| `@johpaz/hive-agents` | `1.1.0` |
-| `@johpaz/hive-cli` | `1.1.0` |
-| `@johpaz/hive-agents-core` | `1.1.0` |
-| `@johpaz/hive-agents-ui` | `1.1.0` |
-| `@johpaz/hive-agents-mcp` | `1.1.0` |
-| `@johpaz/hive-agents-skills` | `1.1.0` |
-| `@johpaz/hive-desktop` | `1.1.0` |
-| `apps/hive-desktop/src-tauri/tauri.conf.json` | `1.1.0` |
+| `@johpaz/hive-agents` | `1.1.1` |
+| `@johpaz/hive-cli` | `1.1.1` |
+| `@johpaz/hive-agents-core` | `1.1.1` |
+| `@johpaz/hive-agents-ui` | `1.1.1` |
+| `@johpaz/hive-agents-mcp` | `1.1.1` |
+| `@johpaz/hive-agents-skills` | `1.1.1` |
+| `@johpaz/hive-desktop` | `1.1.1` |
+| `apps/hive-desktop/src-tauri/tauri.conf.json` | `1.1.1` |
 
 ## Herramientas (99)
 

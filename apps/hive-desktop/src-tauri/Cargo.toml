@@ -1,6 +1,6 @@
 [package]
 name = "hive-desktop"
-version = "1.1.0"
+version = "1.1.1"
 description = "Hive Agents"
 authors = ["Hive Agents"]
 license = "MIT"
