@@ -66,7 +66,10 @@ RUN bun build \
       ./packages/core/src/tool-runtime/tool-worker.ts
 
 # ─── Stage 3: Minimal glibc runtime ───────────────────────────────────────────
-FROM docker.io/debian:bookworm-slim
+# trixie (glibc 2.41), not bookworm (2.36): the native HiveDB binding for
+# linux-*-gnu is built on Ubuntu 24.04 and requires glibc >= 2.39, so on
+# bookworm the server dies at boot with "GLIBC_2.39 not found".
+FROM docker.io/debian:trixie-slim
 
 # ca-certificates for HTTPS, Chromium for browser tools, wget for healthchecks.
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -81,7 +81,9 @@ export const codeAgentRunTool: Tool = {
     const prompt = String(params.prompt ?? "").trim();
     if (!prompt) return { ok: false, error: "prompt is required" };
 
-    if (!Bun.which(adapter.binary)) {
+    // Bun.which looks at the PATH the process started with; pass the live one so
+    // a PATH changed at runtime (a user shell hook, a test double) is honoured.
+    if (!Bun.which(adapter.binary, { PATH: process.env.PATH })) {
       return { ok: false, error: `'${adapter.binary}' is not installed or not in PATH`, hint: "Install that CLI or choose another agent." };
     }
 
