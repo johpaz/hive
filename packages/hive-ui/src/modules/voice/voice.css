@@ -648,6 +648,52 @@
   color: var(--vx-gold);
 }
 
+/* ── Panel de flechas: mover y acercar la escena ─────────────────────────── */
+.vx__pad {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  grid-template-columns: repeat(3, 1.9rem);
+  grid-template-rows: repeat(3, 1.9rem);
+  gap: 0.25rem;
+  padding: 0.4rem;
+  border-radius: 0.9rem;
+  opacity: 0.55;
+  transition: opacity 180ms;
+}
+
+.vx__pad:hover,
+.vx__pad:focus-within {
+  opacity: 1;
+}
+
+.vx__pad-btn {
+  display: grid;
+  place-items: center;
+  color: var(--vx-dim);
+  border-radius: 0.55rem;
+  border: 1px solid var(--vx-faint);
+  background: color-mix(in oklab, var(--vx-ink) 60%, transparent);
+  cursor: pointer;
+  touch-action: none;
+  transition: color 160ms, border-color 160ms, background 160ms;
+}
+
+.vx__pad-btn:hover,
+.vx__pad-btn:active {
+  color: var(--vx-gold);
+  border-color: color-mix(in oklab, var(--vx-gold) 40%, transparent);
+}
+
+.vx__pad-up { grid-area: 1 / 2; }
+.vx__pad-left { grid-area: 2 / 1; }
+.vx__pad-right { grid-area: 2 / 3; }
+.vx__pad-down { grid-area: 3 / 2; }
+.vx__pad-in { grid-area: 3 / 1; }
+.vx__pad-out { grid-area: 3 / 3; }
+
 /* ── Botón de recentrar vista ────────────────────────────────────────────── */
 .vx__recenter {
   position: absolute;

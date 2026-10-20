@@ -40,6 +40,7 @@ import { useUserStore } from "@/stores/userStore";
 import { VoiceStage } from "./scene/VoiceStage";
 import { CameraPreview } from "./CameraPreview";
 import { AudioSettings } from "./AudioSettings";
+import { ScenePad } from "./ScenePad";
 import type { SceneControlsHandle } from "./scene/SceneControls";
 import type { BiaState } from "./scene/BiaPortrait";
 import "./voice.css";
@@ -259,6 +260,7 @@ export function VoiceConsole() {
         working={working}
         baseState={baseState}
         onTomarControl={() => setVistaLibre(true)}
+        onRecentrar={() => setVistaLibre(false)}
         controlsRef={controlsRef}
         avatar={avatar}
       />
@@ -383,6 +385,8 @@ export function VoiceConsole() {
             ))
           )}
         </div>
+
+        <ScenePad controlsRef={controlsRef} />
 
         {vistaLibre ? (
           <button

@@ -232,6 +232,14 @@ export class RealtimePlayer {
   onIdle?: () => void;
 
   /**
+   * Contexto y bus de la voz, para engancharle el análisis de visemas. Solo se
+   * lee: el audio sigue yendo del bus al destino sin pasar por nadie más.
+   */
+  get lipsyncSource(): { context: AudioContext; node: AudioNode } | null {
+    return this.context && this.bus ? { context: this.context, node: this.bus } : null;
+  }
+
+  /**
    * Hasta cuándo se da por hecho que suena su voz, en reloj de pared.
    *
    * En reloj de pared a propósito: es el único que siempre avanza. La versión

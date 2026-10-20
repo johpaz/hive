@@ -13,7 +13,8 @@
  * relieve del retrato se leyera sin tocar nada— y un seguimiento del puntero;
  * los dos se quitaron porque una figura que se balancea sin motivo se lee como
  * un fallo, no como profundidad. Ahora el encuadre sólo cambia si se arrastra
- * con el ratón, y el botón de recentrar lo devuelve a su sitio.
+ * con el ratón (izquierdo desplaza, derecho gira) o con el panel de flechas, y
+ * el botón de recentrar —o un doble clic— lo devuelve a su sitio.
  */
 
 import { Suspense, useRef, type Ref } from "react";
@@ -36,6 +37,8 @@ interface VoiceStageProps {
   className?: string;
   /** Avisa al HUD de que la cámara pasó a control manual. */
   onTomarControl?: () => void;
+  /** Avisa de que se volvió al encuadre de partida (doble clic). */
+  onRecentrar?: () => void;
   controlsRef?: Ref<SceneControlsHandle>;
   /** "foto" = render con relieve; "modelo" = malla 3D real. */
   avatar?: "foto" | "modelo";
@@ -50,6 +53,7 @@ export function VoiceStage({
   baseState,
   className,
   onTomarControl,
+  onRecentrar,
   controlsRef,
   avatar = "modelo",
 }: VoiceStageProps) {
@@ -63,7 +67,10 @@ export function VoiceStage({
     <div className={className}>
       <Canvas
         dpr={[1, 1.75]}
-        gl={{ antialias: false, alpha: false, powerPreference: "high-performance" }}
+        // Con postproceso el antialias del canvas no cuenta (se dibuja a un
+        // buffer aparte): lo que suaviza los bordes es `multisampling` del
+        // compositor. Sin reducedMotion no hay compositor y sí hace falta este.
+        gl={{ antialias: reducedMotion, alpha: false, powerPreference: "high-performance" }}
         // Encuadre de tres cuartos con aire alrededor: antes la figura llenaba
         // la pantalla y se cortaba por abajo.
         camera={{ fov: 32, near: 0.1, far: 60, position: [0, 0.15, 6.2] }}
@@ -94,10 +101,16 @@ export function VoiceStage({
           )}
           <Pollen energyRef={energy} />
 
-          <SceneControls onTomarControl={() => onTomarControl?.()} handleRef={controlsRef} />
+          <SceneControls
+            onTomarControl={() => onTomarControl?.()}
+            onRecentrar={() => onRecentrar?.()}
+            handleRef={controlsRef}
+          />
 
           {!reducedMotion && (
-            <EffectComposer multisampling={0}>
+            // MSAA 4×: con 0 los bordes de la figura, las alas y el pelo salían
+            // dentados, y eso se lee como imagen pixelada aunque la textura esté bien.
+            <EffectComposer multisampling={4}>
               {/*
                * Sólo florece lo que ya brilla: ojos, núcleo y líneas del traje.
                * El umbral es alto a propósito — más bajo, el bloom se comía la

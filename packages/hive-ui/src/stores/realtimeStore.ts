@@ -111,6 +111,11 @@ export function getSpectrumTaps(): { mic: SpectrumTap | null; player: SpectrumTa
   return { mic: mic?.spectrum ?? null, player: player?.spectrum ?? null };
 }
 
+/** Dónde engancharle el análisis de visemas a la voz del modelo; null si no suena nada. */
+export function getLipsyncSource(): { context: AudioContext; node: AudioNode } | null {
+  return player?.lipsyncSource ?? null;
+}
+
 let ws: WebSocket | null = null;
 let mic: RealtimeMic | null = null;
 let player: RealtimePlayer | null = null;
