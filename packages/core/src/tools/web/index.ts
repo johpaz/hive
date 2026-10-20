@@ -16,6 +16,7 @@ import { browserTypeTool } from "./browser-type.ts";
 import { browserExtractTool } from "./browser-extract.ts";
 import { browserScriptTool } from "./browser-script.ts";
 import { browserWaitTool } from "./browser-wait.ts";
+import { createObscuraTools } from "./obscura.ts";
 import { artifactInspectTool } from "./artifact-inspect.ts";
 import { artifactReadTool } from "./artifact-read.ts";
 
@@ -31,6 +32,8 @@ export function createTools(): Tool[] {
     browserExtractTool,
     browserScriptTool,
     browserWaitTool,
+    // Obscura: navegador headless sin Chromium, sesión viva y refs de elementos.
+    ...createObscuraTools(),
     artifactInspectTool,
     artifactReadTool,
   ];
@@ -47,5 +50,6 @@ export * from "./browser-extract.ts";
 export * from "./browser-script.ts";
 export * from "./browser-wait.ts";
 export * from "./browser-service.ts";
+export * from "./obscura.ts";
 export * from "./artifact-inspect.ts";
 export * from "./artifact-read.ts";

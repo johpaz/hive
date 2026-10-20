@@ -1,0 +1,6 @@
+servicio,estado,latencia_ms
+autenticacion,ok,120
+pagos,degradado,850
+inventario,ok,180
+notificaciones,ok,620
+catalogo,ok,95

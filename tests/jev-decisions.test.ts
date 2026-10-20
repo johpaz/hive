@@ -34,6 +34,79 @@ afterEach(() => {
   closeHiveDb()
 })
 
+const hiveagents: ProviderDoc = {
+  id: "hiveagents", name: "HiveAgents LLM", base_url: "https://llm.hiveagents.io/v1",
+  category: "llm", enabled: true, active: true, num_ctx: null, num_gpu: -1, created_at: 1,
+}
+
+describe("Kev decision backend", () => {
+  const choiceQ = { route: { type: "choice" as const, instructions: "Choose", criteria: { files: "File task" } } }
+  const choiceA = { route: { type: "choice", choice: "files", confidence: 0.9, probabilities: { files: 0.9 } } }
+
+  beforeEach(async () => {
+    await (await col<ProviderDoc>("providers")).put("hiveagents", hiveagents)
+    await storeProviderApiKey("hiveagents", "test-hive-key")
+  })
+
+  const fetcherFor = (kev: { ready: boolean; status?: number }, calls: string[]) => (async (url: string | URL | Request) => {
+    const u = String(url)
+    calls.push(u)
+    if (u.endsWith("/api/decisions/status")) return Response.json({ ready: kev.ready })
+    if (u.endsWith("/v1/systemone")) return kev.status && kev.status !== 200 ? new Response("x", { status: kev.status }) : Response.json({ answers: choiceA })
+    return Response.json({ answers: choiceA })
+  }) as unknown as typeof fetch
+
+  test("uses /v1/systemone first and never touches OpenRouter", async () => {
+    const calls: string[] = []
+    const result = await askJev("route", choiceQ, { fetcher: fetcherFor({ ready: true }, calls) })
+    expect(result?.backend).toBe("kev")
+    expect(result?.costUsd).toBe(0)
+    expect(calls).toEqual(["https://llm.hiveagents.io/api/decisions/status", "https://llm.hiveagents.io/v1/systemone"])
+    expect((await getJevStatus()).backend).toBe("kev")
+  })
+
+  test("falls back to Jev when Kev is not ready or fails", async () => {
+    const calls: string[] = []
+    const notReady = await askJev("route", choiceQ, { fetcher: fetcherFor({ ready: false }, calls) })
+    expect(notReady?.backend).toBe("jev")
+    expect(calls.some(c => c.endsWith("/v1/systemone"))).toBe(false)
+
+    resetJevStatus()
+    const failing = await askJev("route", choiceQ, { fetcher: fetcherFor({ ready: true, status: 502 }, []) })
+    expect(failing?.backend).toBe("jev")
+  })
+
+  test("a 401 from Kev puts it in cooldown while Jev keeps answering", async () => {
+    const calls: string[] = []
+    await askJev("route", choiceQ, { fetcher: fetcherFor({ ready: true, status: 401 }, calls) })
+    calls.length = 0
+    const again = await askJev("route", choiceQ, { fetcher: fetcherFor({ ready: true }, calls) })
+    expect(again?.backend).toBe("jev")
+    expect(calls.some(c => c.includes("hiveagents.io"))).toBe(false)
+  })
+
+  test("validates score answers and works with Kev alone", async () => {
+    await (await col<ProviderDoc>("providers")).put("openrouter", { ...provider, active: false })
+    const q = { urgency: { type: "score" as const, instructions: "Urgency?" } }
+    const ok = await askJev("incident", q, { fetcher: (async (url: string) =>
+      String(url).endsWith("/status") ? Response.json({ ready: true }) : Response.json({ answers: { urgency: { type: "score", score: 0.8 } } })) as unknown as typeof fetch })
+    expect(ok?.answers.urgency).toEqual({ type: "score", score: 0.8 })
+    resetJevStatus()
+    const bad = await askJev("incident", q, { fetcher: (async (url: string) =>
+      String(url).endsWith("/status") ? Response.json({ ready: true }) : Response.json({ answers: { urgency: { type: "score", score: 2 } } })) as unknown as typeof fetch })
+    expect(bad).toBeNull()
+  })
+
+  test("returns null without any network call when neither backend is configured", async () => {
+    await (await col<ProviderDoc>("providers")).put("openrouter", { ...provider, active: false })
+    await (await col<ProviderDoc>("providers")).put("hiveagents", { ...hiveagents, active: false })
+    const calls: string[] = []
+    expect(await askJev("route", choiceQ, { fetcher: fetcherFor({ ready: true }, calls) })).toBeNull()
+    expect(calls).toEqual([])
+    expect((await getJevStatus()).state).toBe("off")
+  })
+})
+
 describe("Jev decision plane", () => {
   test("uses the OpenRouter Decisions endpoint and validates bounded answers", async () => {
     let requested = false

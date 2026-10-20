@@ -42,7 +42,7 @@ export async function handleGetProviders(req: Request, addCorsHeaders: (r: Respo
       has_api_key: apiKey ? 1 : 0,
       has_headers: Object.keys(headers).length > 0 ? 1 : 0,
       masked_api_key: apiKey ? maskApiKey(apiKey) : null,
-      ...(p.doc.id === "openrouter" ? { jev: jevStatus } : {}),
+      ...(p.doc.id === "openrouter" || p.doc.id === "hiveagents" ? { jev: jevStatus } : {}),
       models: providerModels,
     }
   }))
@@ -78,7 +78,7 @@ export async function handleToggleProvider(req: Request, addCorsHeaders: (r: Res
   }
 
   await updateDoc<ProviderDoc>("providers", providerId, { active: !!active, enabled: !!active })
-  if (providerId === "openrouter") resetJevStatus()
+  if (providerId === "openrouter" || providerId === "hiveagents") resetJevStatus()
 
   // Cascade: activate/deactivate all models for this provider
   await updateManyByIndex<ModelDoc>("models", "provider_id", providerId, { active: !!active, enabled: !!active })
@@ -113,7 +113,7 @@ export async function handleUpdateProvider(req: Request, addCorsHeaders: (r: Res
   }
   if (body.clearApiKey === true) {
     await deleteProviderApiKey(id)
-    if (id === "openrouter") resetJevStatus()
+    if (id === "openrouter" || id === "hiveagents") resetJevStatus()
   }
   if (body.headers) {
     await storeProviderHeaders(id, body.headers)
@@ -123,7 +123,7 @@ export async function handleUpdateProvider(req: Request, addCorsHeaders: (r: Res
 
   if (Object.keys(patch).length > 0) {
     await updateDoc<ProviderDoc>("providers", id, patch).catch(() => { /* provider not found */ })
-    if (id === "openrouter" && (patch.active !== undefined || patch.enabled !== undefined)) resetJevStatus()
+    if ((id === "openrouter" || id === "hiveagents") && (patch.active !== undefined || patch.enabled !== undefined)) resetJevStatus()
 
     // Cascade active/enabled changes to models
     if (patch.active !== undefined) {

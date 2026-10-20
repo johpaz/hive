@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
 import * as path from "node:path"
 import { getHiveDir } from "../config/loader.ts"
 import { logger } from "../utils/logger"
@@ -15,9 +15,10 @@ interface SecretDoc {
 
 // ─── Durable secret store ────────────────────────────────────────────────────
 // The `secrets` collection is the source of truth: AES-256-GCM ciphertext in
-// the database, keyed by <HIVE_HOME>/.master.key. It lives inside the data
-// directory, so whatever persists the database (a Docker volume, a backup)
-// persists the secrets with it.
+// the database. The AES key lives in the OS keychain (libsecret / macOS
+// Keychain / Credential Manager); only where no keychain exists (headless
+// Linux, Docker) does it fall back to <HIVE_HOME>/.master.key, next to the
+// database, so a fresh install is still durable without configuration.
 //
 // The OS keychain (Bun.secrets) is only a best-effort mirror. It throws on
 // headless Linux/Docker (no libsecret/D-Bus), and on desktops it can be a
@@ -49,6 +50,7 @@ function _getKeychainApi(): any {
 }
 
 async function _get(name: string): Promise<string | null> {
+  await initMasterKey()
   const cached = _mem.get(name)
   if (cached !== undefined) return cached
   const epoch = _epoch.get(name) ?? 0
@@ -74,6 +76,7 @@ async function _get(name: string): Promise<string | null> {
  * silently accepting a secret that dies with the process.
  */
 async function _set(name: string, value: string): Promise<boolean> {
+  await initMasterKey()
   _epoch.set(name, (_epoch.get(name) ?? 0) + 1)
   _mem.set(name, value)
   const durable = await persistSecretToCollection(name, value)
@@ -143,19 +146,20 @@ async function _del(name: string): Promise<void> {
 }
 
 /**
- * Mint the master key (if this is a fresh install) and report where secrets
- * will be stored. Called once at boot so an operator sees the answer before
- * typing an API key, not after a restart lost it.
+ * Resolve the master key (minting it on a fresh install) and report where
+ * secrets will be stored. Called once at boot so an operator sees the answer
+ * before typing an API key, not after a restart lost it.
  */
-export function ensureSecretsBackend(): { durable: boolean } {
-  const durable = getMasterKey() !== null
+export async function ensureSecretsBackend(): Promise<{ durable: boolean; keySource: MasterKeySource }> {
+  await initMasterKey()
+  const durable = _masterKey !== null
   if (!durable) {
     log.error(
       `[secrets] No master key available — API keys and channel tokens will NOT survive a restart. ` +
       `Set HIVE_MASTER_KEY or make ${getHiveDir()} writable.`
     )
   }
-  return { durable }
+  return { durable, keySource: _keySource }
 }
 
 // ─── Primitive API ────────────────────────────────────────────────────────────
@@ -300,50 +304,128 @@ export function decryptSecret(encrypted: string, iv: string): string {
   }
 }
 
+type MasterKeySource = "env" | "keychain" | "file" | "none"
+
+// One entry per data directory: the keychain is per-user, HIVE_HOME is not, and
+// a second instance (tests, another profile) must never adopt this one's key.
+const masterKeyEntry = () =>
+  `master-key:${new Bun.CryptoHasher("sha256").update(path.resolve(getHiveDir())).digest("hex").slice(0, 16)}`
+
 let _masterKey: Buffer | null = null
+let _keySource: MasterKeySource = "none"
+let _initPromise: Promise<void> | null = null
 
 /**
- * The AES key protecting the `secrets` collection.
+ * Resolve the AES key protecting the `secrets` collection, in order:
  *
- * `HIVE_MASTER_KEY` wins when set (the recommended way to run in production:
- * the key never touches the data volume). Otherwise the key is minted on
- * first use and written 0600 to `<HIVE_HOME>/.master.key`, next to the
- * database — a fresh install becomes durable without the user configuring
- * anything, and restoring the data directory restores the ability to read
- * the secrets inside it.
+ *  1. `HIVE_MASTER_KEY` — the key never touches the machine's disk.
+ *  2. The OS keychain. A key left in `<HIVE_HOME>/.master.key` by an earlier
+ *     version is moved there, and the file is removed only after the keychain
+ *     returns the same key.
+ *  3. `<HIVE_HOME>/.master.key` (0600) where no keychain exists.
+ *
+ * Memoized: every secret read/write awaits it, so the sync primitives below
+ * can rely on `_masterKey`.
  */
-function getMasterKey(): Buffer | null {
-  if (_masterKey) return _masterKey
+export function initMasterKey(): Promise<void> {
+  return (_initPromise ??= resolveMasterKey())
+}
 
+async function resolveMasterKey(): Promise<void> {
   const fromEnv = process.env.HIVE_MASTER_KEY
   if (fromEnv) {
     _masterKey = Buffer.from(fromEnv.slice(0, 32).padEnd(32, "0"), "utf8")
-    return _masterKey
+    _keySource = "env"
+    return
   }
 
   const keyPath = path.join(getHiveDir(), ".master.key")
+  const fromKeychain = await _keychainGetKey()
+  if (fromKeychain) {
+    _masterKey = fromKeychain
+    _keySource = "keychain"
+    // An earlier version's file must not outlive the key it duplicates.
+    if (existsSync(keyPath) && readFileKey(keyPath)?.equals(fromKeychain)) removeKeyFile(keyPath)
+    return
+  }
+
+  // No key in the keychain: reuse the file's key (migration) or mint a new one.
+  const key = (existsSync(keyPath) ? readFileKey(keyPath) : null) ?? randomBytes(32)
+  if (await _keychainSetKey(key)) {
+    _masterKey = key
+    _keySource = "keychain"
+    if (existsSync(keyPath)) removeKeyFile(keyPath)
+    else log.info("[secrets] Master key generated in the OS keychain")
+    return
+  }
+
+  // Headless Linux / Docker: no keychain to hold it.
+  _masterKey = loadOrMintKeyFile(keyPath)
+  _keySource = _masterKey ? "file" : "none"
+}
+
+/** Read the key from the keychain; null when absent, malformed or no keychain. */
+async function _keychainGetKey(): Promise<Buffer | null> {
+  try {
+    const hex = await (Bun as any).secrets.get({ service: SERVICE, name: masterKeyEntry() })
+    const key = hex ? Buffer.from(String(hex).trim(), "hex") : null
+    return key?.length === 32 ? key : null
+  } catch {
+    return null
+  }
+}
+
+/** Store the key and confirm the keychain gives it back — a write that does not persist is no write. */
+async function _keychainSetKey(key: Buffer): Promise<boolean> {
+  try {
+    await (Bun as any).secrets.set({ service: SERVICE, name: masterKeyEntry(), value: key.toString("hex") })
+  } catch {
+    return false
+  }
+  return (await _keychainGetKey())?.equals(key) ?? false
+}
+
+function readFileKey(keyPath: string): Buffer | null {
+  try {
+    const key = Buffer.from(readFileSync(keyPath, "utf8").trim(), "hex")
+    if (key.length === 32) return key
+    log.error(`[secrets] ${keyPath} is not a 32-byte hex key — secrets cannot be read or written`)
+  } catch (err) {
+    log.error(`[secrets] Could not read ${keyPath}: ${(err as Error).message}`)
+  }
+  return null
+}
+
+function removeKeyFile(keyPath: string): void {
+  try {
+    unlinkSync(keyPath)
+    log.info(`[secrets] Master key moved to the OS keychain; removed ${keyPath}`)
+  } catch (err) {
+    log.warn(`[secrets] Master key is in the OS keychain but ${keyPath} could not be removed: ${(err as Error).message}`)
+  }
+}
+
+function loadOrMintKeyFile(keyPath: string): Buffer | null {
   try {
     if (!existsSync(keyPath)) {
       mkdirSync(path.dirname(keyPath), { recursive: true })
       try {
         // "wx" so two processes starting at once can't overwrite each other's key
         writeFileSync(keyPath, randomBytes(32).toString("hex"), { mode: 0o600, flag: "wx" })
-        log.info(`[secrets] Master key generated at ${keyPath}`)
+        log.info(`[secrets] No OS keychain; master key generated at ${keyPath}`)
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err
       }
     }
-    const key = Buffer.from(readFileSync(keyPath, "utf8").trim(), "hex")
-    if (key.length !== 32) {
-      log.error(`[secrets] ${keyPath} is not a 32-byte hex key — secrets cannot be read or written`)
-      return null
-    }
-    _masterKey = key
-    return _masterKey
+    return readFileKey(keyPath)
   } catch (err) {
     log.error(`[secrets] Could not read or create ${keyPath}: ${(err as Error).message}`)
     return null
   }
+}
+
+function getMasterKey(): Buffer | null {
+  return _masterKey
 }
 
 /**

@@ -3,7 +3,7 @@ import { useFrame } from "@react-three/fiber";
 import { Html, QuadraticBezierLine } from "@react-three/drei";
 import { AdditiveBlending, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, PointLight, Vector3 } from "three";
 import type { CanvasJevDecision, JevStatus } from "@/stores/canvasStore";
-import { JEV_COLOR, JEV_FALLBACK_COLOR, jevKindLabel, jevSavingChip } from "../state/jev";
+import { JEV_COLOR, JEV_FALLBACK_COLOR, jevKindLabel, jevSavingChip, oracleName } from "../state/jev";
 import type { SwarmRef } from "./swarm";
 
 /** Encima de la corona de la reina: asesora a todo el enjambre sin ser una abeja más. */
@@ -111,7 +111,7 @@ export function JevOracle({
         </group>
         <pointLight ref={lightRef} color={color} intensity={3} distance={12} decay={1.8} />
         <Html position={[0, 1.55, 0]} center distanceFactor={22} className="pointer-events-none select-none">
-          <div className={`office3d-jev-tag ${fallback ? "is-fallback" : ""}`}>JEV</div>
+          <div className={`office3d-jev-tag ${fallback ? "is-fallback" : ""}`}>{oracleName(status).toUpperCase()}</div>
         </Html>
       </group>
 
@@ -122,6 +122,7 @@ export function JevOracle({
           swarmRef={swarmRef}
           coordinatorId={coordinatorId}
           color={color}
+          name={oracleName(status)}
           onDone={() => setBeams((active) => active.filter((b) => b.decision.eventId !== beam.decision.eventId))}
         />
       ))}
@@ -134,12 +135,14 @@ function JevBeam({
   swarmRef,
   coordinatorId,
   color,
+  name,
   onDone,
 }: {
   beam: Beam;
   swarmRef: SwarmRef;
   coordinatorId: string | null;
   color: string;
+  name: string;
   onDone: () => void;
 }) {
   const lineRef = useRef<Line2Like | null>(null);
@@ -205,7 +208,7 @@ function JevBeam({
       <group ref={labelRef}>
         <Html position={[0, 1.35, 0]} center distanceFactor={20} className="pointer-events-none select-none">
           <div className="office3d-jev-chip">
-            <span>Jev · {jevKindLabel(decision.kind)}</span>
+            <span>{name} · {jevKindLabel(decision.kind)}</span>
             {chip && <strong className={decision.savedTokens < 0 ? "is-cost" : ""}>{chip}</strong>}
             <small>{decision.latencyMs} ms</small>
           </div>

@@ -17,7 +17,7 @@ Generado desde el código fuente para Hive **1.1.0**.
 | `@johpaz/hive-desktop` | `1.1.0` |
 | `apps/hive-desktop/src-tauri/tauri.conf.json` | `1.1.0` |
 
-## Herramientas (61)
+## Herramientas (99)
 
 | Herramienta | Categoría | Descripción |
 |---|---|---|
@@ -41,6 +41,7 @@ Generado desde el código fuente para Hive **1.1.0**.
 | `bus_publish` | agents | Publish a message to the Agent Bus for worker-to-worker communication. Spanish: publicar mensaje, comunicar workers, enviar bus |
 | `bus_read` | agents | Read unread messages from the Agent Bus. Spanish: leer mensajes bus, recibir mensajes, verificar bus |
 | `cli_exec` | cli | Execute shell/bash commands in the agent workspace. NOTE: do NOT use for scheduling tasks, use cron.create instead. Spanish: ejecutar comando, terminal, bash, script, consola |
+| `code_agent_run` | externa | Delegate a coding task to an external coding-agent CLI (claude, codex, opencode, kimi). Runs in an isolated git worktree when possible and returns the summary, changed files and diff; it never merges into the workspace. Spanish: agente de código externo, delegar programación |
 | `computer_use_task` | web | Opera el navegador de Hive mirando la pantalla: hace clic, escribe y navega guiado por lo que ve. Úsalo cuando la página no tenga selectores estables o cuando browser_click/browser_type no basten. Actúa sobre el navegador de Hive, NUNCA sobre la pantalla del usuario. Spanish: usar el navegador, hacer clic, operar una página, rellenar un formulario |
 | `conversation_read` | core | Read earlier messages from the current conversation by message IDs or text query when selected context is insufficient. |
 | `cron.create` | cron | Create a Hive scheduled automation: a recurring cron job or one-shot future execution. Spanish: crear automatización programada, programar tarea recurrente, ejecutar después, programar reporte |
@@ -65,6 +66,43 @@ Generado desde el código fuente para Hive **1.1.0**.
 | `memory_search` | agents | Search memories by keyword. Spanish: buscar memoria, encontrar recuerdo, buscar dato guardado |
 | `memory_write` | agents | Store information in persistent long-term memory. Spanish: guardar memoria, recordar, guardar dato, memoria persistente |
 | `notify` | core | Send a notification or progress update to the user's active channel. Use this to keep the user informed while working on long tasks. |
+| `obscura_back` | web | Navigate back in the page history (browser back button). Requires an active session from obscura_navigate. Spanish keywords: atrás, volver, página anterior, regresar |
+| `obscura_clear_cookies` | web | Wipe every cookie from the jar. Spanish keywords: borrar cookies, limpiar cookies, eliminar cookies |
+| `obscura_click` | web | Click an element by ref (preferred, from obscura_snapshot/obscura_interactive_elements) or CSS selector. Spanish keywords: hacer clic, presionar botón, clickear, pulsar, click |
+| `obscura_close` | web | Close the current browser page and reset the session state. Spanish keywords: cerrar navegador, cerrar página, terminar sesión |
+| `obscura_console_messages` | web | List the console messages logged by the current page (logs, warnings, errors). Spanish keywords: ver consola, logs página, mensajes consola, errores javascript, console |
+| `obscura_count` | web | Count how many elements on the page match a CSS selector. Cheap existence/pagination probe. Spanish keywords: contar elementos, cuántos, número de elementos, contar coincidencias |
+| `obscura_detect_forms` | web | List every <form> on the page with its action URL, method and a description of each input/textarea/select. Understand a form before filling it. Spanish keywords: detectar formularios, ver formularios, campos formulario, estructura formulario |
+| `obscura_evaluate` | web | Evaluate a JavaScript expression in the page context and return the result as JSON. Spanish keywords: ejecutar javascript, evaluar expresión, js en página, script navegador, eval |
+| `obscura_extract` | web | Extract a structured object from the page given a map of {field_name: css_selector}. Use 'selector@attr' for attributes (e.g. 'a@href') and 'field[]' suffix for arrays. Spanish keywords: extraer datos, scraping, extraer estructura, datos página, seleccionar campos |
+| `obscura_fill` | web | Set the value of an input element (replaces existing value). Pass ref (preferred) or selector. Spanish keywords: llenar campo, rellenar input, establecer valor, completar campo |
+| `obscura_fill_form` | web | Fill multiple inputs in one call: fields is an array of {ref?, selector?, value, type?} where type is text (default), check, uncheck or select. Optional submit_ref/submit_selector clicks after filling. Spanish keywords: llenar formulario, completar formulario, rellenar form, enviar formulario |
+| `obscura_forward` | web | Navigate forward in the page history. Requires an active session from obscura_navigate. Spanish keywords: adelante, página siguiente, avanzar |
+| `obscura_get_attribute` | web | Read an attribute of an element (href, src, value, class, data-*). Returns the raw value or empty string. Spanish keywords: leer atributo, obtener atributo, href, valor elemento, atributo html |
+| `obscura_get_cookies` | web | Return all cookies in the browser's cookie jar as one JSON object per line. Spanish keywords: ver cookies, obtener cookies, cookies sesión, leer cookies |
+| `obscura_interactive_elements` | web | List every clickable/typeable element with a stable ref ID and a brief description. Use BEFORE clicking or filling to act by ref instead of guessing CSS selectors. Spanish keywords: elementos interactivos, botones, campos, inputs, refs, elementos clicables |
+| `obscura_links` | web | List every anchor link on the current page as one JSON object per line {text, href}. Spanish keywords: listar enlaces, ver links, urls página, hipervínculos, enlaces |
+| `obscura_markdown` | web | Extract the current page as Markdown (headings, paragraphs, lists, links, code blocks). Token-dense structured content instead of plain text. Spanish keywords: markdown, extraer markdown, contenido estructurado, página en markdown |
+| `obscura_navigate` | web | Navigate to a URL and wait for the page to load, keeping a live browser session for subsequent obscura_* tools. Returns the final URL and title only: read the page next with obscura_snapshot or obscura_markdown. Spanish keywords: navegar, abrir página, ir a sitio web, cargar url, visitar |
+| `obscura_network_requests` | web | List the network requests made by the current page (URLs, statuses, timings). Spanish keywords: ver peticiones red, requests, tráfico red, llamadas http página, network |
+| `obscura_pdf` | web | Export the current rendered document as a paginated PDF (saved to ~/.hivecode/screenshots/). Spanish keywords: exportar pdf, guardar pdf, página a pdf, documento pdf |
+| `obscura_press_key` | web | Dispatch a keyboard event (Enter, Tab, Escape…) on an element or the document. Spanish keywords: presionar tecla, pulsar enter, teclado, keydown |
+| `obscura_reload` | web | Reload the current page. Requires an active session from obscura_navigate. Spanish keywords: recargar, refrescar página, actualizar página, f5 |
+| `obscura_screenshot` | web | Capture the current rendered viewport as a PNG (saved to ~/.hivecode/screenshots/, returned with path + base64). Use for canvas/visual verification; prefer obscura_snapshot for text. Spanish keywords: captura de pantalla, screenshot, fotografiar página, imagen página, png |
+| `obscura_scroll` | web | Scroll the page or an element: direction top/bottom/up/down/left/right, amount in pixels. Use 'bottom' to trigger infinite-scroll loaders. Spanish keywords: scroll, desplazar, bajar página, subir página, desplazamiento |
+| `obscura_search` | web | Find substring matches in the visible page text with surrounding context. Spanish keywords: buscar en página, encontrar texto, buscar contenido, texto en página |
+| `obscura_select_option` | web | Select an option from a <select> element by value or visible text. Spanish keywords: seleccionar opción, elegir opción, dropdown, lista desplegable, select |
+| `obscura_set_cookie` | web | Add or replace a cookie in the jar — skip a login flow when you already have a session token. Spanish keywords: setear cookie, establecer cookie, inyectar cookie, cookie sesión |
+| `obscura_set_storage_state` | web | Restore a session state previously returned by obscura_storage_state to bring an authenticated session back. Spanish keywords: restaurar sesión, importar sesión, cargar sesión guardada, login guardado |
+| `obscura_snapshot` | web | Get the current page as text: URL, title, readable body text and interactive element refs. Preferred first read after navigating. Spanish keywords: snapshot página, contenido página, ver página, texto página, captura textual |
+| `obscura_storage_state` | web | Export the full session state (cookies + localStorage + sessionStorage) as JSON — save it to skip a login on a later run. Spanish keywords: exportar sesión, estado sesión, guardar sesión, storage state |
+| `obscura_tab_close` | web | Close a tab by ID (default: the active tab). Spanish keywords: cerrar pestaña, cerrar tab |
+| `obscura_tab_list` | web | List all open tabs with their ID, URL, title and which one is active. Spanish keywords: listar pestañas, ver pestañas, tabs abiertos |
+| `obscura_tab_new` | web | Open a new tab (isolated browser page); subsequent tool calls operate on the most recent tab. Spanish keywords: nueva pestaña, abrir pestaña, nuevo tab |
+| `obscura_tab_switch` | web | Switch the active tab — all subsequent tool calls target this tab. Spanish keywords: cambiar pestaña, cambiar tab, activar pestaña |
+| `obscura_type` | web | Type text into an input element (appends to existing value). Pass ref (preferred) or selector. Spanish keywords: escribir en campo, teclear texto, introducir texto, escribir input |
+| `obscura_wait_for` | web | Wait for a CSS selector to appear in the DOM (default 30s). Spanish keywords: esperar elemento, aguardar selector, wait selector, esperar carga |
+| `obscura_wait_for_text` | web | Wait until a substring appears anywhere in the rendered page text — for result messages and notifications. Spanish keywords: esperar texto, aguardar mensaje, esperar resultado, wait texto |
 | `office_escribir_docx` | office | Generar un archivo Word (.docx) con párrafos, títulos y tablas. Spanish: crear word, generar docx, escribir documento word, exportar a docx |
 | `office_escribir_pdf` | office | Generar un archivo PDF desde texto con configuración de márgenes y tamaño de página. Spanish: crear pdf, generar pdf, escribir pdf, exportar a pdf |
 | `office_escribir_pptx` | office | Generar un archivo PowerPoint (.pptx) desde un array de diapositivas con título y contenido. Spanish: crear powerpoint, generar pptx, escribir presentacion, exportar a pptx |
@@ -83,7 +121,7 @@ Generado desde el código fuente para Hive **1.1.0**.
 | `web_fetch` | web | Fetch plain content from a URL (lightweight, no JS). Spanish: obtener página, descargar contenido, extraer texto de url |
 | `web_search` | web | Search the web for current information and research. Spanish: buscar en internet, búsqueda web, noticias, información |
 
-## Skills incluidas (24)
+## Skills incluidas (26)
 
 | Skill | Categoría | Versión | Herramientas | Agentes preferidos |
 |---|---|---:|---|---|
@@ -100,10 +138,12 @@ Generado desde el código fuente para Hive **1.1.0**.
 | `cli_safe_exec` | cli | 1.0.0 | `cli_exec` | — |
 | `cron_manager` | cron | 2.0.0 | `cron.create`, `cron.list`, `cron.update`, `cron.delete`, `cron.pause`, `cron.resume`, `cron.trigger`, `cron.history` | — |
 | `cron_reminder` | cron | 2.0.0 | `cron.create`, `notify` | — |
+| `external_code_agent` | cli | 1.0.0 | `code_agent_run`, `cli_exec` | `external_code_agent` |
 | `file_manager` | filesystem | 1.0.0 | `fs_list`, `fs_glob`, `fs_exists` | — |
 | `file_read_and_summarize` | filesystem | 1.0.0 | `fs_read`, `fs_exists` | — |
 | `file_writer` | filesystem | 1.0.0 | `fs_read`, `fs_write`, `fs_edit`, `fs_exists` | — |
 | `memory_manager` | agents | 1.0.0 | `memory_write`, `memory_read`, `memory_list`, `memory_search`, `memory_delete` | — |
+| `obscura_browser` | web | 1.0.0 | `obscura_navigate`, `obscura_snapshot`, `obscura_markdown`, `obscura_links`, `obscura_interactive_elements`, `obscura_detect_forms`, `obscura_extract`, `obscura_get_attribute`, `obscura_search`, `obscura_click`, `obscura_fill`, `obscura_type`, `obscura_fill_form`, `obscura_press_key`, `obscura_select_option`, `obscura_scroll`, `obscura_wait_for`, `obscura_wait_for_text`, `obscura_evaluate`, `obscura_pdf`, `obscura_get_cookies`, `obscura_set_cookie`, `obscura_storage_state`, `obscura_set_storage_state`, `obscura_tab_new`, `obscura_tab_list`, `obscura_tab_switch`, `obscura_tab_close`, `obscura_close` | `browser_operator` |
 | `office_document_manager` | office | 1.0.0 | `office_leer_pdf`, `office_escribir_pdf`, `office_leer_docx`, `office_escribir_docx`, `office_leer_xlsx`, `office_escribir_xlsx`, `office_leer_pptx`, `office_escribir_pptx` | — |
 | `research_and_remember` | agents | 1.0.0 | `web_search`, `web_fetch`, `memory_write` | — |
 | `software_engineering` | cli | 1.0.0 | `fs_read`, `fs_write`, `fs_edit`, `fs_list`, `fs_glob`, `fs_exists`, `cli_exec` | `software_engineer` |
@@ -112,14 +152,15 @@ Generado desde el código fuente para Hive **1.1.0**.
 | `web_research` | web | 1.0.0 | `web_search`, `web_fetch` | — |
 | `workspace_file_operator` | filesystem | 1.0.0 | `fs_read`, `fs_write`, `fs_edit`, `fs_delete`, `fs_list`, `fs_glob`, `fs_exists` | `workspace_file_operator` |
 
-## Agentes de catálogo (8)
+## Agentes de catálogo (9)
 
 | ID | Nombre | Propósito | Herramientas autorizadas | Skills |
 |---|---|---|---|---|
 | `web_researcher` | Investigador web | Investiga preguntas actuales en fuentes web y entrega conclusiones verificables con referencias. | `web_search`, `web_fetch` | `web_research` |
-| `browser_operator` | Operador de navegador | Navega sitios, completa formularios y verifica visualmente el estado final de una operación web. | `browser_*`, `web_fetch` | `browser_automate`, `browser_scrape` |
+| `browser_operator` | Operador de navegador | Navega sitios, completa formularios y verifica visualmente el estado final de una operación web. | `browser_*`, `obscura_*`, `web_fetch` | `obscura_browser`, `browser_automate`, `browser_scrape` |
 | `workspace_file_operator` | Operador de archivos | Crea, lee, edita, organiza y elimina archivos o carpetas dentro del workspace autorizado. | `fs_*` | `workspace_file_operator`, `file_manager` |
 | `software_engineer` | Ingeniero de software | Implementa, depura y prueba software dentro de un repositorio o workspace existente. | `fs_*`, `cli_exec` | `software_engineering`, `cli_safe_exec`, `cli_pipeline` |
+| `external_code_agent` | Agente de código externo | Delega implementación y refactors a un CLI de código externo (Claude Code, Codex, OpenCode, Kimi) y verifica el resultado. | `code_agent_run`, `fs_read`, `fs_list`, `fs_glob`, `fs_exists`, `cli_exec` | `external_code_agent`, `software_engineering`, `cli_safe_exec` |
 | `office_document_agent` | Operador de Office | Lee y genera documentos PDF, Word, Excel y PowerPoint dentro del workspace. | `office_*`, `fs_exists` | `office_document_manager` |
 | `a2ui_builder` | Constructor A2UI | Construye formularios, dashboards y flujos interactivos compatibles con A2UI v0.9. | `a2ui_*` | `a2ui_form`, `a2ui_dashboard`, `a2ui_interactive` |
 | `schedule_automation_agent` | Operador de cron | Crea y administra jobs programados de Hive: automatizaciones recurrentes o ejecuciones únicas mediante cron.*. | `cron.*` | `cron_manager`, `cron_reminder` |

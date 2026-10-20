@@ -99,7 +99,7 @@ export function JevUsageBlock({ jev }: { jev: JevUsage | undefined }) {
               <tbody>
                 {ranking.map(([agentId, agent]) => (
                   <tr key={agentId} className="border-t border-violet-500/10">
-                    <td className="p-1.5 font-medium truncate max-w-[10rem]">{nameOf(agentId)}</td>
+                    <td className="p-1.5 font-medium truncate max-w-10rem">{nameOf(agentId)}</td>
                     <td className="p-1.5 text-right">{agent.decisions}</td>
                     <td className={`p-1.5 text-right ${agent.savedTokens < 0 ? "text-amber-400" : "text-emerald-400"}`}>
                       {formatTokens(agent.savedTokens)}

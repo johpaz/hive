@@ -30,7 +30,7 @@ Mientras no exista una contraseña, el endpoint público de estado no expone el 
 
 ## Datos enviados a Jev
 
-Jev solo funciona con una clave de OpenRouter. Mientras esté activo, en cada decisión Hive envía a `openrouter.ai/api/alpha/decisions` extractos de la conversación en curso:
+Jev funciona con una clave de OpenRouter, o con Kev si el proveedor HiveAgents LLM está activo y el servicio responde (en ese caso los mismos extractos viajan a `llm.hiveagents.io/v1/systemone` y no a OpenRouter). Mientras esté activo, en cada decisión Hive envía a `openrouter.ai/api/alpha/decisions` extractos de la conversación en curso:
 
 | Dato | Límite por decisión |
 |---|---|

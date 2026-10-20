@@ -13,7 +13,7 @@
 
 process.env.HIVE_DB_PATH = ":memory:";
 
-import { describe, test, expect, beforeEach, afterEach, afterAll } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { isWebViewSupported } from "../packages/core/src/tools/web/browser-backend.ts";
 import { WebViewBackend } from "../packages/core/src/tools/web/webview-backend.ts";
 import { clicEnPunto, hoverEnPunto, type Vista } from "../packages/core/src/tools/web/computer-use.ts";
@@ -21,9 +21,9 @@ import { clicEnPunto, hoverEnPunto, type Vista } from "../packages/core/src/tool
 const LIVE = isWebViewSupported();
 const page = (html: string) => `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 
-afterAll(() => {
-  (globalThis as { Bun?: { WebView?: { closeAll?: () => void } } }).Bun?.WebView?.closeAll?.();
-});
+// Sin `Bun.WebView.closeAll()` aquí: mata el subproceso de Chrome de TODO el
+// proceso de pruebas y los archivos que corren después ya no pueden abrir una
+// vista ("Chrome process closed the pipe"). Cada test cierra su backend.
 
 // Un lienzo que anota cada evento que recibe: tipo, coordenadas y si el
 // navegador lo considera confiable.

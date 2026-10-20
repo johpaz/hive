@@ -21,7 +21,7 @@
  */
 
 import { logger } from "../../utils/logger.ts";
-import { resolveWebViewEngine, type BrowserBackend, type ScreenshotOptions, type SnapshotOptions, type WebViewEngine } from "./browser-backend.ts";
+import { findChrome, resolveWebViewEngine, type BrowserBackend, type ScreenshotOptions, type SnapshotOptions, type WebViewEngine } from "./browser-backend.ts";
 import {
   loadStoredCookies,
   sessionPersistenceEnabled,
@@ -485,6 +485,8 @@ export class WebViewBackend implements BrowserBackend {
     return (this.engine ?? this.options.engine ?? resolveWebViewEngine()) === "chrome";
   }
 
+  private pendingResize: { width: number; height: number } | null = null;
+
   private ensureView(): BunWebView {
     if (this.view) return this.view;
 
@@ -505,9 +507,17 @@ export class WebViewBackend implements BrowserBackend {
     // motor chrome intenta CONECTARSE a un Chrome que ya esté corriendo, y esa
     // ruta abre un diálogo "Allow remote debugging?" que cuelga el proceso
     // esperando un click que en un servidor no llega nunca.
+    // `path` evita que Bun elija por su cuenta un Chrome que no puede arrancar
+    // (el wrapper de flatpak, por ejemplo): usa el mismo que ya detectó Hive.
+    const chromePath = engine === "chrome" ? findChrome() : null;
     const backend =
       engine === "chrome"
-        ? { type: "chrome" as const, url: false as const, stderr: "ignore" as const }
+        ? {
+            type: "chrome" as const,
+            url: false as const,
+            stderr: "ignore" as const,
+            ...(chromePath ? { path: chromePath } : {}),
+          }
         : ("webkit" as const);
 
     // Sin `url` inicial a propósito: construir con uno deja una navegación
@@ -520,16 +530,28 @@ export class WebViewBackend implements BrowserBackend {
       height: this.options.height ?? 800,
     });
     this.engine = engine;
+    // Algunos Chrome (131, por ejemplo) ignoran width/height del constructor y
+    // abren en ~780x493; tras la primera operación se fija el tamaño pedido con resize().
+    this.pendingResize = { width: this.options.width ?? 1280, height: this.options.height ?? 800 };
     log.info(`✅ WebView abierto (motor: ${engine}, in-process)`);
     return this.view;
   }
 
   /** Serializa: cada operación espera a que termine la anterior. */
   private run<T>(operation: (view: BunWebView) => Promise<T>): Promise<T> {
-    const next = this.queue.then(
-      () => operation(this.ensureView()),
-      () => operation(this.ensureView()),
-    );
+    const prepared = async () => {
+      const view = this.ensureView();
+      const size = this.pendingResize;
+      const result = await operation(view);
+      // Después de la primera operación: el resize anterior a la primera
+      // navegación se pierde, porque Chrome crea el target recién ahí.
+      if (size) {
+        this.pendingResize = null;
+        await view.resize(size.width, size.height).catch(() => undefined);
+      }
+      return result;
+    };
+    const next = this.queue.then(prepared, prepared);
     // La cola no debe romperse porque una operación haya fallado.
     this.queue = next.catch(() => undefined);
     return next;

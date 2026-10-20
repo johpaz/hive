@@ -17,6 +17,11 @@ export function jevKindLabel(kind: CanvasJevDecision["kind"]): string {
   return KIND_LABEL[kind];
 }
 
+/** Nombre del oráculo que está decidiendo: Kev cuando el laboratorio responde, Jev si no. */
+export function oracleName(status: JevStatus | null): string {
+  return status?.backend === "kev" ? "Kev" : "Jev";
+}
+
 export function jevStateLabel(state: JevStatus["state"]): string {
   return state === "ready" ? "activo" : state === "fallback" ? "flujo clásico" : "desactivado";
 }

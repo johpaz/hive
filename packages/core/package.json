@@ -19,7 +19,7 @@
     "@ag-ui/core": "^0.0.46",
     "@johpaz/hive-agents-mcp": "^1.1.0",
     "@johpaz/hive-agents-skills": "^1.1.0",
-    "@johpaz/hive-db": "0.5.1",
+    "@johpaz/hive-db": "0.6.1",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@slack/bolt": "^4.7.2",
     "@whiskeysockets/baileys": "7.0.0-rc11",

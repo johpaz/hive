@@ -160,7 +160,7 @@ export async function ensureHiveDb(): Promise<void> {
   // Mint the master key before anything can save an API key, so a fresh
   // install is durable from the first keystroke rather than after a restart
   // has already dropped the secret.
-  ensureSecretsBackend();
+  await ensureSecretsBackend();
   await ensureSeedData();
 
   await ensureLegacyThreads();

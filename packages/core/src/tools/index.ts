@@ -20,6 +20,9 @@ import * as cron from "./cron/index.ts";
 // CLI (1)
 import * as cli from "./cli/index.ts";
 
+// Code agents (1) - external coding-agent CLIs
+import * as codeAgent from "./code-agent/index.ts";
+
 // Agents (15)
 import * as agents from "./agents/index.ts";
 
@@ -52,6 +55,9 @@ export function createAllTools(config: Config): Tool[] {
     // CLI (1)
     ...cli.createTools(),
 
+    // CODE AGENTS (1)
+    ...codeAgent.createTools(),
+
     // AGENTS (14)
     ...agents.createTools(),
 
@@ -83,6 +89,8 @@ export function createToolsByCategory(category: string, config: Config): Tool[] 
       return cron.createTools();
     case "cli":
       return cli.createTools();
+    case "code-agent":
+      return codeAgent.createTools();
     case "agents":
       return agents.createTools();
     case "a2ui":

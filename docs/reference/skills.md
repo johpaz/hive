@@ -2,7 +2,7 @@
 
 Una skill es un `SKILL.md` con frontmatter YAML y una guía operativa. Hive carga skills incluidas, administradas en `HIVE_HOME/skills` y opcionalmente skills del workspace.
 
-La lista exacta de las 25 skills incluidas está en el [inventario generado](inventario.md).
+La lista exacta de las 26 skills incluidas está en el [inventario generado](inventario.md).
 
 ## Campos principales
 

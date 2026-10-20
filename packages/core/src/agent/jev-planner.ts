@@ -5,7 +5,7 @@ import type { PlaybookRule } from "./playbook-selector"
 import { MINIMAL_TOOLS } from "./minimal-loadout"
 import { searchCapabilities } from "./capability-search"
 import { mcpToolFullName } from "./tool-selector"
-import { askJev, getJevKey, type JevAnswer, type JevQuestion } from "./jev-decisions"
+import { askJev, hasDecisionBackend, type JevAnswer, type JevQuestion } from "./jev-decisions"
 import { col } from "../storage/hive"
 import type { AgentDoc, McpServerDoc, McpToolDoc } from "../storage/collections"
 
@@ -112,7 +112,7 @@ export async function planJevContext(input: {
   /** From describeSwarmCapabilities; absent means "unknown", not "none". */
   swarm?: { mcpServers: JevMcpServer[]; specialists: JevSpecialist[] }
 }): Promise<JevContextPlan | null> {
-  if (!await getJevKey().catch(() => null)) return null
+  if (!await hasDecisionBackend().catch(() => false)) return null
   const { objective, messages, tools, allTools, skills, isWorker } = input
   const mandatoryMessages = new Set<number>()
   // The last two exchanges carry the thread's immediate referents ("hazlo otra
@@ -218,7 +218,7 @@ export async function planJevContext(input: {
  */
 export async function jevWantsParallel(calls: Array<{ function: { name: string; arguments: unknown } }>): Promise<{ parallel: boolean; decision?: JevDecisionMetrics } | null> {
   if (calls.length < 2) return null
-  if (!await getJevKey().catch(() => null)) return null
+  if (!await hasDecisionBackend().catch(() => false)) return null
   const names = calls.map(c => c.function.name)
   const readOnly = names.every(n => /^(fs_read|fs_list|fs_glob|fs_exists|web_search|web_fetch|memory_read|memory_search|artifact_read|artifact_inspect|task_status|agent_find)$/.test(n))
   const delegated = names.every(n => n === "task_delegate")

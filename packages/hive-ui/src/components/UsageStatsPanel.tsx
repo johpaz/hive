@@ -283,7 +283,7 @@ export function UsageStatsPanel() {
                   <Server className="h-4 w-4 text-muted-foreground" />
                   Por Provider
                 </h4>
-                <div className="h-[180px]">
+                <div className="h-180px">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={providerData} layout="vertical">
                       <XAxis type="number" hide />
@@ -321,7 +321,7 @@ export function UsageStatsPanel() {
                   <Bot className="h-4 w-4 text-muted-foreground" />
                   Por Modelo (Top 8)
                 </h4>
-                <div className="h-[180px]">
+                <div className="h-180px">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={modelData}>
                       <XAxis

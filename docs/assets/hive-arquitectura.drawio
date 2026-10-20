@@ -1,0 +1,104 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Arquitectura de Hive" id="hive-arch">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="title" value="Hive — Cómo funciona" style="text;html=1;fontSize=24;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="400" y="10" width="600" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- Entradas -->
+        <mxCell id="inputs" value="Entradas" style="swimlane;horizontal=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;startSize=30;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="1320" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="cli" value="CLI" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#6c8ebf;fontColor=#000000;" vertex="1" parent="inputs">
+          <mxGeometry x="60" y="30" width="200" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="ui" value="UI web / app de escritorio&#xa;(Chat · Office3D · Panel A2UI · Reuniones)" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#6c8ebf;fontColor=#000000;" vertex="1" parent="inputs">
+          <mxGeometry x="320" y="30" width="300" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="chan" value="Canales&#xa;(mensajería externa)" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#6c8ebf;fontColor=#000000;" vertex="1" parent="inputs">
+          <mxGeometry x="680" y="30" width="240" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="voice" value="Voz en tiempo real&#xa;(Gemini Live → BIA → Bee)" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#6c8ebf;fontColor=#000000;" vertex="1" parent="inputs">
+          <mxGeometry x="980" y="30" width="260" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- Gateway -->
+        <mxCell id="gw" value="Gateway HTTP + WebSocket&#xa;rutas · sesiones · eventos en vivo" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="440" y="220" width="520" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Cola durable -->
+        <mxCell id="queue" value="Harness durable&#xa;cola por lane (1 job a la vez)&#xa;leases · reintentos · recuperación" style="rounded=1;whiteSpace=wrap;fillColor=#e1d5e7;strokeColor=#9673a6;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="60" y="330" width="260" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- Agent Service -->
+        <mxCell id="agent" value="Agent Service" style="swimlane;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;startSize=30;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="400" y="320" width="600" height="250" as="geometry"/>
+        </mxCell>
+        <mxCell id="jev" value="Jev (OpenRouter)&#xa;selecciona historial, tools,&#xa;skills, notas y reglas" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#82b366;dashed=1;fontColor=#000000;" vertex="1" parent="agent">
+          <mxGeometry x="20" y="50" width="170" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="ctx" value="Compilador de contexto&#xa;identidad · historial · notas&#xa;playbook ACE · presupuesto" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#82b366;fontColor=#000000;" vertex="1" parent="agent">
+          <mxGeometry x="215" y="50" width="170" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="bee" value="Bee (coordinador)&#xa;loop: prompt → LLM →&#xa;tool calls → resultados" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#82b366;fontStyle=1;fontColor=#000000;" vertex="1" parent="agent">
+          <mxGeometry x="410" y="50" width="170" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="deleg" value="task_delegate&#xa;objetivo + criterios de aceptación,&#xa;tools, skills, workspace, modelo, MCP leases" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#82b366;fontColor=#000000;" vertex="1" parent="agent">
+          <mxGeometry x="320" y="160" width="260" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="fanin" value="Fan-in del coordinador&#xa;checks determinísticos + juicio&#xa;→ síntesis o task_revise" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#82b366;fontColor=#000000;" vertex="1" parent="agent">
+          <mxGeometry x="20" y="160" width="260" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- LLM providers -->
+        <mxCell id="llm" value="Proveedores LLM&#xa;(Ollama, OpenRouter, NVIDIA, OpenCode…)&#xa;con fallback" style="rounded=1;whiteSpace=wrap;fillColor=#f8cecc;strokeColor=#b85450;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="330" width="260" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- Ejecución -->
+        <mxCell id="exec" value="Ejecución" style="swimlane;horizontal=0;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;startSize=30;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="640" width="1320" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="tools" value="Herramientas nativas&#xa;(archivos, navegador WebView, memoria, notas…)" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#d79b00;fontColor=#000000;" vertex="1" parent="exec">
+          <mxGeometry x="60" y="30" width="330" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="workers" value="Pool de workers&#xa;(agentes especialistas de catálogo)" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#d79b00;fontColor=#000000;" vertex="1" parent="exec">
+          <mxGeometry x="470" y="30" width="330" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="mcp" value="Servidores MCP&#xa;(binarios → artifact store)" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#d79b00;fontColor=#000000;" vertex="1" parent="exec">
+          <mxGeometry x="880" y="30" width="330" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- Persistencia -->
+        <mxCell id="db" value="HiveDB (única fuente de verdad)&#xa;config · catálogo · runs · jobs · memoria · evidencia" style="shape=cylinder3;whiteSpace=wrap;boundedLbl=1;size=12;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="300" y="810" width="360" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="art" value="Artifacts&#xa;HIVE_HOME/artifacts/AAAA-MM-DD&#xa;(binarios 7 días, metadatos en HiveDB)" style="rounded=1;whiteSpace=wrap;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="760" y="825" width="300" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- Edges -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="inputs" target="gw"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e2" value="encola turno" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="gw" target="queue"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e3" value="ejecuta" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="queue" target="agent"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="jev" target="ctx"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="ctx" target="bee"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e6" value="delega" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="bee" target="deleg"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e7" value="al terminar todos" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="deleg" target="fanin"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e8" value="razona con" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;startArrow=block;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="agent" target="llm"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e9" value="tool calls" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="agent" target="tools"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e10" value="jobs" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="agent" target="workers"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e11" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="agent" target="mcp"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e12" value="persiste" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;dashed=1;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="exec" target="db"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e13" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;dashed=1;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="exec" target="art"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e14" value="respuesta + eventos en vivo" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;dashed=1;exitX=0;exitY=0.25;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="agent" target="gw"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -106,6 +106,20 @@ const CHROME_BINARIES = [
   "opera",
 ];
 
+/** Chromium que Playwright deja en `~/.cache/ms-playwright/chromium-<rev>`, el más nuevo primero. */
+function playwrightChromiumPaths(home: string): string[] {
+  const { readdirSync } = require("node:fs") as typeof import("node:fs");
+  const root = process.env.PLAYWRIGHT_BROWSERS_PATH ?? `${home}/.cache/ms-playwright`;
+  try {
+    return readdirSync(root)
+      .filter((name) => /^chromium-\d+$/.test(name))
+      .sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1]))
+      .map((name) => `${root}/${name}/chrome-linux/chrome`);
+  } catch {
+    return [];
+  }
+}
+
 /** Rutas conocidas por plataforma, en orden de preferencia. */
 function chromePathsForPlatform(): string[] {
   const home = process.env.HOME ?? "";
@@ -137,8 +151,12 @@ function chromePathsForPlatform(): string[] {
 
   // Linux: paquetes del sistema, snap y los wrappers que exporta flatpak —que
   // en la práctica son el único Chrome de muchas máquinas.
+  // Chrome y Chromium de flatpak arrancan bien con Bun; el de Brave no ("Failed
+  // to spawn Chrome": su sandbox no hereda los pipes de depuración). Por eso se
+  // recorre por app y no por directorio —si no, el Brave del directorio de
+  // sistema ganaría al Chrome del directorio de usuario— y Brave va al final.
   const flatpakDirs = ["/var/lib/flatpak/exports/bin", `${home}/.local/share/flatpak/exports/bin`];
-  const flatpakApps = ["com.google.Chrome", "org.chromium.Chromium", "com.brave.Browser", "com.microsoft.Edge"];
+  const flatpakPaths = (apps: string[]) => apps.flatMap((app) => flatpakDirs.map((dir) => `${dir}/${app}`));
   return [
     "/usr/bin/google-chrome",
     "/usr/bin/google-chrome-stable",
@@ -151,7 +169,9 @@ function chromePathsForPlatform(): string[] {
     "/usr/bin/opera",
     "/snap/bin/chromium",
     "/snap/bin/brave",
-    ...flatpakDirs.flatMap((dir) => flatpakApps.map((app) => `${dir}/${app}`)),
+    ...flatpakPaths(["com.google.Chrome", "org.chromium.Chromium"]),
+    ...playwrightChromiumPaths(home),
+    ...flatpakPaths(["com.microsoft.Edge", "com.brave.Browser"]),
   ];
 }
 

@@ -6,7 +6,7 @@ El servicio carga al coordinador, historial reciente, notas, playbook y una carg
 
 El presupuesto se calcula con la ventana que el proveedor realmente lee (`resolveProviderConfig`): la del modelo o, con Ollama, la menor entre esa y `num_ctx`. Si el historial no cabe, se descartan primero los mensajes más antiguos; los dos últimos intercambios siempre se conservan. La compactación automática usa la misma ventana.
 
-Con una clave de OpenRouter activa, Jev selecciona antes de cada turno qué historial, herramientas, skills, notas y reglas entran al prompt, sobre un mapa de los especialistas y del estado de cada servidor MCP. Entre iteraciones puede omitir resultados viejos de herramientas. Si Jev no responde en tres segundos o falla, el turno sigue con la selección clásica.
+Con una clave de OpenRouter activa, Jev selecciona antes de cada turno qué historial, herramientas, skills, notas y reglas entran al prompt, sobre un mapa de los especialistas y del estado de cada servidor MCP. Entre iteraciones puede omitir resultados viejos de herramientas. Si Jev no responde en tres segundos o falla, el turno sigue con la selección clásica. El detalle está en [Jev](../internals/jev.md).
 
 `search_knowledge` consulta el índice combinado de tools, skills, MCP y reglas ACE. Una capacidad seleccionada se incorpora al loadout del turno y puede activar su skill asociada.
 
@@ -34,6 +34,14 @@ El tracer y el event log causal registran decisiones, tool calls y estados sin c
 - IDs de run, turno, tarea y grupo.
 
 Las delegaciones hermanas pueden compartir un grupo. La respuesta inicial del coordinador finaliza y el gateway continúa los jobs. Al terminar todas, un turno de fan-in evalúa criterios de aceptación y checks, y sintetiza resultados, fallos y evidencia — o devuelve una tarea al worker con `task_revise` si no cumplió.
+
+### Agentes de código externos
+
+El especialista `external_code_agent` delega a Claude Code, Codex, OpenCode o Kimi con `code_agent_run`. Cada CLI corre sin supervisión en un `git worktree` temporal creado desde HEAD (no ve cambios sin commitear) y nunca modifica el workspace: la herramienta devuelve resumen, archivos cambiados, diff y un `patch_path`. El criterio `diff_checks` se verifica sin LLM: la entrega debe apuntar a un patch existente y no vacío. Si el CLI no está instalado o su sesión/saldo caducó, la herramienta lo informa y el especialista prueba otro.
+
+### Navegador: Obscura y Chrome
+
+Hay dos juegos de herramientas de navegador. `obscura_*` (37) maneja el binario [Obscura](https://obscura.sh) como servidor MCP por stdio: headless, sin Chromium, con una sesión viva y refs de elementos (`e3`) en `obscura_snapshot`, además de markdown, enlaces, formularios completos en una llamada, cookies, estado de sesión, pestañas y PDF. El binario se busca en `OBSCURA_PATH`, el PATH, `~/.hive/bin` y `~/.hivecode/bin`; sin él, las herramientas responden con un error de instalación. `browser_*` usa `Bun.WebView` sobre Chrome y queda para capturas, verificación visual y `computer_use_task`. Obscura bloquea localhost y redes privadas por defecto (`OBSCURA_ALLOW_PRIVATE_NETWORK=1` lo permite). La skill `obscura_browser` explica cuándo usar cada uno.
 
 ## Durabilidad
 

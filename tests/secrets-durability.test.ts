@@ -145,3 +145,34 @@ describe("keychain compatibility", () => {
     }
   });
 });
+
+describe("master key in the OS keychain", () => {
+  test("a legacy .master.key is moved into the keychain and removed", async () => {
+    const home = mkdtempSync(path.join(tmpdir(), "hive-mk-"));
+    const legacy = "ab".repeat(32);
+    await Bun.write(path.join(home, ".master.key"), legacy);
+    const script = `
+      process.env.HIVE_HOME = ${JSON.stringify(home)};
+      const store = new Map();
+      (Bun as any).secrets = {
+        get: async ({ name }) => store.get(name) ?? null,
+        set: async ({ name, value }) => { store.set(name, value) },
+        delete: async ({ name }) => { store.delete(name) },
+      };
+      const crypto = await import(${JSON.stringify(path.join(CORE, "storage", "crypto.ts"))});
+      const backend = await crypto.ensureSecretsBackend();
+      const entry = [...store.entries()].find(([n]) => n.startsWith("master-key:"));
+      console.log("__RESULT__" + JSON.stringify({ backend, inKeychain: entry?.[1] }));
+      (await import(${JSON.stringify(path.join(CORE, "storage", "hivedb.ts"))})).closeHiveDb();
+    `;
+    const proc = Bun.spawn(["bun", "-e", script], { stdout: "pipe", stderr: "pipe" });
+    const out = await new Response(proc.stdout).text();
+    await proc.exited;
+    const line = out.split("\n").find((l) => l.startsWith("__RESULT__"))!;
+    const res = JSON.parse(line.slice("__RESULT__".length));
+    expect(res.backend).toEqual({ durable: true, keySource: "keychain" });
+    expect(res.inKeychain).toBe(legacy);
+    expect(await Bun.file(path.join(home, ".master.key")).exists()).toBe(false);
+    rmSync(home, { recursive: true, force: true });
+  });
+});

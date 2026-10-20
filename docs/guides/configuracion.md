@@ -65,6 +65,8 @@ Jev decide sobre un mapa del enjambre que recibe en cada turno: todos los especi
 
 Cada decisión añade entre 0,3 y 0,6 segundos: una al preparar el turno y otra antes de cada llamada al modelo cuando hay resultados de herramientas que valga la pena omitir. Con varios especialistas arrancando a la vez, alguna decisión puede pasar de los tres segundos; ese agente usa el flujo clásico en ese turno y los demás no se ven afectados.
 
+**Kev (opcional, con prioridad).** Si el proveedor **HiveAgents LLM** está activo con su clave y el servicio `kev-decision.service` del laboratorio responde `ready=true` en `GET /api/decisions/status`, las decisiones van a `POST /v1/systemone` de `llm.hiveagents.io` en lugar de OpenRouter, sin costo por token. Si Kev está apagado, tarda más de tres segundos, devuelve un error (401, 502, 504…) o una respuesta inválida, esa decisión pasa a Jev y, si tampoco hay clave de OpenRouter, al flujo clásico. Kev se enciende y apaga con systemd en el PC del laboratorio, no desde Hive; tras apagarlo, Hive vuelve a Jev en un máximo de 30 segundos.
+
 Antes de configurar la clave, revisa qué datos de la conversación viajan a OpenRouter en [Seguridad](seguridad.md#datos-enviados-a-jev).
 
 La tarjeta de OpenRouter muestra `activo`, `desactivado` o `usando flujo clásico`. Al quitar la clave o desactivar OpenRouter, Hive vuelve al compilador y al loop anteriores. También vuelve temporalmente a ese flujo si Jev tarda más de tres segundos, falla o devuelve una respuesta inválida. Las notas y mensajes omitidos se pueden recuperar mediante `conversation_read`, limitado al hilo actual.

@@ -13,6 +13,7 @@
  * to judge using this checks result plus the raw evidence.
  */
 
+import * as fs from "node:fs";
 import { col } from "../storage/hive";
 import type { AgentDoc } from "../storage/collections";
 import type { AcceptanceCriterion } from "./run-store";
@@ -83,6 +84,28 @@ async function runCheckTool(criterion: AcceptanceCriterion, objective: string): 
   }
 }
 
+/**
+ * external_code_agent's "diff_checks" criterion: code_agent_run leaves a patch
+ * file for every non-empty diff, so the delivery must point to one that exists
+ * and has content. A claim of success with no real diff is a failure.
+ */
+function codeAgentPatchGate(criterion: AcceptanceCriterion, texts: string[]): AcceptanceCheckResult | null {
+  if (criterion.id !== "diff_checks") return null;
+  const paths = new Set<string>();
+  for (const text of texts) {
+    for (const m of String(text).matchAll(/[^\s"'`]*hive-code-agent-\d+\.patch/g)) paths.add(m[0]);
+  }
+  const real = [...paths].find((p) => {
+    try { return fs.statSync(p).size > 0; } catch { return false; }
+  });
+  return {
+    criterion_id: criterion.id,
+    check: "code_agent_patch",
+    met: real !== undefined,
+    detail: real ? `Patch no vacío: ${real}` : "La entrega no referencia ningún patch existente y no vacío de code_agent_run",
+  };
+}
+
 async function artifactChecks(evidence: string[]): Promise<AcceptanceCheckResult[]> {
   const artifactIds = new Set<string>();
   for (const item of evidence) {
@@ -131,6 +154,8 @@ export async function runAcceptanceChecks(input: {
   for (const criterion of criteria) {
     const checked = await runCheckTool(criterion, input.objective);
     if (checked) results.push(checked);
+    const patchGate = codeAgentPatchGate(criterion, [input.delivery, ...evidence]);
+    if (patchGate) results.push(patchGate);
   }
 
   results.push(...(await artifactChecks(evidence)));

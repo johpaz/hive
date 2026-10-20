@@ -1632,7 +1632,7 @@ async function runFullWizard(): Promise<void> {
     `💡 DESDE EL DASHBOARD puedes activar:\n` +
     `  • Canales adicionales (Discord, Slack, WhatsApp, etc.)\n` +
     `  • Voz (STT/TTS) para audio en tiempo real\n` +
-    `  • Code Bridge para delegar tareas de código\n` +
+    `  • Agentes de código externos (Claude Code, Codex, OpenCode, Kimi)\n` +
     `  • MCP servers para herramientas externas\n` +
     `  • Tools y funciones personalizadas\n` +
     `\n` +

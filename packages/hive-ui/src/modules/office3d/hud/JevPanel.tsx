@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronUp, Diamond } from "lucide-react";
 import { useCanvasStore, type CanvasJevDecision, type GraphNode, type JevStatus } from "@/stores/canvasStore";
 import type { DeskModel } from "../state/useOfficeModel";
-import { formatJevCost, formatTokenCount, jevKindLabel, jevStateLabel } from "../state/jev";
+import { formatJevCost, formatTokenCount, jevKindLabel, jevStateLabel, oracleName } from "../state/jev";
 
 /**
  * Lo que aporta Jev al enjambre: cuántas decisiones tomó, cuánto contexto le
@@ -43,7 +43,7 @@ export function JevPanel({
         <span className="office3d-jev-icon"><Diamond size={14} /></span>
         <div>
           <span className="office3d-section-kicker">PLANO DE DECISIÓN</span>
-          <h2>Jev · {jevStateLabel(status.state)}</h2>
+          <h2>{oracleName(status)} · {jevStateLabel(status.state)}</h2>
         </div>
         <button
           type="button"
@@ -66,7 +66,7 @@ export function JevPanel({
           <dd>~{formatTokenCount(totals.savedTokens)}</dd>
         </div>
         <div>
-          <dt>Costo Jev</dt>
+          <dt>Costo {oracleName(status)}</dt>
           <dd>{formatJevCost(totals.costUsd)}</dd>
         </div>
       </dl>

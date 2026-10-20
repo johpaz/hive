@@ -9,7 +9,7 @@
         "@anthropic-ai/sdk": "^0.74.0",
         "@clack/prompts": "^0.5.0",
         "@google/genai": "^1.43.0",
-        "@johpaz/hive-db": "0.5.1",
+        "@johpaz/hive-db": "0.6.1",
         "@modelcontextprotocol/sdk": "^1.26.0",
         "@slack/bolt": "^4.7.2",
         "@vitejs/plugin-react": "^6.1.1",
@@ -54,9 +54,9 @@
       "version": "1.1.0",
       "dependencies": {
         "@ag-ui/core": "^0.0.46",
-        "@johpaz/hive-agents-mcp": "^1.0.5",
-        "@johpaz/hive-agents-skills": "^1.0.5",
-        "@johpaz/hive-db": "0.5.1",
+        "@johpaz/hive-agents-mcp": "^1.1.0",
+        "@johpaz/hive-agents-skills": "^1.1.0",
+        "@johpaz/hive-db": "0.6.1",
         "@modelcontextprotocol/sdk": "^1.26.0",
         "@slack/bolt": "^4.7.2",
         "@whiskeysockets/baileys": "7.0.0-rc11",
@@ -372,19 +372,19 @@
 
     "@johpaz/hive-cli": ["@johpaz/hive-cli@workspace:packages/cli"],
 
-    "@johpaz/hive-db": ["@johpaz/hive-db@0.5.1", "", { "optionalDependencies": { "@johpaz/hive-db-darwin-arm64": "0.5.1", "@johpaz/hive-db-darwin-x64": "0.5.1", "@johpaz/hive-db-linux-arm64-gnu": "0.5.1", "@johpaz/hive-db-linux-x64-gnu": "0.5.1", "@johpaz/hive-db-linux-x64-musl": "0.5.1", "@johpaz/hive-db-win32-x64-msvc": "0.5.1" } }, "sha512-fv/cTfgHsVFiHk/G9mS6pCJdm6Z/L+0eRp5/T9g521ZESfGnwhBuX+gy+DNoPggWDfZQIpRYzIylG2eCZKRNhA=="],
+    "@johpaz/hive-db": ["@johpaz/hive-db@0.6.1", "", { "optionalDependencies": { "@johpaz/hive-db-darwin-arm64": "0.6.1", "@johpaz/hive-db-darwin-x64": "0.6.1", "@johpaz/hive-db-linux-arm64-gnu": "0.6.1", "@johpaz/hive-db-linux-x64-gnu": "0.6.1", "@johpaz/hive-db-linux-x64-musl": "0.6.1", "@johpaz/hive-db-win32-x64-msvc": "0.6.1" } }, "sha512-J9UcLrx3m3bPFYZHaOoJmvzC+ypKjJ3TMbPysauaGazixZeMamaVYKkF2+gNjpdlfaoHB5HPXWpFAXHJNWx51g=="],
 
-    "@johpaz/hive-db-darwin-arm64": ["@johpaz/hive-db-darwin-arm64@0.5.1", "", { "os": "darwin", "cpu": "arm64" }, "sha512-4fkhTOJCmvNIlJT8RkVS6EO9ojUyfGJgpXK949HOPNKTybK/Is1IQFlB86egN8YKBT0BrcF7dTwO3h0LFYA6QQ=="],
+    "@johpaz/hive-db-darwin-arm64": ["@johpaz/hive-db-darwin-arm64@0.6.1", "", { "os": "darwin", "cpu": "arm64" }, "sha512-gciF52qXCDXanhMg3Ohoxu050ZGJH+qq1w9krEHtN3pv9gRsXVD+hQN5iqKqkHULhlZNB9XbTdSl5FHoYhGrVg=="],
 
-    "@johpaz/hive-db-darwin-x64": ["@johpaz/hive-db-darwin-x64@0.5.1", "", { "os": "darwin", "cpu": "x64" }, "sha512-RpJEM3AlxeYR2A6lBQpIYGmovTizxd14IAIr8D7JGKYnsLWgjShXiAJSpw8Iizhfcf6n+3ZvCE66rI8tCQHyjg=="],
+    "@johpaz/hive-db-darwin-x64": ["@johpaz/hive-db-darwin-x64@0.6.1", "", { "os": "darwin", "cpu": "x64" }, "sha512-r3Vygb4onnaHsLh2tVYl+08JkRfnzC+wOktd0I6XTj1B4AWIWndcaiM9k/AyMS/ogfXX6zdEQEB6z9PLAzqpEQ=="],
 
-    "@johpaz/hive-db-linux-arm64-gnu": ["@johpaz/hive-db-linux-arm64-gnu@0.5.1", "", { "os": "linux", "cpu": "arm64" }, "sha512-jcroCACfo2w0oUMQs47LdbN+HFQT8jdznWFdD9shHeMHv5ahmF4zIZWwKn28rq2J9d4QdrSLiWKhUiWlZYWWng=="],
+    "@johpaz/hive-db-linux-arm64-gnu": ["@johpaz/hive-db-linux-arm64-gnu@0.6.1", "", { "os": "linux", "cpu": "arm64" }, "sha512-mO3h/4VliYzsmNRSJ0jRHOmpnRnmrKafvQv7bO9BbG2z8LCAcdgkPGg2XfEegyWSIKDuIcBX9ydOxsImpfnpWA=="],
 
-    "@johpaz/hive-db-linux-x64-gnu": ["@johpaz/hive-db-linux-x64-gnu@0.5.1", "", { "os": "linux", "cpu": "x64" }, "sha512-zH3aZ5NCRSrDp3dms2Ma+UB4VvlvDg7kDhRF868Yt54pVzGRD8Z88EgEhk6Lb3OwufsQJCRSBNX905crtEc/jA=="],
+    "@johpaz/hive-db-linux-x64-gnu": ["@johpaz/hive-db-linux-x64-gnu@0.6.1", "", { "os": "linux", "cpu": "x64" }, "sha512-Rf27OQSgyOL2hfREBWiQdKA/xh6FysY96YEdz8QkGQHPx5xUAq3bVOm43Wg247zAakqCK1aIkDaWd/ZsQclfWQ=="],
 
-    "@johpaz/hive-db-linux-x64-musl": ["@johpaz/hive-db-linux-x64-musl@0.5.1", "", { "os": "linux", "cpu": "x64" }, "sha512-gN7UsjR/FHsbBdBsjj+YEMkcIk0Bu+N8+bKTGflIt0XnZQ+n2os7yJirXIg/f+sI/3vfvCnWgNcYVwmn0Q8fKg=="],
+    "@johpaz/hive-db-linux-x64-musl": ["@johpaz/hive-db-linux-x64-musl@0.6.1", "", { "os": "linux", "cpu": "x64" }, "sha512-dQtacfnTAJTSoslwapVWATT8FJNNWELSf9jwzbI5lAgtDv3eogi764BOPVBdVp2TA2kwUiQr/HYeXzC3z2wiUQ=="],
 
-    "@johpaz/hive-db-win32-x64-msvc": ["@johpaz/hive-db-win32-x64-msvc@0.5.1", "", { "os": "win32", "cpu": "x64" }, "sha512-7CfKretZDrHgRkYd4cMbisZdkK34Ovv+aUwVuNcz7TcY2G1pfbJfmJ34Y12tmzq/UvLwV65VkXbt4WmpcUIzGw=="],
+    "@johpaz/hive-db-win32-x64-msvc": ["@johpaz/hive-db-win32-x64-msvc@0.6.1", "", { "os": "win32", "cpu": "x64" }, "sha512-jrDhrvAzWRXymkb5GtNzHO8DeNTAdH5RBNTBa4xrmek5HYBmWdmsvXwJaOC/Qp49wa1cA29OZZB57ghn7HXcZw=="],
 
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 

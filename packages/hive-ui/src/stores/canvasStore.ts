@@ -124,6 +124,7 @@ export interface JevTotals {
 
 export interface JevStatus {
   state: "off" | "ready" | "fallback";
+  backend?: "kev" | "jev" | null;
   lastError: string | null;
   lastSuccessAt: number | null;
   totals?: JevTotals;

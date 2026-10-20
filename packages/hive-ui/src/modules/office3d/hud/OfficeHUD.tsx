@@ -9,7 +9,7 @@ import { AgentInspector, CoordinatorInspector } from "./AgentInspector";
 import { OfficeRoster } from "./OfficeRoster";
 import { NowHappening } from "./NowHappening";
 import { JevPanel } from "./JevPanel";
-import { formatTokenCount, jevStateLabel } from "../state/jev";
+import { formatTokenCount, jevStateLabel, oracleName } from "../state/jev";
 import { playOfficeEventSound, primeOfficeAudio } from "../state/sound";
 
 interface OfficeHUDProps {
@@ -88,10 +88,10 @@ export function OfficeHUD({
           {jev.status && jev.status.state !== "off" && (
             <span
               className={`office3d-jev-badge is-${jev.status.state}`}
-              title={`Jev ${jevStateLabel(jev.status.state)}`}
+              title={`${oracleName(jev.status)} ${jevStateLabel(jev.status.state)}`}
             >
               <Diamond size={11} />
-              JEV
+              {oracleName(jev.status).toUpperCase()}
               {jev.status.totals && jev.status.totals.savedTokens > 0 && (
                 <b>−{formatTokenCount(jev.status.totals.savedTokens)}</b>
               )}
