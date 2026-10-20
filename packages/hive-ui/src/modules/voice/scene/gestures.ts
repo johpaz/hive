@@ -177,6 +177,8 @@ export class DirectorDeGestos {
       default:
         o.mano = 0.3 * onda;
         o.dedos = 0.05 + 0.04 * ruido(e.t * 0.4, idx + 11);
+        // Dedos algo separados: la malla los trae pegados por la base.
+        o.abre = 0.2;
     }
     return o;
   }
