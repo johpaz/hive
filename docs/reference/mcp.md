@@ -1,6 +1,6 @@
 # MCP
 
-MCP conecta Hive con herramientas externas mediante servidores `stdio`, `sse` o `websocket`.
+MCP conecta Hive con herramientas externas mediante servidores `stdio`, `sse`, `websocket` o `http` (Streamable HTTP, un único endpoint normalmente en `/mcp`, con cabeceras de autorización y reanudación de sesión).
 
 ## Administración
 
