@@ -1,7 +1,7 @@
 # ─── Stage 1: Build UI ────────────────────────────────────────────────────────
-# Bun fijo, igual que CI y release: con `oven/bun:1` la imagen subió sola a 1.4
+# Bun fijo, igual que CI y release: con `oven/bun:1` la imagen subió sola de versión
 # y rompió `--frozen-lockfile` sin que cambiara nada del repo.
-FROM docker.io/oven/bun:1.4.2 AS ui-builder
+FROM docker.io/oven/bun:1.4.4 AS ui-builder
 
 WORKDIR /app
 
@@ -24,7 +24,7 @@ RUN bun install --frozen-lockfile --ignore-scripts
 RUN cd packages/hive-ui && bun run build
 
 # ─── Stage 2: Compile gateway for the image architecture ─────────────────────
-FROM docker.io/oven/bun:1.4.2 AS binary-builder
+FROM docker.io/oven/bun:1.4.4 AS binary-builder
 
 WORKDIR /app
 ARG TARGETARCH
