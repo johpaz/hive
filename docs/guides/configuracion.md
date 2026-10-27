@@ -55,6 +55,8 @@ Cada agente puede tener un workspace y un scope de lectura/escritura. Las herram
 
 ## Modelos
 
+Para usar una URL base personalizada con el proveedor OpenAI, consulta [Endpoints compatibles con OpenAI](endpoints-openai.md).
+
 El onboarding asigna proveedor y modelo al coordinador y completa agentes sin configuración. Un agente puede definir un override por capacidades; si no lo tiene, hereda el modelo del coordinador. Los cambios explícitos hechos en la UI no son sobrescritos durante un arranque normal.
 
 ### Decisiones con Jev
