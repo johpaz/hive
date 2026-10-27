@@ -12,6 +12,8 @@ Hive puede enviar conversaciones a un endpoint compatible con **Chat Completions
 
 La URL se guarda como `base_url` en HiveDB y se pasa al cliente como `baseUrl`. La clave se envía como `Authorization: Bearer …`; usa una clave del endpoint elegido. El adaptador OpenAI requiere una clave no vacía incluso con una URL local. El formulario permite conservar la clave existente al dejar su campo vacío.
 
+Si el servicio local no requiere autenticación, introduce un valor de ejemplo no vacío, como `local-placeholder`, en **API Key**. El servidor debe aceptar o ignorar la cabecera `Authorization: Bearer local-placeholder` que Hive enviará. Si rechaza cualquier cabecera de autenticación, no es compatible con esta configuración del proveedor OpenAI.
+
 La configuración persistente se administra desde la UI; `hive config edit` está deshabilitado. Consulta [Configuración](configuracion.md) para el directorio de datos y las variables de entorno. No guardes claves reales en ejemplos o repositorios.
 
 ## Qué comprobar
