@@ -302,9 +302,12 @@ export interface ConversationDoc {
 
 export interface SummaryDoc {
   thread_id: string
+  /** El traspaso renderizado como texto (o el resumen libre de hilos anteriores a `structured`). */
   summary: string
   messages_covered: number
   last_message_id: string | null
+  /** Traspaso en seis campos (ver agent/handoff.ts). Ausente en resúmenes anteriores. */
+  structured?: import("../agent/handoff").Handoff | null
 }
 
 /**

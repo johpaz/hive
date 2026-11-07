@@ -44,6 +44,10 @@ export function CameraPreview({ activa, fuente = "camera" }: VistaPreviaProps) {
       if (fuente === "screen") video.classList.add("vx__cam-video--plano");
       host.appendChild(video);
 
+      // El motor nativo entrega un <canvas> que se repinta solo: no hay nada
+      // que reproducir ni que reanudar.
+      if (!(video instanceof HTMLVideoElement)) return;
+
       // WebKitGTK —el motor de la app de escritorio en Linux— pausa un <video>
       // al moverlo de sitio en el árbol. Como camera.ts llama a play() antes de
       // que exista este contenedor, el elemento llegaba aquí reproduciéndose y
@@ -65,6 +69,7 @@ export function CameraPreview({ activa, fuente = "camera" }: VistaPreviaProps) {
       cancelado = true;
       const video = obtener();
       if (video && reanudar) video.removeEventListener("pause", reanudar);
+      // `reanudar` solo existe para un <video>.
       if (video && video.parentElement === host) host.removeChild(video);
     };
   }, [activa, fuente]);

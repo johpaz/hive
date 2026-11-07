@@ -23,6 +23,8 @@ export interface DispositivoAudio {
   id: string;
   nombre: string;
   porDefecto: boolean;
+  /** Es un aparato Bluetooth. Lo rellena `prepararEntradas`, no el motor. */
+  bluetooth?: boolean;
 }
 
 /** Nombre viejo, mantenido porque describe bien el caso de salida. */
@@ -139,13 +141,35 @@ export async function aplicarSalida(id: string, context: AudioContext | null): P
  * de la colmena no vuelve al micrófono y se puede interrumpir a media frase;
  * por un televisor sí vuelve, y sin freno se contesta a sí misma.
  *
- * Se deduce del propio identificador, que en la vía nativa es
- * `tarjeta|puerto` y el puerto trae el tipo en el nombre —`hdmi-output-0`,
- * `analog-output-speaker`, `headset-output`—. En la vía del navegador el
- * identificador es un hash opaco: ahí no se puede saber y decide la persona.
+ * Se deduce del propio identificador, que cambia según la vía:
+ * - Escritorio con `pactl`: `tarjeta|puerto`, y el puerto trae el tipo en el
+ *   nombre —`hdmi-output-0`, `analog-output-speaker`, `headset-output`—.
+ * - Audio nativo: `pipewire:alsa_output.pci-….hdmi-stereo`; el tipo viene en
+ *   el nombre del nodo (`hdmi`, `bluez`). Bluetooth cuenta como cerca de la
+ *   cabeza: casi siempre es un auricular, y si es un parlante lo dice la persona.
+ * En la vía del navegador el identificador es un hash opaco: ahí no se puede
+ * saber y decide la persona.
  */
 export function esAltavozAbierto(id: string): boolean {
-  const puerto = id.split("|")[1] ?? "";
-  if (/headphone|headset|hf-output/.test(puerto)) return false;
-  return /hdmi|speaker|spdif|tv|line-out/.test(puerto);
+  const nodo = id.startsWith("pipewire:") ? id.slice("pipewire:".length) : null;
+  const puerto = nodo ?? id.split("|")[1] ?? "";
+  if (/headphone|headset|hf-output|bluez/.test(puerto)) return false;
+  return /hdmi|speaker|spdif|(^|[-_.])tv([-_.]|$)|line-out/.test(puerto);
+}
+
+/**
+ * Nombres con que el sistema conoce a los aparatos Bluetooth conectados.
+ *
+ * Solo la app de escritorio en Linux los puede dar; en el resto devuelve vacío y
+ * se reconocen por la etiqueta (`parecerBluetooth`). Nunca lanza: sin esta
+ * ayuda la lista sigue funcionando, solo sin la marca de Bluetooth.
+ */
+export async function nombresBluetooth(): Promise<string[]> {
+  if (!isDesktopApp()) return [];
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<string[]>("bluetooth_names");
+  } catch {
+    return [];
+  }
 }

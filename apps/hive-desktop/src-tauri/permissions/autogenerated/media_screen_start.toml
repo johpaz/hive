@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-media-screen-start"
+description = "Enables the media_screen_start command without any pre-configured scope."
+commands.allow = ["media_screen_start"]
+
+[[permission]]
+identifier = "deny-media-screen-start"
+description = "Denies the media_screen_start command without any pre-configured scope."
+commands.deny = ["media_screen_start"]

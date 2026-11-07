@@ -155,6 +155,10 @@ export async function addMessage(
     updated_at: now,
   }, { expectedVersion: 0 })
 
+  // Indexado para recuperar más tarde lo que salga de la ventana: segundo plano, sin bloquear el guardado.
+  // Import dinámico porque message-memory importa este módulo.
+  void import("./message-memory").then((m) => m.indexMessage(threadId, seq, role, textContent)).catch(() => {})
+
   // Fire-and-forget — never block message persistence on the activity chart rollup.
   const hour = new Date(now).toISOString().slice(0, 13)
   bumpRollup("activityRollups", hour, { messageCount: 1 }).catch(() => {})
@@ -240,6 +244,24 @@ export async function getTotalTokens(threadId: string): Promise<number> {
 }
 
 /**
+ * Mensajes concretos de un hilo por su id, en orden cronológico. Los ids que no
+ * existen (borrados, de otro hilo) se omiten. Es la lectura puntual que usa la
+ * búsqueda de historial: el índice devuelve ids y el texto sale de aquí.
+ */
+export async function getMessagesByIds(threadId: string, ids: number[]): Promise<StoredMessage[]> {
+  if (ids.length === 0) return []
+  const conversationsCol = await col<ConversationDoc>("conversations")
+  const found = await Promise.all(
+    [...new Set(ids)].map(async (seq) => {
+      const id = storageId(threadId, seq)
+      const entry = await conversationsCol.get(id)
+      return entry ? toStoredMessage(id, entry.doc) : null
+    }),
+  )
+  return found.filter((m): m is StoredMessage => m !== null).sort((a, b) => a.id - b.id)
+}
+
+/**
  * Messages after a given message ID (for incremental summary updates).
  */
 export async function getMessagesAfter(threadId: string, afterId: number): Promise<StoredMessage[]> {
@@ -248,6 +270,20 @@ export async function getMessagesAfter(threadId: string, afterId: number): Promi
   return entries
     .map(e => toStoredMessage(e.id, e.doc))
     .filter(m => m.id > afterId)
+}
+
+/**
+ * Los últimos `limit` mensajes de texto (user/assistant) con id menor que `beforeId`, en orden cronológico.
+ * Es lo que queda fuera de la ventana: alimenta la línea de tiempo del historial. Los `tool` se omiten a
+ * propósito (pueden llevar credenciales y no aportan a una línea de tiempo).
+ */
+export async function getMessagesBefore(threadId: string, beforeId: number, limit = 400): Promise<StoredMessage[]> {
+  const conversationsCol = await col<ConversationDoc>("conversations")
+  const entries = await conversationsCol.scan({ prefix: `${threadId}:` })
+  const rows = entries
+    .map(e => toStoredMessage(e.id, e.doc))
+    .filter(m => m.id < beforeId && m.role !== "tool")
+  return rows.length > limit ? rows.slice(rows.length - limit) : rows
 }
 
 // ─── Convert stored messages → LLMMessage array ───────────────────────────────
@@ -280,6 +316,8 @@ export interface Summary {
   summary: string
   last_message_id: number
   messages_covered: number
+  /** Traspaso en seis campos; null en resúmenes libres anteriores. */
+  structured: import("./handoff").Handoff | null
 }
 
 export async function getSummary(threadId: string): Promise<Summary | null> {
@@ -290,6 +328,7 @@ export async function getSummary(threadId: string): Promise<Summary | null> {
     summary: entry.doc.summary,
     last_message_id: entry.doc.last_message_id ? parseInt(entry.doc.last_message_id, 10) : 0,
     messages_covered: entry.doc.messages_covered,
+    structured: entry.doc.structured ?? null,
   }
 }
 
@@ -297,7 +336,8 @@ export async function saveSummary(
   threadId: string,
   summary: string,
   messagesCovered: number,
-  lastMessageId: number
+  lastMessageId: number,
+  structured: import("./handoff").Handoff | null = null,
 ): Promise<void> {
   const summariesCol = await col<SummaryDoc>("summaries")
   const existing = await summariesCol.get(threadId)
@@ -306,7 +346,8 @@ export async function saveSummary(
     summary,
     messages_covered: messagesCovered,
     last_message_id: String(lastMessageId),
-  }, existing ? { expectedVersion: existing.version } : { expectedVersion: 0 })
+    structured,
+  },existing ? { expectedVersion: existing.version } : { expectedVersion: 0 })
 }
 
 // ─── Scratchpad (HiveDB collection) ────────────────────────────────────────────

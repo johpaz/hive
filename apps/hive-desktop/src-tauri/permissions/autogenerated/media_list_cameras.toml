@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-media-list-cameras"
+description = "Enables the media_list_cameras command without any pre-configured scope."
+commands.allow = ["media_list_cameras"]
+
+[[permission]]
+identifier = "deny-media-list-cameras"
+description = "Denies the media_list_cameras command without any pre-configured scope."
+commands.deny = ["media_list_cameras"]

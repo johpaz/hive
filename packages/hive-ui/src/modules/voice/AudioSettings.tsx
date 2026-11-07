@@ -9,7 +9,13 @@
 
 import { useEffect, useRef } from "react";
 import { Play, Volume2, X } from "lucide-react";
-import { useDispositivosAudio, useNivelMicrofono } from "@/hooks/useAudioDevices";
+import { SoloAltavozControl } from "@/components/SoloAltavozControl";
+import {
+  marcarEntradaSoloAltavoz,
+  useDispositivosAudio,
+  useMicrofonoMudo,
+  useNivelMicrofono,
+} from "@/hooks/useAudioDevices";
 import { useRealtimeStore } from "@/stores/realtimeStore";
 
 interface Props {
@@ -26,8 +32,9 @@ interface Props {
 export function AudioSettings({
   abierto, onCerrar, enVivo, entrada, salida, onEntrada, onSalida,
 }: Props) {
-  const { entradas, salidas, motivoSalidas } = useDispositivosAudio();
+  const { entradas, ocultas, salidas, motivoSalidas } = useDispositivosAudio();
   const nivel = useNivelMicrofono(entrada, abierto, enVivo);
+  const sinSenal = useMicrofonoMudo(nivel, abierto);
   const probarSalida = useRealtimeStore((s) => s.probarSalida);
   const modoAltavoz = useRealtimeStore((s) => s.modoAltavoz);
   const usarModoAltavoz = useRealtimeStore((s) => s.usarModoAltavoz);
@@ -68,18 +75,31 @@ export function AudioSettings({
           <option value="">Predeterminado del sistema</option>
           {entradas.map((d) => (
             <option key={d.id} value={d.id}>
-              {d.nombre}{d.porDefecto ? " (actual del sistema)" : ""}
+              {d.nombre}{d.bluetooth ? " · Bluetooth" : ""}{d.porDefecto ? " (actual del sistema)" : ""}
             </option>
           ))}
         </select>
       </label>
 
+      <SoloAltavozControl
+        className="vx__pref-note"
+        entradas={entradas}
+        ocultas={ocultas}
+        onOcultar={(d) => {
+          marcarEntradaSoloAltavoz(d.nombre, true);
+          if (entrada === d.id) onEntrada("");
+        }}
+        onMostrar={(d) => marcarEntradaSoloAltavoz(d.nombre, false)}
+      />
+
       {/* La barra es la prueba de que el micrófono elegido capta algo. */}
       <div className="vx__meter" aria-hidden="true">
         <div className="vx__meter-fill" style={{ transform: `scaleX(${Math.min(1, nivel * 1.6)})` }} />
       </div>
-      <p className="vx__pref-note">
-        {enVivo ? "Habla: la barra sigue tu voz." : "Habla y comprueba que la barra se mueve."}
+      <p className="vx__pref-note" role={sinSenal ? "alert" : undefined}>
+        {sinSenal
+          ? "No llega señal de este micrófono. Comprueba que esté conectado y sin silenciar, o elige otro."
+          : enVivo ? "Habla: la barra sigue tu voz." : "Habla y comprueba que la barra se mueve."}
       </p>
 
       <label className="vx__pref">

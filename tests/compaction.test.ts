@@ -5,7 +5,7 @@
  */
 
 import { describe, test, expect } from "bun:test";
-import { findCompactionCutIndex, renderTranscript } from "../packages/core/src/agent/compaction";
+import { findCompactionCutIndex, renderTranscript, resolveCompactionThreshold } from "../packages/core/src/agent/compaction";
 import type { StoredMessage } from "../packages/core/src/agent/conversation-store";
 
 function msg(partial: Partial<StoredMessage> & Pick<StoredMessage, "id" | "role" | "content">): StoredMessage {
@@ -101,5 +101,29 @@ describe("renderTranscript", () => {
     const rows: StoredMessage[] = [msg({ id: 1, role: "user", content: "x".repeat(500) })];
     const transcript = renderTranscript(rows, 10);
     expect(transcript).toBe(`[USER]: ${"x".repeat(10)}`);
+  });
+});
+
+describe("resolveCompactionThreshold", () => {
+  test("una proporción (<=1) se aplica a la ventana configurada del modelo", () => {
+    expect(resolveCompactionThreshold(0.25, 200_000)).toBe(50_000);
+    expect(resolveCompactionThreshold(0.8, 100_000)).toBe(80_000);
+    expect(resolveCompactionThreshold(1, 64_000)).toBe(64_000);
+  });
+
+  test("un valor mayor que 1 se lee como tokens absolutos", () => {
+    expect(resolveCompactionThreshold(30_000, 200_000)).toBe(30_000);
+  });
+
+  test("sin ventana conocida usa una asumida de 128K", () => {
+    expect(resolveCompactionThreshold(0.25, undefined)).toBe(32_000);
+    expect(resolveCompactionThreshold(0.25, 0)).toBe(32_000);
+  });
+
+  test("sin configuración, el 25 % de la ventana o el umbral por defecto", () => {
+    expect(resolveCompactionThreshold(undefined, 200_000)).toBe(50_000);
+    expect(resolveCompactionThreshold(undefined, undefined)).toBe(32_000);
+    expect(resolveCompactionThreshold(0, 200_000)).toBe(50_000);
+    expect(resolveCompactionThreshold(Number.NaN, 200_000)).toBe(50_000);
   });
 });

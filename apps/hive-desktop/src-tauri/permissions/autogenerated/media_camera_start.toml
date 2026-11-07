@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-media-camera-start"
+description = "Enables the media_camera_start command without any pre-configured scope."
+commands.allow = ["media_camera_start"]
+
+[[permission]]
+identifier = "deny-media-camera-start"
+description = "Denies the media_camera_start command without any pre-configured scope."
+commands.deny = ["media_camera_start"]

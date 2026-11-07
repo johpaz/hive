@@ -1,0 +1,21 @@
+Escenarios: semillas 1,2,3 · ventana de mensajes 15 · datos plantados fuera de ventana
+
+ventana  modo      consulta   retenidos   tasa  chars de prompt (medio)
+8000     actual    A              27/27   100%                     7311
+8000     timeline  A              27/27   100%                     8828
+8000     actual    B               0/27     0%                     7249
+8000     timeline  B               2/27     7%                     8948
+8000     actual    C               9/27    33%                     7558
+8000     timeline  C              22/27    81%                     9664
+32000    actual    A              27/27   100%                     7311
+32000    timeline  A              27/27   100%                    11327
+32000    actual    B               0/27     0%                     7249
+32000    timeline  B              15/27    56%                    11433
+32000    actual    C               9/27    33%                     7558
+32000    timeline  C              27/27   100%                    12626
+128000   actual    A              27/27   100%                     7311
+128000   timeline  A              27/27   100%                    14684
+128000   actual    B               0/27     0%                     7249
+128000   timeline  B              23/27    85%                    14789
+128000   actual    C               9/27    33%                     7558
+128000   timeline  C              27/27   100%                    15983

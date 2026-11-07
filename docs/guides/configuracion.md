@@ -23,6 +23,8 @@ Dentro se almacenan `.env`, `.auth_token`, HiveDB, logs, workspace, credenciales
 | `HIVE_HARNESS_MAX_CONCURRENCY` | Concurrencia global | `4` |
 | `HIVE_HARNESS_TASK_TIMEOUT_MS` | Límite de una tarea durable | 30 minutos |
 | `HIVE_HARNESS_JOB_MAX_RETRIES` | Reintentos de jobs | `3` |
+| `HIVE_HISTORY_TIMELINE` | Línea de tiempo del historial fuera de ventana (experimental; ver [Runtime](../architecture/runtime.md)) | apagada |
+| `HIVE_HISTORY_TIMELINE_MIN_WINDOW` | Ventana mínima en tokens para que la anterior actúe | `16000` |
 
 Las variables pueden colocarse en `HIVE_HOME/.env`, una por línea. Las variables ya presentes en el proceso tienen prioridad funcional cuando el runtime las consulta.
 
@@ -82,6 +84,15 @@ Las tarifas viven en el catálogo de modelos (`packages/core/src/storage/seed.ts
 Ollama lee solo `num_ctx` tokens de cada petición y descarta el resto sin avisar. Hive presupuesta el contexto con la ventana que de verdad envía: la menor entre la ventana del modelo y `num_ctx`. Si no configuras `num_ctx` en **Providers → Ollama**, Hive usa 16.384 tokens, o la ventana del modelo si es menor. Un valor más alto da más contexto a cambio de más RAM y respuestas más lentas; uno más bajo acelera modelos pequeños, pero por debajo de unos 8.000 tokens no caben las instrucciones y herramientas del coordinador junto con la conversación.
 
 Cuando el historial no cabe, el compilador descarta primero los mensajes más antiguos. Siempre conserva los dos últimos intercambios, el historial empieza en un mensaje del usuario y el mensaje actual, si es enorme, se recorta por el medio para conservar su inicio y su final. La compactación automática usa la misma ventana: resume la conversación cuando supera la cuarta parte.
+
+`agent.context.compactionThreshold` ajusta cuándo se compacta: un valor ≤ 1 es una proporción de la ventana (por defecto `0.25`) y uno > 1, un número de tokens. El resumen es un traspaso estructurado de seis campos (objetivo, hechos, cambios, verificación, callejones sin salida y plan), según «You don't need long context» (arXiv 2611.05306, https://arxiv.org/abs/2611.05306); lo compactado sigue consultable con `conversation_read`. Para recuperar también trabajo parecido de otros hilos:
+
+```typescript
+// hive.config.ts
+export default { memory: { crossThreadRecall: { enabled: true, k: 3 } } };
+```
+
+Está apagado por defecto. Los episodios parecidos (`episodicSimilarity`) se suman solos si el `@johpaz/hive-db` instalado trae `embedQuery`.
 
 ### Razonamiento visible
 

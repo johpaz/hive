@@ -8,7 +8,11 @@ finish-args:
   - --socket=x11
   - --socket=wayland
   - --socket=pulseaudio
+  # Audio nativo (hive-media) habla con PipeWire directamente.
+  - --filesystem=xdg-run/pipewire-0
   - --device=dri
+  # Cámara nativa (V4L2): lee /dev/video* directamente.
+  - --device=all
   - --filesystem=home
   - --talk-name=org.freedesktop.Notifications
   - --talk-name=org.kde.StatusNotifierWatcher

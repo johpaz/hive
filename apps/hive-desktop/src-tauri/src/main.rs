@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod media;
+
 use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream, ToSocketAddrs},
@@ -408,6 +410,47 @@ fn audio_outputs() -> Result<Vec<SalidaAudio>, String> {
     Ok(salidas_de(&tarjetas, &sinks, &por_defecto))
 }
 
+/// Nombres con que el sistema conoce a los aparatos Bluetooth conectados.
+///
+/// Sirve para saber cuáles de los micrófonos que lista el navegador integrado
+/// son Bluetooth: WebKit los entrega con una etiqueta pelada —«BS-2»— y nada en
+/// ella lo delata. Un parlante Bluetooth que se anuncia como auricular recibe
+/// un micrófono que no existe, y elegirlo (o dejar que alguna aplicación lo
+/// abra) le cambia el perfil y le baja el sonido a calidad de llamada.
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn bluetooth_names() -> Result<Vec<String>, String> {
+    Ok(nombres_bluetooth(&pactl_json(&["list", "cards"])?))
+}
+
+#[cfg(target_os = "linux")]
+fn nombres_bluetooth(tarjetas: &serde_json::Value) -> Vec<String> {
+    let mut nombres: Vec<String> = tarjetas
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+        .iter()
+        .filter(|t| {
+            t.get("name")
+                .and_then(|n| n.as_str())
+                .is_some_and(|n| n.starts_with("bluez_card"))
+        })
+        .filter_map(|t| {
+            let props = t.get("properties")?;
+            // Se devuelven los dos: el alias que puso la persona y la descripción
+            // que reporta el aparato, porque el navegador puede mostrar cualquiera.
+            Some(["device.alias", "device.description"].into_iter().filter_map(|k| {
+                props.get(k).and_then(|v| v.as_str()).map(str::to_string)
+            }))
+        })
+        .flatten()
+        .filter(|n| !n.is_empty())
+        .collect();
+    nombres.sort();
+    nombres.dedup();
+    nombres
+}
+
 /// Arma la lista con lo que reporta el servidor de sonido. Aparte del mandado
 /// para poder probarla contra capturas reales de `pactl`.
 #[cfg(target_os = "linux")]
@@ -440,7 +483,7 @@ fn salidas_de(
             Some(puertos) => puertos,
             None => continue,
         };
-        let mut de_esta: Vec<(i64, SalidaAudio)> = Vec::new();
+        let mut de_esta: Vec<(i64, SalidaAudio, bool)> = Vec::new();
         for (nombre_puerto, puerto) in puertos {
             if !es_puerto_de_salida(nombre_puerto, puerto) {
                 continue;
@@ -462,14 +505,56 @@ fn salidas_de(
                     nombre: format!("{descripcion} – {nombre_tarjeta}"),
                     por_defecto: nombre_puerto.as_str() == activo,
                 },
+                es_solo_manos_libres(puerto),
             ));
         }
         // Dentro de cada tarjeta manda la prioridad que declara el sistema: es
-        // la que pone los altavoces antes que la salida digital.
-        de_esta.sort_by(|a, b| b.0.cmp(&a.0));
-        salidas.extend(de_esta.into_iter().map(|(_, salida)| salida));
+        // la que pone los altavoces antes que la salida digital. Los empates se
+        // resuelven a favor de la salida normal sobre la de manos libres: un
+        // aparato Bluetooth declara las dos con prioridad 0, y sin este criterio
+        // gana el orden alfabético, que pone «Manos libres» (calidad de llamada,
+        // y una salida cuyo cambio de perfil tarda segundos) delante de
+        // «Auriculares».
+        de_esta.sort_by(|a, b| b.0.cmp(&a.0).then(a.2.cmp(&b.2)));
+        salidas.extend(de_esta.into_iter().map(|(_, salida, _)| salida));
     }
     salidas
+}
+
+/// ¿Este puerto solo existe en el perfil de manos libres (HSP/HFP)?
+///
+/// Es el perfil de las llamadas: audio de baja calidad con micrófono. Un puerto
+/// que además vive en un perfil de alta calidad (A2DP, o cualquiera que no sea
+/// de manos libres) no cuenta.
+#[cfg(target_os = "linux")]
+fn es_solo_manos_libres(puerto: &serde_json::Value) -> bool {
+    let perfiles: Vec<&str> = puerto
+        .get("profiles")
+        .and_then(|p| p.as_array())
+        .map(|l| l.iter().filter_map(|p| p.as_str()).collect())
+        .unwrap_or_default();
+    !perfiles.is_empty()
+        && perfiles
+            .iter()
+            .all(|p| p.contains("head-unit") || p.contains("hfp") || p.contains("hsp"))
+}
+
+/// ¿Este sink ya tiene el puerto pedido?
+///
+/// Tras cambiar el perfil de una tarjeta, su sink antiguo sigue existiendo unos
+/// instantes —con los puertos del perfil anterior— antes de que aparezca el
+/// nuevo. Darse por satisfecho con el primero que se encuentre devolvía ese
+/// sink viejo y pedirle un puerto que no tiene, que el sistema rechaza.
+#[cfg(target_os = "linux")]
+fn sink_tiene_puerto(sink: &serde_json::Value, puerto: &str) -> bool {
+    sink.get("ports")
+        .and_then(|p| p.as_array())
+        .map(|lista| {
+            lista
+                .iter()
+                .any(|p| p.get("name").and_then(|n| n.as_str()) == Some(puerto))
+        })
+        .unwrap_or(false)
 }
 
 /// ¿Este puerto de tarjeta saca sonido?
@@ -592,10 +677,14 @@ fn preparar_puerto(tarjeta: &str, puerto: &str) -> Result<String, String> {
             .ok_or_else(|| format!("El sistema no aceptó activar el perfil «{perfil}»."))?;
     }
 
-    // Tras cambiar de perfil el sink tarda un instante en existir.
-    for _ in 0..20 {
+    // Tras cambiar de perfil el sink tarda en existir: hasta unos segundos en un
+    // aparato Bluetooth, que renegocia el enlace. Hasta entonces se ve el sink
+    // del perfil anterior, que no sirve (ver `sink_tiene_puerto`).
+    for _ in 0..60 {
         let sinks = pactl_json(&["list", "sinks"])?;
-        if let Some(sink) = sink_de_tarjeta(&sinks, tarjeta) {
+        if let Some(sink) =
+            sink_de_tarjeta(&sinks, tarjeta).filter(|s| sink_tiene_puerto(s, puerto))
+        {
             let nombre = sink
                 .get("name")
                 .and_then(|n| n.as_str())
@@ -729,6 +818,15 @@ fn audio_outputs() -> Result<Vec<SalidaAudio>, String> {
         .to_string())
 }
 
+/// En Windows y macOS los navegadores integrados ya ponen «Bluetooth», «Headset»
+/// o «Hands-Free» en la etiqueta de estos aparatos, así que la interfaz los
+/// reconoce sin ayuda.
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+fn bluetooth_names() -> Result<Vec<String>, String> {
+    Ok(Vec::new())
+}
+
 #[cfg(not(target_os = "linux"))]
 #[tauri::command]
 async fn set_audio_output(_id: String) -> Result<usize, String> {
@@ -845,7 +943,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             create_tray(&app.handle()).map_err(std::io::Error::other)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![gateway_info, audio_outputs, set_audio_output, set_zoom])
+        .manage(media::MediaState::default())
+        .invoke_handler(tauri::generate_handler![
+            gateway_info,
+            audio_outputs,
+            bluetooth_names,
+            set_audio_output,
+            set_zoom,
+            media::media_list_devices,
+            media::media_mic_start,
+            media::media_mic_stop,
+            media::media_player_start,
+            media::media_player_enqueue,
+            media::media_player_interrupt,
+            media::media_player_stop,
+            media::media_list_cameras,
+            media::media_camera_start,
+            media::media_camera_stop,
+            media::media_screen_start,
+            media::media_screen_stop
+        ])
         .build(tauri::generate_context!())
         .map_err(Into::into)
         .map(|app| {
@@ -938,12 +1055,63 @@ mod salidas {
             vec![
                 "HDMI / DisplayPort – Radeon High Definition Audio Controller",
                 "HDMI / DisplayPort 2 – Radeon High Definition Audio Controller",
-                "Manos libres – BS-2",
                 "Auriculares – BS-2",
+                "Manos libres – BS-2",
                 "Altavoces – ME6S",
                 "Salida digital (S/PDIF) – ME6S",
             ]
         );
+    }
+
+    #[test]
+    fn reconoce_los_aparatos_bluetooth_por_el_nombre_que_ve_la_persona() {
+        // Sobre la captura real: de todas las tarjetas, solo el BS-2 es Bluetooth.
+        let nombres = nombres_bluetooth(&tarjetas());
+        assert!(nombres.contains(&"BS-2".to_string()), "{nombres:?}");
+        // Ni la webcam, ni el HDMI, ni los altavoces USB.
+        assert!(!nombres.iter().any(|n| n.contains("Camera") || n.contains("Radeon") || n.contains("ME6S")));
+    }
+
+    #[test]
+    fn sin_tarjetas_bluetooth_no_hay_nombres() {
+        assert!(nombres_bluetooth(&serde_json::json!([])).is_empty());
+        assert!(nombres_bluetooth(&serde_json::json!({})).is_empty());
+        let solo_alsa = serde_json::json!([{ "name": "alsa_card.pci-0000", "properties": { "device.description": "HDA" } }]);
+        assert!(nombres_bluetooth(&solo_alsa).is_empty());
+    }
+
+    #[test]
+    fn la_salida_de_alta_calidad_va_antes_que_la_de_manos_libres() {
+        // Las dos llegan con prioridad 0; sin criterio de desempate manda el
+        // orden alfabético y «Manos libres» sale primero.
+        let salidas = salidas_de(&tarjetas(), &sinks(), SINK_POR_DEFECTO);
+        let pos = |n: &str| salidas.iter().position(|s| s.nombre == n).unwrap();
+        assert!(pos("Auriculares – BS-2") < pos("Manos libres – BS-2"));
+    }
+
+    #[test]
+    fn solo_es_manos_libres_el_puerto_que_no_vive_en_ningun_otro_perfil() {
+        let hf = serde_json::json!({ "profiles": ["headset-head-unit"] });
+        let a2dp = serde_json::json!({ "profiles": ["a2dp-sink", "a2dp-sink-sbc_xq"] });
+        let mixto = serde_json::json!({ "profiles": ["a2dp-sink", "headset-head-unit"] });
+        let hdmi = serde_json::json!({ "profiles": ["output:hdmi-stereo"] });
+        assert!(es_solo_manos_libres(&hf));
+        assert!(!es_solo_manos_libres(&a2dp));
+        assert!(!es_solo_manos_libres(&mixto));
+        assert!(!es_solo_manos_libres(&hdmi));
+        assert!(!es_solo_manos_libres(&serde_json::json!({})));
+    }
+
+    #[test]
+    fn un_sink_del_perfil_anterior_no_vale_para_un_puerto_del_perfil_nuevo() {
+        // El caso real: tras pasar de A2DP a manos libres, el sink viejo aún
+        // existe con solo el puerto `headset-output`.
+        let viejo = serde_json::json!({ "ports": [{ "name": "headset-output" }] });
+        let nuevo = serde_json::json!({ "ports": [{ "name": "headset-hf-output" }] });
+        assert!(!sink_tiene_puerto(&viejo, "headset-hf-output"));
+        assert!(sink_tiene_puerto(&nuevo, "headset-hf-output"));
+        assert!(sink_tiene_puerto(&viejo, "headset-output"));
+        assert!(!sink_tiene_puerto(&serde_json::json!({}), "headset-output"));
     }
 
     #[test]
@@ -1069,7 +1237,8 @@ mod acl {
         // Puerto distinto del habitual a propósito: si el 18790 está ocupado la
         // app toma otro libre, y el permiso tiene que seguir valiendo.
         let url: url::Url = "http://127.0.0.1:41337/voz".parse().unwrap();
-        for comando in ["gateway_info", "audio_outputs", "set_audio_output", "set_zoom"] {
+        let propios = ["gateway_info", "audio_outputs", "bluetooth_names", "set_audio_output", "set_zoom"];
+        for comando in propios.iter().copied().chain(crate::media::COMMANDS.iter().copied()) {
             let permitido = resuelta
                 .allowed_commands
                 .get(comando)

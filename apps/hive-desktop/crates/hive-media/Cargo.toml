@@ -1,0 +1,22 @@
+[package]
+name = "hive-media"
+version = "0.1.0"
+description = "Audio, cámara y pantalla nativos para la voz de Hive, independientes de quien los llame"
+edition = "2021"
+license = "MIT"
+
+# Paquete propio: no forma parte del workspace de Tauri ni depende de él.
+[workspace]
+
+[dependencies]
+cpal = "0.18.2"
+image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
+nokhwa = { version = "0.10.11", features = ["input-native"] }
+sonora = "0.2.0"
+xcap = "0.9.8"
+
+# En Linux, PipeWire nativo: lista y enruta los sinks reales (HDMI, televisor,
+# Bluetooth) en vez de los cientos de PCMs virtuales de ALSA. macOS y Windows
+# usan su backend por defecto (CoreAudio, WASAPI).
+[target.'cfg(target_os = "linux")'.dependencies]
+cpal = { version = "0.18.2", features = ["pipewire"] }

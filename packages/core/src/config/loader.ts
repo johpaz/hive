@@ -256,6 +256,25 @@ const MemoryConfigSchema = z.object({
   dbPath: z.string().optional(),
   notesDir: z.string().optional(),
   episodic: EpisodicMemoryConfigSchema.optional(),
+  /** Memoria entre hilos (opt-in): recupera resúmenes de otras conversaciones por relevancia. */
+  crossThreadRecall: z.object({
+    enabled: z.boolean().optional(),
+    k: z.number().optional(),
+  }).optional(),
+  /**
+   * Línea de tiempo de la conversación fuera de ventana + recuperación que llena el presupuesto libre
+   * (agent/history-timeline.ts). Sin modelo. Apagado por defecto: HIVE_HISTORY_TIMELINE=true.
+   *
+   * `minWindow`: ventana de contexto mínima (tokens) para que tenga efecto; por debajo se ignora el flag.
+   * PROVISIONAL: 16 000 es una suposición: las pruebas con modelo no distinguen la mejora del ruido entre corridas (ver bench/history-timeline/README.md, «Ablación y ruido»).
+   * Se cambia con HIVE_HISTORY_TIMELINE_MIN_WINDOW (0 = sin compuerta, lo que usan los bancos).
+   */
+  historyTimeline: z.object({
+    enabled: z.boolean().optional(),
+    minWindow: z.number().optional(),
+    /** Ablación en los bancos: solo la línea de tiempo, solo la recuperación adaptativa, o ambas (por defecto). */
+    parts: z.enum(["both", "timeline", "recall"]).optional(),
+  }).optional(),
 });
 
 const CronConfigSchema = z.object({
@@ -403,6 +422,17 @@ export type AgentEntry = z.infer<typeof AgentEntrySchema>;
 export type Binding = z.infer<typeof BindingSchema>;
 export type UserConfig = z.infer<typeof UserConfigSchema>;
 
+/** Entero >= 0 desde una variable de entorno; si falta o no es válido, `fallback`. */
+function parseParts(raw: string | undefined): "both" | "timeline" | "recall" {
+  return raw === "timeline" || raw === "recall" ? raw : "both";
+}
+
+function parseNonNegativeInt(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 ? n : fallback;
+}
+
 function buildDefaultConfig(): Config {
   const hiveDir = getHiveDir();
   return {
@@ -429,7 +459,8 @@ function buildDefaultConfig(): Config {
       baseDir: path.join(hiveDir, "agents"),
       context: {
         maxTokens: 0,
-        compactionThreshold: 0.8,
+        // Proporción de la ventana del modelo (≤1) o tokens absolutos (>1).
+        compactionThreshold: 0.25,
         minMessagesAfterCompaction: 4,
         maxCompactionRetries: 3,
       },
@@ -521,6 +552,11 @@ function buildDefaultConfig(): Config {
         enabled: false,
         provider: "openai",
         maxEpisodesPerSession: 100,
+      },
+      historyTimeline: {
+        enabled: process.env.HIVE_HISTORY_TIMELINE === "true",
+        minWindow: parseNonNegativeInt(process.env.HIVE_HISTORY_TIMELINE_MIN_WINDOW, 16_000),
+        parts: parseParts(process.env.HIVE_HISTORY_TIMELINE_PARTS),
       },
     },
     cron: {

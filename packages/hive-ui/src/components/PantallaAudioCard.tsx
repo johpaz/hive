@@ -9,11 +9,20 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Mic, Minus, Play, Plus, RotateCcw, Volume2, ZoomIn } from "lucide-react";
+import { Cpu, Mic, Minus, Play, Plus, RotateCcw, Volume2, ZoomIn } from "lucide-react";
 import { aplicarZoom, cargarZoom, zoomDisponible, ZOOM_MAX, ZOOM_MIN, ZOOM_PASO } from "@/lib/desktop-zoom";
 import { type DispositivoAudio } from "@/lib/realtime/dispositivos";
-import { useDispositivosAudio, useNivelMicrofono } from "@/hooks/useAudioDevices";
-import { loadVoicePrefs, useRealtimeStore } from "@/stores/realtimeStore";
+import { SoloAltavozControl } from "@/components/SoloAltavozControl";
+import {
+  avisarDispositivos,
+  marcarEntradaSoloAltavoz,
+  useDispositivosAudio,
+  useMicrofonoMudo,
+  useNivelMicrofono,
+} from "@/hooks/useAudioDevices";
+import { cambiarMotorNativo, getMediaEngine, loadNativeAudioPref } from "@/lib/realtime/engine";
+import { loadVoicePrefs, saveVoicePrefs, useRealtimeStore } from "@/stores/realtimeStore";
+import { isDesktopApp } from "@/stores/useDesktopUpdateStore";
 
 export function PantallaAudioCard() {
   const usarSalida = useRealtimeStore((s) => s.usarSalida);
@@ -21,12 +30,30 @@ export function PantallaAudioCard() {
   const probarSalida = useRealtimeStore((s) => s.probarSalida);
   const enVivo = useRealtimeStore((s) => s.status !== "idle" && s.status !== "error");
   const [zoom, setZoom] = useState(() => cargarZoom());
-  const { entradas, salidas, motivoSalidas } = useDispositivosAudio();
+  const { entradas, ocultas, salidas, motivoSalidas } = useDispositivosAudio();
   const [prefs, setPrefs] = useState(() => loadVoicePrefs());
   // El medidor abre el micrófono, así que sólo mientras esta pantalla está a la
   // vista: nadie quiere el micrófono encendido por haber pasado por Ajustes.
   const nivel = useNivelMicrofono(prefs.input, true, enVivo);
+  const sinSenal = useMicrofonoMudo(nivel, true);
   const conZoom = zoomDisponible();
+  const [nativo, setNativo] = useState(() => loadNativeAudioPref() && getMediaEngine().kind === "native");
+  const [avisoNativo, setAvisoNativo] = useState<string | null>(null);
+
+  const cambiarNativo = async (activar: boolean) => {
+    setAvisoNativo(null);
+    const motor = await cambiarMotorNativo(activar);
+    const quedoNativo = motor.kind === "native";
+    setNativo(quedoNativo);
+    if (activar && !quedoNativo) {
+      setAvisoNativo("El módulo de audio nativo no respondió; se sigue usando el del navegador.");
+    }
+    // Los ids de aparato de un motor no valen en el otro: se vuelve al
+    // predeterminado en vez de dejar un selector apuntando a algo que no existe.
+    saveVoicePrefs({ input: "", output: "" });
+    setPrefs(loadVoicePrefs());
+    avisarDispositivos();
+  };
 
   // Los atajos de teclado cambian el zoom desde fuera de este panel.
   useEffect(() => {
@@ -93,6 +120,20 @@ export function PantallaAudioCard() {
           }}
           sinNada="No se detectó ningún micrófono."
         />
+        <SoloAltavozControl
+          className="space-y-1 text-xs text-muted-foreground"
+          entradas={entradas}
+          ocultas={ocultas}
+          onOcultar={(d) => {
+            marcarEntradaSoloAltavoz(d.nombre, true);
+            // Si era el micrófono elegido, se vuelve al del sistema.
+            if (prefs.input === d.id) {
+              setPrefs({ ...prefs, input: "" });
+              void usarEntrada("");
+            }
+          }}
+          onMostrar={(d) => marcarEntradaSoloAltavoz(d.nombre, false)}
+        />
         {/* La barra confirma que el aparato elegido capta algo. */}
         <div className="h-1.5 overflow-hidden rounded-full bg-muted">
           <div
@@ -100,8 +141,43 @@ export function PantallaAudioCard() {
             style={{ transform: `scaleX(${Math.min(1, nivel * 1.6)})` }}
           />
         </div>
-        <p className="text-xs text-muted-foreground">Habla y comprueba que la barra se mueve.</p>
+        <p
+          className={sinSenal ? "text-xs text-destructive" : "text-xs text-muted-foreground"}
+          role={sinSenal ? "alert" : undefined}
+        >
+          {sinSenal
+            ? "No llega señal de este micrófono. Comprueba que esté conectado y sin silenciar, o elige otro."
+            : "Habla y comprueba que la barra se mueve."}
+        </p>
       </div>
+
+      {isDesktopApp() && (
+        <div className="space-y-3 rounded-lg border border-border/60 bg-card/50 p-5">
+          <div className="flex items-center gap-2">
+            <Cpu className="h-4 w-4 text-muted-foreground" />
+            <h3 className="font-medium">Audio nativo (experimental)</h3>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Captura y reproduce el audio con un módulo propio de la aplicación en lugar del
+            navegador integrado: lista y cambia de dispositivo sin trucos, y quita el eco de los
+            altavoces, así que se puede interrumpir a la colmena hablando encima sin usar
+            auriculares. Si algo falla, desactívalo y vuelve al del navegador.
+          </p>
+          <label className="flex cursor-pointer items-center gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={nativo}
+              disabled={enVivo}
+              onChange={(e) => void cambiarNativo(e.target.checked)}
+            />
+            Usar el audio nativo
+          </label>
+          {enVivo && (
+            <p className="text-xs text-muted-foreground">Cuelga la llamada para cambiarlo.</p>
+          )}
+          {avisoNativo && <p className="text-xs text-destructive" role="alert">{avisoNativo}</p>}
+        </div>
+      )}
 
       <div className="space-y-4 rounded-lg border border-border/60 bg-card/50 p-5">
         <div className="flex items-center gap-2">
@@ -153,6 +229,7 @@ function Selector({
       {dispositivos.map((d) => (
         <option key={d.id} value={d.id}>
           {d.nombre}
+          {d.bluetooth ? " · Bluetooth" : ""}
           {d.porDefecto ? " (actual del sistema)" : ""}
         </option>
       ))}

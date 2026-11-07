@@ -1,6 +1,6 @@
 [package]
 name = "hive-desktop"
-version = "1.1.2"
+version = "1.1.3"
 description = "Hive Agents"
 authors = ["Hive Agents"]
 license = "MIT"
@@ -20,6 +20,8 @@ tauri-plugin-shell = "2"
 tauri-plugin-updater = "2"
 # Reiniciar la app después de instalar una actualización (relaunch()).
 tauri-plugin-process = "2"
+# Audio nativo: captura, reproducción y dispositivos, independientes de Tauri.
+hive-media = { path = "../crates/hive-media" }
 
 # Sólo para activar la captura de micrófono/cámara sobre el WebView de
 # WebKitGTK — ver `enable_media_capture` en main.rs. La versión y las features

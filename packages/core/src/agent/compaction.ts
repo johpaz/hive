@@ -18,7 +18,7 @@
 import { logger } from "../utils/logger"
 import {
   getTotalTokens,
-  getHistory,
+  getMessagesAfter,
   getSummary,
   saveSummary,
   getMessageCount,
@@ -29,6 +29,10 @@ import { estimateTokens } from "../utils/toon"
 import { callLLM, resolveProviderConfig, getDefaultLLM, type ContentPart } from "./llm-client"
 import { col, fromIndexable } from "../storage/hive"
 import type { AgentDoc, ModelDoc } from "../storage/collections"
+import { loadConfig } from "../config/loader"
+import { indexThreadSummary } from "./summary-memory"
+import { indexThreadMessages } from "./message-memory"
+import { HANDOFF_SYSTEM_PROMPT, buildHandoffPrompt, parseHandoff, renderHandoff } from "./handoff"
 
 const log = logger.child("compaction")
 
@@ -37,12 +41,115 @@ const log = logger.child("compaction")
 const COMPACT_TOKEN_THRESHOLD = 32000  // ~25% of 128K default context window
 const KEEP_LAST_N_MESSAGES = 5         // always keep most recent N messages
 const TOOL_RESULT_MAX_CHARS = 200      // max chars for old tool results after clearing
-const MAX_TRANSCRIPT_MSGS = 30         // cap messages sent to summarizer (avoids OOM on small models)
-const MAX_MSG_CHARS = 300              // chars per message in transcript
+const MAX_TRANSCRIPT_MSGS = 40         // cap messages sent to summarizer (avoids OOM on small models)
+const MAX_MSG_CHARS = 800              // chars per message in transcript
+const MAX_TRANSCRIPT_CHARS = 24_000    // ~6K tokens: tope de la transcripción entera (modelos locales pequeños)
+
+/** Los límites de la compactación, expuestos para que el benchmark (bench/compaction) mida con los mismos valores. */
+export const COMPACTION_LIMITS = {
+  keepLastMessages: KEEP_LAST_N_MESSAGES,
+  maxTranscriptMsgs: MAX_TRANSCRIPT_MSGS,
+  maxMsgChars: MAX_MSG_CHARS,
+  maxTranscriptChars: MAX_TRANSCRIPT_CHARS,
+} as const
 // Compaction runs before the turn and blocks it. A local model on CPU took
 // minutes here; past this bound the turn goes on uncompacted — the context
 // compiler already trims history to the window, so nothing overflows.
 const COMPACTION_TIMEOUT_MS = 60_000
+
+/** Ventana asumida cuando no se conoce la del modelo: `COMPACT_TOKEN_THRESHOLD` es su 25 %. */
+const ASSUMED_CONTEXT_WINDOW = 128_000
+
+/**
+ * A partir de cuántos tokens de historial se compacta.
+ *
+ * `agent.context.compactionThreshold` es una PROPORCIÓN de la ventana del
+ * modelo (≤1, por defecto 0.25); un valor mayor que 1 se lee como tokens
+ * absolutos. La ventana es la que el modelo tiene configurada. Sin
+ * configuración, el 25 % de la ventana conocida. Portado de hive-sdk.
+ */
+export function resolveCompactionThreshold(configured: number | undefined, contextWindow?: number): number {
+  const known = contextWindow && contextWindow > 0 ? contextWindow : undefined
+  if (typeof configured === "number" && Number.isFinite(configured) && configured > 0) {
+    return configured <= 1
+      ? Math.floor((known ?? ASSUMED_CONTEXT_WINDOW) * configured)
+      : Math.floor(configured)
+  }
+  return known ? Math.floor(known * 0.25) : COMPACT_TOKEN_THRESHOLD
+}
+
+/**
+ * La compactación con modelo es el ÚLTIMO recurso: antes de ella, lo que sale de la ventana ya se recupera sin
+ * modelo (los mensajes se indexan al guardarse y cada turno trae los relevantes; `conversation_read`). Por eso
+ * el umbral es alto: cada compactación pierde detalle.
+ */
+export const DEFAULT_COMPACTION_RATIO = 0.65
+/** Parte del contexto que no se puede compactar (sistema, herramientas, skills) si aún no se ha medido. */
+const DEFAULT_FIXED_TOKENS = 10_000
+/** Por debajo de esto no merece una llamada al modelo. */
+const MIN_COMPACT_HISTORY_TOKENS = 2_000
+/** Reserva para la respuesta y el error de estimación: la misma que usa el compilador (`COMPACT_RATIO`). */
+const USABLE_RATIO = 0.8
+/** Margen sobre el presupuesto de historial del compilador: compactar antes de que empiece a descartar turnos. */
+const BUDGET_SAFETY = 0.9
+
+/**
+ * A partir de cuántos tokens de HISTORIAL se compacta.
+ *
+ * `agent.context.compactionThreshold` ≤ 1 es la parte del espacio útil de entrada que puede ocupar el contexto
+ * TOTAL del turno (sistema + herramientas + historial); por defecto 0,65. El espacio útil es la ventana por 0,8:
+ * el resto es la respuesta y el error de estimación. Como la parte fija no se puede compactar, al historial le
+ * toca lo que queda: `ratio × útil − fijo`. Un valor > 1 son tokens de historial, sin más cálculo. Para volver
+ * al comportamiento anterior (25 % de la ventana) usa `resolveCompactionThreshold` o fija tokens.
+ *
+ * Tres protecciones: nunca por encima del 90 % del presupuesto de historial del compilador; nunca por debajo de
+ * 2000 tokens; y sin ventana conocida se asume una de 128K.
+ */
+export function resolveCompactionTrigger(o: { configured?: number; window?: number; fixedTokens?: number }): number {
+  const { configured } = o
+  if (typeof configured === "number" && Number.isFinite(configured) && configured > 1) return Math.floor(configured)
+  const window = o.window && o.window > 0 ? o.window : ASSUMED_CONTEXT_WINDOW
+  const ratio = typeof configured === "number" && Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_COMPACTION_RATIO
+  const fixed = Math.min(Math.max(0, o.fixedTokens ?? DEFAULT_FIXED_TOKENS), Math.floor(window * 0.5))
+  const budget = Math.max(Math.floor(window * 0.25), Math.floor(window * USABLE_RATIO) - fixed)
+  const ceiling = Math.floor(budget * BUDGET_SAFETY)
+  const raw = Math.floor(ratio * window * USABLE_RATIO) - fixed
+  return Math.min(ceiling, Math.max(MIN_COMPACT_HISTORY_TOKENS, raw))
+}
+
+/**
+ * Cuánto de lo acumulado ve el resumen en UNA llamada, según la ventana. Con umbrales altos se acumulan decenas
+ * de miles de tokens; un tope fijo de 40 mensajes dejaba al resumen ver una fracción. Crece con la ventana (un
+ * modelo local pequeño sigue con los topes de siempre) y sigue siendo una sola llamada.
+ */
+export function transcriptLimits(window?: number): { maxMsgs: number; maxChars: number } {
+  const w = window && window > 0 ? window : ASSUMED_CONTEXT_WINDOW
+  const maxChars = Math.min(100_000, Math.max(MAX_TRANSCRIPT_CHARS, Math.floor(w * 0.1 * 3.5)))
+  const maxMsgs = Math.min(160, Math.max(MAX_TRANSCRIPT_MSGS, Math.floor(maxChars / 600)))
+  return { maxMsgs, maxChars }
+}
+
+/**
+ * Tokens de la parte fija del último prompt compilado de cada hilo (sistema + herramientas). La compactación se
+ * decide ANTES de compilar el turno, así que usa la medida del turno anterior.
+ */
+const fixedTokensByThread = new Map<string, number>()
+export function noteFixedTokens(threadId: string, tokens: number): void {
+  if (fixedTokensByThread.size > 500) fixedTokensByThread.clear()
+  fixedTokensByThread.set(threadId, tokens)
+}
+
+/**
+ * Tokens del historial VIVO: el resumen más lo posterior a él. Los mensajes ya
+ * resumidos siguen guardados (auditoría) pero el modelo no los lee; contarlos
+ * haría que, pasado el umbral una vez, se recompactara en cada turno.
+ */
+async function liveTokens(threadId: string): Promise<number> {
+  const summary = await getSummary(threadId)
+  if (!summary) return getTotalTokens(threadId)
+  const after = await getMessagesAfter(threadId, summary.last_message_id)
+  return estimateTokens(summary.summary) + after.reduce((sum, m) => sum + m.token_count, 0)
+}
 
 /**
  * Check if compaction is needed and run it if so.
@@ -57,11 +164,12 @@ export async function maybeCompact(
   signal?: AbortSignal,
 ): Promise<void> {
   try {
-    const totalTokens = await getTotalTokens(threadId)
+    const totalTokens = await liveTokens(threadId)
 
-    // Use model's context window if available, otherwise use default
-    let effectiveThreshold = contextWindow ? Math.floor(contextWindow * 0.25) : COMPACT_TOKEN_THRESHOLD
-    if (!contextWindow) try {
+    // La ventana la da el modelo (la que el usuario configuró en su fila);
+    // el umbral es la proporción `agent.context.compactionThreshold` de ella.
+    let windowSize = contextWindow
+    if (!windowSize) try {
       const agentsCol = await col<AgentDoc>("agents")
       const coordinators = await agentsCol.findBy("role", "coordinator", { limit: 1 })
       const modelId = fromIndexable(coordinators[0]?.doc.model_id ?? null)
@@ -71,11 +179,15 @@ export async function maybeCompact(
         // modelo cuyo nombre lleve barra (meta/llama-3.3-70b-instruct buscaba
         // "llama-3.3-70b-instruct", no encontraba nada y caía al default).
         const modelEntry = await modelsCol.get(modelId)
-        if (modelEntry?.doc.context_window) {
-          effectiveThreshold = Math.floor(modelEntry.doc.context_window * 0.25)
-        }
+        if (modelEntry?.doc.context_window) windowSize = modelEntry.doc.context_window
       }
     } catch { /* use default threshold */ }
+
+    const effectiveThreshold = resolveCompactionTrigger({
+      configured: loadConfig().agent?.context?.compactionThreshold,
+      window: windowSize,
+      fixedTokens: fixedTokensByThread.get(threadId),
+    })
 
     if (totalTokens < effectiveThreshold) return
 
@@ -85,7 +197,7 @@ export async function maybeCompact(
     // Already summarized up to near the current state
     if (summary && summary.last_message_id > totalMessages - KEEP_LAST_N_MESSAGES) return
 
-    log.info(`[compaction] Compacting thread=${threadId} tokens=${totalTokens}`)
+    log.info(`[compaction] Compacting thread=${threadId} tokens=${totalTokens} threshold=${effectiveThreshold}`)
     const timeout = AbortSignal.timeout(COMPACTION_TIMEOUT_MS)
     await compactThread(threadId, notify, signal ? AbortSignal.any([signal, timeout]) : timeout)
   } catch (err) {
@@ -132,7 +244,12 @@ export async function compactThread(
   notify?: { channel: string; userId: string },
   signal?: AbortSignal,
 ): Promise<void> {
-  const allMessages = await getHistory(threadId)
+  // Solo lo posterior al resumen anterior: ese ya está en su traspaso. Se lee
+  // sin tope de longitud; `getHistory()` devolvía los 200 mensajes MÁS ANTIGUOS,
+  // así que en un hilo largo cada compactación veía el mismo corte que la
+  // primera y la compactación dejaba de avanzar pasado el mensaje ~200.
+  const existingSummary = await getSummary(threadId)
+  const allMessages = await getMessagesAfter(threadId, existingSummary?.last_message_id ?? -1)
   if (allMessages.length <= KEEP_LAST_N_MESSAGES) return
 
   const cutIndex = findCompactionCutIndex(allMessages)
@@ -146,17 +263,23 @@ export async function compactThread(
 
   const lastSummarizedId = toSummarize[toSummarize.length - 1].id
 
-  const existingSummary = await getSummary(threadId)
-  if (existingSummary && existingSummary.last_message_id >= lastSummarizedId) return
-
-  // Cap transcript to avoid overflowing small model contexts
-  const capped = toSummarize.slice(-MAX_TRANSCRIPT_MSGS)
-  const transcript = renderTranscript(capped)
+  // Todo lo que se resume es posterior al resumen anterior, que entra por su traspaso.
+  const fresh = toSummarize
 
   const defaultLLM = await getDefaultLLM()
   if (!defaultLLM) throw new Error("No active LLM providers/models configured in the database")
 
   const providerCfg = await resolveProviderConfig(defaultLLM.provider, defaultLLM.model)
+
+  // Cap transcript to avoid overflowing small model contexts (se conserva la cola, lo más reciente). El tope
+  // crece con la ventana del modelo que resume.
+  const limits = transcriptLimits(providerCfg.contextWindow)
+  const capped = fresh.slice(-limits.maxMsgs)
+  const rendered = renderTranscript(capped)
+  const transcript = rendered.length > limits.maxChars ? rendered.slice(-limits.maxChars) : rendered
+  const previous = existingSummary
+    ? (existingSummary.structured ? renderHandoff(existingSummary.structured) : existingSummary.summary)
+    : null
 
   const summaryResponse = await callLLM({
     ...providerCfg,
@@ -164,13 +287,11 @@ export async function compactThread(
     messages: [
       {
         role: "system",
-        content:
-          "You are a conversation summarizer. Create a concise summary preserving: " +
-          "user preferences, decisions made, important facts, tool results, and context needed to continue.",
+        content: HANDOFF_SYSTEM_PROMPT,
       },
       {
         role: "user",
-        content: `Summarize this conversation (${toSummarize.length} messages) in 3-5 sentences:\n\n${transcript}`,
+        content: buildHandoffPrompt({ transcript, messageCount: capped.length, previous }),
       },
     ],
   })
@@ -187,10 +308,26 @@ export async function compactThread(
     return
   }
 
-  const summary = summaryResponse.content.trim()
-  if (!summary) return
+  const raw = summaryResponse.content.trim()
+  if (!raw) return
 
-  await saveSummary(threadId, summary, toSummarize.length, lastSummarizedId)
+  // Traspaso estructurado; si el modelo no devolvió JSON válido y lo que dio es
+  // prosa, se guarda como resumen libre (el formato anterior). Si parece un JSON
+  // roto, no se guarda: el hilo queda sin compactar, que es recuperable.
+  const structured = parseHandoff(raw)
+  if (!structured && /^[`{\[]/.test(raw)) {
+    log.warn(`[compaction] Handoff JSON inválido para thread=${threadId} — se deja sin compactar`)
+    return
+  }
+  const summary = structured ? renderHandoff(structured) : raw
+
+  await saveSummary(
+    threadId, summary, (existingSummary?.messages_covered ?? 0) + toSummarize.length, lastSummarizedId, structured,
+  )
+  // Memoria entre hilos: segundo plano, fuera del camino de la respuesta.
+  void indexThreadSummary(threadId, summary)
+  // Lo compactado sigue siendo recuperable: conversation_read lo busca en este índice.
+  void indexThreadMessages(threadId, fresh)
   log.info(
     `[compaction] Thread ${threadId} compacted: ${toSummarize.length} msgs → ${estimateTokens(summary)} tokens`
   )

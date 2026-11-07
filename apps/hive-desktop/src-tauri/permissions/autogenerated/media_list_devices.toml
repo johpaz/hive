@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-media-list-devices"
+description = "Enables the media_list_devices command without any pre-configured scope."
+commands.allow = ["media_list_devices"]
+
+[[permission]]
+identifier = "deny-media-list-devices"
+description = "Denies the media_list_devices command without any pre-configured scope."
+commands.deny = ["media_list_devices"]

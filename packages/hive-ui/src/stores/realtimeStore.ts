@@ -9,9 +9,14 @@
 
 import { create } from "zustand";
 import { getWsBaseUrl } from "@/lib/gateway-url";
-import { RealtimeMic, RealtimePlayer, describeMicError, type SpectrumTap } from "@/lib/realtime/audio";
-import { RealtimeCamera, describeCameraError } from "@/lib/realtime/camera";
-import { RealtimeScreen, describeScreenError } from "@/lib/realtime/screen";
+import {
+  getMediaEngine,
+  type CapturePort,
+  type LipsyncSource,
+  type MicPort,
+  type PlayerPort,
+  type SpectrumReader,
+} from "@/lib/realtime/engine";
 import { esAltavozAbierto } from "@/lib/realtime/dispositivos";
 import { useConversationsStore } from "@/stores/conversationsStore";
 
@@ -96,31 +101,40 @@ interface RealtimeState {
   toggleScreen: () => Promise<void>;
 }
 
-/** El `<video>` de la cámara, para la vista previa. Fuera del estado: es un nodo DOM. */
-export function getCameraElement(): HTMLVideoElement | null {
+/** El nodo de la cámara (`<video>` o `<canvas>`), para la vista previa. Fuera del estado: es un nodo DOM. */
+export function getCameraElement(): HTMLElement | null {
   return camera?.element ?? null;
 }
 
 /** Ídem para la pantalla compartida. */
-export function getScreenElement(): HTMLVideoElement | null {
+export function getScreenElement(): HTMLElement | null {
   return screen?.element ?? null;
 }
 
 /** Acceso a los analizadores para el visualizador; fuera del estado de React. */
-export function getSpectrumTaps(): { mic: SpectrumTap | null; player: SpectrumTap | null } {
+export function getSpectrumTaps(): { mic: SpectrumReader | null; player: SpectrumReader | null } {
   return { mic: mic?.spectrum ?? null, player: player?.spectrum ?? null };
 }
 
 /** Dónde engancharle el análisis de visemas a la voz del modelo; null si no suena nada. */
-export function getLipsyncSource(): { context: AudioContext; node: AudioNode } | null {
+export function getLipsyncSource(): LipsyncSource | null {
   return player?.lipsyncSource ?? null;
 }
 
+/**
+ * Manos libres: ¿se calla ahora el micrófono porque habla la colmena?
+ * No si el motor ya le quita el eco: ahí el micrófono sigue abierto y se puede
+ * interrumpir hablando encima.
+ */
+function callarMicrofono(modoAltavoz: boolean): boolean {
+  return modoAltavoz && !getMediaEngine().cancelaEco && !!player?.estaHablando();
+}
+
 let ws: WebSocket | null = null;
-let mic: RealtimeMic | null = null;
-let player: RealtimePlayer | null = null;
-let camera: RealtimeCamera | null = null;
-let screen: RealtimeScreen | null = null;
+let mic: MicPort | null = null;
+let player: PlayerPort | null = null;
+let camera: CapturePort | null = null;
+let screen: CapturePort | null = null;
 
 /** Voces de Gemini Live, con el carácter de cada una para poder elegir a oído. */
 export const VOCES = [
@@ -266,7 +280,7 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => ({
       return;
     }
     try {
-      const cam = new RealtimeCamera((data, mimeType) => {
+      const cam = getMediaEngine().createCamera((data, mimeType) => {
         if (ws?.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: "video", data, mimeType }));
         }
@@ -276,7 +290,7 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => ({
       set({ cameraOn: true, cameraError: null });
     } catch (error) {
       camera = null;
-      set({ cameraOn: false, cameraError: describeCameraError(error) });
+      set({ cameraOn: false, cameraError: getMediaEngine().describeCameraError(error) });
     }
   },
 
@@ -288,7 +302,7 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => ({
       return;
     }
     try {
-      const compartida = new RealtimeScreen(
+      const compartida = getMediaEngine().createScreen(
         (data, mimeType) => {
           if (ws?.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "video", data, mimeType, source: "screen" }));
@@ -306,7 +320,7 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => ({
       set({ screenOn: true, screenError: null });
     } catch (error) {
       screen = null;
-      set({ screenOn: false, screenError: describeScreenError(error) });
+      set({ screenOn: false, screenError: getMediaEngine().describeScreenError(error) });
     }
   },
 
@@ -316,7 +330,7 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => ({
     // estado "interrupted" y la voz de la colmena no suena. Chrome no distingue
     // ese caso, por eso el fallo solo aparecía en la app de escritorio.
     if (!player) {
-      player = new RealtimePlayer();
+      player = getMediaEngine().createPlayer();
       player.onIdle = () => {
         if (get().status === "speaking") set({ status: "listening" });
       };
@@ -330,7 +344,7 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => ({
   },
 
   /** ¿Está callado el micrófono ahora mismo por manos libres? Para la interfaz. */
-  micCallado: () => get().modoAltavoz && !!player?.estaHablando(),
+  micCallado: () => get().modoAltavoz && !getMediaEngine().cancelaEco && !!player?.estaHablando(),
 
   usarSalida: async (id) => {
     saveVoicePrefs({ output: id });
@@ -350,8 +364,8 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => ({
     saveVoicePrefs({ input: id });
     if (!mic) return;
     mic.stop();
-    const nuevo = new RealtimeMic((pcm) => {
-      if (get().modoAltavoz && player?.estaHablando()) return;
+    const nuevo = getMediaEngine().createMic((pcm) => {
+      if (callarMicrofono(get().modoAltavoz)) return;
       if (ws?.readyState === WebSocket.OPEN) ws.send(pcm);
     }, id || null);
     mic = nuevo;
@@ -359,7 +373,7 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => ({
       await nuevo.start();
     } catch (error) {
       mic = null;
-      set({ status: "error", error: describeMicError(error) });
+      set({ status: "error", error: getMediaEngine().describeMicError(error) });
     }
   },
 
@@ -400,19 +414,19 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => ({
         throw new Error("El micrófono necesita una conexión segura (https o localhost).");
       }
 
-      mic = new RealtimeMic((pcm) => {
+      mic = getMediaEngine().createMic((pcm) => {
         // Manos libres: mientras suena su voz, lo que entra por el micrófono
         // es ella misma rebotando en la sala. Enviarlo es pedirle que se
         // interrumpa sola. El plazo lo lleva el reproductor con reloj de pared
         // —ver `estaHablando()`—: cualquier señal basada en estado podría
         // quedarse trabada y dejar el micrófono mudo el resto de la llamada.
-        if (get().modoAltavoz && player?.estaHablando()) return;
+        if (callarMicrofono(get().modoAltavoz)) return;
         if (ws?.readyState === WebSocket.OPEN) ws.send(pcm);
       }, prefs.input || null);
       await mic.start();
     } catch (error) {
       get().stop();
-      set({ status: "error", error: describeMicError(error) });
+      set({ status: "error", error: getMediaEngine().describeMicError(error) });
       return;
     }
 

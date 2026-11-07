@@ -82,6 +82,15 @@ export class RealtimeVoiceSession {
   private usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
   private usageBase = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
 
+  /**
+   * Lo que llegó del navegador y lo que Gemini entendió, para diagnosticar
+   * "hablo y no me escucha": audio recibido sin transcripción es un modelo que
+   * no oye; ningún audio recibido es un micrófono que el navegador no abrió.
+   */
+  private readonly abiertaEn = Date.now();
+  private audioEntrada = { frames: 0, bytes: 0, primeroMs: -1 };
+  private transcripcionesUsuario = 0;
+
   /** Nº de conexión: los callbacks de generaciones viejas se descartan. */
   private generation = 0;
   /** Evita que goAway y onClose disparen dos reconexiones a la vez. */
@@ -143,6 +152,7 @@ export class RealtimeVoiceSession {
           if (!vigente()) return;
           this.lastActivityAt = Date.now();
           this.userTurnText += text;
+          this.transcripcionesUsuario++;
           this.send({ type: "transcript", role: "user", text });
         },
         onOutputTranscript: (text) => {
@@ -259,6 +269,9 @@ export class RealtimeVoiceSession {
   // ── Entrada desde el navegador ─────────────────────────────────────────────
 
   handleAudio(pcm: ArrayBufferLike): void {
+    if (this.audioEntrada.frames === 0) this.audioEntrada.primeroMs = Date.now() - this.abiertaEn;
+    this.audioEntrada.frames++;
+    this.audioEntrada.bytes += pcm.byteLength;
     if (!this.session || this.closed) return;
     this.session.sendAudio(pcm);
   }
@@ -426,6 +439,12 @@ export class RealtimeVoiceSession {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    const { frames, bytes, primeroMs } = this.audioEntrada;
+    log.info(
+      `llamada cerrada tras ${Math.round((Date.now() - this.abiertaEn) / 1000)} s: ` +
+        `audio del navegador=${frames} frames (${Math.round(bytes / 1024)} KB, primero a los ${primeroMs} ms), ` +
+        `transcripciones del usuario=${this.transcripcionesUsuario}`,
+    );
     if (this.idleTimer) clearInterval(this.idleTimer);
     this.idleTimer = null;
     if (this.flushTimer) clearTimeout(this.flushTimer);

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-media-player-enqueue"
+description = "Enables the media_player_enqueue command without any pre-configured scope."
+commands.allow = ["media_player_enqueue"]
+
+[[permission]]
+identifier = "deny-media-player-enqueue"
+description = "Denies the media_player_enqueue command without any pre-configured scope."
+commands.deny = ["media_player_enqueue"]

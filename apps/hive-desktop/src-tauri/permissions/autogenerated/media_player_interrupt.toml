@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-media-player-interrupt"
+description = "Enables the media_player_interrupt command without any pre-configured scope."
+commands.allow = ["media_player_interrupt"]
+
+[[permission]]
+identifier = "deny-media-player-interrupt"
+description = "Denies the media_player_interrupt command without any pre-configured scope."
+commands.deny = ["media_player_interrupt"]

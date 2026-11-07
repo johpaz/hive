@@ -189,7 +189,18 @@ jobs:
             libxdo-dev \
             patchelf \
             libssl-dev \
-            libfuse2
+            libfuse2 \
+            libasound2-dev \
+            libpipewire-0.3-dev \
+            libspa-0.2-dev \
+            clang \
+            libgbm-dev \
+            libdrm-dev \
+            libegl-dev \
+            libwayland-dev \
+            libxcb1-dev \
+            libxcb-shm0-dev \
+            libxcb-randr0-dev
       - name: Install JavaScript dependencies
         run: bun install --frozen-lockfile
       - uses: actions/download-artifact@v4
