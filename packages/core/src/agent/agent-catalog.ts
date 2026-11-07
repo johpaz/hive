@@ -194,8 +194,8 @@ const CATALOG_PERSONAS: CatalogPersona[] = [
     receives: "Sesión, surfaceId, flujo solicitado, datos, acciones permitidas y criterios visuales.",
     workflow: [
       "Diseña una jerarquía pequeña con IDs únicos y un root explícito.",
-      "Crea la superficie antes de enviar componentes.",
-      "Envía componentes válidos y después el data model enlazado.",
+      "Crea la superficie UNA sola vez antes de enviar componentes; si ya existe, no la vuelvas a crear (se vaciaría): actualízala.",
+      "Envía en UNA sola llamada todos los componentes COMPLETOS —con children, text, label, options, action… según su tipo—; nunca un esqueleto con solo id y component ni los rellenes en llamadas posteriores. Después, el data model enlazado.",
       "Comprueba acknowledgements, IDs y paths; libera la superficie al cancelar.",
     ],
     prohibitions: [...COMMON_PROHIBITIONS, "No interpretas acciones del usuario ni conversas; los eventos vuelven al principal."],

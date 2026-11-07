@@ -57,6 +57,55 @@ export function findComponentCycle(components: unknown[]): string[] | null {
   return null
 }
 
+/**
+ * What each component type must carry to render anything. Each entry is a list of alternatives:
+ * at least one key of every list has to be present. Unknown types are not checked (the client
+ * draws a placeholder for them).
+ */
+const REQUIRED_PROPS: Record<string, string[][]> = {
+  Column: [["children"]],
+  Row: [["children"]],
+  List: [["children", "child"]],
+  Card: [["child"]],
+  Text: [["text"]],
+  Button: [["child", "text"]],
+  TextField: [["label", "value"]],
+  CheckBox: [["label"]],
+  ChoicePicker: [["options"]],
+  Slider: [["value", "label"]],
+  DateTimeInput: [["value", "label"]],
+  Tabs: [["tabs", "tabItems"]],
+  Modal: [["trigger", "entryPointChild"], ["content", "contentChild"]],
+  Image: [["url"]],
+  Video: [["url"]],
+  AudioPlayer: [["url"]],
+  Icon: [["name"]],
+}
+
+/**
+ * Components that would render empty ("root (Column) necesita children"). A skeleton with only
+ * `id` and `component` publishes a blank surface and the agent then believes it is done, so a batch
+ * must arrive complete. Both the flat and the nested (`{ Card: {...} }`) forms are understood.
+ */
+export function findIncompleteComponents(components: unknown[]): string[] {
+  const problems: string[] = []
+  for (const raw of components) {
+    if (!raw || typeof raw !== "object") continue
+    const def = raw as Record<string, unknown>
+    const nested = def.component && typeof def.component === "object" && !Array.isArray(def.component)
+      ? Object.entries(def.component as Record<string, unknown>)[0]
+      : undefined
+    const type = nested ? nested[0] : typeof def.component === "string" ? def.component.trim() : ""
+    const props = nested && nested[1] && typeof nested[1] === "object" ? { ...def, ...(nested[1] as Record<string, unknown>) } : def
+    for (const alternatives of REQUIRED_PROPS[type] ?? []) {
+      if (!alternatives.some((key) => props[key] !== undefined && props[key] !== null)) {
+        problems.push(`${String(def.id)} (${type}) necesita ${alternatives.join(" o ")}`)
+      }
+    }
+  }
+  return problems
+}
+
 export function createA2UISurfaceTool(_config: Config): Tool {
   const log = logger.child("a2ui-surface");
 
@@ -115,6 +164,21 @@ export function createA2UISurfaceTool(_config: Config): Tool {
         log.warn(`No visual sessions connected. Rendering to ${sessionId} anyway. Available: ${connected.join(", ")}`);
       }
 
+      // Creating a surface that already has components resets it to empty (client and replay cache
+      // alike). An agent that repeated the call after building the form left the user an empty panel.
+      // There is deliberately no "replace" flag: offering one, the model used it right away. Starting
+      // over is a2ui_delete_surface and then create, two explicit steps.
+      const built = canvasManager.getCachedComponents(sessionId, params.surfaceId as string)
+      if (built.length > 0) {
+        return JSON.stringify({
+          status: "exists",
+          surfaceId: params.surfaceId,
+          sessionId,
+          componentCount: built.length,
+          hint: `La superficie '${params.surfaceId}' ya existe con ${built.length} componentes y NO se volvió a crear: hacerlo la vaciaría. Para cambiarla usa a2ui_update_components con los mismos ids (reemplaza por id) o a2ui_update_data_model. Si de verdad necesitas empezar de cero: a2ui_delete_surface y luego crearla, y reenvía TODOS los componentes.`,
+        })
+      }
+
       await canvasManager.sendA2UIMessage(sessionId, "a2ui:createSurface", {
         surfaceId: params.surfaceId as string,
         catalogId: params.catalogId as string,
@@ -127,6 +191,7 @@ export function createA2UISurfaceTool(_config: Config): Tool {
         status: "created",
         surfaceId: params.surfaceId,
         sessionId,
+        next: "La superficie está VACÍA: envía ahora TODOS los componentes completos con a2ui_update_components (y luego el data model). No des la tarea por terminada antes.",
       });
     },
   };
@@ -138,6 +203,8 @@ export function createA2UIUpdateComponentsTool(_config: Config): Tool {
   return {
     name: "a2ui_update_components",
     description: `Send A2UI v0.9 components to an existing surface. Components are a FLAT list with ID references (adjacency list).
+
+ENVÍA TODO COMPLETO EN UNA SOLA LLAMADA: cada componente con sus propiedades (children, text, label, options, action…) según su tipo. Un componente con solo id y component se rechaza y no se publica nada; no mandes un esqueleto para rellenarlo después.
 
 CHILDREN (spec oficial A2UI v0.9):
   Static: "children": ["id1", "id2"]  ← array crudo, formato oficial
@@ -190,6 +257,11 @@ Root component: usar id="root" explícito.`,
               component: { type: "string", description: "Component type: Text, Button, Row, Column, Card, List, Divider, Image, Icon, Video, AudioPlayer, TextField, CheckBox, ChoicePicker, Slider, DateTimeInput, Tabs, Modal" },
               weight: { type: "number", description: "Flex weight for proportional sizing inside Row/Column" },
             },
+            required: ["id", "component"],
+            // Each type has its own props (children, text, label, options, action…), listed in the tool
+            // description. Without this, a model whose output is constrained to the schema can only emit
+            // the three keys above and every component arrives empty.
+            additionalProperties: true,
           },
         },
       },
@@ -203,6 +275,10 @@ Root component: usar id="root" explícito.`,
         : (userId ? `canvas:${userId}` : (() => { throw new Error("No session or user ID provided"); })());
 
       if (!Array.isArray(params.components)) throw new Error("components must be an array")
+      const incomplete = findIncompleteComponents(params.components)
+      if (incomplete.length > 0) {
+        throw new Error(`Componentes incompletos: ${incomplete.join("; ")}. Envía TODOS los componentes COMPLETOS en una sola llamada a a2ui_update_components (con children, text, label, options, action… según el tipo), no un esqueleto con solo id y component. No se publicó nada.`)
+      }
       // Checked on the merged tree the client will render, not only this batch.
       const cycle = findComponentCycle(mergeComponentsById(
         canvasManager.getCachedComponents(sessionId, params.surfaceId as string),
