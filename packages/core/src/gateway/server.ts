@@ -22,6 +22,7 @@ import rootPackage from "../../../../package.json";
 // standalone executables instead of depending on a package.json at runtime.
 const _pkgVersion = rootPackage.version;
 import { ensureHiveDb } from "../storage/bootstrap";
+import { syncActiveProviderModels } from "../storage/model-sync";
 import { col, fromIndexable, nextId } from "../storage/hive";
 import { reconcileOnBoot } from "../storage/reconcile";
 import { getBootId } from "../storage/boot-id";
@@ -216,6 +217,19 @@ export async function startGateway(
     // Seed providers/models/etc so setup wizard has data before onboarding completes
     await ensureHiveDb();
   } catch { /* si falla, los endpoints manejarán el error */ }
+
+  // Pregunta a cada provider ACTIVO qué modelos tiene y actualiza la BD (ventana de contexto, capacidades, retirados).
+  // En segundo plano: nunca retrasa el arranque, y un fallo de red solo queda en el log. Se omite con
+  // HIVE_MODEL_SYNC=0 y en las pruebas (BD en memoria).
+  if (process.env.HIVE_MODEL_SYNC !== "0" && process.env.HIVE_DB_PATH !== ":memory:") {
+    void syncActiveProviderModels()
+      .then((results) => {
+        const ok = results.filter((r) => r.ok)
+        const summary = ok.map((r) => `${r.provider} (+${r.added} ~${r.updated} -${r.unlisted})`).join(", ")
+        log.info(`[model-sync] ${ok.length}/${results.length} providers actualizados${summary ? `: ${summary}` : ""}`)
+      })
+      .catch((err) => log.warn(`[model-sync] ${(err as Error).message}`))
+  }
 
   // Setup mode: DB existe pero tiene 0 usuarios (primera ejecución interrumpida)
   let gatewaySetupMode = false;
@@ -1455,6 +1469,12 @@ export async function startGateway(
         const availableModelsMatch = url.pathname.match(/^\/api\/providers\/([^/]+)\/available-models$/)
         if (availableModelsMatch && req.method === "GET") {
           return await handleGetProviderAvailableModels(req, addCorsHeaders, availableModelsMatch[1])
+        }
+
+        // POST /api/models/refresh — actualiza los modelos de todos los providers activos preguntándoselos a cada uno
+        if (url.pathname === "/api/models/refresh" && req.method === "POST") {
+          const results = await syncActiveProviderModels()
+          return addCorsHeaders(Response.json({ success: true, results }), req)
         }
 
         // POST /api/models - Create a new model

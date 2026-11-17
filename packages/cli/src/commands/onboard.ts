@@ -94,7 +94,7 @@ const DEFAULT_MODELS: Record<string, string> = {
   kimi: "kimi-k3",
   openrouter: "openrouter/anthropic/claude-sonnet-5",
   ollama: "llama3.3:8b",
-  nvidia: "nvidia/nvidia/nemotron-3-super-120b-a12b",
+  nvidia: "nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b",
   "z-ai": "glm-5.2",
   minimax: "MiniMax-M3",
   hiveagents: "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
@@ -191,12 +191,13 @@ const AVAILABLE_MODELS: Record<string, Array<{ value: string; label: string; hin
     { value: "phi4:14b", label: "Phi-4 14B", hint: "Mejor calidad, ~8GB RAM" },
   ],
   nvidia: [
-    { value: "nvidia/nvidia/nemotron-3-super-120b-a12b", label: "Nemotron 3 Super 120B", hint: "Recomendado — agentic, 1M contexto" },
-    { value: "nvidia/nvidia/nemotron-3-ultra-550b-a55b", label: "Nemotron 3 Ultra 550B", hint: "NVIDIA flagship — 1M contexto" },
-    { value: "nvidia/z-ai/glm-5.2", label: "GLM 5.2", hint: "Agentic workflows y código" },
-    { value: "nvidia/moonshotai/kimi-k2.6", label: "Kimi K2.6", hint: "Agentic tool use — 256K" },
-    { value: "nvidia/minimaxai/minimax-m3", label: "MiniMax M3", hint: "Multimodal — tool calling" },
-    { value: "nvidia/deepseek-ai/deepseek-v4-pro", label: "DeepSeek V4 Pro", hint: "Código y agentes — 1M contexto" },
+    // Verificados el 2026-11-16 contra /v1/models y con llamadas reales (texto y herramientas). NVIDIA retira
+    // modelos sin avisar (410 Gone): Nemotron 3 Super, GLM 5.2 y MiniMax M3 ya no responden y Kimi K2.6 / DeepSeek V4 Pro
+    // devuelven 404 en cuentas normales, por eso salieron de esta lista.
+    { value: "nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b", label: "Nemotron 3.5 Super VL 120B", hint: "Recomendado — visión y herramientas, 1M contexto" },
+    { value: "nvidia/nvidia/nemotron-3.5-bolt-e4b", label: "Nemotron 3.5 Bolt E4B", hint: "Rápido — visión y herramientas, 64K" },
+    { value: "nvidia/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", label: "Nemotron 3 Nano Omni 30B", hint: "Razonamiento y visión — 262K" },
+    { value: "nvidia/nvidia/nemotron-3-ultra-550b-a55b", label: "Nemotron 3 Ultra 550B", hint: "NVIDIA flagship — 1M contexto, verificado el 2026-11-16" },
   ],
   "z-ai": [
     { value: "glm-5.2", label: "GLM 5.2", hint: "Recomendado — 1M contexto, 128K salida" },

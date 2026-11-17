@@ -362,11 +362,29 @@ export const SEED_DATA: SeedData = {
     // julio/agosto con "Free Endpoint" en el catálogo de NGC, y responden con
     // tool calling en una cuenta gratuita. Contexto según la referencia de la API
     // de NVIDIA (Kimi K3) y OpenRouter (el resto). Verificado 2026-09-10.
-    { id: "moonshotai/kimi-k3", providerId: "nvidia", name: "Kimi K3 (NVIDIA)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "code", "vision", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
-    { id: "deepseek-ai/deepseek-v4-flash-0731", providerId: "nvidia", name: "DeepSeek V4 Flash (NVIDIA)", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "code", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "meta/muse-glimmer-30b", providerId: "nvidia", name: "Muse Glimmer 30B (NVIDIA)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "vision", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "nvidia/nemotron-3-ultra-550b-a55b", providerId: "nvidia", name: "Nemotron 3 Ultra 550B", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
-    { id: "nvidia/nemotron-3-super-120b-a12b", providerId: "nvidia", name: "Nemotron 3 Super 120B", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    // Revisado el 2026-11-16 con llamadas reales a /v1/models y a cada modelo (nivel gratuito, "Free Endpoint"): de 23
+    // LLMs listados respondieron 11, y 10 de ellos también con herramientas. Que el proveedor liste un modelo NO
+    // garantiza que funcione: varios devuelven 404 "Function not found for account" o 500.
+    // Solo se declaran las capacidades comprobadas ese día, y SOLO quedan los que llamaron herramientas (tool_calls): sin
+    // eso un modelo no sirve para un agente. Retirados (410 Gone) y por eso quitados de esta lista:
+    // moonshotai/kimi-k3 (2026-10-15), deepseek-ai/deepseek-v4-flash-0731 (2026-09-21) y
+    // nvidia/nemotron-3-super-120b-a12b (2026-10-03). z-ai/glm-5.3 también se retiró (2026-10-28).
+    // Quedaron fuera por no responder hoy, aunque figuran en /v1/models: z-ai/glm-5.3-flash (agota 170 s, dos veces) y
+    // minimaxai/minimax-m3.1-flash (503 "content safety screening is temporarily unavailable", dos veces). Funcionaron
+    // en una prueba anterior: si vuelven, se pueden añadir de nuevo.
+    // deepseek-ai/deepseek-v4.1-flash respondió bien en las pruebas, pero /v1/models ya no lo lista: no entra (esta lista
+    // se valida contra el listado vivo; `storage/model-sync.ts` lo marcaría `unlisted`).
+    { id: "nvidia/nemotron-3.5-super-vl-120b-a12b", providerId: "nvidia", name: "Nemotron 3.5 Super VL 120B", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "reasoning", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "nvidia/nemotron-3.5-bolt-e4b", providerId: "nvidia", name: "Nemotron 3.5 Bolt E4B", modelType: "llm", contextWindow: 65536, capabilities: JSON.stringify(["chat", "vision", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", providerId: "nvidia", name: "Nemotron 3 Nano Omni 30B", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "reasoning", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },
+    // Con ventana de contexto 0 (NVIDIA no la publica y no se inventa): el runtime ya la trata como desconocida.
+    { id: "nvidia/nemotron-3.5-lightning-30b-a3b", providerId: "nvidia", name: "Nemotron 3.5 Lightning 30B", modelType: "llm", contextWindow: 0, capabilities: JSON.stringify(["chat", "reasoning", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "mistralai/mistral-large-4-1t-a52b", providerId: "nvidia", name: "Mistral Large 4 (NVIDIA)", modelType: "llm", contextWindow: 0, capabilities: JSON.stringify(["chat", "reasoning", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "google/gemma-4-31b-it", providerId: "nvidia", name: "Gemma 4 31B IT (NVIDIA)", modelType: "llm", contextWindow: 0, capabilities: JSON.stringify(["chat", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "poolside/laguna-xs-2.1", providerId: "nvidia", name: "Laguna XS 2.1 (NVIDIA)", modelType: "llm", contextWindow: 0, capabilities: JSON.stringify(["chat", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "stepfun-ai/step-5-preview", providerId: "nvidia", name: "Step 5 Preview (NVIDIA)", modelType: "llm", contextWindow: 0, capabilities: JSON.stringify(["chat", "reasoning", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },
 
     // ── ModelScope Qwen (fuente: GET https://api-inference.modelscope.ai/v1/models) ──
     // Endpoint gratuito dentro de cuota (2000 llamadas/día, ≤500 por modelo), por
@@ -435,6 +453,18 @@ export const SEED_DATA: SeedData = {
     // Se carga por el primer shard: llama.cpp descubre los otros dos solo.
     // Sólo texto, y el más lento del inventario: ~91 s de carga y 12.8 t/s.
     { id: "DeepSeek-V4-Flash-UD-IQ2_XXS-00001-of-00003.gguf", providerId: "hiveagents", name: "DeepSeek V4 Flash 90 GB (lento)", modelType: "llm", contextWindow: 32768, capabilities: JSON.stringify(["chat", "streaming", "reasoning", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },
+
+    // ── Voz y tiempo real del catálogo revisado el 2026-11-13 (mismo catálogo que usa el gateway Rust) ──
+    // Solo entran los que este proyecto sabe ejecutar: TTS con gemini, qwen y elevenlabs, y tiempo real con gemini.
+    // Quedan fuera, por no tener adaptador aquí: STT de gemini/qwen/elevenlabs/openai (solo hay groq y Whisper),
+    // TTS de mistral y minimax, tiempo real de openai y qwen, y el OCR de mistral.
+    { id: "gemini-3.8-live-extended-thinking", providerId: "gemini", name: "Gemini 3.8 Live Extended Thinking", modelType: "realtime", contextWindow: 131072, capabilities: JSON.stringify(["realtime", "audio_in", "audio_out", "transcription", "function_calling"]) },
+    { id: "gemini-3.8-flash-tts", providerId: "gemini", name: "Gemini 3.8 Flash TTS", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
+    { id: "gemini-3.8-flash-lite-tts", providerId: "gemini", name: "Gemini 3.8 Flash Lite TTS", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
+    { id: "qwen-audio-3.1-tts-flash", providerId: "qwen", name: "Qwen Audio 3.1 TTS Flash", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
+    { id: "eleven_v4", providerId: "elevenlabs", name: "Eleven V4", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
+    { id: "eleven_v4_turbo", providerId: "elevenlabs", name: "Eleven V4 Turbo", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
+    { id: "eleven_v3_conversational", providerId: "elevenlabs", name: "Eleven V3 Conversational", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
   ],
 
 

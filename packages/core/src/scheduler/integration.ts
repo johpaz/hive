@@ -14,7 +14,8 @@ import { getNarration } from "../gateway/helpers";
 import { addMessage } from "../agent/conversation-store";
 import { makeThreadId, CRON_CHANNEL } from "../agent/thread-id";
 import { threadForChannel } from "../agent/thread-store";
-import { resolveBestChannel } from "../tools/cron/index";
+import { resolveBestChannel, resolveActiveChannels } from "../tools/cron/index";
+import { formatUserDateTime } from "../utils/date";
 import { col } from "../storage/hive";
 import type { UserDoc, CronJobDoc } from "../storage/collections";
 
@@ -234,30 +235,35 @@ export async function notifyTaskCompletion(
   const userEntry = (await usersCol.scan({ limit: 1 }))[0];
   const userId = userEntry?.id || "";
 
-  const explicitChannel = task.channel && task.channel !== "system" ? task.channel : undefined;
-  const notifyChannel = (await resolveBestChannel(userId, explicitChannel)) || "webchat";
-  log.info(`[notifyTaskCompletion] task.channel=${task.channel} explicit=${explicitChannel} resolved=${notifyChannel}`);
+  const timezone = userEntry?.doc.timezone || "UTC";
+  const when = formatUserDateTime(new Date(), timezone);
+  const stamp = when ? `\n🕒 ${when} (${timezone})` : "";
 
   const status = success ? "✅" : "❌";
   const message = success
-    ? `${status} Scheduled task "${taskName}" completed\n${response || ""}`
-    : `${status} Scheduled task "${taskName}" failed\n${error || ""}`;
+    ? `${status} Scheduled task "${taskName}" completed${stamp}\n${response || ""}`
+    : `${status} Scheduled task "${taskName}" failed${stamp}\n${error || ""}`;
 
-  log.info(`[notify] Sending notification to ${notifyChannel}: "${message.slice(0, 50)}..."`);
+  // El resultado va a TODOS los canales activos, sin distinción ni prioridad.
+  const channels = await resolveActiveChannels(userId);
+  log.info(`[notify] Sending "${taskName}" result to all active channels: [${channels.join(", ")}]`);
 
-  // El aviso se guarda en el hilo donde el usuario lo va a leer —su conversación
-  // activa en la web, o el chat del canal— y no en el hilo del usuario, que desde
-  // la separación por canal ya no es donde mira nadie.
-  const notifyThreadId = (await threadForChannel(userId, notifyChannel)) ?? userId;
-
-  try {
-    await addMessage(notifyThreadId, "assistant", message, { channel: notifyChannel });
-  } catch (e) {
-    log.warn(`[notify] Failed to persist notification to DB: ${(e as Error).message}`);
-  }
-
-  await sendToUserChannel(notifyChannel, userId, message, { threadId: notifyThreadId });
-  log.info(`[notify] Notification sent to ${notifyChannel}`);
+  await Promise.all(channels.map(async (channel) => {
+    // El aviso se guarda en el hilo donde el usuario lo va a leer —su conversación
+    // activa en la web, o el chat del canal.
+    const threadId = (await threadForChannel(userId, channel)) ?? userId;
+    try {
+      await addMessage(threadId, "assistant", message, { channel });
+    } catch (e) {
+      log.warn(`[notify] Failed to persist notification for ${channel}: ${(e as Error).message}`);
+    }
+    try {
+      const res = await sendToUserChannel(channel, userId, message, { threadId });
+      if (!res.ok) log.warn(`[notify] ${channel} failed: ${res.error}`);
+    } catch (e) {
+      log.warn(`[notify] ${channel} threw: ${(e as Error).message}`);
+    }
+  }));
 }
 
 /**

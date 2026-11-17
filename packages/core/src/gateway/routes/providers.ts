@@ -10,6 +10,7 @@ import {
 import { getJevStatus, resetJevStatus } from "../../agent/jev-decisions"
 import { loadHiveAgentsModel, getHiveAgentsModelStatus } from "../../agent/llm-providers/hiveagents"
 import { logger } from "../../utils/logger"
+import { fetchProviderModels, syncProviderModels } from "../../storage/model-sync"
 
 const log = logger.child("gateway")
 
@@ -158,31 +159,25 @@ export async function fetchProviderModelNames(
   providerId: string,
   baseUrl: string | null
 ): Promise<DiscoveryResult> {
-  if (providerId === "ollama") {
-    const host = (baseUrl || "http://localhost:11434").replace(/\/+$/, "").replace(/\/(v1|api)$/, "")
-    const res = await fetch(`${host}/api/tags`, { signal: AbortSignal.timeout(10000) })
-    if (!res.ok) return { names: [], error: `Ollama responded ${res.status}`, status: 502 }
-    const data = await res.json() as { models: Array<{ name: string }> }
-    return { names: (data.models || []).map(m => m.name) }
-  }
-
-  if (!baseUrl) {
+  if (providerId !== "ollama" && !baseUrl && providerId !== "gemini" && providerId !== "anthropic") {
     return { names: [], error: `El provider "${providerId}" no tiene base_url configurada.`, status: 400 }
   }
-
   // Se manda la key si el provider tiene una: hay endpoints cuyo listado es
   // público (ModelScope, NVIDIA) y otros que devuelven 401 sin autenticar
   // (DashScope), donde sin esto el explorador de modelos no servía.
-  const apiKey = await loadProviderApiKey(providerId).catch(() => null)
-  const headers: Record<string, string> = apiKey ? { Authorization: `Bearer ${apiKey}` } : {}
-
-  const res = await fetch(`${baseUrl.replace(/\/+$/, "")}/models`, {
-    headers,
-    signal: AbortSignal.timeout(10000),
-  })
-  if (!res.ok) return { names: [], error: `${providerId} responded ${res.status}`, status: 502 }
-  const data = await res.json() as { data: Array<{ id: string }> }
-  return { names: (data.data || []).map(m => m.id) }
+  const apiKey = await loadProviderApiKey(providerId).catch(() => "")
+  const headers = await loadProviderHeaders(providerId).catch(() => ({}))
+  try {
+    const found = await fetchProviderModels({
+      providerId, baseUrl, apiKey,
+      headers: Object.fromEntries(Object.entries(headers).filter(([, v]) => typeof v === "string")) as Record<string, string>,
+      fetch, timeoutMs: 10000,
+    })
+    return { names: found.map(m => m.wireId) }
+  } catch (err) {
+    const status = (err as { status?: number }).status
+    return { names: [], error: status ? `${providerId} responded ${status}` : `No se pudo consultar ${providerId}`, status: 502 }
+  }
 }
 
 /**
@@ -232,69 +227,21 @@ export async function handleSyncProviderModels(
   providerId: string
 ): Promise<Response> {
   const providersCol = await col<ProviderDoc>("providers")
-  const modelsCol = await col<ModelDoc>("models")
-  const providerEntry = await providersCol.get(providerId)
-
-  if (!providerEntry) {
+  if (!(await providersCol.get(providerId))) {
     return addCorsHeaders(new Response("Provider not found", { status: 404 }), req)
   }
 
-  try {
-    const discovered = await fetchProviderModelNames(providerId, providerEntry.doc.base_url)
-    if (discovered.error) {
-      return addCorsHeaders(Response.json({ error: discovered.error }, { status: discovered.status }), req)
-    }
-    const modelNames = discovered.names
-
-    if (modelNames.length === 0) {
-      return addCorsHeaders(Response.json({ error: "No models found from provider" }, { status: 400 }), req)
-    }
-
-    // Los ids se guardan con la clave de catálogo (prefijada en los providers
-    // revendedores) para que dos servicios que sirvan el mismo modelo no se
-    // pisen la fila.
-    const discoveredKeys = new Set(modelNames.map(n => catalogModelKey(providerId, n)))
-    for (const name of modelNames) {
-      const key = catalogModelKey(providerId, name)
-      const existing = await modelsCol.get(key)
-      await modelsCol.put(key, {
-        id: key, provider_id: providerId, name,
-        model_type: existing?.doc.model_type ?? "llm",
-        context_window: existing?.doc.context_window ?? 32768,
-        capabilities: existing?.doc.capabilities ?? null,
-        enabled: true, active: true,
-        source: existing?.doc.source ?? "discovered",
-        input_per_1m: existing?.doc.input_per_1m ?? null,
-        output_per_1m: existing?.doc.output_per_1m ?? null,
-      }, existing ? { expectedVersion: existing.version } : undefined)
-    }
-
-    // Disable models that are no longer present
-    const existingModels = await modelsCol.findBy("provider_id", providerId)
-    for (const row of existingModels) {
-      if (!discoveredKeys.has(row.id)) {
-        await modelsCol.put(row.id, { ...row.doc, active: false, enabled: false }, { expectedVersion: row.version })
-      }
-    }
-
-    // Se devuelve el doc completo: recortar los campos dejaba a la UI sin
-    // context_window ni precio justo después de sincronizar.
-    const models = (await modelsCol.findBy("provider_id", providerId)).map(m => m.doc)
-
-    return addCorsHeaders(Response.json({
-      success: true,
-      synced: modelNames.length,
-      models
-    }), req)
-  } catch (err: unknown) {
-    const errorMsg = (err as Error).message
-    const hint = providerId === "ollama"
-      ? "Could not connect to Ollama"
-      : `Could not connect to provider: ${errorMsg}`
-    return addCorsHeaders(Response.json({
-      error: `${hint}: ${errorMsg}`
-    }, { status: 502 }), req)
+  // Lo que el proveedor declara de cada modelo se guarda sin tocar lo que es del usuario (nombre, activación, precio) y
+  // sin apagar ni borrar los que el proveedor ya no lista: ver storage/model-sync.ts.
+  const result = await syncProviderModels(providerId)
+  if (!result.ok) {
+    const status = result.skipped ? 400 : result.found === 0 ? 400 : 502
+    return addCorsHeaders(Response.json({ error: result.skipped ?? result.error, ...result }, { status }), req)
   }
+  // Se devuelve el doc completo: recortar los campos dejaba a la UI sin
+  // context_window ni precio justo después de sincronizar.
+  const models = (await (await col<ModelDoc>("models")).findBy("provider_id", providerId)).map(m => m.doc)
+  return addCorsHeaders(Response.json({ success: true, synced: result.found, ...result, models }), req)
 }
 
 export async function handleLoadHiveAgentsModel(

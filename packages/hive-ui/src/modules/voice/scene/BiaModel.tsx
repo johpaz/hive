@@ -22,6 +22,9 @@
  *    14 visemas Oculus (`viseme_*`).
  *  - `blink_L` / `blink_R`: aplastan verticalmente la zona de cada ojo; el ojo
  *    pintado queda como una línea de pestañas.
+ *  - Expresión: `brow_up`, `brow_down_L/R`, `brow_inner_up`, `cheek_squint_L/R`
+ *    y `mouth_frown`. Los ojos y las cejas están pintados en la textura, así que
+ *    son desplazamientos suaves de la piel de la zona, no geometría de ceja.
  *
  * Los visemas los calcula HeadAudio a partir del audio de la voz (lib/realtime/
  * lipsync.ts). Sin worklet, la mandíbula sigue la amplitud.
@@ -30,12 +33,14 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
+import { clone as clonarEsqueleto } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { Color, Group, MathUtils, Mesh, MeshStandardMaterial, PointLight } from "three";
 import biaGlb from "@/assets/bia.glb";
 import type { PulseRef } from "./audioPulse";
 import type { BiaState } from "./BiaPortrait";
 import { crearParpadeo, pasoParpadeo, respiracion, ruido } from "./idleLife";
 import { DirectorDeGestos } from "./gestures";
+import { CuerpoRig, poseCuerpo } from "./cuerpo";
 import { VisemeTracker } from "@/lib/realtime/lipsync";
 import { getLipsyncSource } from "@/stores/realtimeStore";
 
@@ -45,6 +50,50 @@ const VISEMAS = [
   "viseme_PP", "viseme_SS", "viseme_TH", "viseme_DD", "viseme_FF",
   "viseme_kk", "viseme_nn", "viseme_RR", "viseme_CH",
 ] as const;
+
+/** Morph targets de expresión (nombre del GLB → influencia 0..1). */
+const EXPRESION_REPOSO = {
+  brow_up: 0,
+  brow_down_L: 0,
+  brow_down_R: 0,
+  brow_inner_up: 0,
+  cheek_squint_L: 0,
+  cheek_squint_R: 0,
+  mouth_frown: 0,
+};
+type Expresion = typeof EXPRESION_REPOSO;
+
+/**
+ * Cara de cada estado. Escucha abre las cejas (atención), pensando frunce una
+ * más que la otra (duda, no enfado), éxito sube mejillas y cejas, alerta junta
+ * el ceño con las comisuras abajo. Hablando se añade un pulso con el onset de
+ * la voz para que las cejas acompañen el énfasis.
+ */
+function expresionObjetivo(estado: BiaState, piensa: number, onset: number): Expresion {
+  const e = { ...EXPRESION_REPOSO };
+  switch (estado) {
+    case "escucha":
+      e.brow_up = 0.3; e.brow_inner_up = 0.15; e.cheek_squint_L = e.cheek_squint_R = 0.1;
+      break;
+    case "habla":
+      e.brow_up = 0.12 + onset * 0.3; e.cheek_squint_L = e.cheek_squint_R = 0.15;
+      break;
+    case "exito":
+      e.brow_up = 0.35; e.cheek_squint_L = e.cheek_squint_R = 0.8;
+      break;
+    case "alerta":
+      e.brow_inner_up = 0.7; e.brow_down_L = e.brow_down_R = 0.3; e.mouth_frown = 0.6;
+      break;
+    default:
+      break;
+  }
+  if (piensa > 0) {
+    e.brow_down_L = Math.max(e.brow_down_L, 0.45 * piensa);
+    e.brow_down_R = Math.max(e.brow_down_R, 0.12 * piensa);
+    e.brow_inner_up = Math.max(e.brow_inner_up, 0.2 * piensa);
+  }
+  return e;
+}
 
 const COLOR_ESTADO: Record<BiaState, string> = {
   reposo: "#d8a541",
@@ -70,10 +119,14 @@ export function BiaModel({ pulse, baseState, live, working }: BiaModelProps) {
   // El GLB llega con un único material; se clona para poder tocarle la emisión
   // sin alterar la caché que comparte useGLTF entre montajes.
   const modelo = useMemo(() => {
-    const copia = scene.clone(true);
+    // SkeletonUtils: Object3D.clone() dejaba la malla atada al esqueleto original.
+    const copia = clonarEsqueleto(scene);
     copia.traverse((hijo) => {
       const malla = hijo as Mesh;
       if (!malla.isMesh) return;
+      // Con esqueleto la caja de la malla queda en la pose de reposo: sin esto
+      // un brazo levantado desaparecía al salir de ella.
+      malla.frustumCulled = false;
       malla.castShadow = false;
       malla.receiveShadow = false;
       const material = malla.material as MeshStandardMaterial;
@@ -96,6 +149,7 @@ export function BiaModel({ pulse, baseState, live, working }: BiaModelProps) {
       parpadeoDer: number;
       mandibula: number;
       sonrisa: number;
+      expr: Record<keyof typeof EXPRESION_REPOSO, number>;
       visemas: Array<[string, number]>;
     }> = [];
     modelo.traverse((hijo) => {
@@ -111,6 +165,9 @@ export function BiaModel({ pulse, baseState, live, working }: BiaModelProps) {
         parpadeoDer: dic["blink_R"] ?? -1,
         mandibula: dic["jaw_open"] ?? -1,
         sonrisa: dic["mouth_smile"] ?? -1,
+        expr: Object.fromEntries(
+          (Object.keys(EXPRESION_REPOSO) as Array<keyof typeof EXPRESION_REPOSO>).map((k) => [k, dic[k] ?? -1]),
+        ) as Record<keyof typeof EXPRESION_REPOSO, number>,
         visemas: VISEMAS.flatMap((v): Array<[string, number]> => (dic[v] !== undefined ? [[v, dic[v]]] : [])),
       });
     });
@@ -153,14 +210,16 @@ export function BiaModel({ pulse, baseState, live, working }: BiaModelProps) {
     }
   }, [materiales]);
 
+  const rig = useMemo(() => new CuerpoRig(modelo), [modelo]);
   const director = useMemo(() => new DirectorDeGestos(), []);
   const tracker = useMemo(() => new VisemeTracker(), []);
   useEffect(() => () => tracker.detach(), [tracker]);
 
   const acento = useMemo(() => new Color(COLOR_ESTADO.reposo), []);
   const acentoObjetivo = useMemo(() => new Color(), []);
-  const anim = useRef({ voz: 0, mic: 0, live: 0, piensa: 0, sonrisa: 0.14 });
+  const anim = useRef({ voz: 0, mic: 0, live: 0, piensa: 0, sonrisa: 0.14, exito: 0, alerta: 0 });
   const parpadeo = useRef(crearParpadeo(0));
+  const expr = useRef<Expresion>({ ...EXPRESION_REPOSO });
 
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime;
@@ -182,6 +241,8 @@ export function BiaModel({ pulse, baseState, live, working }: BiaModelProps) {
     a.voz = MathUtils.damp(a.voz, p.voice, 12, dt);
     a.mic = MathUtils.damp(a.mic, p.mic, 10, dt);
     a.live = MathUtils.damp(a.live, live ? 1 : 0, 2.5, dt);
+    a.exito = MathUtils.damp(a.exito, estado === "exito" ? 1 : 0, 3, dt);
+    a.alerta = MathUtils.damp(a.alerta, estado === "alerta" ? 1 : 0, 4, dt);
     a.piensa = MathUtils.damp(a.piensa, working && estado !== "habla" ? 1 : 0, 3, dt);
 
     if (grupo.current) {
@@ -194,20 +255,12 @@ export function BiaModel({ pulse, baseState, live, working }: BiaModelProps) {
       // de personaje. La voz se muestra con cabeceo, manos y luz.
       grupo.current.scale.setScalar(1.3);
 
-      // De frente y quieta. Antes acumulaba un ángulo sin fin —más rápido
-      // mientras la colmena trabajaba— y acababa dando la espalda a quien le
-      // hablaba. Girarla es cosa del ratón; lo único que queda aquí es un
-      // apunte mínimo hacia quien habla, que es reacción y no movimiento
-      // propio: con el micrófono en silencio vale cero. Pensando, la mirada
-      // se desvía un poco y la cabeza se ladea, como quien busca la respuesta.
-      grupo.current.rotation.y = a.mic * 0.08 + a.piensa * (0.07 + ruido(t * 0.4, 3) * 0.02);
-      // Cabeceo al hablar. Es lo que sustituye al movimiento de labios, así
-      // que pesa más de lo que pesaría en un avatar con lip-sync propio.
-      grupo.current.rotation.x =
-        ruido(t * 1.3, 4) * 0.026 * (0.4 + a.voz * 3.2) +
-        ruido(t * 2.7, 5) * 0.008 * a.voz -
-        a.piensa * 0.03;
-      grupo.current.rotation.z = ruido(t * 0.8, 6) * 0.014 + a.piensa * 0.045;
+      // De frente y quieta: girarla es cosa del ratón. El apunte hacia quien
+      // habla, el cabeceo, el ladeo al pensar y el resto del lenguaje corporal
+      // ya no se hacen girando el grupo entero sino con los huesos (cuerpo.ts).
+      grupo.current.rotation.y = a.mic * 0.03;
+      grupo.current.rotation.x = 0;
+      grupo.current.rotation.z = 0;
     }
 
     const cierre = pasoParpadeo(parpadeo.current, t);
@@ -234,11 +287,22 @@ export function BiaModel({ pulse, baseState, live, working }: BiaModelProps) {
       dt,
     );
 
+    // ── Expresión ────────────────────────────────────────────────────────
+    const objetivo = expresionObjetivo(estado, a.piensa, p.onset);
+    for (const k of Object.keys(expr.current) as Array<keyof Expresion>) {
+      expr.current[k] = MathUtils.damp(expr.current[k], objetivo[k], k === "brow_up" ? 8 : 4, dt);
+    }
+
     // ── Gestos ───────────────────────────────────────────────────────────
     // Las manos nunca se quedan quietas —unas manos congeladas delatan a una
     // figura tanto como una boca quieta— pero lo que hacen depende del estado:
     // explicar, escuchar, pensar o celebrar (ver gestures.ts).
     const manos = director.step({ t, estado, voz: a.voz, onset: p.onset, working }, dt);
+    if (rig.cantidad) {
+      rig.aplicar(
+        poseCuerpo({ t, estado, voz: a.voz, mic: a.mic, onset: p.onset, piensa: a.piensa, exito: a.exito, alerta: a.alerta, manos }),
+      );
+    }
     for (const m of morphs) {
       const inf = m.malla.morphTargetInfluences;
       if (!inf) continue;
@@ -247,6 +311,9 @@ export function BiaModel({ pulse, baseState, live, working }: BiaModelProps) {
       if (m.sonrisa >= 0) inf[m.sonrisa] = a.sonrisa;
       for (const [nombre, idx] of m.visemas) {
         inf[idx] = tracker.activo ? Math.min(1, (tracker.values[nombre] ?? 0) * 1.3) : 0;
+      }
+      for (const k of Object.keys(m.expr) as Array<keyof Expresion>) {
+        if (m.expr[k] >= 0) inf[m.expr[k]] = Math.min(1, expr.current[k]);
       }
       if (m.parpadeoIzq >= 0) inf[m.parpadeoIzq] = cierre;
       if (m.parpadeoDer >= 0) inf[m.parpadeoDer] = cierre;

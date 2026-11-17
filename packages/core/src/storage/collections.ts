@@ -62,6 +62,13 @@ export interface ModelDoc {
    */
   input_per_1m?: number | null
   output_per_1m?: number | null
+  /** Última vez que el propio proveedor confirmó este modelo (`storage/model-sync.ts`), en ms. */
+  synced_at?: number
+  /**
+   * El proveedor ya no lo lista (NVIDIA, por ejemplo, retira modelos sin avisar y responde 410). No se borra ni se
+   * apaga: puede haber agentes apuntándole. Se desmarca solo si vuelve a aparecer.
+   */
+  unlisted?: boolean
 }
 
 export interface AgentDoc {

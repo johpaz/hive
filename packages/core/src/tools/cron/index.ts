@@ -13,6 +13,7 @@ import { col, toIndexable } from "../../storage/hive";
 import type { UserDoc, UserIdentityDoc, ChannelDoc, CronJobDoc, TaskRunDoc } from "../../storage/collections";
 import { logger } from "../../utils/logger";
 import { Cron } from "../../scheduler/cron";
+import { formatUserDateTime } from "../../utils/date";
 
 const log = logger.child("CronTools");
 
@@ -30,6 +31,25 @@ async function getUserTimezone(): Promise<string> {
   const usersCol = await col<UserDoc>("users");
   const userEntry = (await usersCol.scan({ limit: 1 }))[0];
   return userEntry?.doc.timezone || "UTC";
+}
+
+/**
+ * Todos los canales activos (conectados) del usuario, sin priorizar ninguno.
+ * Si no hay ninguno conectado cae a los que tengan identidad, y en último caso a webchat.
+ */
+export async function resolveActiveChannels(userId: string): Promise<string[]> {
+  const identitiesCol = await col<UserIdentityDoc>("userIdentities");
+  const identityEntries = await identitiesCol.scan({ prefix: `${userId}:` });
+  const all = [...new Set(identityEntries.map(e => e.doc.channel))];
+
+  const channelsCol = await col<ChannelDoc>("channels");
+  const active: string[] = [];
+  for (const channel of all) {
+    const entry = await channelsCol.get(channel);
+    if (entry?.doc.active && entry.doc.status === "connected") active.push(channel);
+  }
+  const result = active.length > 0 ? active : all;
+  return result.length > 0 ? result : ["webchat"];
 }
 
 export async function resolveBestChannel(userId: string, explicitChannel?: string): Promise<string> {
@@ -201,7 +221,7 @@ export const cronCreateTool: Tool = {
           ok: true,
           task_id: result.id,
           next_run: result.nextRun,
-          message: `Job "${name}" scheduled. Next run: ${result.nextRun ? new Date(result.nextRun).toLocaleString() : "unknown"}`,
+          message: `Job "${name}" scheduled. Next run: ${formatUserDateTime(result.nextRun, timezone) ?? "unknown"} (${timezone})`,
         };
       } else {
         const cronJobsCol = await col<CronJobDoc>("cronJobs");
@@ -272,6 +292,7 @@ export const cronListTool: Tool = {
       if (task_type) tasks = tasks.filter(t => t.task_type === task_type);
 
       tasks.sort((a, b) => (a.next_run_at ?? "").localeCompare(b.next_run_at ?? ""));
+      const tz = await getUserTimezone();
 
       return {
         ok: true,
@@ -285,8 +306,9 @@ export const cronListTool: Tool = {
           fire_at: t.fire_at,
           start_at: t.start_at,
           stop_at: t.stop_at,
-          next_run: t.next_run_at,
-          last_run: t.last_run_at,
+          next_run: formatUserDateTime(t.next_run_at, tz),
+          last_run: formatUserDateTime(t.last_run_at, tz),
+          timezone: tz,
           run_count: t.run_count,
           channel: t.channel,
         })),

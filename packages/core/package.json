@@ -25,6 +25,7 @@
     "@whiskeysockets/baileys": "7.0.0-rc11",
     "discord.js": "^14.26.4",
     "docx": "^9.6.1",
+    "exceljs": "4.4.0",
     "grammy": "^1.42.0",
     "jszip": "^3.10.1",
     "mammoth": "^1.12.0",

@@ -29,6 +29,7 @@ import { join } from "node:path"
 import { logger } from "../../utils/logger.ts"
 import type { Tool, ToolParameter } from "../types.ts"
 import type { Subprocess } from "bun"
+import { installObscura, obscuraInstallError } from "./obscura-install.ts"
 
 const log = logger.child("obscura")
 
@@ -89,6 +90,27 @@ export function resolveObscuraBin(): string | null {
 
   cachedBin = null
   return null
+}
+
+/** Olvida el resultado cacheado de la búsqueda (tras instalar el binario). */
+export function resetObscuraBinCache(): void {
+  cachedBin = undefined
+}
+
+/**
+ * Garantiza el binario: si no está, lo descarga a ~/.hive/bin. Devuelve true si
+ * quedó disponible. Es lo que usan las tools; `obscuraAvailable` sigue siendo sync.
+ */
+export async function ensureObscura(): Promise<boolean> {
+  if (resolveObscuraBin()) return true
+  if (!(await installObscura())) return false
+  resetObscuraBinCache()
+  return resolveObscuraBin() !== null
+}
+
+function installError(): string {
+  const why = obscuraInstallError()
+  return why ? `${INSTALL_ERROR} (instalación automática: ${why})` : INSTALL_ERROR
 }
 
 /** True when the Obscura CLI is available (used for capability reporting). */
@@ -154,8 +176,8 @@ class ObscuraMcpSession {
   }
 
   private async start(): Promise<void> {
-    const bin = resolveObscuraBin()
-    if (!bin) throw new Error(INSTALL_ERROR)
+    if (!(await ensureObscura())) throw new Error(installError())
+    const bin = resolveObscuraBin()!
 
     const args = ["mcp"]
     if (process.env.OBSCURA_STEALTH === "1" || process.env.OBSCURA_STEALTH === "true") args.push("--stealth")
@@ -467,7 +489,7 @@ function obscuraTool(
       ...(required.length > 0 ? { required } : {}),
     },
     async execute(args: Record<string, unknown>): Promise<string | object> {
-      if (!obscuraAvailable()) return { ok: false, error: INSTALL_ERROR }
+      if (!(await ensureObscura())) return { ok: false, error: installError() }
 
       // Forward only schema-declared keys
       const serverArgs: Record<string, unknown> = {}
@@ -850,7 +872,7 @@ export function obscuraToolNames(): string[] {
 
 /** List the tools the Obscura MCP server actually exposes (diagnostics). */
 export async function listObscuraTools() {
-  if (!obscuraAvailable()) return { ok: false as const, error: INSTALL_ERROR, tools: [] as Array<{ name: string; description?: string; inputSchema?: unknown }> }
+  if (!(await ensureObscura())) return { ok: false as const, error: installError(), tools: [] as Array<{ name: string; description?: string; inputSchema?: unknown }> }
   try {
     const tools = await getSession().listTools()
     return { ok: true as const, tools, protocol: getSession().protocolVersion, mode: getSession().protocolMode }
