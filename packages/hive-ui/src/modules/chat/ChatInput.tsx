@@ -52,6 +52,9 @@ function describeMicError(error: unknown): string {
   }
 }
 
+/** Mismo tope que el gateway (MAX_ATTACHMENT_BYTES). */
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+
 export function ChatInput({ onSendMessage, onStop, disabled = false, isStreaming = false }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [isRecording, setIsRecording] = useState(false);
@@ -86,8 +89,14 @@ export function ChatInput({ onSendMessage, onStop, disabled = false, isStreaming
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
+    setMicError(null);
     for (const file of Array.from(files)) {
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        setMicError(`«${file.name}» pesa ${(file.size / 1048576).toFixed(1)} MB y el máximo es ${MAX_ATTACHMENT_BYTES / 1048576} MB.`);
+        continue;
+      }
       const reader = new FileReader();
+      reader.onerror = () => setMicError(`No se pudo leer «${file.name}».`);
       reader.readAsDataURL(file);
       reader.onload = () => {
         const base64 = (reader.result as string).split(",")[1];

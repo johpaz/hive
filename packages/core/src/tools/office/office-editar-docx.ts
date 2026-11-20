@@ -31,8 +31,8 @@ const escapeXml = (s: string) =>
  * coincidencias y cada una se escribe en el fragmento donde empieza (así hereda
  * su formato) vaciando el resto de fragmentos que cubría.
  */
-export function reemplazarEnParrafo(parrafo: string, buscar: string, reemplazar: string): { xml: string; cuenta: number } {
-  const re = /(<w:t(?:\s[^>]*)?>)([^<]*)(<\/w:t>)/g;
+export function reemplazarEnParrafo(parrafo: string, buscar: string, reemplazar: string, etiqueta: "w:t" | "a:t" = "w:t"): { xml: string; cuenta: number } {
+  const re = new RegExp(`(<${etiqueta}(?:\\s[^>]*)?>)([^<]*)(<\\/${etiqueta}>)`, "g");
   const partes: { start: number; end: number; open: string; text: string }[] = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(parrafo))) {
@@ -78,8 +78,8 @@ export function reemplazarEnParrafo(parrafo: string, buscar: string, reemplazar:
   for (let k = partes.length - 1; k >= 0; k--) {
     const p = partes[k];
     let open = p.open;
-    if (nuevos[k] !== textos[k] && !/xml:space/.test(open)) open = open.replace(/>$/, ' xml:space="preserve">');
-    xml = xml.slice(0, p.start) + open + escapeXml(nuevos[k]) + "</w:t>" + xml.slice(p.end);
+    if (etiqueta === "w:t" && nuevos[k] !== textos[k] && !/xml:space/.test(open)) open = open.replace(/>$/, ' xml:space="preserve">');
+    xml = xml.slice(0, p.start) + open + escapeXml(nuevos[k]) + `</${etiqueta}>` + xml.slice(p.end);
   }
   return { xml, cuenta };
 }

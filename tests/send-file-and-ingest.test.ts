@@ -42,6 +42,18 @@ describe("ingesta de documentos", () => {
     const res: any = await officeLeerXlsxTool.execute({ artifact_id: att.artifactId });
     expect(res.ok).toBe(true);
   });
+  test("un PDF con texto trae vista previa y páginas, sin pasar por modelos", async () => {
+    const { PDFDocument, StandardFonts } = await import("../packages/core/node_modules/pdf-lib");
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    doc.addPage([300, 300]).drawText("Factura 1024 total 50000", { x: 20, y: 250, size: 12, font });
+    doc.addPage([300, 300]);
+    const att = await ingestDocument({ buffer: Buffer.from(await doc.save()), fileName: "factura.pdf", userId: "u1" });
+    expect(att.kind).toBe("pdf");
+    expect(att.pages).toBe(2);
+    expect(att.preview).toContain("Factura 1024 total 50000");
+    expect(att.scanned).toBe(false);
+  });
   test("un adjunto vacío se rechaza con mensaje claro", async () => {
     await expect(ingestDocument({ buffer: Buffer.alloc(0), fileName: "x.pdf", userId: "u1" })).rejects.toThrow("vacío");
   });
@@ -68,5 +80,19 @@ describe("send_file", () => {
   test("sin ruta ni artifact_id pide uno", async () => {
     const res: any = await sendFileTool.execute({}, { configurable: {} });
     expect(res.ok).toBe(false);
+  });
+});
+
+describe("ingesta de presentaciones", () => {
+  test("un pptx trae diapositivas y vista previa", async () => {
+    const PptxGenJS = (await import("../packages/core/node_modules/pptxgenjs")).default;
+    const p = new PptxGenJS();
+    p.addSlide().addText("Resultados Q3", { x: 1, y: 1, w: 5, h: 1 });
+    p.addSlide().addText("Próximos pasos", { x: 1, y: 1, w: 5, h: 1 });
+    const att = await ingestDocument({ buffer: Buffer.from(await p.write({ outputType: "nodebuffer" }) as ArrayBuffer), fileName: "q3.pptx", userId: "u1" });
+    expect(att.kind).toBe("pptx");
+    expect(att.pages).toBe(2);
+    expect(att.preview).toContain("Resultados Q3");
+    expect(att.path.endsWith(".pptx")).toBe(true);
   });
 });

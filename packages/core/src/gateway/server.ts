@@ -550,6 +550,7 @@ export async function startGateway(
           await channelManager.send(message.channel, message.sessionId, {
             content: `⚠️ Error al procesar la imagen: ${(imgError as Error).message}`,
           });
+          if (!messageContent?.trim()) return;
         }
       }
 
@@ -560,21 +561,7 @@ export async function startGateway(
             ...message.document,
             userId: `${message.channel}:${message.peerId}`,
           });
-          let manifest = formatAttachmentManifest(att);
-          if (att.needsVision && att.kind === "pdf") {
-            // PDF escaneado: sin texto nativo, se apoya en el modelo de visión como antes.
-            try {
-              const ocrText = await multimodalService.ocrImage({
-                type: "base64",
-                data: Buffer.from(await Bun.file(att.path).arrayBuffer()).toString("base64"),
-                mimeType: att.mimeType,
-                caption: att.fileName,
-              }, visionConfig.ocrProvider || "openai");
-              if (ocrText) manifest += `\nContenido leído por visión:\n${ocrText}`;
-            } catch (ocrErr) {
-              log.warn(`📄 OCR de respaldo falló: ${(ocrErr as Error).message}`);
-            }
-          }
+          const manifest = formatAttachmentManifest(att);
           messageContent = `${manifest}\n\n${messageContent || ""}`;
           inputType = "document";
           log.info(`📄 Documento ingerido: ${att.fileName} (${att.kind}, ${att.size} bytes)`);
@@ -583,6 +570,8 @@ export async function startGateway(
           await channelManager.send(message.channel, message.sessionId, {
             content: `⚠️ No pude procesar el documento: ${(docError as Error).message}`,
           });
+          // Sin texto del usuario no hay nada más que responder: ya se le avisó del fallo.
+          if (!messageContent?.trim()) return;
         }
       }
     }
@@ -2136,6 +2125,9 @@ export async function startGateway(
     },
 
     websocket: {
+      // Bun corta el socket en silencio por encima de 16 MB y un adjunto viaja en base64 (+33 %):
+      // un .pptx de 10 MB ya no entraba. 80 MB cubre el tope de 50 MB de MAX_ATTACHMENT_BYTES.
+      maxPayloadLength: 80 * 1024 * 1024,
       async open(ws) {
         const data = ws.data;
 

@@ -65,6 +65,22 @@ describe("modelo analizador de visión", () => {
     }));
     expect(await analyzeImage(png)).toBe("Un recibo por $10");
     expect(calls[0].messages[0].content[1].image_url.url).toStartWith("data:image/png;base64,");
+    expect(calls[0].model).toBe("con-vision"); // sin recortar el prefijo del provider
+    mock.module("../packages/core/src/agent/llm-client", () => real);
+  });
+
+  test("manda la clave del modelo sin recortar el prefijo y reporta el fallo del proveedor", async () => {
+    await addModel("openrouter/vendor/vl-x", ["chat", "vision"]);
+    await setVisionAnalyzerModelId("openrouter/vendor/vl-x");
+    const calls: any[] = [];
+    const real = await import("../packages/core/src/agent/llm-client");
+    mock.module("../packages/core/src/agent/llm-client", () => ({
+      ...real,
+      resolveProviderConfig: async () => ({ provider: "openrouter", model: "x", apiKey: "k" }),
+      callLLM: async (o: any) => { calls.push(o); return { content: `${real.LLM_ERROR_PREFIX} el modelo ya no existe (HTTP 404)`, stop_reason: "error" }; },
+    }));
+    await expect(analyzeImage(png)).rejects.toThrow("HTTP 404");
+    expect(calls[0].model).toBe("openrouter/vendor/vl-x");
     mock.module("../packages/core/src/agent/llm-client", () => real);
   });
 });

@@ -64,15 +64,30 @@ class MultimodalService {
 
   async ocrImage(image: ImageInput, providerId?: string): Promise<string> {
     // Primero el modelo analizador del sistema (elegido en la pestaña Imagen); si no hay
-    // uno, no es una imagen o falla, se cae al OCR por provider de siempre.
+    // uno o no es una imagen, se usa el OCR por provider de siempre.
+    let analyzerError: string | null = null
     try {
       const { analyzeImage } = await import("./vision-analyzer")
       const text = await analyzeImage(image)
       if (text !== null) return text
     } catch (err) {
-      log.warn(`El modelo analizador falló, uso el OCR por provider: ${(err as Error).message}`)
+      analyzerError = (err as Error).message
+      log.warn(`El modelo analizador falló, pruebo el OCR por provider: ${analyzerError}`)
     }
 
+    try {
+      return await this.ocrWithProvider(image, providerId)
+    } catch (err) {
+      // Si el analizador ya había fallado, el error útil es ese: el del respaldo (casi siempre
+      // "falta la clave de OpenAI") solo confunde.
+      if (analyzerError) {
+        throw new Error(`El modelo analizador falló: ${analyzerError} Además el OCR de respaldo no está disponible (${(err as Error).message}).`)
+      }
+      throw err
+    }
+  }
+
+  private async ocrWithProvider(image: ImageInput, providerId?: string): Promise<string> {
     const resolved = providerId || "openai"
 
     if (resolved === "openai") {

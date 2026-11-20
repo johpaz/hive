@@ -6,6 +6,7 @@
  * @spanish leer pdf, abrir pdf, extraer texto de pdf, contenido pdf
  */
 
+import { extraerTextoPdf } from "./pdf-text.ts";
 import { resolveOfficeInput, ARTIFACT_ID_PARAM } from "./resolve-input.ts";
 import type { Tool } from "../types.ts";
 import { logger } from "../../utils/logger.ts";
@@ -14,10 +15,12 @@ import * as path from "node:path";
 
 const log = logger.child("office-leer-pdf");
 
+const DEFAULT_MAX_CHARS = 40_000;
+
 export const officeLeerPdfTool: Tool = {
   name: "office_leer_pdf",
   description:
-    "Leer contenido de un archivo PDF y retornar texto plano con metadata. Spanish: leer pdf, abrir pdf, extraer texto de pdf, pdf a texto",
+    "Leer el texto de un PDF (capa de texto nativa, sin OCR ni modelos), conservando renglones y columnas, por páginas y con tope de tamaño. Un PDF escaneado devuelve aviso en vez de texto. Spanish: leer pdf, abrir pdf, extraer texto de pdf, pdf a texto",
   parameters: {
     type: "object",
     properties: {
@@ -32,7 +35,11 @@ export const officeLeerPdfTool: Tool = {
       },
       pagina_fin: {
         type: "number",
-        description: "Última página a leer (default: todas las páginas)",
+        description: "Última página a leer (default: hasta donde quepa en max_caracteres)",
+      },
+      max_caracteres: {
+        type: "number",
+        description: "Tope de caracteres por llamada (default 40000). Si hay más, la respuesta trae siguiente_pagina para continuar.",
       },
     },
     required: [],
@@ -41,8 +48,9 @@ export const officeLeerPdfTool: Tool = {
     const entrada = await resolveOfficeInput(params);
     if ("error" in entrada) return { ok: false, error: entrada.error };
     const ruta = entrada.ruta;
-    const paginaInicio = Math.max(1, (params.pagina_inicio as number) ?? 1);
-    const paginaFin = params.pagina_fin as number | undefined;
+    const paginaInicio = Math.max(1, Number(params.pagina_inicio) || 1);
+    const paginaFin = params.pagina_fin ? Number(params.pagina_fin) : undefined;
+    const maxCaracteres = Math.min(Math.max(Number(params.max_caracteres) || DEFAULT_MAX_CHARS, 1000), 200_000);
 
     log.debug(`Leyendo PDF: ${ruta}`);
 
@@ -51,61 +59,33 @@ export const officeLeerPdfTool: Tool = {
       if (!fs.existsSync(rutaAbsoluta)) {
         return { ok: false, error: `Archivo no encontrado: ${rutaAbsoluta}` };
       }
+      const r = await extraerTextoPdf(new Uint8Array(fs.readFileSync(rutaAbsoluta)), {
+        desde: paginaInicio, hasta: paginaFin, maxCaracteres,
+      });
+      log.info(`PDF leído: ${r.paginasLeidas}/${r.totalPaginas} páginas, ${r.texto.length} caracteres`);
 
-      const buffer = fs.readFileSync(rutaAbsoluta);
-      const uint8Array = new Uint8Array(buffer);
-
-      // Importar pdfjs-dist (compatible con Bun, sin worker)
-      const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs" as any).catch(
-        () => import("pdfjs-dist" as any)
-      );
-
-      // Desactivar worker para entorno Node/Bun
-      const lib = pdfjsLib.default ?? pdfjsLib;
-      if (lib.GlobalWorkerOptions) {
-        lib.GlobalWorkerOptions.workerSrc = "";
+      if (r.sinTexto) {
+        return {
+          ok: true,
+          ruta: rutaAbsoluta,
+          totalPaginas: r.totalPaginas,
+          paginasLeidas: r.paginasLeidas,
+          texto: "",
+          aviso: "Estas páginas no tienen texto extraíble: el PDF parece escaneado (solo imágenes). Esta herramienta no hace OCR; pídele al usuario el documento en formato editable o que copie el texto.",
+        };
       }
-
-      const doc = await lib.getDocument({ data: uint8Array, disableWorker: true }).promise;
-      const totalPaginas = doc.numPages;
-
-      // Metadata
-      let titulo: string | undefined;
-      try {
-        const meta = await doc.getMetadata();
-        titulo = (meta?.info as any)?.Title ?? undefined;
-      } catch {
-        // metadata opcional
-      }
-
-      const inicio = paginaInicio;
-      const fin = paginaFin ? Math.min(paginaFin, totalPaginas) : totalPaginas;
-
-      const textosPorPagina: Array<{ pagina: number; texto: string }> = [];
-
-      for (let i = inicio; i <= fin; i++) {
-        const pagina = await doc.getPage(i);
-        const contenido = await pagina.getTextContent();
-        const texto = (contenido.items as any[])
-          .map((item: any) => item.str ?? "")
-          .join(" ")
-          .replace(/\s+/g, " ")
-          .trim();
-        textosPorPagina.push({ pagina: i, texto });
-      }
-
-      const textoCompleto = textosPorPagina.map((p) => p.texto).join("\n\n");
-
-      log.info(`PDF leído: ${totalPaginas} páginas, ${textoCompleto.length} caracteres`);
-
+      const vacias = r.caracteresPorPagina.filter((c) => c === 0).length;
       return {
         ok: true,
         ruta: rutaAbsoluta,
-        totalPaginas,
-        paginasLeidas: fin - inicio + 1,
-        titulo,
-        texto: textoCompleto,
-        paginas: textosPorPagina,
+        totalPaginas: r.totalPaginas,
+        paginasLeidas: r.paginasLeidas,
+        titulo: r.titulo,
+        texto: r.texto,
+        ...(r.truncado || r.siguientePagina
+          ? { truncado: r.truncado, siguiente_pagina: r.siguientePagina, aviso: `Hay más contenido: vuelve a llamar con pagina_inicio=${r.siguientePagina}.` }
+          : {}),
+        ...(vacias ? { paginas_sin_texto: vacias } : {}),
       };
     } catch (error) {
       log.error(`Error leyendo PDF: ${(error as Error).message}`);

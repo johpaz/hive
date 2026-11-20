@@ -191,7 +191,8 @@ export function WebChatPage() {
         const firstDoc = attachments.find(a => a.type === "document");
 
         if (firstImage) newMessage.image = { base64: firstImage.base64, mimeType: firstImage.mimeType, caption: firstImage.fileName };
-        if (firstDoc) newMessage.document = { base64: firstDoc.base64, mimeType: firstDoc.mimeType, fileName: firstDoc.fileName };
+        // La tarjeta solo muestra nombre y tipo: el contenido viaja en el payload, no se guarda en el mensaje local.
+        if (firstDoc) newMessage.document = { mimeType: firstDoc.mimeType, fileName: firstDoc.fileName };
       }
 
       addMessage(newMessage);

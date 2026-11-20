@@ -259,6 +259,7 @@ export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
     { name: "office_escribir_xlsx", description: "Generate an Excel spreadsheet. Spanish keywords: crear excel, generar xlsx, escribir hoja de cálculo, exportar a excel, armar planilla", category: "office", abstractionLevel: "atomic" },
     { name: "office_editar_xlsx", description: "Edit an existing Excel file changing only given cells, keeping formatting; saves a copy. Spanish keywords: editar excel, corregir excel, modificar celdas, mejorar planilla", category: "office", abstractionLevel: "atomic" },
     { name: "office_editar_docx", description: "Edit an existing Word file: replace text and append paragraphs keeping styles; saves a copy. Spanish keywords: editar word, corregir word, reemplazar texto en documento, mejorar documento", category: "office", abstractionLevel: "atomic" },
+    { name: "office_editar_pptx", description: "Edit an existing PowerPoint file replacing text in slides and notes, keeping design; saves a copy. Spanish keywords: editar powerpoint, corregir presentación, reemplazar texto en diapositivas, mejorar pptx", category: "office", abstractionLevel: "atomic" },
     { name: "office_escribir_pptx", description: "Generate a PowerPoint presentation. Spanish keywords: crear powerpoint, generar pptx, escribir presentación, armar diapositivas", category: "office", abstractionLevel: "atomic" },
 ]
 

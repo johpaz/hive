@@ -8,7 +8,6 @@
  */
 import { col } from "../storage/hive"
 import type { ModelDoc } from "../storage/collections"
-import { wireModelId } from "../storage/model-id"
 import { logger } from "../utils/logger"
 import type { ImageInput } from "./types"
 
@@ -74,7 +73,9 @@ export async function analyzeImage(image: ImageInput): Promise<string | null> {
   }
   const res = await callLLM({
     ...cfg,
-    model: wireModelId(entry.doc.provider_id, modelId),
+    // La clave tal cual: el adaptador del provider ya quita su propio prefijo al armar el request.
+    // Quitarlo aquí también lo recortaba dos veces (nvidia/nvidia/x → x) y daba 404.
+    model: modelId,
     maxTokens: 2000,
     temperature: 0.1,
     messages: [{

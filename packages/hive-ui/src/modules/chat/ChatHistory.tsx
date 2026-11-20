@@ -1,6 +1,6 @@
 import type { Message } from "@/types";
 import { ChatMessage } from "./ChatMessage";
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { Bot, Zap, Sparkles } from "lucide-react";
 
 interface ChatHistoryProps {
@@ -33,35 +33,51 @@ export function ChatHistory({
   onNarrateMessage,
 }: ChatHistoryProps) {
   const scrollViewportRef = useRef<HTMLDivElement>(null);
-  const previousListRef = useRef({ count: 0, firstId: "", lastId: "" });
+  const contentRef = useRef<HTMLDivElement>(null);
+  const previousListRef = useRef({ firstId: "", lastId: "" });
+  // Pegado al final: se sigue el último mensaje hasta que el usuario sube a leer.
+  const pinnedRef = useRef(true);
+  const hasContent = messages.length > 0 || isLoading;
 
-  // Auto-scroll logic
+  const scrollToBottom = () => {
+    const el = scrollViewportRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  };
+
+  // El usuario manda: si se aleja más de ~120 px del final deja de seguirse; si vuelve, se retoma.
+  const handleScroll = () => {
+    const el = scrollViewportRef.current;
+    if (!el) return;
+    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  };
+
   useLayoutEffect(() => {
-    const scrollElement = scrollViewportRef.current;
-    if (!scrollElement) return;
-
-    const previousList = previousListRef.current;
-    const firstId = messages[0]?.id ?? "";
+    const previous = previousListRef.current;
+    const first = messages[0];
+    const firstId = first?.id ?? "";
     const lastId = messages[messages.length - 1]?.id ?? "";
-    const isInitialHistory = previousList.count === 0 && messages.length > 0;
-    const isHistoryReplacement =
-      previousList.count > 0 &&
-      messages.length > 0 &&
-      previousList.count === messages.length &&
-      (previousList.firstId !== firstId || previousList.lastId !== lastId);
-    const isNearBottom = scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 200;
-    const shouldScrollToBottom = isInitialHistory || isHistoryReplacement || isNearBottom || messages.length <= 1;
+    // Primera carga, historial reemplazado por el del servidor u otra conversación: siempre al final.
+    if (messages.length > 0 && previous.firstId !== firstId) pinnedRef.current = true;
+    previousListRef.current = { firstId, lastId };
 
-    previousListRef.current = { count: messages.length, firstId, lastId };
-
-    if (shouldScrollToBottom) {
-      // Let message markdown/media layout commit before measuring the final height.
-      const timeoutId = setTimeout(() => {
-        scrollElement.scrollTop = scrollElement.scrollHeight;
-      }, 0);
-      return () => clearTimeout(timeoutId);
-    }
+    if (!pinnedRef.current) return;
+    scrollToBottom();
+    // Una vez confirmado el layout (markdown, medios, fuentes) se vuelve a medir.
+    const frame = requestAnimationFrame(scrollToBottom);
+    return () => cancelAnimationFrame(frame);
   }, [messages, isLoading, currentSteps]);
+
+  // El contenido sigue creciendo después de renderizar (imágenes, bloques de proceso, fuentes,
+  // pestaña que pasa de oculta a visible): mientras se esté pegado al final, se acompaña ese crecimiento.
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (pinnedRef.current) scrollToBottom();
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [hasContent]);
 
   if (messages.length === 0 && !isLoading) {
     return (
@@ -101,8 +117,8 @@ export function ChatHistory({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 w-full">
-      <div ref={scrollViewportRef} className="flex-1 overflow-y-auto w-full">
-        <div className="max-w-3xl mx-auto flex flex-col gap-6 p-4 md:p-8 pb-2">
+      <div ref={scrollViewportRef} onScroll={handleScroll} className="flex-1 overflow-y-auto w-full">
+        <div ref={contentRef} className="max-w-3xl mx-auto flex flex-col gap-6 p-4 md:p-8 pb-2">
           {messages.map((message) => (
             <ChatMessage
               key={message.id}

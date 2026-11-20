@@ -25,6 +25,7 @@ import { officeLeerPptxTool } from "./office-leer-pptx.ts";
 import { officeEscribirPptxTool } from "./office-escribir-pptx.ts";
 import { officeEditarDocxTool } from "./office-editar-docx.ts";
 import { officeEditarXlsxTool } from "./office-editar-xlsx.ts";
+import { officeEditarPptxTool } from "./office-editar-pptx.ts";
 
 export function createTools(): Tool[] {
   return [
@@ -38,6 +39,7 @@ export function createTools(): Tool[] {
     officeEscribirPptxTool,
     officeEditarDocxTool,
     officeEditarXlsxTool,
+    officeEditarPptxTool,
   ];
 }
 
@@ -51,3 +53,4 @@ export * from "./office-leer-pptx.ts";
 export * from "./office-escribir-pptx.ts";
 export * from "./office-editar-docx.ts";
 export * from "./office-editar-xlsx.ts";
+export * from "./office-editar-pptx.ts";

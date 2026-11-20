@@ -20,7 +20,7 @@ describe("formatAttachmentManifest", () => {
   test("incluye ruta, artifact_id, lector y vista previa", () => {
     const m = formatAttachmentManifest({
       fileName: "a.xlsx", mimeType: "x", size: 2048, kind: "xlsx",
-      artifactId: "id-1", path: "/tmp/a.xlsx", preview: "# Hoja", needsVision: false,
+      artifactId: "id-1", path: "/tmp/a.xlsx", preview: "# Hoja", scanned: false,
     });
     expect(m).toContain("Ruta: /tmp/a.xlsx");
     expect(m).toContain("artifact_id: id-1");
@@ -31,8 +31,8 @@ describe("formatAttachmentManifest", () => {
   test("sin texto avisa que no hubo extracción", () => {
     const m = formatAttachmentManifest({
       fileName: "s.pdf", mimeType: "x", size: 10, kind: "pdf",
-      artifactId: "i", path: "/p", preview: "", needsVision: true,
+      artifactId: "i", path: "/p", preview: "", scanned: true,
     });
-    expect(m).toContain("No se pudo extraer texto");
+    expect(m).toContain("no se puede leer sin OCR");
   });
 });

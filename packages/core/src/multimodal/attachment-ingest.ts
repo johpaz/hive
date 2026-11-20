@@ -10,6 +10,8 @@
 import { extname } from "node:path"
 import { createArtifact } from "../artifacts/store"
 import { cargarXlsx } from "../tools/office/xlsx-loader"
+import { extraerTextoPdf } from "../tools/office/pdf-text"
+import { listarSlides, textoDeXml } from "../tools/office/pptx-slides"
 import { logger } from "../utils/logger"
 
 const log = logger.child("attachment-ingest")
@@ -30,8 +32,10 @@ export interface IngestedAttachment {
   path: string
   /** Primeros caracteres del contenido; vacío si no hay texto extraíble. */
   preview: string
-  /** true si no hubo texto (PDF escaneado, formato desconocido): conviene un modelo de visión. */
-  needsVision: boolean
+  /** Páginas del PDF (solo PDF). */
+  pages?: number
+  /** true si es un PDF sin capa de texto (escaneado): no se puede leer sin OCR. */
+  scanned: boolean
 }
 
 const EXT_KIND: Record<string, AttachmentKind> = {
@@ -65,7 +69,7 @@ function clip(text: string): string {
   return t.length > PREVIEW_CHARS ? `${t.slice(0, PREVIEW_CHARS)}…` : t
 }
 
-async function extractPreview(kind: AttachmentKind, bytes: Buffer): Promise<string> {
+async function extractPreview(kind: AttachmentKind, bytes: Buffer, info: { pages?: number; sinTexto?: boolean }): Promise<string> {
   try {
     switch (kind) {
       case "text":
@@ -85,15 +89,22 @@ async function extractPreview(kind: AttachmentKind, bytes: Buffer): Promise<stri
         return clip(parts.join("\n\n") + extra)
       }
       case "pdf": {
-        const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs" as any).catch(() => import("pdfjs-dist" as any))
-        const lib = pdfjs.default ?? pdfjs
-        const doc = await lib.getDocument({ data: new Uint8Array(bytes), disableWorker: true }).promise
-        let out = ""
-        for (let i = 1; i <= Math.min(doc.numPages, 3) && out.length < PREVIEW_CHARS; i++) {
-          const content = await (await doc.getPage(i)).getTextContent()
-          out += content.items.map((it: any) => it.str).join(" ") + "\n"
+        const r = await extraerTextoPdf(new Uint8Array(bytes), { hasta: 3, maxCaracteres: PREVIEW_CHARS * 2 })
+        info.pages = r.totalPaginas
+        info.sinTexto = r.sinTexto
+        return r.sinTexto ? "" : clip(r.texto.replace(/--- Página \d+ ---\n?/g, ""))
+      }
+      case "pptx": {
+        const JSZip = (await import("jszip")).default
+        const zip = await JSZip.loadAsync(bytes)
+        const slides = await listarSlides(zip)
+        info.pages = slides.length
+        const partes: string[] = []
+        for (const slide of slides.slice(0, 5)) {
+          const t = textoDeXml(await zip.file(slide.archivo)!.async("string"))
+          partes.push(`# Diapositiva ${slide.numero}\n${t}`)
         }
-        return clip(out)
+        return clip(partes.join("\n\n"))
       }
       default:
         return ""
@@ -133,11 +144,12 @@ export async function ingestDocument(input: {
   const artifact = await createArtifact({
     bytes, mimeType, kind: "attachment", userId: input.userId, extension: extname(fileName),
   })
-  const preview = await extractPreview(kind, bytes)
+  const info: { pages?: number; sinTexto?: boolean } = {}
+  const preview = await extractPreview(kind, bytes, info)
   return {
     fileName, mimeType: artifact.mime_type, size: bytes.byteLength, kind,
     artifactId: artifact.id, path: artifact.path, preview,
-    needsVision: !preview && (kind === "pdf" || kind === "other"),
+    pages: info.pages, scanned: !!info.sinTexto,
   }
 }
 
@@ -151,12 +163,13 @@ export function formatAttachmentManifest(a: IngestedAttachment): string {
   const kb = a.size < 1048576 ? `${Math.max(1, Math.round(a.size / 1024))} KB` : `${(a.size / 1048576).toFixed(1)} MB`
   const reader = READER[a.kind]
   const lines = [
-    `[Archivo adjunto: ${a.fileName} · ${a.mimeType} · ${kb}]`,
+    `[Archivo adjunto: ${a.fileName} · ${a.mimeType} · ${kb}${a.pages ? ` · ${a.pages} ${a.kind === "pptx" ? "diapositivas" : "páginas"}` : ""}]`,
     `Ruta: ${a.path}`,
     `artifact_id: ${a.artifactId}`,
     reader ? `Para leerlo completo usa la tool ${reader} con esa ruta.` : "Formato sin lector nativo.",
   ]
   if (a.preview) lines.push(`Vista previa:\n${a.preview}`)
-  else lines.push("No se pudo extraer texto (¿escaneado o protegido?).")
+  else if (a.scanned) lines.push("Este PDF no tiene texto extraíble (parece escaneado, solo imágenes) y no se puede leer sin OCR. Dile al usuario que lo envíe en formato editable o que pegue el texto.")
+  else lines.push("No se pudo extraer texto.")
   return lines.join("\n")
 }

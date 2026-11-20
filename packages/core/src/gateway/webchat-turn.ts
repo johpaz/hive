@@ -278,6 +278,9 @@ export async function runWebchatTurn(
           }
         } catch (imgError) {
           log.error(`❌ Image processing failed: ${(imgError as Error).message}`);
+          // El agente debe saber que SÍ llegó una imagen y por qué no se pudo leer, para
+          // decírselo al usuario en vez de pedirle que describa un archivo "sin contenido".
+          finalMessageContent = `[El usuario adjuntó una imagen pero no se pudo leer: ${(imgError as Error).message}]\n\n${finalMessageContent || ""}`;
         }
       }
 
@@ -290,20 +293,7 @@ export async function runWebchatTurn(
             fileName: payload.document.fileName,
             userId,
           });
-          let manifest = formatAttachmentManifest(att);
-          if (att.needsVision && att.kind === "pdf") {
-            // PDF escaneado: sin texto nativo, se apoya en el modelo de visión como antes.
-            try {
-              const ocrProvider = visionConfig.ocrProvider || (["openai", "gemini", "anthropic"].includes(d.getProvider()) ? d.getProvider() : "openai");
-              const ocrText = await multimodalService.ocrImage({
-                type: "base64" as const, data: payload.document.base64,
-                mimeType: att.mimeType, caption: att.fileName,
-              }, ocrProvider);
-              if (ocrText) manifest += `\nContenido leído por visión:\n${ocrText}`;
-            } catch (ocrErr) {
-              log.warn(`📄 OCR de respaldo falló: ${(ocrErr as Error).message}`);
-            }
-          }
+          const manifest = formatAttachmentManifest(att);
           finalMessageContent = `${manifest}\n\n${finalMessageContent || ""}`;
           log.info(`📄 Documento ingerido desde WebChat: ${att.fileName} (${att.kind}, ${att.size} bytes)`);
         } catch (docError) {
