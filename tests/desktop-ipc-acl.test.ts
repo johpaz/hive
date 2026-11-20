@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -41,7 +41,16 @@ describe("ACL de la app de escritorio", () => {
     const comandos = handler![1].split(",").map((c) => c.trim()).filter(Boolean);
     expect(comandos.length).toBeGreaterThan(0);
     for (const comando of comandos) {
-      expect(main).toMatch(new RegExp(`fn ${comando}\\s*\\(`));
+      // Un comando `modulo::nombre` vive en `src/modulo.rs` (o `src/modulo/mod.rs`), no en main.rs.
+      const partes = comando.split("::");
+      const nombre = partes[partes.length - 1];
+      let fuente = main;
+      if (partes.length > 1) {
+        const archivo = [join(raiz, "src", `${partes[0]}.rs`), join(raiz, "src", partes[0], "mod.rs")].find(existsSync);
+        expect(archivo, `no existe el módulo «${partes[0]}» del comando ${comando}`).toBeDefined();
+        fuente = readFileSync(archivo!, "utf8");
+      }
+      expect(fuente, `el comando ${comando} no está definido`).toMatch(new RegExp(`fn ${nombre}\\s*\\(`));
     }
   });
 });

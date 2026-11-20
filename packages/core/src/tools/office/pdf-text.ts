@@ -32,6 +32,38 @@ const MAX_PDF_BYTES = 100 * 1024 * 1024
  * cambian en el binario empaquetado.
  */
 let workerListo = false
+
+/**
+ * pdfjs hace referencia a DOMMatrix, ImageData y Path2D al cargarse. En desarrollo se
+ * las presta `@napi-rs/canvas`, pero en el ejecutable compilado (app de escritorio,
+ * paquete) ese módulo no existe y la carga muere con «DOMMatrix is not defined». Para
+ * extraer texto no hace falta dibujar nada: bastan clases mínimas, solo si faltan.
+ */
+function instalarPolyfillsPdf(): void {
+  const g = globalThis as any
+  if (typeof g.DOMMatrix === "undefined") {
+    g.DOMMatrix = class DOMMatrix {
+      a = 1; b = 0; c = 0; d = 1; e = 0; f = 0
+      constructor(init?: ArrayLike<number> | string) {
+        if (init && typeof init !== "string" && init.length >= 6) {
+          [this.a, this.b, this.c, this.d, this.e, this.f] = Array.from(init)
+        }
+      }
+      multiplySelf(): this { return this }
+      preMultiplySelf(): this { return this }
+      translateSelf(): this { return this }
+      scaleSelf(): this { return this }
+      invertSelf(): this { return this }
+    }
+  }
+  if (typeof g.ImageData === "undefined") {
+    g.ImageData = class ImageData { constructor(public width = 0, public height = 0, public data: Uint8ClampedArray = new Uint8ClampedArray(0)) {} }
+  }
+  if (typeof g.Path2D === "undefined") {
+    g.Path2D = class Path2D {}
+  }
+}
+
 async function registrarWorker(lib: any): Promise<void> {
   if (workerListo) return
   const g = globalThis as any
@@ -88,6 +120,7 @@ export async function extraerTextoPdf(
   if (bytes.byteLength > MAX_PDF_BYTES) {
     throw new Error(`El PDF pesa ${(bytes.byteLength / 1048576).toFixed(0)} MB; el máximo es ${MAX_PDF_BYTES / 1048576} MB.`)
   }
+  instalarPolyfillsPdf()
   const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs" as any).catch(() => import("pdfjs-dist" as any))
   const lib = pdfjs.default ?? pdfjs
   await registrarWorker(lib)

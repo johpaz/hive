@@ -236,6 +236,8 @@ const DEFAULT_MAIN_THREAD_TOOL_NAMES = new Set([
   "cron.trigger",
   "cron.history",
   "notify",
+  // Entrega archivos por el canal: usa el sender y la base de datos del proceso principal.
+  "send_file",
   "report_progress",
   "task_delegate",
   "task_list",
