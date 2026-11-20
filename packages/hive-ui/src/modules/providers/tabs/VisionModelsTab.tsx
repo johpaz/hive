@@ -8,17 +8,49 @@ import { Search, Eye } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { useGlobalConfigStore } from "@/stores/useGlobalConfigStore";
 import { parseCapabilities } from "@/lib/capabilities";
+import { apiClient } from "@/lib/api";
 
 export function VisionModelsTab() {
   const { availableModels, activeProviders } = useProviders();
   const fetchAll = useGlobalConfigStore((s) => s.fetchAll);
   const [filter, setFilter] = useState("");
   const [providerFilter, setProviderFilter] = useState("all");
+  // Modelo que describe imágenes y documentos cuando el del chat no los ve. Uno solo para todos los canales.
+  const [analyzerId, setAnalyzerId] = useState<string>("");
 
   // Force fresh data from the DB every time this tab is opened
   useEffect(() => {
     fetchAll(true);
   }, [fetchAll]);
+
+  useEffect(() => {
+    apiClient<{ modelId: string | null }>("/api/multimodal/analyzer", { showError: true })
+      .then((r) => setAnalyzerId(r.modelId ?? ""))
+      .catch(() => { /* sin ajuste guardado: queda en "Ninguno" */ });
+  }, []);
+
+  const changeAnalyzer = async (value: string) => {
+    const previous = analyzerId;
+    setAnalyzerId(value === "none" ? "" : value);
+    try {
+      await apiClient("/api/multimodal/analyzer", {
+        method: "PUT",
+        body: { modelId: value === "none" ? null : value },
+        showError: true,
+        showSuccess: "Modelo analizador actualizado",
+      });
+    } catch {
+      setAnalyzerId(previous);
+    }
+  };
+
+  const analyzerOptions = useMemo(
+    () =>
+      availableModels
+        .filter((m) => parseCapabilities(m.capabilities).includes("vision"))
+        .sort((a, b) => Number(!!b.active) - Number(!!a.active)),
+    [availableModels],
+  );
 
   const filtered = useMemo(() => {
     return availableModels.filter((m) => {
@@ -27,7 +59,9 @@ export function VisionModelsTab() {
       const matchesSearch = m.name.toLowerCase().includes(filter.toLowerCase()) || m.id.toLowerCase().includes(filter.toLowerCase());
       const matchesProvider = providerFilter === "all" || m.providerId === providerFilter || m.provider_id === providerFilter;
       return isVisionModel && matchesSearch && matchesProvider;
-    });
+    })
+      // Activos primero; sort estable, así el resto conserva su orden.
+      .sort((a, b) => Number(!!b.active) - Number(!!a.active));
   }, [availableModels, filter, providerFilter]);
 
   return (
@@ -41,6 +75,26 @@ export function VisionModelsTab() {
       <p className="text-xs text-muted-foreground">
         Estos modelos pueden procesar imagenes y documentos visuales. Si el agente usa uno de estos modelos, las imagenes se envian directamente. Si no, se usa OCR para extraer el texto.
       </p>
+      <div className="rounded-lg border p-3 space-y-2">
+        <div>
+          <p className="text-sm font-semibold">Modelo analizador</p>
+          <p className="text-xs text-muted-foreground">
+            Un solo modelo para todos los canales: lee las imagenes que envia el usuario y entrega el contenido al agente
+            cuando su modelo de chat no tiene vision. Es independiente del modelo del chat.
+          </p>
+        </div>
+        <Select value={analyzerId || "none"} onValueChange={changeAnalyzer}>
+          <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Ninguno" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Ninguno (usar OCR del provider)</SelectItem>
+            {analyzerOptions.map((m) => (
+              <SelectItem key={m.id} value={m.id}>
+                {m.name} · {m.providerId || m.provider_id}{m.active ? "" : " (inactivo)"}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />

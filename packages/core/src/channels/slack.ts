@@ -1,6 +1,6 @@
 import { App, ExpressReceiver, type SlashCommand } from "@slack/bolt";
 import type { ChannelConfig, IncomingMessage, OutboundMessage } from "./base.ts";
-import { BaseChannel, readOutboundImageBytes } from "./base.ts";
+import { BaseChannel, readOutboundImageBytes, readOutboundDocument } from "./base.ts";
 import { logger } from "../utils/logger.ts";
 import { updateDoc } from "../storage/hive.ts";
 import type { ChannelDoc } from "../storage/collections.ts";
@@ -16,6 +16,13 @@ export interface SlackConfig extends ChannelConfig {
 export interface SlackConnectionState {
   status: "connecting" | "connected" | "disconnected" | "error";
   error?: string;
+}
+
+const DOCUMENT_EXTENSIONS = /\.(pdf|docx?|xlsx?|xlsm|pptx?|csv|tsv|txt|md|json|rtf)$/i;
+
+/** Qué cuenta como documento: cualquier application/*, text/* o una extensión de oficina conocida. */
+function isDocumentFile(f: { mimetype?: string; name?: string }): boolean {
+  return !!(f.mimetype?.startsWith("application/") || f.mimetype?.startsWith("text/") || (f.name && DOCUMENT_EXTENSIONS.test(f.name)));
 }
 
 export class SlackChannel extends BaseChannel {
@@ -129,6 +136,13 @@ export class SlackChannel extends BaseChannel {
     } catch { /* ignore DB errors */ }
   }
 
+  /** Los archivos de Slack (url_private) solo se descargan con el token del bot: sin él devuelven una página de login. */
+  private async downloadPrivateFile(url: string): Promise<Buffer> {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${this.config.botToken}` }, signal: AbortSignal.timeout(60_000) });
+    if (!res.ok) throw new Error(`Slack no entregó el archivo (HTTP ${res.status})`);
+    return Buffer.from(await res.arrayBuffer());
+  }
+
   private async handleMention(event: { user?: string; text?: string; channel?: string; ts?: string; files?: Array<{ url_private?: string; mimetype?: string; name?: string }> }): Promise<void> {
     if (!event.user || !event.channel) return;
 
@@ -149,7 +163,7 @@ f.name?.endsWith(".png") || f.name?.endsWith(".gif") || f.name?.endsWith(".webp"
 );
 
 const docFile = !audioFile && !imageFile
-? event.files?.find(f => f.mimetype?.startsWith("application/") || f.name?.endsWith(".pdf") || f.name?.endsWith(".doc") || f.name?.endsWith(".txt"))
+? event.files?.find(f => isDocumentFile(f))
 : undefined;
 
 const incoming: IncomingMessage = {
@@ -160,8 +174,8 @@ peerId: event.channel,
 peerKind: "group",
 content,
 audio: audioFile?.url_private ? { url: audioFile.url_private, mimeType: audioFile.mimetype || "audio/webm" } : undefined,
-image: imageFile?.url_private ? { url: imageFile.url_private, mimeType: imageFile.mimetype || "image/png" } : undefined,
-document: docFile?.url_private ? { url: docFile.url_private, mimeType: docFile.mimetype || "application/octet-stream", fileName: docFile.name } : undefined,
+image: imageFile?.url_private ? { buffer: await this.downloadPrivateFile(imageFile.url_private), mimeType: imageFile.mimetype || "image/png" } : undefined,
+document: docFile?.url_private ? { buffer: await this.downloadPrivateFile(docFile.url_private), mimeType: docFile.mimetype || "application/octet-stream", fileName: docFile.name } : undefined,
 metadata: {
 userId: event.user,
 timestamp: event.ts,
@@ -191,7 +205,7 @@ f.name?.endsWith(".png") || f.name?.endsWith(".gif") || f.name?.endsWith(".webp"
 );
 
 const docFile = !audioFile && !imageFile
-? event.files?.find(f => f.mimetype?.startsWith("application/") || f.name?.endsWith(".pdf") || f.name?.endsWith(".doc") || f.name?.endsWith(".txt"))
+? event.files?.find(f => isDocumentFile(f))
 : undefined;
 
 const incoming: IncomingMessage = {
@@ -202,8 +216,8 @@ peerId: event.user,
 peerKind: "direct",
 content: event.text || "",
 audio: audioFile?.url_private ? { url: audioFile.url_private, mimeType: audioFile.mimetype || "audio/webm" } : undefined,
-image: imageFile?.url_private ? { url: imageFile.url_private, mimeType: imageFile.mimetype || "image/png" } : undefined,
-document: docFile?.url_private ? { url: docFile.url_private, mimeType: docFile.mimetype || "application/octet-stream", fileName: docFile.name } : undefined,
+image: imageFile?.url_private ? { buffer: await this.downloadPrivateFile(imageFile.url_private), mimeType: imageFile.mimetype || "image/png" } : undefined,
+document: docFile?.url_private ? { buffer: await this.downloadPrivateFile(docFile.url_private), mimeType: docFile.mimetype || "application/octet-stream", fileName: docFile.name } : undefined,
 metadata: {
 channel: event.channel,
 timestamp: event.ts,
@@ -277,6 +291,22 @@ await this.handleMessage(incoming);
         }
       } catch (error) {
         this.log.error(`Failed to send Slack image: ${(error as Error).message}`);
+      }
+    }
+
+    if (message.document) {
+      try {
+        const doc = await readOutboundDocument(message.document);
+        if (doc) {
+          await this.app.client.files.uploadV2({
+            channel_id: peerId, file: doc.bytes, filename: doc.filename,
+            title: message.document.caption ?? doc.filename,
+          });
+        } else {
+          this.log.warn(`Document unavailable, skipping file send`, { sessionId });
+        }
+      } catch (error) {
+        this.log.error(`Failed to send Slack document: ${(error as Error).message}`);
       }
     }
 

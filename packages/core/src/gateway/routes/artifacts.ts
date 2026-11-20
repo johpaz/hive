@@ -36,6 +36,7 @@ export async function handleDownloadArtifact(
       return addCorsHeaders(Response.json({ ok: false, error: "Artifact not found" }, { status: 404 }), req);
     }
 
+    const downloadName = new URL(req.url).searchParams.get("name")?.replace(/[\\/\0\r\n]/g, "_").slice(0, 200);
     const file = Bun.file(entry.doc.path);
     if (!(await file.exists())) {
       return addCorsHeaders(Response.json({ ok: false, error: "Artifact binary is missing" }, { status: 404 }), req);
@@ -59,6 +60,9 @@ export async function handleDownloadArtifact(
           "Cache-Control": "private, max-age=3600",
           ETag: etag,
           "Accept-Ranges": "bytes",
+          ...(downloadName
+            ? { "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(downloadName)}` }
+            : {}),
         },
       }),
       req,

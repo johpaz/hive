@@ -7,7 +7,7 @@ import {
   type DMChannel,
   type NewsChannel,
 } from "discord.js";
-import { BaseChannel, type ChannelConfig, type IncomingMessage, type OutboundMessage, readOutboundImageBytes } from "./base.ts";
+import { BaseChannel, type ChannelConfig, type IncomingMessage, type OutboundMessage, readOutboundImageBytes, readOutboundDocument } from "./base.ts";
 import { logger } from "../utils/logger.ts";
 import { updateDoc } from "../storage/hive.ts";
 import type { ChannelDoc } from "../storage/collections.ts";
@@ -101,7 +101,7 @@ export class DiscordChannel extends BaseChannel {
   );
 
   const documentAttachment = !audioAttachment && !imageAttachment
-    ? message.attachments.find(a => a.contentType?.startsWith("application/") || a.url.endsWith(".pdf") || a.url.endsWith(".doc") || a.url.endsWith(".docx") || a.url.endsWith(".txt"))
+    ? message.attachments.find(a => a.contentType?.startsWith("application/") || a.contentType?.startsWith("text/") || /\.(pdf|docx?|xlsx?|xlsm|pptx?|csv|tsv|txt|md|json|rtf)(\?|$)/i.test(a.name ?? a.url))
     : undefined;
 
   const incomingMessage: IncomingMessage = {
@@ -221,6 +221,22 @@ export class DiscordChannel extends BaseChannel {
         }
       } catch (error) {
         this.log.error(`Failed to send Discord image: ${(error as Error).message}`);
+      }
+    }
+
+    if (message.document) {
+      try {
+        const doc = await readOutboundDocument(message.document);
+        if (doc) {
+          await channel.send({
+            content: message.document.caption,
+            files: [{ attachment: doc.bytes, name: doc.filename }],
+          });
+        } else {
+          this.log.warn(`Document unavailable, skipping file send`, { sessionId });
+        }
+      } catch (error) {
+        this.log.error(`Failed to send Discord document: ${(error as Error).message}`);
       }
     }
 

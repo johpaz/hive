@@ -6,6 +6,7 @@
  * @spanish leer pdf, abrir pdf, extraer texto de pdf, contenido pdf
  */
 
+import { resolveOfficeInput, ARTIFACT_ID_PARAM } from "./resolve-input.ts";
 import type { Tool } from "../types.ts";
 import { logger } from "../../utils/logger.ts";
 import * as fs from "node:fs";
@@ -20,6 +21,7 @@ export const officeLeerPdfTool: Tool = {
   parameters: {
     type: "object",
     properties: {
+      artifact_id: ARTIFACT_ID_PARAM,
       ruta: {
         type: "string",
         description: "Ruta absoluta o relativa al archivo PDF",
@@ -33,10 +35,12 @@ export const officeLeerPdfTool: Tool = {
         description: "Última página a leer (default: todas las páginas)",
       },
     },
-    required: ["ruta"],
+    required: [],
   },
   execute: async (params: Record<string, unknown>) => {
-    const ruta = params.ruta as string;
+    const entrada = await resolveOfficeInput(params);
+    if ("error" in entrada) return { ok: false, error: entrada.error };
+    const ruta = entrada.ruta;
     const paginaInicio = Math.max(1, (params.pagina_inicio as number) ?? 1);
     const paginaFin = params.pagina_fin as number | undefined;
 

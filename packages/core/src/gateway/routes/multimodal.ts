@@ -80,3 +80,22 @@ export async function handleOcrImage(req: Request, addCorsHeaders: (r: Response,
     return addCorsHeaders(Response.json({ success: false, error: (error as Error).message }, { status: 500 }), req)
   }
 }
+
+export async function handleGetVisionAnalyzer(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
+  const { getVisionAnalyzerModelId } = await import("../../multimodal/vision-analyzer")
+  return addCorsHeaders(Response.json({ modelId: await getVisionAnalyzerModelId() }), req)
+}
+
+export async function handleSetVisionAnalyzer(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
+  const body = await req.json().catch(() => ({})) as { modelId?: string | null }
+  if (body.modelId !== null && typeof body.modelId !== "string") {
+    return addCorsHeaders(Response.json({ success: false, error: "modelId debe ser un id o null" }, { status: 400 }), req)
+  }
+  const { setVisionAnalyzerModelId, getVisionAnalyzerModelId } = await import("../../multimodal/vision-analyzer")
+  try {
+    await setVisionAnalyzerModelId(body.modelId || null)
+  } catch (err) {
+    return addCorsHeaders(Response.json({ success: false, error: (err as Error).message }, { status: 400 }), req)
+  }
+  return addCorsHeaders(Response.json({ success: true, modelId: await getVisionAnalyzerModelId() }), req)
+}

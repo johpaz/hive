@@ -18,6 +18,7 @@ export const MINIMAL_TOOLS = new Set([
   "search_knowledge",
   // Communication with the user
   "notify",
+  "send_file",
   "report_progress",
   // Notes that survive context compaction
   "save_note",

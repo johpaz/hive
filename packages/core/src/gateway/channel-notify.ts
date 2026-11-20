@@ -23,7 +23,27 @@ type SendFn = (
   metadata?: { notificationId?: string; accountId?: string },
 ) => Promise<void>
 
+export interface OutboundFile {
+  artifactId: string
+  filename: string
+  mimeType: string
+  caption?: string
+}
+
+type SendFileFn = (
+  channel: string,
+  sessionId: string,
+  file: OutboundFile,
+  metadata?: { accountId?: string },
+) => Promise<void>
+
 let _sendFn: SendFn | null = null
+let _sendFileFn: SendFileFn | null = null
+
+/** Llamar en server.ts junto a setChannelSendFn: permite que la tool send_file entregue archivos. */
+export function setChannelFileFn(fn: SendFileFn): void {
+  _sendFileFn = fn
+}
 
 /** Llamar en server.ts una vez que channelManager esté listo */
 export function setChannelSendFn(fn: SendFn): void {
@@ -110,6 +130,28 @@ export async function sendToUserChannel(
     if (notificationId) {
       return { ok: true, queued: true, notificationId }
     }
+    return { ok: false, error: (err as Error).message }
+  }
+}
+
+/**
+ * Entrega un archivo (Word, Excel, PDF…) al chat desde el que escribió el usuario.
+ * Misma resolución de destino que sendToUserChannel; sin socket vivo no hay cola
+ * (a diferencia del texto), así que un fallo se devuelve para que el agente avise.
+ */
+export async function sendFileToUserChannel(
+  channel: string,
+  userId: string,
+  file: OutboundFile,
+  opts?: { threadId?: string },
+): Promise<{ ok: boolean; error?: string }> {
+  if (!_sendFileFn) return { ok: false, error: "El envío de archivos no está inicializado" }
+  const { sessionId, accountId } = await resolveSession(userId, channel, opts?.threadId)
+  try {
+    await _sendFileFn(channel, sessionId, file, { accountId })
+    return { ok: true }
+  } catch (err) {
+    log.warn(`[channel-notify] Falló el envío de archivo: ${(err as Error).message}`)
     return { ok: false, error: (err as Error).message }
   }
 }

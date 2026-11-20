@@ -12,6 +12,7 @@
  * @spanish crear word, generar docx, escribir documento word, exportar a docx
  */
 
+import { resolveInWorkspace, getWorkspace } from "../filesystem/workspace-guard.ts";
 import type { Tool } from "../types.ts";
 import { logger } from "../../utils/logger.ts";
 import * as path from "node:path";
@@ -80,7 +81,7 @@ export const officeEscribirDocxTool: Tool = {
     },
     required: ["ruta"],
   },
-  execute: async (params: Record<string, unknown>) => {
+  execute: async (params: Record<string, unknown>, config?: any) => {
     const ruta = params.ruta as string;
     const titulo = typeof params.titulo === "string" ? params.titulo : "";
 
@@ -342,7 +343,7 @@ export const officeEscribirDocxTool: Tool = {
         }],
       });
 
-      const rutaAbsoluta = path.resolve(ruta);
+      const rutaAbsoluta = path.resolve(resolveInWorkspace(ruta, getWorkspace(config)));
       const dirDestino = path.dirname(rutaAbsoluta);
       if (!fs.existsSync(dirDestino)) fs.mkdirSync(dirDestino, { recursive: true });
 

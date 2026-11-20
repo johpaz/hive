@@ -283,21 +283,33 @@ export async function runWebchatTurn(
 
       if (payload.document) {
         try {
-          const ocrProvider = visionConfig.ocrProvider || (["openai", "gemini", "anthropic"].includes(d.getProvider()) ? d.getProvider() : "openai");
-          log.info(`📄 Document detected from WebChat, extracting text via OCR (${ocrProvider})...`);
-          const docImage = {
-            type: "base64" as const,
-            data: payload.document.base64,
-            mimeType: payload.document.mimeType || "application/pdf",
-            caption: payload.document.fileName,
-          };
-          const ocrText = await multimodalService.ocrImage(docImage, ocrProvider);
-          finalMessageContent = ocrText
-            ? `[Documento adjunto]\n${ocrText}\n\n${finalMessageContent || ""}`
-            : finalMessageContent || "";
-          log.info(`📄 Document OCR result: ${ocrText.substring(0, 100)}...`);
+          const { ingestDocument, formatAttachmentManifest } = await import("../multimodal/attachment-ingest");
+          const att = await ingestDocument({
+            base64: payload.document.base64,
+            mimeType: payload.document.mimeType,
+            fileName: payload.document.fileName,
+            userId,
+          });
+          let manifest = formatAttachmentManifest(att);
+          if (att.needsVision && att.kind === "pdf") {
+            // PDF escaneado: sin texto nativo, se apoya en el modelo de visión como antes.
+            try {
+              const ocrProvider = visionConfig.ocrProvider || (["openai", "gemini", "anthropic"].includes(d.getProvider()) ? d.getProvider() : "openai");
+              const ocrText = await multimodalService.ocrImage({
+                type: "base64" as const, data: payload.document.base64,
+                mimeType: att.mimeType, caption: att.fileName,
+              }, ocrProvider);
+              if (ocrText) manifest += `\nContenido leído por visión:\n${ocrText}`;
+            } catch (ocrErr) {
+              log.warn(`📄 OCR de respaldo falló: ${(ocrErr as Error).message}`);
+            }
+          }
+          finalMessageContent = `${manifest}\n\n${finalMessageContent || ""}`;
+          log.info(`📄 Documento ingerido desde WebChat: ${att.fileName} (${att.kind}, ${att.size} bytes)`);
         } catch (docError) {
           log.error(`❌ Document processing failed: ${(docError as Error).message}`);
+          processReporter?.step({ type: "tool_result" });
+          finalMessageContent = `[El usuario adjuntó un documento pero no se pudo procesar: ${(docError as Error).message}]\n\n${finalMessageContent || ""}`;
         }
       }
     }

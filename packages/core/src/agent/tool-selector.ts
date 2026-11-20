@@ -158,6 +158,7 @@ export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
 
     // Notifications/reporting
     { name: "notify", description: "Send system notification, alert user with message or alert. Spanish keywords: notificar, enviar notificación, alertar, aviso, alarma", category: "core", abstractionLevel: "atomic" },
+    { name: "send_file", description: "Send a file (Word, Excel, PDF, image) to the user in the current chat, return a corrected document. Spanish keywords: enviar archivo, enviar documento, devolver archivo corregido, mandar excel, mandar word, mandar pdf", category: "core", abstractionLevel: "atomic" },
     { name: "report_progress", description: "Report progress to user, inform user of current status and completion. Spanish keywords: reportar progreso, informar estado, actualizar,报告进度, progreso", category: "core", abstractionLevel: "atomic" },
 
     // Browser automation
@@ -256,6 +257,8 @@ export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
     { name: "office_escribir_pdf", description: "Generate a PDF document. Spanish keywords: crear pdf, generar pdf, escribir pdf, exportar a pdf", category: "office", abstractionLevel: "atomic" },
     { name: "office_escribir_docx", description: "Generate a Word document. Spanish keywords: crear word, generar docx, escribir documento word, exportar a word", category: "office", abstractionLevel: "atomic" },
     { name: "office_escribir_xlsx", description: "Generate an Excel spreadsheet. Spanish keywords: crear excel, generar xlsx, escribir hoja de cálculo, exportar a excel, armar planilla", category: "office", abstractionLevel: "atomic" },
+    { name: "office_editar_xlsx", description: "Edit an existing Excel file changing only given cells, keeping formatting; saves a copy. Spanish keywords: editar excel, corregir excel, modificar celdas, mejorar planilla", category: "office", abstractionLevel: "atomic" },
+    { name: "office_editar_docx", description: "Edit an existing Word file: replace text and append paragraphs keeping styles; saves a copy. Spanish keywords: editar word, corregir word, reemplazar texto en documento, mejorar documento", category: "office", abstractionLevel: "atomic" },
     { name: "office_escribir_pptx", description: "Generate a PowerPoint presentation. Spanish keywords: crear powerpoint, generar pptx, escribir presentación, armar diapositivas", category: "office", abstractionLevel: "atomic" },
 ]
 

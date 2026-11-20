@@ -150,6 +150,7 @@ export const SEED_DATA: SeedData = {
 
     // 9. CORE — Notificaciones y notas
     { id: "notify", name: "notify", category: "core", description: "Enviar notificación al usuario. Sinónimos: notificar, enviar notificación, alertar, aviso" },
+    { id: "send_file", name: "send_file", category: "core", description: "Enviar un archivo (Word, Excel, PDF, imagen) al usuario por el chat actual. Sinónimos: enviar archivo, enviar documento, devolver archivo corregido, mandar excel, mandar word, mandar pdf" },
     { id: "save_note", name: "save_note", category: "core", description: "Guardar nota persistente en el scratchpad. Sinónimos: guardar nota, escribir nota, recordatorio rápido, apuntar" },
     { id: "report_progress", name: "report_progress", category: "core", description: "Reportar progreso actual al usuario. Sinónimos: reportar progreso, informar estado, actualizar progreso, porcentaje" },
     { id: "conversation_read", name: "conversation_read", category: "core", description: "Recuperar mensajes anteriores de esta conversación por ID o búsqueda de texto. Sinónimos: leer conversación, recuperar contexto, historial omitido" },
@@ -163,6 +164,8 @@ export const SEED_DATA: SeedData = {
     { id: "office_escribir_docx", name: "office_escribir_docx", category: "office", description: "Generar un archivo Word (.docx) con párrafos, títulos y tablas. Sinónimos: crear word, generar docx, escribir documento word, exportar a docx" },
     { id: "office_leer_xlsx", name: "office_leer_xlsx", category: "office", description: "Leer un archivo Excel (.xlsx) y retornar hojas con datos en JSON (filas y columnas). Sinónimos: leer excel, abrir xlsx, extraer datos de excel, hojas excel" },
     { id: "office_escribir_xlsx", name: "office_escribir_xlsx", category: "office", description: "Generar un archivo Excel (.xlsx) desde un objeto JSON con hojas, filas y columnas. Sinónimos: crear excel, generar xlsx, escribir excel, exportar a xlsx" },
+    { id: "office_editar_xlsx", name: "office_editar_xlsx", category: "office", description: "Editar un Excel (.xlsx) existente cambiando solo celdas indicadas y conservando el formato; guarda una copia. Sinónimos: editar excel, corregir excel, modificar celdas, mejorar planilla" },
+    { id: "office_editar_docx", name: "office_editar_docx", category: "office", description: "Editar un Word (.docx) existente: reemplazar texto y añadir párrafos conservando estilos; guarda una copia. Sinónimos: editar word, corregir word, reemplazar texto en documento, mejorar documento" },
     { id: "office_leer_pptx", name: "office_leer_pptx", category: "office", description: "Leer un archivo PowerPoint (.pptx) y retornar el texto de cada diapositiva como array estructurado. Sinónimos: leer powerpoint, abrir pptx, extraer texto de presentacion, contenido slides" },
     { id: "office_escribir_pptx", name: "office_escribir_pptx", category: "office", description: "Generar un archivo PowerPoint (.pptx) desde un array de diapositivas con título y contenido. Sinónimos: crear powerpoint, generar pptx, escribir presentacion, exportar a pptx" },
 
@@ -295,7 +298,14 @@ export const SEED_DATA: SeedData = {
     // OpenRouter renombró qwen/qwen3.8-max a su versión fechada: mismo contexto
     // y precio, ahora también con imagen. Verificado 2026-09-10.
     { id: "qwen/qwen3.8-max-0902", providerId: "openrouter", name: "Qwen3.8 Max (OR)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 2, outputPer1M: 6 },
-    { id: "qwen/qwen3.7-flash", providerId: "openrouter", name: "Qwen3.7 Flash (OR)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.03, outputPer1M: 0.13 },
+    { id: "qwen/qwen3.7-flash", providerId: "openrouter", name: "Qwen3.7 Flash (OR)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.03, outputPer1M: 0.13 },
+    { id: "qwen/qwen4-max", providerId: "openrouter", name: "Qwen4 Max (OR)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 1.425, outputPer1M: 4.275 },
+    { id: "qwen/qwen3.8-flash", providerId: "openrouter", name: "Qwen3.8 Flash (OR)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0.15, outputPer1M: 0.47 },
+    { id: "qwen/qwen3.8-omni-flash", providerId: "openrouter", name: "Qwen3.8 Omni Flash (OR)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0.15, outputPer1M: 0.47 },
+    { id: "qwen/qwen3.8-27b", providerId: "openrouter", name: "Qwen3.8 27B (OR)", modelType: "llm", contextWindow: 1024000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0.06, outputPer1M: 1.96 },
+    { id: "qwen/qwen3.6-plus", providerId: "openrouter", name: "Qwen3.6 Plus (OR)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0.325, outputPer1M: 1.95 },
+    { id: "qwen/qwen3.6-35b-a3b", providerId: "openrouter", name: "Qwen3.6 35B A3B (OR)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0.1, outputPer1M: 0.9 },
+    { id: "qwen/qwen3-vl-235b-a22b-instruct", providerId: "openrouter", name: "Qwen3 VL 235B (OR)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.21, outputPer1M: 1.9 },
     // xAI
     { id: "x-ai/grok-4.5", providerId: "openrouter", name: "Grok 4.5 (OR)", modelType: "llm", contextWindow: 500000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 2, outputPer1M: 6 },
     // Mistral
@@ -336,8 +346,8 @@ export const SEED_DATA: SeedData = {
     // estaba sembrado con 32768 en realidad tiene 262144.
     { id: "qwen3.7-max", providerId: "qwen", name: "Qwen 3.7 Max", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 1.475, outputPer1M: 4.425 },
     { id: "qwen3.7-plus", providerId: "qwen", name: "Qwen 3.7 Plus", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0.32, outputPer1M: 1.28 },
-    { id: "qwen3.6-flash", providerId: "qwen", name: "Qwen 3.6 Flash", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.1875, outputPer1M: 1.125 },
-    { id: "qwen3.5-omni-plus", providerId: "qwen", name: "Qwen 3.5 Omni Plus", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.32, outputPer1M: 1.28 },
+    { id: "qwen3.6-flash", providerId: "qwen", name: "Qwen 3.6 Flash", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.1875, outputPer1M: 1.125 },
+    { id: "qwen3.5-omni-plus", providerId: "qwen", name: "Qwen 3.5 Omni Plus", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]), inputPer1M: 0.32, outputPer1M: 1.28 },
 
     // ── Qwen (TTS) ──
     { id: "qwen3-tts-instruct-flash", providerId: "qwen", name: "Qwen TTS Instruct Flash", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
@@ -399,7 +409,11 @@ export const SEED_DATA: SeedData = {
     { id: "Qwen-Ambassador/Qwen3.7-Max", providerId: "modelscope", name: "Qwen3.7 Max (Embajador)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "Qwen-Ambassador/Qwen3.7-Plus", providerId: "modelscope", name: "Qwen3.7 Plus (Embajador)", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
     // Open-weight del mismo endpoint, para cuentas sin permiso de embajador.
-    { id: "Qwen/Qwen3.5-397B-A17B", providerId: "modelscope", name: "Qwen3.5 397B (ModelScope)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "Qwen/Qwen3.5-397B-A17B", providerId: "modelscope", name: "Qwen3.5 397B (ModelScope)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "Qwen/Qwen3.8-27B", providerId: "modelscope", name: "Qwen3.8 27B (ModelScope)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "Qwen/Qwen3.5-122B-A10B", providerId: "modelscope", name: "Qwen3.5 122B (ModelScope)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "Qwen/Qwen3.5-35B-A3B", providerId: "modelscope", name: "Qwen3.5 35B (ModelScope)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "Qwen/Qwen3.5-27B", providerId: "modelscope", name: "Qwen3.5 27B (ModelScope)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "Qwen/Qwen3-Next-80B-A3B-Instruct", providerId: "modelscope", name: "Qwen3 Next 80B (ModelScope)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "Qwen/Qwen3-Coder-30B-A3B-Instruct", providerId: "modelscope", name: "Qwen3 Coder 30B (ModelScope)", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "Qwen/Qwen3-VL-235B-A22B-Instruct", providerId: "modelscope", name: "Qwen3 VL 235B (ModelScope)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming"]), inputPer1M: 0, outputPer1M: 0 },
@@ -448,8 +462,13 @@ export const SEED_DATA: SeedData = {
     // context_window es el ctx que se pide en POST /api/load, no un tope del
     // modelo: DeepSeek va a 32K porque sus 90.9 GB de pesos dejan poco margen
     // de memoria para el KV cache.
-    { id: "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf", providerId: "hiveagents", name: "Qwen3.6 35B MoE (Recomendado)", modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "reasoning", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },
-    { id: "Qwen3.8-27B-UD-Q4_K_XL.gguf", providerId: "hiveagents", name: "Qwen3.8 27B Dense + MTP", modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "streaming", "reasoning", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },
+    // Los Qwen 3.5/3.6/3.8 son multimodales nativos (aceptan imagen), por eso llevan `vision`: así
+    // aparecen en la pestaña de imagen. Inventario verificado contra GET /api/models el 2026-11-20;
+    // se omiten a propósito los de ciberseguridad (Cyber*, StagAI, Uraion, wolfram) y las piezas de MiniMax-Music3.
+    // Sin verificar y fuera del catálogo: Ornith 1.0 9B, Sage A1.5 y Gemma 4 12B.
+    { id: "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf", providerId: "hiveagents", name: "Qwen3.6 35B MoE (Recomendado)", modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "vision", "streaming", "reasoning", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "Qwen3.8-27B-UD-Q6_K_XL.gguf", providerId: "hiveagents", name: "Qwen3.8 27B Dense + MTP", modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "vision", "streaming", "reasoning", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "Qwen3.5-9B-UD-Q8_K_XL.gguf", providerId: "hiveagents", name: "Qwen3.5 9B + MTP (ligero)", modelType: "llm", contextWindow: 50000, capabilities: JSON.stringify(["chat", "vision", "streaming", "reasoning", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },
     // Se carga por el primer shard: llama.cpp descubre los otros dos solo.
     // Sólo texto, y el más lento del inventario: ~91 s de carga y 12.8 t/s.
     { id: "DeepSeek-V4-Flash-UD-IQ2_XXS-00001-of-00003.gguf", providerId: "hiveagents", name: "DeepSeek V4 Flash 90 GB (lento)", modelType: "llm", contextWindow: 32768, capabilities: JSON.stringify(["chat", "streaming", "reasoning", "function_calling"]), inputPer1M: 0, outputPer1M: 0 },

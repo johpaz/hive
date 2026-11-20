@@ -13,6 +13,7 @@
  * @spanish crear pdf, generar pdf, escribir pdf, exportar a pdf
  */
 
+import { resolveInWorkspace, getWorkspace } from "../filesystem/workspace-guard.ts";
 import type { Tool } from "../types.ts";
 import { logger } from "../../utils/logger.ts";
 import * as path from "node:path";
@@ -106,7 +107,7 @@ export const officeEscribirPdfTool: Tool = {
     },
     required: ["ruta"],
   },
-  execute: async (params: Record<string, unknown>) => {
+  execute: async (params: Record<string, unknown>, config?: any) => {
     const ruta = params.ruta as string;
     log.debug(`Generando PDF: ${ruta}`);
 
@@ -533,7 +534,7 @@ export const officeEscribirPdfTool: Tool = {
         if (pie) dibujarBanda(pie, pg, i + 1, true);
       });
 
-      const rutaAbsoluta = path.resolve(ruta);
+      const rutaAbsoluta = path.resolve(resolveInWorkspace(ruta, getWorkspace(config)));
       const dirDestino = path.dirname(rutaAbsoluta);
       if (!fs.existsSync(dirDestino)) fs.mkdirSync(dirDestino, { recursive: true });
 

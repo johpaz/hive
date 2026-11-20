@@ -1,5 +1,5 @@
 import { Bot, GrammyError, InputFile, type Context } from "grammy";
-import { BaseChannel, type ChannelConfig, type IncomingMessage, type OutboundMessage, readOutboundImageBytes } from "./base.ts";
+import { BaseChannel, type ChannelConfig, type IncomingMessage, type OutboundMessage, readOutboundImageBytes, readOutboundDocument } from "./base.ts";
 import { logger } from "../utils/logger.ts";
 import { col, updateDoc } from "../storage/hive.ts";
 import type { ChannelDoc, UserIdentityDoc } from "../storage/collections.ts";
@@ -434,6 +434,21 @@ export class TelegramChannel extends BaseChannel {
         }
       } catch (error) {
         this.log.error(`Telegram sendPhoto failed: ${(error as Error).message}`);
+      }
+    }
+
+    if (message.document) {
+      try {
+        const doc = await readOutboundDocument(message.document);
+        if (doc) {
+          await this.bot.api.sendDocument(chatId, new InputFile(doc.bytes, doc.filename), {
+            caption: message.document.caption,
+          });
+        } else {
+          this.log.warn(`Document unavailable, skipping file send`, { sessionId });
+        }
+      } catch (error) {
+        this.log.error(`Telegram sendDocument failed: ${(error as Error).message}`);
       }
     }
 

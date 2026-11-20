@@ -168,7 +168,7 @@ const createModelsSlice = (set: any, get: any) => ({
 
   toggleModel: async (id: string, active: boolean) => {
     try {
-      await apiClient(`/api/models/${id}/toggle`, {
+      await apiClient(`/api/models/${encodeURIComponent(id)}/toggle`, {
         method: "POST",
         body: { active },
         showLoader: active ? "Activando modelo..." : "Desactivando modelo...",

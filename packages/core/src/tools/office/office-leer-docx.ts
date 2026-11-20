@@ -6,6 +6,7 @@
  * @spanish leer word, abrir docx, extraer texto de word, contenido word
  */
 
+import { resolveOfficeInput, ARTIFACT_ID_PARAM } from "./resolve-input.ts";
 import type { Tool } from "../types.ts";
 import { logger } from "../../utils/logger.ts";
 import * as fs from "node:fs";
@@ -20,6 +21,7 @@ export const officeLeerDocxTool: Tool = {
   parameters: {
     type: "object",
     properties: {
+      artifact_id: ARTIFACT_ID_PARAM,
       ruta: {
         type: "string",
         description: "Ruta absoluta o relativa al archivo .docx",
@@ -29,10 +31,12 @@ export const officeLeerDocxTool: Tool = {
         description: "Incluir contenido de tablas en la extracción (default: true)",
       },
     },
-    required: ["ruta"],
+    required: [],
   },
   execute: async (params: Record<string, unknown>) => {
-    const ruta = params.ruta as string;
+    const entrada = await resolveOfficeInput(params);
+    if ("error" in entrada) return { ok: false, error: entrada.error };
+    const ruta = entrada.ruta;
     const incluirTablas = (params.incluir_tablas as boolean) ?? true;
 
     log.debug(`Leyendo DOCX: ${ruta}`);

@@ -345,7 +345,13 @@ export function ChatMessage({ message, userName = "Tú", agentName = "Agente", i
         )}
 
         {message.document && (
-          <div className="mb-2 flex items-center gap-3 bg-white/5 border border-white/10 px-4 py-3 rounded-2xl w-fit max-w-full">
+          <a
+            href={message.document.url}
+            download={message.document.fileName}
+            target="_blank"
+            rel="noreferrer"
+            className={`mb-2 flex items-center gap-3 bg-white/5 border border-white/10 px-4 py-3 rounded-2xl w-fit max-w-full ${message.document.url ? "hover:bg-white/10 cursor-pointer" : "pointer-events-none"}`}
+          >
             <div className="h-10 w-10 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
               <FileText className="h-6 w-6 text-blue-400" />
             </div>
@@ -353,7 +359,7 @@ export function ChatMessage({ message, userName = "Tú", agentName = "Agente", i
               <span className="text-sm font-medium text-white truncate">{message.document.fileName || "Documento"}</span>
               <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider">{message.document.mimeType?.split('/')[1] || "DOC"}</span>
             </div>
-          </div>
+          </a>
         )}
 
         {showProcess && (

@@ -64,7 +64,7 @@ import { handleGetRuntimeStatus } from "./routes/runtime";
 import { handleGetEthics, handleActivateEthics, handleDeleteEthics } from "./routes/ethics";
 import { handleGetTools, handleActivateTool, handleUpdateTool } from "./routes/tools";
 import { handleGetTasks, handleUpdateTask } from "./routes/tasks";
-import { setChannelSendFn } from "./channel-notify";
+import { setChannelSendFn, setChannelFileFn } from "./channel-notify";
 import {
   acknowledgeNotification,
   listPendingNotifications,
@@ -100,7 +100,7 @@ import { handleGetChannels, handleGetChannelConfig, handleActivateChannel, handl
 import { handleGetMcpServers, handleGetMcpServerDetail, handleCreateMcpServer, handleUpdateMcpServer, handleDeleteMcpServer, handleToggleMcpServer, handleGetMCPServerTools } from "./routes/mcp";
 import { handleGetModels, handleCreateModel, handleToggleModel, handleGetModelsConfig, handleUpdateModelsConfig, handleDeleteModel, handleUpdateModel } from "./routes/models";
 import { handleGetVoiceProviders, handleGetConfiguredVoiceProviders, handleSaveVoiceProviderKey, handleTestVoice, handleGetChannelVoice, handleUpdateChannelVoice, handleGetVoiceProviderVoices } from "./routes/voice";
-import { handleGetVisionProviders, handleGetChannelVision, handleUpdateChannelVision, handleOcrImage } from "./routes/multimodal";
+import { handleGetVisionProviders, handleGetChannelVision, handleUpdateChannelVision, handleOcrImage, handleGetVisionAnalyzer, handleSetVisionAnalyzer } from "./routes/multimodal";
 import { handleGetLocalTTSStatus, handleGetLocalTTSLogs, handleInstallLocalTTS, handleStartLocalTTS, handleStopLocalTTS, handleSpeakLocalTTS, handleGetAvailableModels, handleGetInstalledVoices, handleDownloadModel, handleGetDownloadLogs, initializeLocalTTS } from "./routes/tts-local";
 import { handleCreateMeeting, handleListMeetings, handleGetMeeting, handleAddMeetingSegment, handleStopMeeting, handleGenerateMeetingReport, handleDownloadMeetingReport } from "./routes/meeting";
 import { handleDownloadArtifact } from "./routes/artifacts";
@@ -260,6 +260,21 @@ export async function startGateway(
         type: metadata?.notificationId ? "notification" : "progress",
         sessionId,
         notificationId: metadata?.notificationId,
+      }, metadata?.accountId);
+    });
+    setChannelFileFn(async (channel, sessionId, file, metadata) => {
+      await channelManager.send(channel, sessionId, {
+        type: "message",
+        sessionId,
+        content: "",
+        document: {
+          artifactId: file.artifactId,
+          // La web descarga por HTTP; los canales de servidor leen el artifact del disco.
+          url: `/api/artifacts/${file.artifactId}/download?name=${encodeURIComponent(file.filename)}`,
+          filename: file.filename,
+          mimeType: file.mimeType,
+          caption: file.caption,
+        },
       }, metadata?.accountId);
     });
     setNarrationDelivery(async (event) => {
@@ -540,25 +555,33 @@ export async function startGateway(
 
       if (message.document) {
         try {
-          const docInput = multimodalService.normalizeDocumentFromChannel(message.channel, message.document);
-          const ocrProvider = visionConfig.ocrProvider || "openai";
-          log.info(`📄 Document detected, extracting text via OCR (${ocrProvider})...`);
-          const docImage: import("../multimodal/types").ImageInput = {
-            type: docInput.type,
-            data: docInput.data,
-            mimeType: docInput.mimeType,
-            caption: docInput.fileName,
-          };
-          const ocrText = await multimodalService.ocrImage(docImage, ocrProvider);
-          messageContent = ocrText
-            ? `[Documento adjunto: ${docInput.fileName || "unknown"}]\n${ocrText}\n\n${messageContent || ""}`
-            : messageContent || "";
+          const { ingestDocument, formatAttachmentManifest } = await import("../multimodal/attachment-ingest");
+          const att = await ingestDocument({
+            ...message.document,
+            userId: `${message.channel}:${message.peerId}`,
+          });
+          let manifest = formatAttachmentManifest(att);
+          if (att.needsVision && att.kind === "pdf") {
+            // PDF escaneado: sin texto nativo, se apoya en el modelo de visión como antes.
+            try {
+              const ocrText = await multimodalService.ocrImage({
+                type: "base64",
+                data: Buffer.from(await Bun.file(att.path).arrayBuffer()).toString("base64"),
+                mimeType: att.mimeType,
+                caption: att.fileName,
+              }, visionConfig.ocrProvider || "openai");
+              if (ocrText) manifest += `\nContenido leído por visión:\n${ocrText}`;
+            } catch (ocrErr) {
+              log.warn(`📄 OCR de respaldo falló: ${(ocrErr as Error).message}`);
+            }
+          }
+          messageContent = `${manifest}\n\n${messageContent || ""}`;
           inputType = "document";
-          log.info(`📄 Document OCR result: ${ocrText.substring(0, 100)}...`);
+          log.info(`📄 Documento ingerido: ${att.fileName} (${att.kind}, ${att.size} bytes)`);
         } catch (docError) {
           log.error(`❌ Document processing failed: ${(docError as Error).message}`);
           await channelManager.send(message.channel, message.sessionId, {
-            content: `⚠️ Error al procesar el documento: ${(docError as Error).message}`,
+            content: `⚠️ No pude procesar el documento: ${(docError as Error).message}`,
           });
         }
       }
@@ -1912,6 +1935,14 @@ export async function startGateway(
         // ── Multimodal / Vision API ─────────────────────────────────────────
         if (url.pathname === "/api/multimodal/vision-providers" && req.method === "GET") {
           return await handleGetVisionProviders(req, addCorsHeaders)
+        }
+
+        if (url.pathname === "/api/multimodal/analyzer" && req.method === "GET") {
+          return await handleGetVisionAnalyzer(req, addCorsHeaders)
+        }
+
+        if (url.pathname === "/api/multimodal/analyzer" && req.method === "PUT") {
+          return await handleSetVisionAnalyzer(req, addCorsHeaders)
         }
 
         if (url.pathname === "/api/multimodal/ocr" && req.method === "POST") {

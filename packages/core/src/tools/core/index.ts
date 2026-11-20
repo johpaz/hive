@@ -362,6 +362,84 @@ export const notifyTool: Tool = {
   },
 };
 
+// ─── send_file ───────────────────────────────────────────────────────────────
+
+const SEND_FILE_MIME: Record<string, string> = {
+  pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  csv: "text/csv", txt: "text/plain", md: "text/markdown", json: "application/json",
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", zip: "application/zip",
+}
+const SEND_FILE_MAX_BYTES = 50 * 1024 * 1024
+
+export const sendFileTool: Tool = {
+  name: "send_file",
+  description:
+    "Send a file (Word, Excel, PDF, PowerPoint, image, text…) to the user in the chat they are writing from. Use it to hand back a document you created or corrected. Spanish: enviar archivo, enviar documento, devolver archivo corregido, mandar el excel/word/pdf al usuario",
+  parameters: {
+    type: "object",
+    properties: {
+      ruta: { type: "string", description: "Path of the file to send (inside the workspace, or the path of an attachment)" },
+      artifact_id: { type: "string", description: "Alternative to 'ruta': artifact_id of a file already stored" },
+      nombre: { type: "string", description: "File name the user will see (default: the file's own name)" },
+      mensaje: { type: "string", description: "Short caption shown with the file" },
+    },
+    required: [],
+  },
+  execute: async (params: Record<string, unknown>, config?: any) => {
+    const fs = await import("node:fs");
+    const nodePath = await import("node:path");
+    const { createArtifact } = await import("../../artifacts/store.ts");
+    const { resolveInWorkspace, getWorkspace } = await import("../filesystem/workspace-guard.ts");
+    const { sendFileToUserChannel } = await import("../../gateway/channel-notify");
+
+    const channel = (config?.configurable?.channel as string) ?? "webchat";
+    const userId = (config?.configurable?.user_id as string) ?? "";
+    const threadId = config?.configurable?.thread_id as string | undefined;
+
+    let artifactId = typeof params.artifact_id === "string" ? params.artifact_id.trim() : "";
+    let filename = typeof params.nombre === "string" ? params.nombre.trim() : "";
+    let mimeType = "application/octet-stream";
+
+    if (artifactId) {
+      const { col } = await import("../../storage/hive.ts");
+      const entry = await (await col<import("../../storage/collections.ts").ArtifactDoc>("artifacts")).get(artifactId);
+      if (!entry || entry.doc.status !== "active") return { ok: false, error: `El archivo ${artifactId} no existe o expiró.` };
+      mimeType = entry.doc.mime_type;
+      if (!filename) filename = nodePath.basename(entry.doc.path);
+    } else {
+      const ruta = typeof params.ruta === "string" ? params.ruta.trim() : "";
+      if (!ruta) return { ok: false, error: "Indica 'ruta' o 'artifact_id'." };
+      let abs: string;
+      try {
+        abs = resolveInWorkspace(ruta, getWorkspace(config));
+      } catch (err) {
+        return { ok: false, error: (err as Error).message };
+      }
+      abs = nodePath.resolve(abs);
+      if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) return { ok: false, error: `No existe el archivo: ${abs}` };
+      const size = fs.statSync(abs).size;
+      if (size === 0) return { ok: false, error: "El archivo está vacío." };
+      if (size > SEND_FILE_MAX_BYTES) return { ok: false, error: `El archivo pesa ${(size / 1048576).toFixed(1)} MB; el máximo es 50 MB.` };
+      const ext = nodePath.extname(abs).replace(".", "").toLowerCase();
+      mimeType = SEND_FILE_MIME[ext] ?? "application/octet-stream";
+      if (!filename) filename = nodePath.basename(abs);
+      const artifact = await createArtifact({
+        bytes: fs.readFileSync(abs), mimeType, kind: "outgoing", userId: userId || "unknown", extension: ext,
+      });
+      artifactId = artifact.id;
+    }
+
+    const caption = typeof params.mensaje === "string" ? params.mensaje : undefined;
+    log.info(`[send_file] ${channel}/${userId}: ${filename} (${mimeType})`);
+    const result = await sendFileToUserChannel(channel, userId, { artifactId, filename, mimeType, caption }, { threadId });
+    if (!result.ok) return { ok: false, error: `No se pudo enviar el archivo: ${result.error}` };
+    return { ok: true, sent: filename };
+  },
+};
+
 // ─── save_note (scratchpad) ──────────────────────────────────────────────────
 
 export const saveNoteTool: Tool = {
@@ -504,5 +582,5 @@ export const conversationReadTool: Tool = {
 };
 
 export function createTools(): Tool[] {
-  return [searchKnowledgeTool, notifyTool, saveNoteTool, reportProgressTool, conversationReadTool];
+  return [searchKnowledgeTool, notifyTool, sendFileTool, saveNoteTool, reportProgressTool, conversationReadTool];
 }

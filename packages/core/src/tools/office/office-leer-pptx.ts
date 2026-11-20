@@ -6,6 +6,7 @@
  * @spanish leer powerpoint, abrir pptx, extraer texto de presentacion, contenido slides
  */
 
+import { resolveOfficeInput, ARTIFACT_ID_PARAM } from "./resolve-input.ts";
 import type { Tool } from "../types.ts";
 import { logger } from "../../utils/logger.ts";
 import * as fs from "node:fs";
@@ -20,6 +21,7 @@ export const officeLeerPptxTool: Tool = {
   parameters: {
     type: "object",
     properties: {
+      artifact_id: ARTIFACT_ID_PARAM,
       ruta: {
         type: "string",
         description: "Ruta absoluta o relativa al archivo .pptx",
@@ -30,10 +32,12 @@ export const officeLeerPptxTool: Tool = {
           "Número de diapositiva específica a leer (1-indexed, default: todas)",
       },
     },
-    required: ["ruta"],
+    required: [],
   },
   execute: async (params: Record<string, unknown>) => {
-    const ruta = params.ruta as string;
+    const entrada = await resolveOfficeInput(params);
+    if ("error" in entrada) return { ok: false, error: entrada.error };
+    const ruta = entrada.ruta;
     const soloSlide = params.solo_diapositiva as number | undefined;
 
     log.debug(`Leyendo PPTX: ${ruta}`);

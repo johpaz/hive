@@ -8,7 +8,7 @@ import makeWASocket, {
   type WAMessage,
 } from "@whiskeysockets/baileys";
 import type { ChannelConfig, IncomingMessage, OutboundMessage } from "./base.ts";
-import { BaseChannel, readOutboundImageBytes } from "./base.ts";
+import { BaseChannel, readOutboundImageBytes, readOutboundDocument } from "./base.ts";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import * as path from "node:path";
 import { homedir } from "node:os";
@@ -500,6 +500,21 @@ export class WhatsAppChannel extends BaseChannel {
         }
       } catch (error) {
         this.log.error(`Failed to send WhatsApp image: ${(error as Error).message}`);
+      }
+    }
+
+    if (message.document) {
+      try {
+        const doc = await readOutboundDocument(message.document);
+        if (doc) {
+          await this.socket.sendMessage(jid, {
+            document: doc.bytes, fileName: doc.filename, mimetype: doc.mimeType, caption: message.document.caption,
+          });
+        } else {
+          this.log.warn(`Document unavailable, skipping file send`, { sessionId });
+        }
+      } catch (error) {
+        this.log.error(`Failed to send WhatsApp document: ${(error as Error).message}`);
       }
     }
 

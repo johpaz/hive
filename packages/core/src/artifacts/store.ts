@@ -14,7 +14,11 @@ import type { ArtifactDoc } from "../storage/collections";
 
 const ARTIFACT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
-function extensionFor(mimeType: string): string {
+function extensionFor(mimeType: string, hint?: string): string {
+  // Un adjunto del usuario conserva su extensión real (.docx, .xlsx, .pdf…): las
+  // tools office_leer_* deciden por extensión y un ".bin" no se abriría.
+  const clean = hint?.toLowerCase().replace(/^\./, "");
+  if (clean && /^[a-z0-9]{1,8}$/.test(clean)) return clean;
   if (mimeType === "image/png") return "png";
   if (mimeType === "image/jpeg") return "jpg";
   if (mimeType === "image/webp") return "webp";
@@ -49,6 +53,8 @@ export async function createArtifact(input: {
   runId?: string | null;
   taskId?: string | null;
   rootDir?: string;
+  /** Extensión original del archivo (sin punto), p. ej. "docx". */
+  extension?: string;
   width?: number | null;
   height?: number | null;
   now?: number;
@@ -60,7 +66,7 @@ export async function createArtifact(input: {
   const day = new Date(now).toISOString().slice(0, 10);
   const dir = join(root, "artifacts", day);
   mkdirSync(dir, { recursive: true });
-  const path = join(dir, `${id}.${extensionFor(mimeType)}`);
+  const path = join(dir, `${id}.${extensionFor(mimeType, input.extension)}`);
   writeFileSync(path, input.bytes, { flag: "wx" });
 
   const doc: ArtifactDoc = {

@@ -6,6 +6,7 @@
  * @spanish leer excel, abrir xlsx, extraer datos de excel, hojas excel
  */
 
+import { resolveOfficeInput, ARTIFACT_ID_PARAM } from "./resolve-input.ts";
 import type { Tool } from "../types.ts";
 import { logger } from "../../utils/logger.ts";
 import * as fs from "node:fs";
@@ -21,6 +22,7 @@ export const officeLeerXlsxTool: Tool = {
   parameters: {
     type: "object",
     properties: {
+      artifact_id: ARTIFACT_ID_PARAM,
       ruta: {
         type: "string",
         description: "Ruta absoluta o relativa al archivo .xlsx",
@@ -40,10 +42,12 @@ export const officeLeerXlsxTool: Tool = {
           "Rango de celdas a leer en notación Excel (ej: 'A1:D10', default: toda la hoja)",
       },
     },
-    required: ["ruta"],
+    required: [],
   },
   execute: async (params: Record<string, unknown>) => {
-    const ruta = params.ruta as string;
+    const entrada = await resolveOfficeInput(params);
+    if ("error" in entrada) return { ok: false, error: entrada.error };
+    const ruta = entrada.ruta;
     const hojaFiltro = params.hoja as string | undefined;
     const incluirEncabezados = (params.incluir_encabezados as boolean) ?? true;
     const rango = params.rango as string | undefined;

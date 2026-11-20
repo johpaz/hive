@@ -1,3 +1,5 @@
+import { readFileSync, existsSync } from "node:fs";
+import { basename } from "node:path";
 import { readArtifactBytes } from "../artifacts/store";
 
 /**
@@ -14,6 +16,26 @@ export async function readOutboundImageBytes(
     if (artifact) return artifact.bytes;
   }
   if (image.base64) return Buffer.from(image.base64, "base64");
+  return null;
+}
+
+/**
+ * Resuelve un OutboundMessage.document a bytes + nombre para los canales que
+ * suben el archivo directamente. Prefiere el artifact, luego la ruta en disco y
+ * al final el base64 en línea.
+ */
+export async function readOutboundDocument(
+  doc: NonNullable<OutboundMessage["document"]>,
+): Promise<{ bytes: Buffer; filename: string; mimeType: string } | null> {
+  const filename = doc.filename || (doc.path ? basename(doc.path) : "documento");
+  if (doc.artifactId) {
+    const artifact = await readArtifactBytes(doc.artifactId);
+    if (artifact) return { bytes: artifact.bytes, filename, mimeType: doc.mimeType || artifact.mimeType };
+  }
+  if (doc.path && existsSync(doc.path)) {
+    return { bytes: readFileSync(doc.path), filename, mimeType: doc.mimeType || "application/octet-stream" };
+  }
+  if (doc.base64) return { bytes: Buffer.from(doc.base64, "base64"), filename, mimeType: doc.mimeType || "application/octet-stream" };
   return null;
 }
 
@@ -46,11 +68,15 @@ export interface OutboundMessage {
     mimeType?: string;
     caption?: string;
   };
+  /** Archivo para el usuario (Word, Excel, PDF…). `artifactId` o `path` los leen los canales del servidor; `url` es para la web. */
   document?: {
+    artifactId?: string;
+    path?: string;
     url?: string;
     base64?: string;
     mimeType?: string;
     filename?: string;
+    caption?: string;
   };
   status?: {
     state: string;

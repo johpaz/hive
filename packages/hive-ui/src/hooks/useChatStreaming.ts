@@ -10,6 +10,18 @@ function imageAttachment(data: any): Pick<Message, "image"> | Record<string, nev
   return { image: { url: `${getApiBaseUrl()}${data.image}`, mimeType: data.imageMimeType } };
 }
 
+/** data.document llega de send_file: url relativa /api/artifacts/:id/download?name=… — se completa con la base del gateway. */
+function documentAttachment(data: any): Pick<Message, "document"> | Record<string, never> {
+  if (!data.document?.url) return {};
+  return {
+    document: {
+      url: `${getApiBaseUrl()}${data.document.url}`,
+      fileName: data.document.filename,
+      mimeType: data.document.mimeType,
+    },
+  };
+}
+
 /**
  * @param threadId Conversación abierta. Los frames del gateway vienen marcados con
  *   la suya: mientras uno está en vuelo el usuario puede cambiar de conversación
@@ -120,6 +132,7 @@ export function useChatStreaming(agentId: string, threadId: string) {
           timestamp: data.timestamp || existingMessage.timestamp,
           ...(data.audio && { audio: { base64: data.audio, mimeType: data.mimeType } }),
           ...imageAttachment(data),
+          ...documentAttachment(data),
         });
       } else {
         addMessage({
@@ -131,6 +144,7 @@ export function useChatStreaming(agentId: string, threadId: string) {
           timestamp: data.timestamp || new Date().toISOString(),
           ...(data.audio && { audio: { base64: data.audio, mimeType: data.mimeType } }),
           ...imageAttachment(data),
+          ...documentAttachment(data),
         });
       }
 

@@ -14,6 +14,7 @@
  * @spanish crear excel, generar xlsx, escribir excel, exportar a xlsx
  */
 
+import { resolveInWorkspace, getWorkspace } from "../filesystem/workspace-guard.ts";
 import type { Tool } from "../types.ts";
 import { logger } from "../../utils/logger.ts";
 import * as path from "node:path";
@@ -123,7 +124,7 @@ export const officeEscribirXlsxTool: Tool = {
     },
     required: ["ruta", "hojas"],
   },
-  execute: async (params: Record<string, unknown>) => {
+  execute: async (params: Record<string, unknown>, config?: any) => {
     const ruta = params.ruta as string;
     const hojasInput = params.hojas as HojaInput[];
 
@@ -247,7 +248,7 @@ export const officeEscribirXlsxTool: Tool = {
         totalFilas += Math.max(0, matriz.length - 1);
       }
 
-      const rutaAbsoluta = path.resolve(ruta);
+      const rutaAbsoluta = path.resolve(resolveInWorkspace(ruta, getWorkspace(config)));
       const dirDestino = path.dirname(rutaAbsoluta);
       if (!fs.existsSync(dirDestino)) fs.mkdirSync(dirDestino, { recursive: true });
 

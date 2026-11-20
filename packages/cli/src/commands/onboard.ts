@@ -209,8 +209,9 @@ const AVAILABLE_MODELS: Record<string, Array<{ value: string; label: string; hin
     { value: "MiniMax-M2.7", label: "MiniMax M2.7", hint: "200K contexto" },
   ],
   hiveagents: [
-    { value: "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf", label: "Qwen3.6 35B MoE (Recomendado)", hint: "MoE 22.7GB — el más rápido: 62.7 t/s, carga en 8s" },
-    { value: "Qwen3.8-27B-UD-Q4_K_XL.gguf", label: "Qwen3.8 27B Dense + MTP", hint: "Denso 17.9GB — 25.3 t/s, carga en 8s" },
+    { value: "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf", label: "Qwen3.6 35B MoE (Recomendado)", hint: "MoE 22.7GB — el más rápido: 62.7 t/s, con visión" },
+    { value: "Qwen3.8-27B-UD-Q6_K_XL.gguf", label: "Qwen3.8 27B Dense + MTP", hint: "Denso 25.9GB, con visión" },
+    { value: "Qwen3.5-9B-UD-Q8_K_XL.gguf", label: "Qwen3.5 9B + MTP", hint: "Denso 13.2GB, ligero, con visión" },
     { value: "DeepSeek-V4-Flash-UD-IQ2_XXS-00001-of-00003.gguf", label: "DeepSeek V4 Flash 90 GB", hint: "MoE 90.9GB, sólo texto — 12.8 t/s y ~91s de carga" },
   ],
 };
