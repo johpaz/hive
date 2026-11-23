@@ -475,6 +475,10 @@ export async function syncToolCatalogToIndex(tools?: ToolDescriptor[]): Promise<
         for (const row of dbTools) {
             if (catalogByName.has(row.name)) continue
 
+            // Las tools de Google solo se ofrecen con la cuenta conectada: sin conexión
+            // (o sin credenciales) no hay ejecutor y el modelo las descubriría para nada.
+            if (row.category === "google" && !row.active) continue
+
             // Check if this is a legacy name with different separator
             // (e.g. "cron_create" vs "cron.create" — seed was wrong, tools use dots)
             const altName = row.name.includes("_")

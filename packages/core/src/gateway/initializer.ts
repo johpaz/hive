@@ -1,4 +1,6 @@
 import type { Config } from "../config/loader";
+import { initGoogleFromEnv } from "./google-host.ts";
+import { syncGoogleCapabilities } from "../storage/google-capabilities.ts";
 import { logger } from "../utils/logger";
 import { ensureHiveDb } from "../storage/bootstrap";
 import { col, fromIndexable } from "../storage/hive";
@@ -205,6 +207,9 @@ export async function initializeGateway(
   config: Config,
   pidFile: string
 ): Promise<GatewayInitializationResult> {
+  // Google es opt-in por entorno: debe estar configurado antes de armar el loadout de tools.
+  initGoogleFromEnv();
+
   // Setup mode: 0 usuarios (ensureHiveDb() ya fue llamado antes en server.ts)
   let setupMode = false;
   try {
@@ -236,6 +241,9 @@ export async function initializeGateway(
 
     // 3. Cargar configuración del agente desde DB
     const { provider, model } = await loadAgentConfigFromDB(config);
+
+    // 3b. Los agentes y tools de Google solo están activos mientras haya cuenta conectada.
+    await syncGoogleCapabilities("boot").catch((err) => log.warn(`[initialize] google: ${(err as Error).message}`));
 
     // 4. Sync HiveDB capability index (tools + skills + playbook + mcp_tools)
     log.info("[initialize] Syncing HiveDB capability index...")

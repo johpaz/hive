@@ -38,6 +38,10 @@ import * as office from "./office/index.ts";
 // API (1) - HTTP client for REST APIs
 import * as api from "./api/index.ts";
 
+// Google Workspace (21) - Gmail, Calendar, Drive. Sólo si el host configuró Google.
+import * as google from "./google/index.ts";
+import { isGoogleConfigured } from "../google/config.ts";
+
 /**
  * Creates all tools with proper configuration
  */
@@ -73,6 +77,9 @@ export function createAllTools(config: Config): Tool[] {
     // API (1)
     ...api.createTools(),
 
+    // GOOGLE (21) — opt-in: sin credenciales no hay tools que fallen en silencio
+    ...(isGoogleConfigured() ? google.createTools() : []),
+
   ];
 }
 
@@ -101,6 +108,8 @@ export function createToolsByCategory(category: string, config: Config): Tool[] 
       return office.createTools();
     case "api":
       return api.createTools();
+    case "google":
+      return google.createTools();
     default:
       return [];
   }
@@ -108,6 +117,14 @@ export function createToolsByCategory(category: string, config: Config): Tool[] 
 
 // Export types
 export * from "./types.ts";
+
+export {
+  gmailSearchTool, gmailReadTool, gmailThreadTool, gmailSendTool, gmailReplyTool, gmailForwardTool,
+  gmailDraftSaveTool, gmailDraftListTool, gmailDraftSendTool, gmailDraftDeleteTool,
+  gmailModifyTool, gmailLabelsTool, gmailAttachmentTool,
+  gcalListEventsTool, gcalCreateEventTool, gcalUpdateEventTool, gcalDeleteEventTool, gcalFreebusyTool,
+  gdriveSearchTool, gdriveDownloadTool, gdriveUploadTool,
+} from "./google/index.ts";
 
 // Export tools by category (avoiding createTools name collisions)
 // Use category-specific imports or createAllTools/createToolsByCategory

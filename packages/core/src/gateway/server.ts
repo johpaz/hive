@@ -53,7 +53,9 @@ import {
   handleRealtimeOpen,
 } from "./realtime/index";
 import { handleSetupStatus, handleVerifyProvider, handleCompleteSetup, handleSetupProviders, handleSetupEthics, handleSetupOllamaModels } from "./routes/setup";
-import { handleAuthStatus, handleLogin, handleSetupCredentials, handleChangePassword, handleRecover, handleDisableAuth, handleRecoveryKey } from "./routes/auth";
+import { handleAuthStatus, handleLogin, handleSetupCredentials, handleChangePassword, handleRecover, handleDisableAuth, handleRecoveryKey, isAuthEnabled } from "./routes/auth";
+import { handleGoogleStatus, handleGoogleLoginStart, handleGoogleLoginStartExternal, handleGoogleTicket, handleGoogleConnect, handleGoogleCallback, handleGoogleExchange, handleGoogleDisconnect } from "./routes/google";
+import { initGoogleFromEnv } from "./google-host.ts";
 import { resolveUserId } from "../storage/onboarding";
 import { handleGetAgents, handleCreateAgent, handleUpdateAgent, handleDeleteAgent, handleGetAgentProposals } from "./routes/agents";
 import { handleGetProviders, handleCreateProvider, handleToggleProvider, handleUpdateProvider, handleSyncProviderModels, handleGetProviderAvailableModels, handleLoadHiveAgentsModel, handleGetHiveAgentsModelStatus } from "./routes/providers";
@@ -776,6 +778,12 @@ export async function startGateway(
     if (url.pathname === "/api/auth/status") return true;
     if (url.pathname === "/api/auth/login") return true;
     if (url.pathname === "/api/auth/recover") return true;
+    // Google: el inicio del flujo, el callback de Google y el canje del código son públicos
+    if (url.pathname === "/api/auth/google/start") return true;
+    if (url.pathname === "/api/auth/google/exchange") return true;
+    if (url.pathname === "/api/auth/google/start-external") return true;
+    if (url.pathname === "/api/google/ticket") return true;
+    if (url.pathname === "/api/google/oauth/callback") return true;
 
     // Users endpoint is public when no credentials configured (matches /api/auth/status behavior)
     // This allows the UI to load user data when login is not configured yet
@@ -783,7 +791,7 @@ export async function startGateway(
       try {
         const usersCol = await col<UserDoc>("users");
         const user = (await usersCol.scan({ limit: 1 }))[0]?.doc;
-        const hasCredentials = !!(user?.email && user?.password_hash);
+        const hasCredentials = isAuthEnabled(user);
         // Allow access if no credentials configured
         if (!hasCredentials) return true;
       } catch {
@@ -797,7 +805,7 @@ export async function startGateway(
     try {
       const usersCol = await col<UserDoc>("users");
       const user = (await usersCol.scan({ limit: 1 }))[0]?.doc;
-      const hasCredentials = !!(user?.email && user?.password_hash);
+      const hasCredentials = isAuthEnabled(user);
       if (!hasCredentials) return true;
     } catch {
       // Si falla la consulta, caemos al chequeo de token
@@ -1166,6 +1174,31 @@ export async function startGateway(
         // GET /api/auth/status
         if (url.pathname === "/api/auth/status" && req.method === "GET") {
           return handleAuthStatus(req, addCorsHeaders);
+        }
+        // ── Google ───────────────────────────────────────────────────────────
+        if (url.pathname === "/api/auth/google/start" && req.method === "GET") {
+          return handleGoogleLoginStart(req, addCorsHeaders);
+        }
+        if (url.pathname === "/api/auth/google/start-external" && req.method === "POST") {
+          return handleGoogleLoginStartExternal(req, addCorsHeaders);
+        }
+        if (url.pathname === "/api/google/ticket" && req.method === "GET") {
+          return handleGoogleTicket(req, addCorsHeaders);
+        }
+        if (url.pathname === "/api/auth/google/exchange" && req.method === "POST") {
+          return handleGoogleExchange(req, addCorsHeaders);
+        }
+        if (url.pathname === "/api/google/oauth/callback" && req.method === "GET") {
+          return handleGoogleCallback(req);
+        }
+        if (url.pathname === "/api/google/status" && req.method === "GET") {
+          return handleGoogleStatus(req, addCorsHeaders);
+        }
+        if (url.pathname === "/api/google/connect" && req.method === "POST") {
+          return handleGoogleConnect(req, addCorsHeaders);
+        }
+        if (url.pathname === "/api/google/disconnect" && req.method === "POST") {
+          return handleGoogleDisconnect(req, addCorsHeaders);
         }
         // POST /api/auth/login
         if (url.pathname === "/api/auth/login" && req.method === "POST") {

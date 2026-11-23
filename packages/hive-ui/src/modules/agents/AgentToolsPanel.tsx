@@ -31,6 +31,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   office: "Office",
   mcp: "MCP",
   core: "Sistema",
+  google: "Google",
 };
 
 function inferCategory(id: string) {
@@ -41,6 +42,7 @@ function inferCategory(id: string) {
   if (id.startsWith("mcp") || id.includes("_mcp")) return "mcp";
   if (id.startsWith("canvas_") || id.startsWith("a2ui_")) return "canvas";
   if (id.startsWith("cli_")) return "cli";
+  if (id.startsWith("gmail_") || id.startsWith("gcal_") || id.startsWith("gdrive_")) return "google";
   if (id.includes("agent") || id.includes("task_") || id.includes("acceptance")) return "agents";
   return "core";
 }

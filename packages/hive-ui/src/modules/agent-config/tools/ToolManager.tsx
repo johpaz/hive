@@ -19,7 +19,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   cron: "Cron",
   cli: "CLI",
   agents: "Agentes",
-
+  google: "Google",
 };
 
 export function ToolManager() {
@@ -103,7 +103,7 @@ export function ToolManager() {
 
       {/* ── Tabs/Categorías ────────────────────────────────────────────────── */}
       <div className="flex items-center gap-1.5 p-1 bg-white/5 rounded-2xl w-fit border border-white/5">
-        {(["all", "filesystem", "web", "cron", "cli", "agents", "a2ui"] as const).map(cat => (
+        {(["all", "filesystem", "web", "cron", "cli", "agents", "a2ui", "google"] as const).map(cat => (
           <button
             key={cat}
             onClick={() => setActiveTab(cat)}

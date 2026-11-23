@@ -20,6 +20,9 @@ export interface UserDoc {
   master_key_hash: string | null
   email: string | null
   password_hash: string | null
+  /** `sub` de la cuenta de Google vinculada: habilita «Continuar con Google». */
+  google_sub?: string | null
+  google_email?: string | null
   preferred_cron_channel: string
   created_at: number
 }

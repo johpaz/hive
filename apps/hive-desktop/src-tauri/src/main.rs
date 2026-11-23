@@ -51,6 +51,41 @@ fn available_port() -> Result<u16, String> {
         })
 }
 
+/// Credenciales OAuth de Google que el instalador lleva «de fábrica».
+///
+/// El escritorio no tiene `.env`, así que se compilan con `HIVE_GOOGLE_CLIENT_ID`
+/// y `HIVE_GOOGLE_CLIENT_SECRET`. Deben ser de un cliente OAuth de tipo
+/// «Aplicación de escritorio»: Google no trata su secreto como confidencial y
+/// acepta cualquier puerto de loopback, que aquí cambia si el 18790 está ocupado.
+/// Un valor ya presente en el entorno (para desarrollo) tiene prioridad.
+const GOOGLE_CLIENT_ID_BUILT: Option<&str> = option_env!("HIVE_GOOGLE_CLIENT_ID");
+const GOOGLE_CLIENT_SECRET_BUILT: Option<&str> = option_env!("HIVE_GOOGLE_CLIENT_SECRET");
+
+fn pick_google_value(runtime: Option<String>, built: Option<&str>) -> Option<String> {
+    let usable = |v: &str| !v.trim().is_empty();
+    match runtime {
+        Some(v) if usable(&v) => Some(v),
+        _ => built.filter(|v| usable(v)).map(str::to_string),
+    }
+}
+
+/// Pares (nombre, valor) a pasar al gateway; vacío si no hay credenciales completas.
+fn google_gateway_env(
+    runtime_id: Option<String>,
+    runtime_secret: Option<String>,
+    built_id: Option<&str>,
+    built_secret: Option<&str>,
+) -> Vec<(&'static str, String)> {
+    match (
+        pick_google_value(runtime_id, built_id),
+        pick_google_value(runtime_secret, built_secret),
+    ) {
+        (Some(id), Some(secret)) => vec![("GOOGLE_CLIENT_ID", id), ("GOOGLE_CLIENT_SECRET", secret)],
+        // Un id sin secreto (o al revés) no sirve: mejor sin Google que a medias.
+        _ => Vec::new(),
+    }
+}
+
 fn spawn_gateway(
     app: &AppHandle,
     port: u16,
@@ -58,7 +93,7 @@ fn spawn_gateway(
 ) -> Result<(tauri::async_runtime::Receiver<CommandEvent>, CommandChild), String> {
     let port_text = port.to_string();
     let home_text = hive_home.to_string_lossy().to_string();
-    let command = app
+    let mut command = app
         .shell()
         // Tauri copies external binaries next to the desktop executable in
         // installed bundles. The source path still lives under `binaries/`,
@@ -72,6 +107,15 @@ fn spawn_gateway(
         .env("HIVE_GATEWAY_CHILD", "1")
         .env("NO_BROWSER", "1")
         .env("NODE_ENV", "production");
+
+    for (name, value) in google_gateway_env(
+        std::env::var("GOOGLE_CLIENT_ID").ok(),
+        std::env::var("GOOGLE_CLIENT_SECRET").ok(),
+        GOOGLE_CLIENT_ID_BUILT,
+        GOOGLE_CLIENT_SECRET_BUILT,
+    ) {
+        command = command.env(name, value);
+    }
 
     command
         .spawn()
@@ -985,6 +1029,26 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    use super::google_gateway_env;
+
+    #[test]
+    fn google_env_needs_both_values_and_prefers_the_runtime_environment() {
+        // Compiladas: se usan.
+        let built = google_gateway_env(None, None, Some("id-b"), Some("sec-b"));
+        assert_eq!(built, vec![("GOOGLE_CLIENT_ID", "id-b".to_string()), ("GOOGLE_CLIENT_SECRET", "sec-b".to_string())]);
+        // El entorno en ejecución manda sobre lo compilado.
+        let over = google_gateway_env(Some("id-r".into()), Some("sec-r".into()), Some("id-b"), Some("sec-b"));
+        assert_eq!(over[0].1, "id-r");
+        assert_eq!(over[1].1, "sec-r");
+        // Mezcla: id del entorno, secreto compilado.
+        let mix = google_gateway_env(Some("id-r".into()), None, Some("id-b"), Some("sec-b"));
+        assert_eq!((mix[0].1.as_str(), mix[1].1.as_str()), ("id-r", "sec-b"));
+        // Sin nada, o con un valor vacío o a medias, no se pasa nada.
+        assert!(google_gateway_env(None, None, None, None).is_empty());
+        assert!(google_gateway_env(None, None, Some(""), Some("sec")).is_empty());
+        assert!(google_gateway_env(Some("  ".into()), None, Some("id"), None).is_empty());
+    }
+
     use super::{copy_tree, gateway_response_is_healthy};
     use std::path::PathBuf;
 

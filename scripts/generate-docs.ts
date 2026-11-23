@@ -3,6 +3,12 @@ import { dirname, relative, resolve } from "node:path";
 import { YAML } from "bun";
 import { createAllTools, createToolsByCategory } from "../packages/core/src/tools/index.ts";
 import { createSeedCatalogAgents } from "../packages/core/src/agent/agent-catalog.ts";
+import { configureGoogle } from "../packages/core/src/google/config.ts";
+import { MemoryGoogleTokenStore } from "../packages/core/src/google/token-store.ts";
+
+// Las tools de Google son opt-in (sólo con credenciales). El inventario documenta
+// todas las capacidades, así que se configura con valores de relleno.
+configureGoogle({ clientId: "docs", clientSecret: "docs", redirectUri: "https://docs.invalid/cb", tokenStore: new MemoryGoogleTokenStore() });
 
 const root = resolve(import.meta.dir, "..");
 const outputPath = resolve(root, "docs/reference/inventario.md");

@@ -49,6 +49,31 @@ export const SEED_DATA: SeedData = {
     // ─────────────────────────────────────────
     // 2. WEB — Búsqueda, navegación + automatización
     // ─────────────────────────────────────────
+    // ─────────────────────────────────────────
+    // GOOGLE — requieren conectar la cuenta en Ajustes → Perfil
+    // ─────────────────────────────────────────
+    { id: "gmail_search", name: "gmail_search", category: "google", description: "Buscar correos en Gmail con la sintaxis de Gmail (from:, subject:, is:unread). Sinónimos: buscar correos, correos sin leer, bandeja de entrada (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gmail_read", name: "gmail_read", category: "google", description: "Leer un correo completo de Gmail por id. Sinónimos: abrir correo, leer email, contenido del correo (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gmail_thread", name: "gmail_thread", category: "google", description: "Leer una conversación completa de Gmail. Sinónimos: hilo de correos, historial del correo (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gmail_send", name: "gmail_send", category: "google", description: "Enviar un correo nuevo desde Gmail, con adjuntos; pide confirmación. Sinónimos: mandar email, escribir correo (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gmail_reply", name: "gmail_reply", category: "google", description: "Responder un correo manteniendo el hilo, o responder a todos; pide confirmación. Sinónimos: contestar email (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gmail_forward", name: "gmail_forward", category: "google", description: "Reenviar un correo con su texto y adjuntos; pide confirmación. Sinónimos: forward, pasar correo (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gmail_draft_save", name: "gmail_draft_save", category: "google", description: "Crear o editar un borrador de Gmail sin enviarlo. Sinónimos: guardar borrador, editar borrador (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gmail_draft_list", name: "gmail_draft_list", category: "google", description: "Listar los borradores de Gmail. Sinónimos: ver borradores (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gmail_draft_send", name: "gmail_draft_send", category: "google", description: "Enviar un borrador existente de Gmail; pide confirmación. Sinónimos: enviar borrador (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gmail_draft_delete", name: "gmail_draft_delete", category: "google", description: "Borrar un borrador de Gmail; pide confirmación. Sinónimos: eliminar borrador (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gmail_modify", name: "gmail_modify", category: "google", description: "Marcar leído o no leído, destacar, archivar, mandar a la papelera o etiquetar correos. Sinónimos: marcar como leído, archivar correo (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gmail_labels", name: "gmail_labels", category: "google", description: "Listar, crear, renombrar o borrar etiquetas de Gmail. Sinónimos: carpetas de gmail (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gmail_attachment_download", name: "gmail_attachment_download", category: "google", description: "Descargar un adjunto de un correo recibido a un artifact. Sinónimos: guardar adjunto (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gcal_list_events", name: "gcal_list_events", category: "google", description: "Listar eventos de Google Calendar en un rango. Sinónimos: ver agenda, próximos eventos, reuniones de la semana (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gcal_create_event", name: "gcal_create_event", category: "google", description: "Crear un evento en Google Calendar, con invitados y Meet; con invitados pide confirmación. Sinónimos: agendar reunión, programar cita (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gcal_update_event", name: "gcal_update_event", category: "google", description: "Modificar un evento de Google Calendar; pide confirmación. Sinónimos: mover reunión, reprogramar (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gcal_delete_event", name: "gcal_delete_event", category: "google", description: "Cancelar un evento de Google Calendar; pide confirmación. Sinónimos: borrar evento (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gcal_freebusy", name: "gcal_freebusy", category: "google", description: "Consultar disponibilidad (ocupado/libre) de uno o varios calendarios. Sinónimos: horarios libres (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gdrive_search", name: "gdrive_search", category: "google", description: "Buscar archivos en Google Drive por nombre o contenido. Sinónimos: buscar en drive (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gdrive_download", name: "gdrive_download", category: "google", description: "Descargar o exportar un archivo de Google Drive a un artifact. Sinónimos: leer documento de google (Requiere conectar tu cuenta de Google en tu perfil.)" },
+    { id: "gdrive_upload", name: "gdrive_upload", category: "google", description: "Subir un archivo nuevo a Google Drive. Sinónimos: guardar en drive (Requiere conectar tu cuenta de Google en tu perfil.)" },
+
     { id: "api_request", name: "api_request", category: "api", description: "Ejecutar una petición HTTP autorizada contra un endpoint REST y validar la respuesta. Sinónimos: llamar api, request rest, consumir endpoint, petición http, hacer get, hacer post" },
     { id: "web_search", name: "web_search", category: "web", description: "Buscar en la web información actual y noticias. Sinónimos: búsqueda web, noticias, información, buscar en internet, google" },
     { id: "web_fetch", name: "web_fetch", category: "web", description: "Obtener contenido de texto de una URL (ligero, sin JS). Sinónimos: descargar página, extraer texto, obtener contenido, leer url" },
@@ -532,6 +557,7 @@ import type {
   ToolDoc, SkillDoc, EthicsDoc, ProviderDoc, ModelDoc, McpServerDoc, ChannelDoc, PlaybookDoc, AgentDoc,
 } from "./collections"
 import { createSeedCatalogAgents, ensureAgentsConfigured } from "../agent/agent-catalog"
+import { syncGoogleCapabilities } from "./google-capabilities.ts"
 
 const log = logger.child("seed");
 
@@ -777,6 +803,8 @@ async function reseedToolsAndSkills(): Promise<void> {
     toolCount++;
   }
   log.info(`[seed] ✅ ${toolCount} tools re-seeded`);
+  // Las tools de Google nacen activas en SEED_DATA: se alinean con la conexión real.
+  await syncGoogleCapabilities("seed").catch((err) => log.warn(`[seed] google: ${(err as Error).message}`));
 
   // ── Skills: re-seed from the bundled skill files ──
   const skillsCol = await col<SkillDoc>("skills");

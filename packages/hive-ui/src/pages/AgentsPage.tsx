@@ -235,6 +235,7 @@ function AgentInspector({
   onEdit: (agent: Agent) => void;
   onOpen: (agent: Agent) => void;
 }) {
+  const navigate = useNavigate();
   if (!agent) return null;
 
   const isCoordinator = agent.role === "coordinator";
@@ -274,6 +275,22 @@ function AgentInspector({
             {agent.status === "archived" ? "Archivado" : agent.enabled ? "Activo" : "Inactivo"}
           </span>
         </div>
+
+        {!agent.enabled && String(agent.id).startsWith("google_") && (
+          <div className="mt-4 rounded-xl border border-amber-500/25 bg-amber-500/10 p-3">
+            <p className="text-[11px] font-bold text-amber-300">Necesita tu cuenta de Google</p>
+            <p className="mt-1 text-[11px] leading-4 text-white/55">
+              Este agente se activa solo cuando conectas tu cuenta de Google.
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate("/settings/perfil")}
+              className="mt-2 rounded-lg border border-amber-500/30 px-2.5 py-1.5 text-[10px] font-bold text-amber-300 hover:bg-amber-500/10"
+            >
+              Conectar en Perfil →
+            </button>
+          </div>
+        )}
 
         <p className={`mt-4 text-[9px] font-bold uppercase tracking-[0.2em] ${isCoordinator ? "text-amber-400" : "text-blue-400"}`}>
           {isCoordinator ? "Nodo coordinador" : "Nodo especialista"}

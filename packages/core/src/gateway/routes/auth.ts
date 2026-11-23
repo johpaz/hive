@@ -5,6 +5,7 @@ import { getHiveDir } from "../../config/loader";
 import * as path from "node:path";
 import jwt from "jsonwebtoken";
 import { normalizeUserEmail } from "../../storage/user-email";
+import { isGoogleConfigured } from "../../google/config";
 
 type CorsHelper = (res: Response, req: Request) => Response;
 
@@ -49,6 +50,20 @@ async function generateTokens(userId: string): Promise<AuthTokens> {
   };
 }
 
+/**
+ * `true` cuando la instancia exige iniciar sesión: hay email y al menos un
+ * método (contraseña o cuenta de Google vinculada). Es la única definición de
+ * «acceso protegido»: server.ts y /api/auth/status deben usarla.
+ */
+export function isAuthEnabled(user: Pick<UserDoc, "email" | "password_hash" | "google_sub"> | undefined | null): boolean {
+  return !!(user?.email && (user.password_hash || user.google_sub));
+}
+
+/** Token de acceso vigente (el mismo que devuelve /api/auth/login). */
+export function currentAuthToken(): string {
+  return process.env.HIVE_AUTH_TOKEN ?? getAuthTokenFromFile();
+}
+
 function getAuthTokenFromFile(): string {
   // The auth token lives in ~/.hive/.auth_token — same value as HIVE_AUTH_TOKEN env var
   try {
@@ -68,8 +83,15 @@ export async function handleAuthStatus(
 ): Promise<Response> {
   const user = (await getSingleUser())?.doc;
 
-  const hasCredentials = !!(user?.email && user?.password_hash);
-  return cors(Response.json({ hasCredentials, email: hasCredentials ? user?.email ?? null : null }), req);
+  const hasCredentials = isAuthEnabled(user);
+  const googleConfigured = isGoogleConfigured();
+  return cors(Response.json({
+    hasCredentials,
+    email: hasCredentials ? user?.email ?? null : null,
+    hasPassword: !!user?.password_hash,
+    googleConfigured,
+    googleLogin: googleConfigured && !!user?.google_sub,
+  }), req);
 }
 
 /** GET /api/auth/recovery-key — requires auth
@@ -233,7 +255,7 @@ export async function handleDisableAuth(
   const usersCol = await col<UserDoc>("users");
   const entry = await getSingleUser();
   if (entry) {
-    await usersCol.put(entry.id, { ...entry.doc, email: null, password_hash: null }, { expectedVersion: entry.version });
+    await usersCol.put(entry.id, { ...entry.doc, email: null, password_hash: null, google_sub: null, google_email: null }, { expectedVersion: entry.version });
   }
   return cors(Response.json({ success: true }), req);
 }

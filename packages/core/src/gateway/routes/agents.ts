@@ -1,3 +1,5 @@
+import { GOOGLE_AGENT_BY_SERVICE, connectedGoogleServices, isGoogleAgentId } from "../../storage/google-capabilities.ts"
+import type { GoogleService } from "../../google/scopes.ts"
 import { col, updateDoc, toIndexable, fromIndexable } from "../../storage/hive"
 import type { AgentDoc, AgentProposalDoc, McpServerDoc, SkillDoc, TaskDoc, UserDoc } from "../../storage/collections"
 import { emitCanvas } from "../../canvas/emitter"
@@ -250,6 +252,18 @@ export async function handleUpdateAgent(req: Request, addCorsHeaders: (r: Respon
       (patch as any)[docField] = toIndexable(val)
     } else {
       (patch as any)[docField] = typeof val === "object" ? JSON.stringify(val) : val
+    }
+  }
+
+  // Los especialistas de Google solo pueden activarse con la cuenta conectada.
+  if (patch.enabled === true && isGoogleAgentId(agentId)) {
+    const service = (Object.entries(GOOGLE_AGENT_BY_SERVICE).find(([, id]) => id === agentId)?.[0]) as GoogleService
+    if (!(await connectedGoogleServices()).includes(service)) {
+      return addCorsHeaders(Response.json({
+        ok: false,
+        error: "Conecta tu cuenta de Google en Ajustes → Perfil para activar este agente.",
+        needs_google: true,
+      }, { status: 409 }), req)
     }
   }
 

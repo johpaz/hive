@@ -82,8 +82,9 @@ describe("saveAgentConfig", () => {
       expect(fromIndexable(doc.model_id)).toBe("gemini-3.6-flash");
       expect(doc.user_id).toBe("user-1");
       expect(doc.role).toBe("worker");
-      // The rest of the persona survives the rewrite untouched
-      expect(doc.enabled).toBe(true);
+      // The rest of the persona survives the rewrite untouched. Los de Google
+      // nacen apagados: solo se activan al conectar la cuenta.
+      expect(doc.enabled).toBe(!id.startsWith("google_"));
       expect(doc.status).toBe("idle");
       expect(doc.source).toBe("catalog");
       expect(doc.tool_allowlist_json).toBeTruthy();

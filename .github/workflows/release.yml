@@ -155,6 +155,9 @@ jobs:
       HIVE_DESKTOP_PREBUILT_UI: "1"
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      # Cliente OAuth de Google de tipo «Aplicación de escritorio» (se compila dentro de la app).
+      HIVE_GOOGLE_CLIENT_ID: ${{ secrets.HIVE_GOOGLE_CLIENT_ID }}
+      HIVE_GOOGLE_CLIENT_SECRET: ${{ secrets.HIVE_GOOGLE_CLIENT_SECRET }}
       # linuxdeploy empaqueta el AppImage como... un AppImage, que se ejecuta
       # montándose vía FUSE. Los runners ubuntu-24.04 no traen libfuse2 (ver
       # apt-get abajo) ni siempre exponen /dev/fuse de forma confiable — esto

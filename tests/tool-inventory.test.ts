@@ -23,7 +23,10 @@ import { SEED_DATA } from "../packages/core/src/storage/seed";
 
 const executors = new Set(createAllTools({ tools: {} } as never).map((t) => t.name));
 const catalog = new Set(CORE_TOOL_CATALOG.map((t) => t.name));
-const seeded = new Set(SEED_DATA.tools.map((t) => t.id));
+// Las filas de Google existen para la lista de configuración, pero son opt-in: el índice
+// las omite mientras estén inactivas (tool-selector.ts) y solo hay ejecutor con Google
+// configurado. tests/google-capabilities.test.ts cubre ese contrato.
+const seeded = new Set(SEED_DATA.tools.filter((t) => t.category !== "google").map((t) => t.id));
 const indexed = new Set([...catalog, ...seeded]);
 
 describe("tool inventory", () => {

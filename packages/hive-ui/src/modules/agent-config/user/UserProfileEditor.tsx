@@ -14,6 +14,7 @@ import {
 import { Toast } from "@/lib/swal";
 import { loader } from "@/stores/useLoaderStore";
 import { SecurityPanel } from "@/components/SecurityPanel";
+import { GoogleConnectionPanel } from "@/components/GoogleConnectionPanel";
 
 /* ─── Honeycomb SVG pattern ──────────────────────────────────────────── */
 const HoneycombBg = () => (
@@ -396,8 +397,11 @@ export function UserProfileEditor() {
 
           {/* ACCESO */}
           <section>
-            <SectionLabel>Acceso y seguridad</SectionLabel>
+            <SectionLabel>Acceso, seguridad y cuenta de Google</SectionLabel>
             <SecurityPanel email={formData.email} profileEditing={editing} />
+            <div className="mt-3">
+              <GoogleConnectionPanel />
+            </div>
           </section>
 
           <Divider />

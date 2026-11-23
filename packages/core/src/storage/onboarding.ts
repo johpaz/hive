@@ -49,6 +49,9 @@ Para cualquier pedido operativo, compáralo primero con este mapa y delega al es
 - \`a2ui_builder\`: construye formularios, dashboards y flujos interactivos A2UI.
 - \`schedule_automation_agent\`: crea y administra jobs, recordatorios y automatizaciones de Hive.
 - \`api_operator\`: ejecuta y verifica operaciones contra APIs REST autorizadas.
+- \`google_mail_agent\`: busca, lee, responde, envía, organiza (leído, etiquetas, archivo), borradores y adjuntos de la cuenta de Gmail conectada.
+- \`google_calendar_agent\`: consulta, crea y modifica eventos y disponibilidad en Google Calendar.
+- \`google_drive_agent\`: busca, descarga y sube archivos en Google Drive.
 - Especialistas MCP del usuario: workers con integraciones específicas; encuéntralos con \`agent_find\` antes de usar una tool MCP.
 
 **Regla de prioridad:** primero elige un agente de este mapa y usa \`task_delegate\`, pero verifica antes que aparezca activo en la COLMENA; el mapa describe roles y no garantiza disponibilidad. Si no está activo o ninguno encaja, busca otro worker con \`agent_find\`; solo después descubre herramientas y resuelve directamente. No delegues a un ID asumido ni elijas herramientas directas antes de hacer esta comprobación, salvo saludos, charla o preguntas que respondes de memoria.
@@ -242,6 +245,8 @@ export async function saveUserProfile(data: {
         master_key_hash: existing?.doc.master_key_hash ?? null,
         email: normalizedEmail ?? existing?.doc.email ?? null,
         password_hash: existing?.doc.password_hash ?? null,
+        google_sub: existing?.doc.google_sub ?? null,
+        google_email: existing?.doc.google_email ?? null,
         preferred_cron_channel: existing?.doc.preferred_cron_channel ?? "auto",
         created_at: existing?.doc.created_at ?? Date.now(),
       }, existing ? { expectedVersion: existing.version } : undefined);

@@ -26,7 +26,7 @@ Hive reemplaza el patrón de "un agente gigante con 80 herramientas cargadas de 
 
 ## ✨ Por qué Hive
 
-- **Catálogo persistente, no plantillas desechables.** 9 agentes especializados (investigación web, navegador, archivos, ingeniería de software, Office, automatizaciones cron, APIs y A2UI) enrutan el trabajo según el objetivo. Para MCP, el coordinador pide autorización y crea especialistas persistentes por servidor.
+- **Catálogo persistente, no plantillas desechables.** 12 agentes especializados (investigación web, navegador, archivos, ingeniería de software, Office, automatizaciones cron, APIs, A2UI y Google: Gmail, Calendar y Drive) enrutan el trabajo según el objetivo. Para MCP, el coordinador pide autorización y crea especialistas persistentes por servidor.
 - **Carga mínima + descubrimiento bajo demanda.** Cada turno arranca con 7 herramientas esenciales; `search_knowledge` incorpora el resto (99 herramientas, 26 skills) solo cuando la tarea lo necesita.
 - **Aceptación explícita, no confianza ciega.** Cada entrega pasa por checks determinísticos y el juicio del coordinador antes de reportar éxito; si no cumple sus criterios, vuelve al mismo worker con feedback concreto (`task_revise`) sin repetir el trabajo desde cero.
 - **Ejecución durable.** Jobs, leases y reintentos con backoff sobreviven caídas y reinicios del gateway — nada se pierde a mitad de camino.

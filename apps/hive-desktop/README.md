@@ -81,6 +81,22 @@ Update signing (minisign, via the Tauri updater plugin) requires the
 secrets. The public key is safe to keep in `src-tauri/tauri.conf.json`; never
 commit the private key.
 
+## Google sign-in and Workspace
+
+"Continue with Google" and the Gmail/Calendar/Drive tools need an OAuth client.
+The installer has no `.env`, so the credentials are compiled in from the
+`HIVE_GOOGLE_CLIENT_ID` and `HIVE_GOOGLE_CLIENT_SECRET` environment variables
+(GitHub secrets of the same name in `release.yml`). Use a client of type
+**Desktop app** in the same Google Cloud project as hive-cloud: Google does not
+treat its secret as confidential and accepts any loopback port, which matters
+because the gateway falls back to a random port when 18790 is taken. A value
+already present in the runtime environment (`GOOGLE_CLIENT_ID` /
+`GOOGLE_CLIENT_SECRET`) wins over the compiled one. If either is missing, the
+Google button simply does not appear.
+
+Google rejects OAuth inside embedded WebViews, so the app opens the system
+browser and the window polls the gateway until the flow finishes.
+
 The desktop shell chooses a free loopback port, creates an application-scoped
 `HIVE_HOME`, starts the gateway, waits for `/health`, and then opens the existing
 Hive UI over HTTP/WebSocket. Closing the app terminates the sidecar.

@@ -17,7 +17,7 @@ Generado desde el código fuente para Hive **1.1.6**.
 | `@johpaz/hive-desktop` | `1.1.6` |
 | `apps/hive-desktop/src-tauri/tauri.conf.json` | `1.1.6` |
 
-## Herramientas (103)
+## Herramientas (124)
 
 | Herramienta | Categoría | Descripción |
 |---|---|---|
@@ -59,7 +59,28 @@ Generado desde el código fuente para Hive **1.1.6**.
 | `fs_list` | filesystem | List files and directories in workspace. Spanish: listar archivos, ver carpeta, explorar directorio |
 | `fs_read` | filesystem | Read file content from agent workspace. Spanish: leer archivo, ver contenido, abrir archivo |
 | `fs_write` | filesystem | Create or overwrite file in agent workspace. Spanish: crear archivo, guardar archivo, escribir archivo |
+| `gcal_create_event` | externa | Create a Google Calendar event. If it has attendees, Google emails them invitations, so the first call returns needs_confirmation; repeat with confirmed=true after the user approves. Spanish: agendar reunión, crear evento, programar cita, invitar asistentes |
+| `gcal_delete_event` | externa | Delete a Google Calendar event (attendees are notified). IRREVERSIBLE: needs_confirmation first, then confirmed=true. Spanish: cancelar reunión, borrar evento |
+| `gcal_freebusy` | externa | Check busy intervals for one or more calendars in a time range to find free slots. Spanish: disponibilidad, horarios libres, cuándo estoy libre |
+| `gcal_list_events` | externa | List Google Calendar events in a time range (default: the next 7 days). Spanish: ver agenda, qué tengo hoy, próximos eventos, reuniones de la semana |
+| `gcal_update_event` | externa | Modify fields of an existing Google Calendar event (only the ones provided). Needs user confirmation (needs_confirmation, then confirmed=true). Spanish: mover reunión, cambiar evento, reprogramar cita |
+| `gdrive_download` | externa | Download a Drive file (or export a Google Doc as text, a Sheet as CSV, Slides as PDF) into a Hive artifact. Text content up to 20k chars is also returned inline. Spanish: descargar de drive, leer documento de google, abrir archivo de drive |
+| `gdrive_search` | externa | Search the user's Google Drive by text (name and content) or with a raw Drive query. Returns id, name, type, modified time and link. Spanish: buscar en drive, encontrar archivo, documentos de google |
+| `gdrive_upload` | externa | Upload a file to the user's Google Drive from text `content` or from a Hive artifact (artifact_id). Creates a new file; never overwrites. Spanish: subir a drive, guardar en drive, enviar archivo a drive |
 | `get_available_models` | agents | Obtener el catálogo completo de modelos de los providers configurados (con credenciales activas) para elegir el más adecuado según capacidad, contexto o costo — no solo el modelo por defecto del usuario. Sinónimos: ver modelos, listar providers, modelos disponibles, consultar modelos, provider activo, qué modelos tengo, modelos para código, modelos para chat |
+| `gmail_attachment_download` | externa | Download an attachment of a received email into a Hive artifact (ids come from gmail_read: message id + attachment_id). Spanish: descargar adjunto, guardar adjunto del correo |
+| `gmail_draft_delete` | externa | Permanently delete a draft. Needs confirmation (needs_confirmation, then confirmed=true). Spanish: borrar borrador, eliminar borrador |
+| `gmail_draft_list` | externa | List the user's Gmail drafts (draft_id, message_id, recipients, subject). Use gmail_read with message_id for the body. Spanish: ver borradores, mis borradores |
+| `gmail_draft_save` | externa | Create a Gmail draft, or EDIT an existing one by passing draft_id (the whole draft is replaced: read it first with gmail_read and resend every field). Never sends anything. Spanish: crear borrador, editar borrador, guardar borrador |
+| `gmail_draft_send` | externa | Send an existing draft. IRREVERSIBLE: needs_confirmation first, then confirmed=true after user approval. Spanish: enviar borrador |
+| `gmail_forward` | externa | Forward an email to new recipients with an optional note, including the original text and (by default) its attachments. IRREVERSIBLE: needs_confirmation first, then confirmed=true after user approval. Spanish: reenviar correo, forward, pasar este correo a |
+| `gmail_labels` | externa | Manage Gmail labels: list them (no params), create (create=<name>), rename (label + new_name) or delete (delete=<label>, needs confirmation; mails keep existing but lose the label). System labels cannot be changed. Spanish: ver etiquetas, crear etiqueta, renombrar etiqueta, borrar etiqueta, carpetas de gmail |
+| `gmail_modify` | externa | Organize one or many messages (up to 50): mark read/unread, star/unstar, archive, move back to inbox, mark important, send to trash or restore, and add/remove labels. Reversible, no confirmation needed. Spanish: marcar como leído, marcar no leído, archivar correo, destacar, mover a la papelera, poner etiqueta |
+| `gmail_read` | externa | Read one Gmail message in full (headers, text body, attachment names) by id from gmail_search. Spanish: leer correo, abrir correo, contenido del correo |
+| `gmail_reply` | externa | Reply to an email in its thread (keeps subject, In-Reply-To and recipients). reply_all=true also includes the other recipients. IRREVERSIBLE unless save_as_draft=true: first call returns a preview and needs_confirmation; repeat with confirmed=true after the user approves. Spanish: responder correo, contestar email, responder a todos |
+| `gmail_search` | externa | Search the user's Gmail. Accepts Gmail query syntax (from:, to:, subject:, is:unread, after:2026/01/31, has:attachment, label:). Returns id, sender, subject, date and snippet. Spanish: buscar correos, correos sin leer, correos de, bandeja de entrada |
+| `gmail_send` | externa | Send a NEW email from the user's Gmail (to reply use gmail_reply). IRREVERSIBLE: first call returns a preview and needs_confirmation; repeat with confirmed=true only after the user approves. Spanish: enviar correo, mandar email, escribir un correo, enviar con adjunto |
+| `gmail_thread` | externa | Read a whole conversation thread (all messages in order, text bodies trimmed). Spanish: leer conversación, hilo de correos, historial del correo |
 | `memory_delete` | agents | Delete a specific memory entry. Spanish: borrar memoria, eliminar recuerdo, quitar dato |
 | `memory_list` | agents | List all saved memory entries. Spanish: listar memorias, ver memorias, todas las memorias |
 | `memory_read` | agents | Retrieve a memory entry by identifier. Spanish: leer memoria, recuperar dato, obtener memoria |
@@ -125,7 +146,7 @@ Generado desde el código fuente para Hive **1.1.6**.
 | `web_fetch` | web | Fetch plain content from a URL (lightweight, no JS). Spanish: obtener página, descargar contenido, extraer texto de url |
 | `web_search` | web | Search the web for current information and research. Spanish: buscar en internet, búsqueda web, noticias, información |
 
-## Skills incluidas (26)
+## Skills incluidas (29)
 
 | Skill | Categoría | Versión | Herramientas | Agentes preferidos |
 |---|---|---:|---|---|
@@ -146,6 +167,9 @@ Generado desde el código fuente para Hive **1.1.6**.
 | `file_manager` | filesystem | 1.0.0 | `fs_list`, `fs_glob`, `fs_exists` | — |
 | `file_read_and_summarize` | filesystem | 1.0.0 | `fs_read`, `fs_exists` | — |
 | `file_writer` | filesystem | 1.0.0 | `fs_read`, `fs_write`, `fs_edit`, `fs_exists` | — |
+| `google_calendar` | google | 1.0.0 | `gcal_list_events`, `gcal_create_event`, `gcal_update_event`, `gcal_delete_event`, `gcal_freebusy` | `google_calendar_agent` |
+| `google_drive` | google | 1.0.0 | `gdrive_search`, `gdrive_download`, `gdrive_upload` | `google_drive_agent` |
+| `google_gmail` | google | 1.0.0 | `gmail_search`, `gmail_read`, `gmail_thread`, `gmail_send`, `gmail_reply`, `gmail_forward`, `gmail_draft_save`, `gmail_draft_list`, `gmail_draft_send`, `gmail_draft_delete`, `gmail_modify`, `gmail_labels`, `gmail_attachment_download` | `google_mail_agent` |
 | `memory_manager` | agents | 1.0.0 | `memory_write`, `memory_read`, `memory_list`, `memory_search`, `memory_delete` | — |
 | `obscura_browser` | web | 1.0.0 | `obscura_navigate`, `obscura_snapshot`, `obscura_markdown`, `obscura_links`, `obscura_interactive_elements`, `obscura_detect_forms`, `obscura_extract`, `obscura_get_attribute`, `obscura_search`, `obscura_click`, `obscura_fill`, `obscura_type`, `obscura_fill_form`, `obscura_press_key`, `obscura_select_option`, `obscura_scroll`, `obscura_wait_for`, `obscura_wait_for_text`, `obscura_evaluate`, `obscura_pdf`, `obscura_get_cookies`, `obscura_set_cookie`, `obscura_storage_state`, `obscura_set_storage_state`, `obscura_tab_new`, `obscura_tab_list`, `obscura_tab_switch`, `obscura_tab_close`, `obscura_close` | `browser_operator` |
 | `office_document_manager` | office | 1.0.0 | `office_leer_pdf`, `office_escribir_pdf`, `office_leer_docx`, `office_escribir_docx`, `office_leer_xlsx`, `office_escribir_xlsx`, `office_leer_pptx`, `office_escribir_pptx` | — |
@@ -156,7 +180,7 @@ Generado desde el código fuente para Hive **1.1.6**.
 | `web_research` | web | 1.0.0 | `web_search`, `web_fetch` | — |
 | `workspace_file_operator` | filesystem | 1.0.0 | `fs_read`, `fs_write`, `fs_edit`, `fs_delete`, `fs_list`, `fs_glob`, `fs_exists` | `workspace_file_operator` |
 
-## Agentes de catálogo (9)
+## Agentes de catálogo (12)
 
 | ID | Nombre | Propósito | Herramientas autorizadas | Skills |
 |---|---|---|---|---|
@@ -169,6 +193,9 @@ Generado desde el código fuente para Hive **1.1.6**.
 | `a2ui_builder` | Constructor A2UI | Construye formularios, dashboards y flujos interactivos compatibles con A2UI v0.9. | `a2ui_*` | `a2ui_form`, `a2ui_dashboard`, `a2ui_interactive` |
 | `schedule_automation_agent` | Operador de cron | Crea y administra jobs programados de Hive: automatizaciones recurrentes o ejecuciones únicas mediante cron.*. | `cron.*` | `cron_manager`, `cron_reminder` |
 | `api_operator` | Operador de APIs | Ejecuta y verifica operaciones contra APIs REST expresamente autorizadas. | `api_request` | `api_client` |
+| `google_mail_agent` | Operador de Gmail | Busca, lee, responde, envía, organiza y gestiona borradores y adjuntos de la cuenta de Gmail que el usuario conectó. | `gmail_*` | `google_gmail` |
+| `google_calendar_agent` | Operador de Google Calendar | Consulta, crea, modifica y cancela eventos y revisa disponibilidad en Google Calendar. | `gcal_*` | `google_calendar` |
+| `google_drive_agent` | Operador de Google Drive | Busca, descarga y sube archivos y documentos en Google Drive. | `gdrive_*` | `google_drive` |
 
 ## Exports públicos
 
