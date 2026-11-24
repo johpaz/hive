@@ -3,6 +3,7 @@ import type { Collection } from "@johpaz/hive-db"
 import { logger } from "../utils/logger"
 import { catalogModelKey } from "./model-id"
 import { invalidateModelPricingCache } from "./usage"
+import { DEFAULT_LOCAL_VOICE, isLegacyPiper, LOCAL_TTS_MODEL, LOCAL_TTS_PROVIDER } from "../voice/local-model"
 
 /**
  * Seed de datos predeterminados para Hive
@@ -223,7 +224,7 @@ export const SEED_DATA: SeedData = {
     // no valida la key; el 401 recién aparece al invocar el modelo.
     { id: "modelscope", name: "ModelScope Qwen", baseUrl: "https://api-inference.modelscope.ai/v1" },
     { id: "opencode-go", name: "OpenCode Go", baseUrl: "https://opencode.ai/zen/go/v1" },
-    { id: "piper", name: "Piper (Local TTS)", category: "tts" },
+    { id: LOCAL_TTS_PROVIDER, name: "Kitten (Local TTS)", category: "tts" },
     { id: "hiveagents", name: "HiveAgents LLM (Cloudflare)", baseUrl: "https://llm.hiveagents.io/v1", category: "llm" },
   ],
 
@@ -244,10 +245,11 @@ export const SEED_DATA: SeedData = {
     { id: "gpt-5.6-sol", providerId: "openai", name: "GPT-5.6 Sol", modelType: "llm", contextWindow: 1050000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code", "reasoning"]), inputPer1M: 5, outputPer1M: 30 },
     // STT / TTS
     { id: "whisper-1", providerId: "openai", name: "Whisper 1", modelType: "stt", contextWindow: 0, capabilities: JSON.stringify(["transcription", "translation"]) },
+    { id: "gpt-transcribe", providerId: "openai", name: "GPT Transcribe", modelType: "stt", contextWindow: 0, capabilities: JSON.stringify(["transcription"]) },
     { id: "tts-1", providerId: "openai", name: "TTS-1", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
     { id: "tts-1-hd", providerId: "openai", name: "TTS-1 HD", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "high_quality"]) },
     { id: "gpt-4o-mini-tts", providerId: "openai", name: "GPT-4o Mini TTS", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech"]) },
-    { id: "es_MX-claude-14947-epoch-high", providerId: "piper", name: "Piper Spanish (Claude)", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "local"]) },
+    { id: LOCAL_TTS_MODEL, providerId: LOCAL_TTS_PROVIDER, name: "Kitten TTS 2 Mini (Español)", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "local"]) },
 
     // ── Google Gemini (fuente: ai.google.dev/gemini-api/docs/models) ──
     // Solo la generación 3.x: la familia 2.0 ya está apagada y la 2.5 quedó
@@ -367,6 +369,8 @@ export const SEED_DATA: SeedData = {
 
     // ── ElevenLabs (TTS) ──
     { id: "eleven_flash_v2_5", providerId: "elevenlabs", name: "Eleven Flash V2.5", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "fast"]) },
+    { id: "scribe_v3", providerId: "elevenlabs", name: "ElevenLabs Scribe v3", modelType: "stt", contextWindow: 0, capabilities: JSON.stringify(["transcription"]) },
+    { id: "scribe_v2", providerId: "elevenlabs", name: "ElevenLabs Scribe v2", modelType: "stt", contextWindow: 0, capabilities: JSON.stringify(["transcription"]) },
     { id: "eleven_turbo_v2_5", providerId: "elevenlabs", name: "Eleven Turbo V2.5", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "balanced"]) },
     { id: "eleven_multilingual_v2", providerId: "elevenlabs", name: "Eleven Multilingual V2", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "multilingual"]) },
     { id: "eleven_v3", providerId: "elevenlabs", name: "Eleven V3", modelType: "tts", contextWindow: 0, capabilities: JSON.stringify(["tts", "speech", "expressive"]) },
@@ -876,10 +880,11 @@ export async function seedAllData(): Promise<void> {
     const providersCol = await col<ProviderDoc>("providers");
     let providerCount = 0;
     for (const provider of SEED_DATA.providers) {
+      const localByDefault = provider.id === LOCAL_TTS_PROVIDER;
       await putIfAbsent(providersCol, provider.id, {
         id: provider.id, name: provider.name, base_url: provider.baseUrl || null,
         category: (provider.category || "llm") as ProviderDoc["category"],
-        num_ctx: null, num_gpu: -1, enabled: false, active: false, created_at: now,
+        num_ctx: null, num_gpu: -1, enabled: localByDefault, active: localByDefault, created_at: now,
       });
       providerCount++;
     }
@@ -915,22 +920,22 @@ export async function seedAllData(): Promise<void> {
     // (context_window, capabilities, precio) sobrevive a una entrada renombrada
     // o corregida. Un upsert en sitio no daba esa garantía.
     //
-    // Dos cosas sí se preservan a propósito:
+    // Se preservan a propósito:
     //   - enabled/active por id, para no desactivar el modelo que el usuario
     //     eligió cada vez que se publica un catálogo nuevo;
     //   - las filas source != "catalog" (Ollama tags, /v1/models), que no tienen
     //     origen canónico desde el que recrearse.
+    //   - el resultado de la última consulta al proveedor sobre disponibilidad.
     log.info("[seed] 🔄 Re-seeding models (wipe & recreate)...");
     const modelsCol = await col<ModelDoc>("models");
     const beforeWipe = await modelsCol.scan({});
 
-    const activationState = new Map(
-      beforeWipe.map((e) => [e.id, { enabled: e.doc.enabled, active: e.doc.active }])
-    );
+    const previousModels = new Map(beforeWipe.map(({ id, doc }) => [id, doc]));
 
+    const piperModelIds = new Set(beforeWipe.filter(row => row.doc.provider_id === "piper").map(row => row.id));
     let wipedModels = 0;
     for (const row of beforeWipe) {
-      if (row.doc.source !== "catalog") continue;
+      if (row.doc.source !== "catalog" || piperModelIds.has(row.id)) continue;
       await modelsCol.delete(row.id);
       wipedModels++;
     }
@@ -938,12 +943,14 @@ export async function seedAllData(): Promise<void> {
     let modelCount = 0;
     for (const model of SEED_DATA.models) {
       const key = catalogModelKey(model.providerId, model.id);
-      const previous = activationState.get(key);
+      const previous = previousModels.get(key);
       await modelsCol.put(key, {
         id: key, provider_id: model.providerId, name: model.name,
         model_type: model.modelType as ModelDoc["model_type"],
         context_window: model.contextWindow || 0, capabilities: model.capabilities || null,
-        enabled: previous?.enabled ?? true, active: previous?.active ?? false,
+        enabled: previous?.enabled ?? true, active: previous?.active ?? (key === LOCAL_TTS_MODEL),
+        ...(previous?.unlisted ? { unlisted: true } : {}),
+        ...(previous?.synced_at ? { synced_at: previous.synced_at } : {}),
         source: "catalog",
         input_per_1m: model.inputPer1M ?? null,
         output_per_1m: model.outputPer1M ?? null,
@@ -982,6 +989,11 @@ export async function seedAllData(): Promise<void> {
           patch[field] = RETIRED_VOICE_MODELS[current];
         }
       }
+      const tts = c.doc.tts_provider;
+      if (tts && (piperModelIds.has(tts) || isLegacyPiper(tts))) {
+        patch.tts_provider = LOCAL_TTS_MODEL;
+        patch.tts_voice_id = DEFAULT_LOCAL_VOICE;
+      }
       if (Object.keys(patch).length === 0) continue;
       await voiceChannelsCol.put(c.id, { ...c.doc, ...patch }, { expectedVersion: c.version });
       migratedVoice++;
@@ -990,6 +1002,8 @@ export async function seedAllData(): Promise<void> {
     if (migratedVoice > 0) {
       log.info(`[seed] 🎙️  ${migratedVoice} canal(es) repuntados a modelos de voz vigentes`);
     }
+    for (const id of piperModelIds) await modelsCol.delete(id);
+    if (await providersCol.get("piper")) await providersCol.delete("piper");
 
     log.info(`[seed] ✅ ${modelCount} models procesados`);
 

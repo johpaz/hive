@@ -22,6 +22,7 @@ import type { ProviderDoc, ModelDoc } from "./collections"
 import { catalogModelKey } from "./model-id"
 import { loadProviderApiKey, loadProviderHeaders } from "./crypto"
 import { logger } from "../utils/logger"
+import { GEMINI_AUDIO_INPUT, isGeminiAudioFamily, nvidiaSttBase } from "../voice/stt-models"
 
 const log = logger.child("model-sync")
 
@@ -54,7 +55,7 @@ export type ProviderFetcher = (ctx: FetchContext) => Promise<DiscoveredModel[]>
 /** Providers cuyo listado responde sin clave (o que no la usan): se consultan aunque no haya una guardada. */
 const KEYLESS = new Set(["ollama", "modelscope"])
 /** Providers cuyo listado no es completo por diseño (modelos montados bajo demanda): nunca se marca nada como retirado. */
-const PARTIAL_LISTING = new Set(["hiveagents", "piper"])
+const PARTIAL_LISTING = new Set(["hiveagents"])
 /** Providers locales: sus modelos son gratis y entran encendidos. */
 const LOCAL = new Set(["ollama"])
 
@@ -87,8 +88,8 @@ export function classifyModelId(wireId: string): ModelType | null {
   // Modelos auxiliares que no conversan: guardas de seguridad, CLIP, detectores, rerankers, parsers y similares.
   if (/(guard|safety|nvclip|(^|[-_/])clip([-_/.\d]|$)|detector|reward|rerank|retriev|parse|[-_]ocr([-_/.\d]|$))/.test(id)) return null
   if (/embed/.test(id)) return "embedding"
-  if (/(whisper|transcribe|scribe|\basr\b|[-_]asr[-_]|stt)/.test(id)) return "stt"
   if (/(realtime|[-_]live([-_.\d]|$))/.test(id)) return "realtime"
+  if (/(whisper|transcribe|scribe|\basr\b|[-_]asr[-_]|stt)/.test(id)) return "stt"
   if (/(tts|speech|voxtral)/.test(id)) return "tts"
   return "llm"
 }
@@ -191,6 +192,7 @@ const gemini: ProviderFetcher = async (ctx) => {
       else if (methods.includes("generateContent") || methods.includes("streamGenerateContent")) {
         if (/(image|imagen|veo)/.test(wireId)) continue // imágenes y vídeo: no se manejan
         type = "llm"; caps.add("chat"); caps.add("streaming")
+        if (methods.includes("generateContent") && isGeminiAudioFamily(wireId)) caps.add(GEMINI_AUDIO_INPUT)
       } else if (methods.includes("embedContent") || methods.includes("batchEmbedContents")) type = "embedding"
       else if (methods.includes("predict") || methods.includes("predictLongRunning")) continue
       if (row.thinking === true) caps.add("reasoning")
@@ -241,16 +243,49 @@ const ollama: ProviderFetcher = async (ctx) => {
   return out
 }
 
-/** ElevenLabs: `GET /v1/models` con `xi-api-key`; solo los que sirven para síntesis de voz. */
+/** OpenRouter lists file transcription models separately from the general catalog. */
+const openrouter: ProviderFetcher = async (ctx) => {
+  if (!ctx.baseUrl) return openAiCompatible(ctx)
+  const headers = { ...ctx.headers, ...(ctx.apiKey ? { Authorization: `Bearer ${ctx.apiKey}` } : {}) }
+  const [general, transcription] = await Promise.all([
+    openAiCompatible(ctx),
+    getJson(ctx, `${trimSlash(ctx.baseUrl)}/models?output_modalities=transcription`, headers) as Promise<{ data?: Array<{ id: string; name?: string }> }>,
+  ])
+  if (!Array.isArray(transcription.data)) throw new Error("OpenRouter no devolvió su catálogo de transcripción")
+  const generalById = new Map(general.map(model => [model.wireId, model]))
+  const found = new Map(general
+    .filter(model => model.type !== "stt" && classifyModelId(model.wireId) !== "stt")
+    .map(model => [model.wireId, model]))
+  for (const row of transcription.data) {
+    if (!text(row.id)) continue
+    found.set(row.id, { ...generalById.get(row.id), wireId: row.id, name: text(row.name), type: "stt", capabilities: ["transcription"] })
+  }
+  return [...found.values()]
+}
+
+/** ElevenLabs: `GET /v1/models` con `xi-api-key`. */
 const elevenlabs: ProviderFetcher = async (ctx) => {
   const base = trimSlash(ctx.baseUrl || "https://api.elevenlabs.io/v1")
   const body = (await getJson(ctx, `${base}/models`, { ...ctx.headers, "xi-api-key": ctx.apiKey })) as any[]
   return (Array.isArray(body) ? body : [])
-    .filter((m) => m.can_do_text_to_speech === true && text(m.model_id))
-    .map((m) => ({ wireId: m.model_id as string, name: text(m.name), type: "tts" as const, capabilities: ["tts", "speech"] }))
+    .flatMap((m): DiscoveredModel[] => {
+      const wireId = text(m.model_id)
+      if (!wireId) return []
+      if (/^scribe_v\d+(?:_medical)?$/.test(wireId)) return [{ wireId, name: text(m.name), type: "stt", capabilities: ["transcription"] }]
+      return m.can_do_text_to_speech ? [{ wireId, name: text(m.name), type: "tts", capabilities: ["tts", "speech"] }] : []
+    })
 }
 
-const FETCHERS: Record<string, ProviderFetcher> = { anthropic, gemini, ollama, elevenlabs }
+const nvidia: ProviderFetcher = async (ctx) => {
+  const speechBase = nvidiaSttBase(ctx.baseUrl)
+  const models = await openAiCompatible({ ...ctx, baseUrl: speechBase ?? ctx.baseUrl })
+  return speechBase
+    ? models.map(model => /(?:^|\/)(?:canary|parakeet)[-_/]/.test(model.wireId)
+      ? { ...model, type: "stt", capabilities: ["transcription"] }
+      : model)
+    : models
+}
+const FETCHERS: Record<string, ProviderFetcher> = { anthropic, gemini, ollama, elevenlabs, openrouter, nvidia }
 
 /** Consulta el listado del proveedor con el adaptador que le corresponde. */
 export async function fetchProviderModels(ctx: FetchContext): Promise<DiscoveredModel[]> {
@@ -306,6 +341,9 @@ export async function applyDiscoveredModels(provider: ProviderDoc, found: Discov
     const doc = row.doc
     const next: ModelDoc = { ...doc }
     let changed = false
+    if (doc.source === "discovered" && model.type === "stt" && doc.model_type !== "stt") {
+      next.model_type = "stt"; changed = true
+    }
     if (model.contextWindow && doc.context_window !== model.contextWindow) { next.context_window = model.contextWindow; changed = true }
     if (model.capabilities?.length) {
       const have = parseCapabilities(doc.capabilities)
@@ -324,8 +362,9 @@ export async function applyDiscoveredModels(provider: ProviderDoc, found: Discov
 
   // Lo que el proveedor ya no lista se marca, no se borra. Una lista vacía o parcial por diseño no marca nada.
   if (found.length > 0 && !PARTIAL_LISTING.has(provider.id)) {
+    const listsStt = provider.id !== "elevenlabs" || found.some(model => model.type === "stt")
     for (const row of await models.findBy("provider_id", provider.id)) {
-      if (seen.has(row.id) || row.doc.unlisted) continue
+      if (seen.has(row.id) || row.doc.unlisted || (!listsStt && row.doc.model_type === "stt")) continue
       await models.put(row.id, { ...row.doc, unlisted: true, synced_at: now }, { expectedVersion: row.version })
       result.unlisted++
     }
@@ -368,7 +407,8 @@ export async function syncProviderModels(providerId: string, deps: SyncDeps = {}
   const entry = await providers.get(providerId)
   if (!entry) return { provider: providerId, ok: false, error: "provider desconocido" }
   const apiKey = await (deps.loadKey ?? loadProviderApiKey)(providerId).catch(() => "")
-  if (!apiKey && !KEYLESS.has(providerId)) return { provider: providerId, ok: false, skipped: "sin clave guardada" }
+  const nvidiaSpeech = providerId === "nvidia" && nvidiaSttBase(entry.doc.base_url)
+  if (!apiKey && !KEYLESS.has(providerId) && !nvidiaSpeech) return { provider: providerId, ok: false, skipped: "sin clave guardada" }
   const headers = stringHeaders(await (deps.loadHeaders ?? loadProviderHeaders)(providerId).catch(() => ({})))
   try {
     const found = await fetchProviderModels({

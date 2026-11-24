@@ -1,27 +1,33 @@
 import { col, updateDoc } from "../../storage/hive"
 import type { ModelDoc, ProviderDoc, ChannelDoc } from "../../storage/collections"
 import { voiceService } from "../../voice"
+import { LOCAL_TTS_PROVIDER } from "../../voice/local-model"
+import { nvidiaSttBase, supportsStt } from "../../voice/stt-models"
+import { getLocalTTSStatus, getLocalVoices } from "../tts/kitten"
 import { storeProviderApiKey, loadProviderApiKey } from "../../storage/crypto"
 
 /** Providers de voz = providers con al menos un modelo STT/TTS en la BD. */
 async function getVoiceProviderIds(): Promise<string[]> {
   const modelsCol = await col<ModelDoc>("models")
-  const [sttModels, ttsModels] = await Promise.all([
-    modelsCol.findBy("model_type", "stt"),
-    modelsCol.findBy("model_type", "tts"),
+  const [models, nvidia] = await Promise.all([
+    modelsCol.scan({}),
+    (await col<ProviderDoc>("providers")).get("nvidia"),
   ])
-  const ids = new Set([...sttModels, ...ttsModels].map(e => e.doc.provider_id))
+  const ids = new Set(models
+    .filter(({ doc }) => doc.model_type === "tts" || supportsStt(doc, nvidia?.doc.base_url))
+    .map(({ doc }) => doc.provider_id))
   return [...ids]
 }
 
-/** Providers de voz locales (modelos con capability "local", ej. Piper) no requieren API key. */
-async function isLocalVoiceProvider(providerId: string): Promise<boolean> {
-  const modelsCol = await col<ModelDoc>("models")
-  const models = await modelsCol.findBy("provider_id", providerId)
-  return models.some(e =>
-    (e.doc.model_type === "stt" || e.doc.model_type === "tts") &&
-    !!e.doc.capabilities?.includes('"local"')
-  )
+async function isVoiceProviderConfigured(id: string): Promise<boolean> {
+  if (id === LOCAL_TTS_PROVIDER) return getLocalTTSStatus().running
+  if (id === "nvidia") {
+    const provider = await (await col<ProviderDoc>("providers")).get(id)
+    if (nvidiaSttBase(provider?.doc.base_url)) return true
+  }
+  // Match the credentials shown in Providers. Process environment keys can
+  // still be used by the runtime, but don't configure a provider in the UI.
+  return !!(await loadProviderApiKey(id)).trim()
 }
 
 export async function handleGetVoiceProviders(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
@@ -34,7 +40,7 @@ export async function handleGetConfiguredVoiceProviders(req: Request, addCorsHea
   const voiceProviderIds = await getVoiceProviderIds()
   const results = await Promise.all(voiceProviderIds.map(async id => ({
     id,
-    configured: (await isLocalVoiceProvider(id)) || !!(await loadProviderApiKey(id))
+    configured: await isVoiceProviderConfigured(id)
   })))
 
   const providers: Record<string, boolean> = {}
@@ -91,6 +97,13 @@ export async function handleGetVoiceProviderVoices(
   providerId: string
 ): Promise<Response> {
   try {
+    const modelId = new URL(req.url).searchParams.get("model")
+    if (modelId) {
+      const model = await (await col<ModelDoc>("models")).get(modelId)
+      if (model?.doc.provider_id !== providerId || model.doc.model_type !== "tts") {
+        return addCorsHeaders(Response.json({ voices: [], error: "Modelo TTS desconocido" }, { status: 404 }), req)
+      }
+    }
     let voices: Array<{ id: string; name: string }>
 
     switch (providerId) {
@@ -104,33 +117,14 @@ export async function handleGetVoiceProviderVoices(
         voices = voiceService.getGeminiVoices()
         break
       case "groq":
-        voices = voiceService.getGroqVoices()
+        voices = voiceService.getGroqVoices(modelId ?? undefined)
         break
       case "qwen":
         voices = voiceService.getQwenVoices()
         break
-      case "piper": {
-        // Consultar voces disponibles en el servidor TTS local
-        const TTS_PORT = Number(process.env.TTS_PORT ?? 5500)
-        try {
-          const res = await fetch(`http://localhost:${TTS_PORT}/voices`, {
-            signal: AbortSignal.timeout(1000),
-          })
-          if (res.ok) {
-            const data = await res.json()
-            voices = (data.voices || []).map((v: string) => ({
-              id: v,
-              name: v.replace(/_/g, " ").replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()),
-            }))
-          } else {
-            voices = [{ id: "es_MX-claude-14947-epoch-high", name: "Piper Local (Claude Spanish)" }]
-          }
-        } catch {
-          // Servidor TTS no disponible - usar fallback para permitir selección
-          voices = [{ id: "es_MX-claude-14947-epoch-high", name: "Piper Local (Claude Spanish)" }]
-        }
+      case LOCAL_TTS_PROVIDER:
+        voices = getLocalVoices()
         break
-      }
       default:
         return addCorsHeaders(Response.json({ voices: [] }), req)
     }

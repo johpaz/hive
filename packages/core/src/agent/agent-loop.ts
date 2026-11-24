@@ -636,7 +636,7 @@ export async function* runAgent(
       finalEmitted = true // already yielded above as the agent chunk
       // Only save to history if we have real content; empty → synthesis block will handle it
       if (finalContent && !opts.isolated) {
-        await addMessage(opts.threadId, "assistant", finalContent)
+        await addMessage(opts.threadId, "assistant", finalContent, turnImageArtifacts.length ? { images: turnImageArtifacts } : undefined)
       }
       break
     }
@@ -1200,7 +1200,7 @@ export async function* runAgent(
       return synthesis.content
     })
     if (!opts.isolated) {
-      await addMessage(opts.threadId, "assistant", finalContent)
+      await addMessage(opts.threadId, "assistant", finalContent, turnImageArtifacts.length ? { images: turnImageArtifacts } : undefined)
     }
     yield { agent: { messages: [{ content: finalContent }] } }
     }
@@ -1208,7 +1208,7 @@ export async function* runAgent(
     // Internal break (stall, loop detected, stuck, timeout, abort) set finalContent
     // without yielding it — emit and persist it so the user gets a non-empty response
     if (!opts.isolated) {
-      await addMessage(opts.threadId, "assistant", finalContent)
+      await addMessage(opts.threadId, "assistant", finalContent, turnImageArtifacts.length ? { images: turnImageArtifacts } : undefined)
     }
     yield { agent: { messages: [{ content: finalContent }] } }
   }

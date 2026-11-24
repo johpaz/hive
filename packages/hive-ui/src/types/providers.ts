@@ -156,6 +156,8 @@ export interface Model {
   providerId?: string;
   provider_id?: string;
   model_type?: string;
+  supports_stt?: boolean;
+  unlisted?: boolean;
   contextWindow?: number | null;
   context_window?: number | null;
   capabilities?: string | null;

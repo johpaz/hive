@@ -103,7 +103,8 @@ import { handleGetMcpServers, handleGetMcpServerDetail, handleCreateMcpServer, h
 import { handleGetModels, handleCreateModel, handleToggleModel, handleGetModelsConfig, handleUpdateModelsConfig, handleDeleteModel, handleUpdateModel } from "./routes/models";
 import { handleGetVoiceProviders, handleGetConfiguredVoiceProviders, handleSaveVoiceProviderKey, handleTestVoice, handleGetChannelVoice, handleUpdateChannelVoice, handleGetVoiceProviderVoices } from "./routes/voice";
 import { handleGetVisionProviders, handleGetChannelVision, handleUpdateChannelVision, handleOcrImage, handleGetVisionAnalyzer, handleSetVisionAnalyzer, handleGetImageModel, handleSetImageModel } from "./routes/multimodal";
-import { handleGetLocalTTSStatus, handleGetLocalTTSLogs, handleInstallLocalTTS, handleStartLocalTTS, handleStopLocalTTS, handleSpeakLocalTTS, handleGetAvailableModels, handleGetInstalledVoices, handleDownloadModel, handleGetDownloadLogs, initializeLocalTTS } from "./routes/tts-local";
+import { handleGetLocalTTSStatus, handleStartLocalTTS, handleStopLocalTTS, handleSpeakLocalTTS, handleGetLocalVoices } from "./routes/tts-local";
+import { startLocalTTS, stopLocalTTS } from "./tts/kitten";
 import { handleCreateMeeting, handleListMeetings, handleGetMeeting, handleAddMeetingSegment, handleStopMeeting, handleGenerateMeetingReport, handleDownloadMeetingReport } from "./routes/meeting";
 import { handleDownloadArtifact } from "./routes/artifacts";
 import { handleGetActivityStats, handleGetSystemStats, handleGetUsageStats, handleSystemReload, handleApiReload, handleGetVersion, handleTriggerUpdate } from "./routes/system";
@@ -252,8 +253,7 @@ export async function startGateway(
     dbProvider = init.provider;
     dbModel = init.model;
 
-    // Auto-iniciar TTS local si está instalado
-    await initializeLocalTTS();
+    startLocalTTS();
 
     // Conectar channel-notify singleton para que las tools (notify, report_progress) puedan enviar mensajes
     setChannelSendFn(async (channel, sessionId, content, metadata) => {
@@ -1990,18 +1990,12 @@ export async function startGateway(
           return await handleUpdateChannelVision(req, addCorsHeaders, channelId)
         }
 
-        // ── Piper TTS Local ──────────────────────────────────────────────────
+        // ── Local TTS ─────────────────────────────────────────────────────────
         if (url.pathname === "/api/tts-local/status" && req.method === "GET") {
-          return await handleGetLocalTTSStatus(req, addCorsHeaders)
+          return handleGetLocalTTSStatus(req, addCorsHeaders)
         }
-        if (url.pathname === "/api/tts-local/logs" && req.method === "GET") {
-          return await handleGetLocalTTSLogs(req, addCorsHeaders)
-        }
-        if (url.pathname === "/api/tts-local/install" && req.method === "POST") {
-          return await handleInstallLocalTTS(req, addCorsHeaders)
-        }
-        if (url.pathname === "/api/tts-local/start" && req.method === "POST") {
-          return await handleStartLocalTTS(req, addCorsHeaders)
+        if ((url.pathname === "/api/tts-local/start" || url.pathname === "/api/tts-local/install") && req.method === "POST") {
+          return handleStartLocalTTS(req, addCorsHeaders)
         }
         if (url.pathname === "/api/tts-local/stop" && req.method === "POST") {
           return await handleStopLocalTTS(req, addCorsHeaders)
@@ -2009,18 +2003,8 @@ export async function startGateway(
         if (url.pathname === "/api/tts-local/speak" && req.method === "POST") {
           return await handleSpeakLocalTTS(req, addCorsHeaders)
         }
-        // Modelos
-        if (url.pathname === "/api/tts-local/models" && req.method === "GET") {
-          return await handleGetAvailableModels(req, addCorsHeaders)
-        }
-        if (url.pathname === "/api/tts-local/models/download" && req.method === "POST") {
-          return await handleDownloadModel(req, addCorsHeaders)
-        }
-        if (url.pathname === "/api/tts-local/models/logs" && req.method === "GET") {
-          return await handleGetDownloadLogs(req, addCorsHeaders)
-        }
         if (url.pathname === "/api/tts-local/voices" && req.method === "GET") {
-          return await handleGetInstalledVoices(req, addCorsHeaders)
+          return handleGetLocalVoices(req, addCorsHeaders)
         }
 
         // ── Meeting Transcription API ────────────────────────────────────────
@@ -2799,6 +2783,7 @@ export async function startGateway(
     // ── Shutdown tool runtime (dispose worker pool) ──────────────────────
     try {
       shutdownToolRuntime();
+      await stopLocalTTS();
       log.info("[SIGTERM] Tool runtime disposed");
     } catch { }
 

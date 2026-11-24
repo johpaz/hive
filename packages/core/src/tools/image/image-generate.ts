@@ -11,6 +11,7 @@
  * @spanish crear imagen, generar imagen, dibujar, ilustración, logo, foto, póster
  */
 import type { Tool } from "../types";
+import { getWorkspace } from "../filesystem/workspace-guard";
 import { createArtifact } from "../../artifacts/store";
 import {
   ASPECT_RATIOS, ImageGenerationError, ImageModelNotConfiguredError, generateImage, type AspectRatio,
@@ -54,6 +55,8 @@ export const imageGenerateTool: Tool = {
         taskId: config?.configurable?.task_id ?? null,
         // Es contenido que el usuario pidió y verá en su historial: no caduca como la basura transitoria.
         expiresAt: null,
+        // Carpeta visible del usuario (workspace o ~/Hive), no la oculta de la base de datos.
+        visible: { workspace: getWorkspace(config), folder: "imagenes", label: prompt },
       });
       return [
         {
@@ -67,8 +70,8 @@ export const imageGenerateTool: Tool = {
         {
           type: "text",
           text:
-            `Imagen creada con ${img.modelId} (${aspect}). Ya se muestra al usuario junto a tu respuesta: ` +
-            "no incluyas enlaces ni base64. Cierra con una frase breve sobre lo que creaste y ofrece ajustes (otro estilo, formato u otra idea).",
+            `Imagen creada con ${img.modelId} (${aspect}). Ya se muestra al usuario junto a tu respuesta y quedó guardada en su equipo: ${artifact.path}. ` +
+            "Si te preguntan dónde está, dales esa ruta. No incluyas enlaces ni base64. Cierra con una frase breve sobre lo que creaste y ofrece ajustes (otro estilo, formato u otra idea).",
         },
       ];
     } catch (err) {

@@ -156,9 +156,10 @@ export async function buildSystemPrompt(opts: BuildSystemPromptOpts): Promise<st
       const { getImageModelId } = await import("../multimodal/image-generation")
       if (await getImageModelId()) {
         capabilitiesSection = `# CAPACIDADES\n\n` +
-          `Puedes crear imágenes nuevas (ilustraciones, logos, pósters, arte) con la herramienta \`image_generate\`: ` +
-          `se muestran solas al usuario en el chat y en Telegram. No puedes editar imágenes existentes. ` +
-          `Si el usuario te pide una imagen, úsala; si te pregunta si puedes generarlas, responde que sí.\n\n`
+          `Sí puedes crear imágenes nuevas (ilustraciones, logos, pósters, arte). La herramienta \`image_generate\` no está en tu lista inicial: ` +
+          `descúbrela con \`search_knowledge\` (por ejemplo "generar imagen") y úsala enseguida. ` +
+          `La imagen se muestra sola al usuario en el chat y en Telegram. No puedes editar imágenes existentes. ` +
+          `Nunca respondas que no puedes generar imágenes sin haber buscado antes la herramienta.\n\n`
       }
     } catch { /* sin modelo de imagen: no se anuncia */ }
   }

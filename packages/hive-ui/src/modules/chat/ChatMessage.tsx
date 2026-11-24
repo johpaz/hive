@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { AuthImage } from "@/components/AuthImage";
 import type { Message } from "@/types";
 import { 
   Bot, AlertTriangle, Play, Pause, Volume2, Volume1, VolumeX, 
@@ -295,7 +296,7 @@ export function ChatMessage({ message, userName = "Tú", agentName = "Agente", i
         <div className="flex flex-col items-end gap-1 max-w-[75%] md:max-w-[65%]">
           {message.image && (
             <div className="mb-2 rounded-2xl overflow-hidden border border-white/10 shadow-lg bg-black/20">
-              <img
+              <AuthImage
                 src={message.image.url || `data:${message.image.mimeType || "image/jpeg"};base64,${message.image.base64}`}
                 alt="adjunto"
                 className="max-w-full h-auto max-h-[300px] object-contain"
@@ -336,7 +337,7 @@ export function ChatMessage({ message, userName = "Tú", agentName = "Agente", i
 
         {message.image && (
           <div className="mb-2 rounded-2xl overflow-hidden border border-white/10 shadow-lg bg-black/20 w-fit">
-            <img
+            <AuthImage
               src={message.image.url || `data:${message.image.mimeType || "image/jpeg"};base64,${message.image.base64}`}
               alt="adjunto"
               className="max-w-full h-auto max-h-[300px] object-contain"

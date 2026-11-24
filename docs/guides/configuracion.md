@@ -53,6 +53,12 @@ Los especialistas MCP se crean desde la conversación únicamente después de la
 
 ## Workspace
 
+### Dónde quedan los archivos que Hive crea
+
+Lo que una herramienta crea para el usuario se guarda en una carpeta **visible**, no dentro de `~/.hive` junto a la base de datos: en el workspace del agente o, si no tiene, en `~/Hive` (se cambia con `HIVE_OUTPUT_DIR`). Subcarpetas: `imagenes/` (imágenes generadas), `descargas/` (adjuntos de Gmail y archivos de Drive) y `capturas/` (capturas del navegador) y `reuniones/` (informes de reunión en .docx, siempre en `~/Hive` porque se generan sin agente). Los nombres son legibles (`2026-11-24_2158_abeja-robot.jpg`) y nunca pisan un archivo existente. La base de datos solo guarda la ruta; si el usuario mueve o borra el archivo, esa referencia queda sin contenido.
+
+Siguen en `~/.hive/artifacts` los blobs internos: resultados grandes de herramientas MCP y copias de los adjuntos que el usuario sube al chat.
+
 Cada agente puede tener un workspace y un scope de lectura/escritura. Las herramientas `fs_*` resuelven los paths contra ese scope. Los agentes de catálogo reciben scopes por tipo de trabajo: ninguno, workspace completo o recursos concretos como una superficie A2UI.
 
 ## Modelos

@@ -210,6 +210,25 @@ jobs:
         with:
           name: hive-ui-dist
           path: packages/hive-ui/dist/
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build and smoke-test Kitten local TTS
+        shell: bash
+        # Descarga Python, ruedas y pesos dos veces (paquete y fuentes oficiales): sin tope, un
+        # Hugging Face o PyPI colgado deja el runner consumiendo minutos hasta el límite de 6 h.
+        timeout-minutes: 30
+        run: |
+          python packages/core/src/gateway/tts/build.py kitten-release
+          bun scripts/smoke-kitten.ts kitten-release/hive-kitten-*.tar.gz
+          bun scripts/smoke-kitten.ts kitten-release/hive-kitten-*.tar.gz --upstream
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kitten-${{ matrix.platform.name }}
+          path: kitten-release/
+          if-no-files-found: error
+          retention-days: 1
       - name: Install Rust target
         shell: bash
         run: rustup target add "${{ matrix.platform.target }}"
@@ -403,7 +422,7 @@ jobs:
       - name: Assemble release files
         shell: bash
         run: |
-          # Solo instaladores de escritorio: se descartó publicar los binarios
+          # Para escritorio se descartó publicar los binarios
           # standalone de Bun (npm y Docker ya cubren esas rutas de instalación).
           # Se filtra por extensión en vez de copiar todo `*/bundle/*`, porque ese
           # árbol también contiene el AppDir del AppImage completo (cientos de
@@ -415,6 +434,7 @@ jobs:
               -iname '*.dmg' -o -iname '*.exe' -o -iname '*.msi' \
             \) -exec cp {} release-assets/ \;
           find artifacts -type f -name '*.flatpak' -exec cp {} release-assets/ \;
+          find artifacts -type f -name 'hive-kitten-*.tar.gz*' -exec cp {} release-assets/ \;
           bun scripts/create-updater-manifest.ts \
             --artifacts-dir artifacts \
             --version "${{ needs.resolve-tag.outputs.version }}" \
@@ -433,7 +453,7 @@ jobs:
   npm-publish:
     name: Publish npm tarball
     runs-on: ubuntu-24.04
-    needs: release-gate
+    needs: github-release
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -449,7 +469,7 @@ jobs:
   docker-publish:
     name: Publish Docker manifest
     runs-on: ubuntu-24.04
-    needs: [resolve-tag, release-gate]
+    needs: [resolve-tag, github-release]
     steps:
       - uses: actions/checkout@v4
         with:

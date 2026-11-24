@@ -3,7 +3,8 @@ import { voiceService, type AudioInput } from "../../voice/index";
 import { logger } from "../../utils/logger";
 import { col, nextId, toIndexable } from "../../storage/hive";
 import type { MeetingSessionDoc, MeetingSegmentDoc, ModelDoc, ProviderDoc } from "../../storage/collections";
-import { getHiveDir } from "../../config/loader";
+import { existsSync } from "node:fs";
+import { resolveOutputDir, visibleFileBase } from "../../artifacts/store";
 import { getDefaultLLM, resolveProviderConfig, callLLM } from "../../agent/llm-client";
 import { officeEscribirDocxTool } from "../../tools/office/office-escribir-docx";
 
@@ -408,7 +409,14 @@ export async function handleGenerateMeetingReport(
     }
 
     const parsed = parseReportMarkdown(reportMarkdown);
-    const reportPath = path.join(getHiveDir(), "meeting-reports", `${sessionId}.docx`);
+    // Carpeta visible del usuario (~/Hive/reuniones), no ~/.hive junto a la base de datos.
+    // Cada generación conserva el informe anterior: se numera en vez de pisarlo.
+    const reportDir = path.join(resolveOutputDir(null), "reuniones");
+    const reportBase = visibleFileBase(session.title || "reunion", session.started_at);
+    let reportPath = path.join(reportDir, `${reportBase}.docx`);
+    for (let n = 2; existsSync(reportPath) && reportPath !== session.report_path && n < 1000; n++) {
+      reportPath = path.join(reportDir, `${reportBase}-${n}.docx`);
+    }
 
     const result = (await officeEscribirDocxTool.execute({
       ruta: reportPath,

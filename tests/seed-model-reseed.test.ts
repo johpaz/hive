@@ -13,7 +13,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { closeHiveDb } from "../packages/core/src/storage/hivedb";
 import { ensureHiveDb } from "../packages/core/src/storage/bootstrap";
 import { col } from "../packages/core/src/storage/hive";
-import type { ModelDoc, ProviderDoc } from "../packages/core/src/storage/collections";
+import type { ChannelDoc, ModelDoc, ProviderDoc } from "../packages/core/src/storage/collections";
 import { seedAllData, SEED_DATA } from "../packages/core/src/storage/seed";
 import { catalogModelKey } from "../packages/core/src/storage/model-id";
 
@@ -32,6 +32,43 @@ const A_SEEDED_MODEL = () => {
 };
 
 describe("re-seed de modelos", () => {
+  test("migra Piper a Kitten sin modificar el interruptor TTS ni la visión del canal", async () => {
+    const models = await col<ModelDoc>("models");
+    const providers = await col<ProviderDoc>("providers");
+    const channels = await col<ChannelDoc>("channels");
+    const kitten = (await models.get("kitten-tts-2-mini"))!.doc;
+    expect(kitten.active).toBe(true);
+    expect((await providers.get("kitten"))?.doc.active).toBe(true);
+
+    await models.put("custom-piper", { ...kitten, id: "custom-piper", provider_id: "piper", source: "discovered" });
+    for (const [id, previous] of [["webchat", "custom-piper"], ["telegram", "piper-local"]]) {
+      const { doc, version } = (await channels.get(id))!;
+      await channels.put(id, {
+        ...doc,
+        tts_provider: previous,
+        tts_voice_id: "old-voice",
+        tts_enabled: id === "webchat",
+        vision_enabled: true,
+        ocr_provider: "gemini",
+      }, { expectedVersion: version });
+    }
+
+    await seedAllData();
+    expect(await models.get("custom-piper")).toBeFalsy();
+    for (const id of ["webchat", "telegram"]) {
+      expect((await channels.get(id))?.doc).toMatchObject({
+        tts_provider: "kitten-tts-2-mini",
+        tts_voice_id: "lucia",
+        tts_enabled: id === "webchat",
+        vision_enabled: true,
+        ocr_provider: "gemini",
+      });
+    }
+    await models.put(kitten.id, { ...kitten, active: false, enabled: false });
+    await seedAllData();
+    expect((await models.get(kitten.id))?.doc.active).toBe(false);
+  });
+
   test("preserva enabled/active de los ids que sobreviven", async () => {
     const modelsCol = await col<ModelDoc>("models");
     const id = A_SEEDED_MODEL();

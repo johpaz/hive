@@ -76,6 +76,25 @@ function storageId(threadId: string, seq: number): string {
   return `${threadId}:${String(seq).padStart(15, "0")}`
 }
 
+/**
+ * Lo que el modelo lee de una respuesta que entregó imágenes. Los resultados de
+ * herramienta no se guardan en el historial, así que sin esta nota el turno
+ * siguiente solo vería el texto y no sabría que la imagen ya existe ni su id
+ * (necesario para adjuntarla a un correo o reenviarla). Solo es contexto del
+ * modelo: lo que ve el usuario (content guardado, historial de la web) no cambia.
+ */
+function withImageNote(doc: ConversationDoc): string {
+  if (doc.role !== "assistant" || !doc.images_json) return doc.content
+  try {
+    const images = JSON.parse(doc.images_json) as Array<{ artifactId: string; mimeType: string }>
+    if (!images.length) return doc.content
+    const list = images.map((i) => `artifact_id=${i.artifactId} (${i.mimeType})`).join("; ")
+    return `${doc.content}\n\n[Sistema: con esta respuesta ya se entregó al usuario la imagen ${list}. ` +
+      `Ya existe: no la generes de nuevo. Para enviarla o adjuntarla (correo, canal) usa ese artifact_id con ` +
+      `send_file o con los adjuntos de la herramienta de correo.]`
+  } catch { return doc.content }
+}
+
 function toStoredMessage(id: string, doc: ConversationDoc): StoredMessage {
   const seq = parseInt(id.slice(id.lastIndexOf(":") + 1), 10)
   // Legacy rows (written before `source` existed) used role:"system" as the
@@ -89,7 +108,7 @@ function toStoredMessage(id: string, doc: ConversationDoc): StoredMessage {
     channel: doc.channel,
     role: legacyInternal ? "user" : (doc.role as StoredMessage["role"]),
     source: doc.source ?? (legacyInternal ? "legacy_internal" : "message"),
-    content: doc.content,
+    content: withImageNote(doc),
     tool_calls_json: doc.tool_calls_json,
     tool_call_id: doc.tool_call_id,
     reasoning_content: doc.reasoning_content,
@@ -121,6 +140,8 @@ export async function addMessage(
     tool_call_id?: string
     reasoning_content?: string
     source?: MessageSource
+    /** Imágenes entregadas al usuario con esta respuesta (se recuperan al recargar el historial). */
+    images?: Array<{ artifactId: string; mimeType: string }>
   }
 ): Promise<number> {
   // Handle multimodal content by extracting text for the content column
@@ -149,6 +170,7 @@ export async function addMessage(
     tool_call_id: opts?.tool_call_id ?? null,
     reasoning_content: opts?.reasoning_content ?? null,
     source: opts?.source ?? "message",
+    images_json: opts?.images?.length ? JSON.stringify(opts.images) : null,
     // Estimate tokens: content + tool_calls JSON
     token_count: Math.max(1, estimateTokens(textContent) + estimateTokens(tool_calls_json ?? "")),
     created_at: now,

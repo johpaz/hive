@@ -54,7 +54,7 @@ Lo que tomamos y lo que no:
 | Presupuesto = lo que queda tras el prompt y la ventana reciente (30 % o 50 % a la línea de tiempo) | **Distinto**: porcentaje fijo de la ventana del modelo, porque el prompt aún no está armado cuando se calcula |
 | Unidades de pasos de agente con grafo | **No**: aquí solo conversación. El log causal es por ejecución y sus `ToolCall` no guardan argumentos ni resultado |
 
-**Evidencia propia** (metodología, límites y datos crudos en [`bench/history-timeline/README.md`](../../bench/history-timeline/README.md)). En `hive` solo se repitió el banco sin modelo (mismas retenciones que en el SDK); la prueba con modelo se hizo en `hive-sdk` y **no se ha repetido sobre el código de `hive`**.
+**Evidencia propia** (el banco de pruebas se retiró del repositorio; los datos de abajo son los que midió). En `hive` solo se repitió el banco sin modelo (mismas retenciones que en el SDK); la prueba con modelo se hizo en `hive-sdk` y **no se ha repetido sobre el código de `hive`**.
 
 1. **Sin modelo, exacta** (27 datos plantados fuera de la ventana, 3 semillas; porcentaje que llega al prompt). Se miden las piezas por separado con `HIVE_HISTORY_TIMELINE_PARTS`:
 

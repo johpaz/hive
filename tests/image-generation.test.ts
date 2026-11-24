@@ -1,5 +1,7 @@
 process.env.HIVE_DB_PATH = ":memory:";
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { closeHiveDb } from "../packages/core/src/storage/hivedb";
 import { ensureHiveDb } from "../packages/core/src/storage/bootstrap";
@@ -13,6 +15,8 @@ import { createAllTools } from "../packages/core/src/tools/index";
 import { handleGetImageModel, handleSetImageModel } from "../packages/core/src/gateway/routes/multimodal";
 import { deleteProviderApiKey } from "../packages/core/src/storage/crypto";
 import { TelegramChannel } from "../packages/core/src/channels/telegram";
+import { addMessage, getHistory } from "../packages/core/src/agent/conversation-store";
+import { handleGetChatHistory } from "../packages/core/src/gateway/routes/chat";
 import { readOutboundImageBytes } from "../packages/core/src/channels/base";
 
 const KLEIN = "nvidia/black-forest-labs/flux.2-klein-4b";
@@ -178,7 +182,13 @@ describe("tool image_generate", () => {
 
     const artifact = (await (await col<ArtifactDoc>("artifacts")).get(ref.artifact_id))!.doc;
     expect(artifact).toMatchObject({ kind: "generated_image", user_id: "u1", status: "active", expires_at: null });
-    expect(out.find((b) => b.type === "text").text).toContain("no incluyas enlaces");
+    expect(out.find((b) => b.type === "text").text).toContain("No incluyas enlaces");
+    // Queda en una carpeta VISIBLE del usuario (no en ~/.hive/artifacts junto a la base de datos)
+    expect(artifact.path.startsWith(join(process.env.HIVE_OUTPUT_DIR!, "imagenes"))).toBe(true);
+    expect(artifact.path).toMatch(/_un-faro\.jpg$/);
+    expect(existsSync(artifact.path)).toBe(true);
+    expect(artifact.path).not.toContain("/.hive/");
+    expect(out.find((b) => b.type === "text").text).toContain(artifact.path);
   });
 
   test("sin modelo configurado explica dónde elegirlo", async () => {
@@ -235,5 +245,45 @@ describe("entrega por Telegram", () => {
     (channel as any).bot = { api: { sendPhoto: async () => { sent.push("photo"); }, sendMessage: async (_c: number, t: string) => { sent.push(t); } } };
     await channel.send("424242", { content: "Texto", image: { artifactId: "no-existe", mimeType: "image/jpeg" } } as any);
     expect(sent).toEqual(["Texto"]);
+  });
+});
+
+describe("historial del chat", () => {
+  test("la imagen entregada con una respuesta vuelve al recargar el historial", async () => {
+    const thread = "u/webchat/conv-img";
+    await addMessage(thread, "user", "hazme una abeja");
+    await addMessage(thread, "assistant", "Listo, aquí está", { images: [{ artifactId: "11111111-2222-3333-4444-555555555555", mimeType: "image/jpeg" }] });
+    await addMessage(thread, "assistant", "¿Algo más?");
+    const res = await handleGetChatHistory(new Request(`http://x/api/chat/history?threadId=${encodeURIComponent(thread)}`), cors);
+    const { messages } = await res.json() as { messages: Array<{ content: string; image?: string; imageMimeType?: string }> };
+    const withImage = messages.find((m) => m.content === "Listo, aquí está")!;
+    expect(withImage.image).toBe("/api/artifacts/11111111-2222-3333-4444-555555555555/download");
+    expect(withImage.imageMimeType).toBe("image/jpeg");
+    expect(messages.find((m) => m.content === "¿Algo más?")!.image).toBeUndefined();
+  });
+
+  test("el modelo ve el id de la imagen en el turno siguiente; el usuario no ve la nota", async () => {
+    const thread = "u/webchat/conv-ctx";
+    await addMessage(thread, "assistant", "Aquí está", { images: [{ artifactId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", mimeType: "image/jpeg" }] });
+    const llm = (await getHistory(thread)).find((m) => m.role === "assistant")!;
+    expect(llm.content).toContain("artifact_id=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    expect(llm.content).toContain("no la generes de nuevo");
+    const res = await handleGetChatHistory(new Request(`http://x/api/chat/history?threadId=${encodeURIComponent(thread)}`), cors);
+    const { messages } = await res.json() as { messages: Array<{ content: string }> };
+    expect(messages[0].content).toBe("Aquí está");
+  });
+
+  test("con workspace el archivo va al workspace del agente y no pisa uno existente", async () => {
+    const { createArtifact } = await import("../packages/core/src/artifacts/store");
+    const { mkdtempSync, readdirSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const ws = mkdtempSync(join(tmpdir(), "hive-ws-"));
+    const mk = () => createArtifact({ bytes: JPEG, mimeType: "image/jpeg", kind: "generated_image", userId: "u", expiresAt: null,
+      visible: { workspace: ws, folder: "imagenes", label: "¡Una abeja ROBOT!" }, now: Date.UTC(2026, 10, 24, 12, 0) });
+    const a = await mk(); const b = await mk();
+    expect(a.path.startsWith(join(ws, "imagenes"))).toBe(true);
+    expect(a.path).not.toBe(b.path);
+    expect(readdirSync(join(ws, "imagenes")).length).toBe(2);
+    expect(a.path).toMatch(/una-abeja-robot/);
   });
 });

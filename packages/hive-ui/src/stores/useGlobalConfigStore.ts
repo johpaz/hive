@@ -795,49 +795,21 @@ const createVoiceSlice = (set: any, get: any) => ({
 
 // ==================== LOCAL TTS SLICE ====================
 export interface LocalTTSStatus {
+  phase: "stopped" | "installing" | "starting" | "ready" | "error";
   installed: boolean;
-  piperExists: boolean;
-  voiceExists: boolean;
   running: boolean;
-  port: number;
   installing: boolean;
-  voices?: string[];
-}
-
-export interface TTSModel {
-  id: string;
-  name: string;
-  language: string;
-  quality: "low" | "medium" | "high";
-  size: string;
-  modelUrl: string;
-  configUrl: string;
-  installed: boolean;
+  modelId: string;
+  voices: Array<{ id: string; name: string }>;
+  error?: string;
 }
 
 interface LocalTTSState {
-  localTTS: LocalTTSStatus;
-  availableTTSModels: TTSModel[];
-  isDownloadingModel: boolean;
-  downloadLogs: string[];
+  localTTS: LocalTTSStatus | null;
   fetchLocalTTSStatus: () => Promise<void>;
-  installLocalTTS: () => Promise<void>;
   startLocalTTS: () => Promise<void>;
   stopLocalTTS: () => Promise<void>;
-  fetchAvailableTTSModels: () => Promise<void>;
-  downloadTTSModel: (modelId: string) => Promise<void>;
-  fetchDownloadLogs: () => Promise<void>;
 }
-
-const DEFAULT_LOCAL_TTS: LocalTTSStatus = {
-  installed: false,
-  piperExists: false,
-  voiceExists: false,
-  running: false,
-  port: 5500,
-  installing: false,
-  voices: [],
-};
 
 // ==================== GLOBAL STORE ====================
 type GlobalConfigState = ProvidersState & ModelsState & AgentsState & ToolsState & SkillsState & MCPServersState & ChannelsState & VoiceState & LocalTTSState & {
@@ -891,10 +863,7 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
   configuredVoiceProviders: {},
 
   // Local TTS
-  localTTS: DEFAULT_LOCAL_TTS,
-  availableTTSModels: [],
-  isDownloadingModel: false,
-  downloadLogs: [],
+  localTTS: null,
 
   // Internal fetchers (helper methods to avoid recreating slices constantly)
   fetchProvidersInternal: async () => createProvidersSlice(set, get).fetchProviders(),
@@ -1121,64 +1090,21 @@ export const useGlobalConfigStore = create<GlobalConfigState>((set, get) => ({
     set(data);
   },
 
-  // Local TTS methods
   fetchLocalTTSStatus: async () => {
     try {
-      const data = await apiClient<LocalTTSStatus>("/api/tts-local/status");
-      set({ localTTS: data });
+      const localTTS = await apiClient<LocalTTSStatus>("/api/tts-local/status", { showError: false });
+      set({ localTTS });
     } catch {
-      // Gateway no disponible aún — no modificar el estado
+      // Re-read when the gateway is available.
     }
-  },
-  installLocalTTS: async () => {
-    await apiClient("/api/tts-local/install", { method: "POST" });
-    set((state) => ({ localTTS: { ...state.localTTS, installing: true } }));
   },
   startLocalTTS: async () => {
     await apiClient("/api/tts-local/start", { method: "POST" });
-    const data = await apiClient<LocalTTSStatus>("/api/tts-local/status");
-    set({ localTTS: data });
+    await get().fetchLocalTTSStatus();
   },
   stopLocalTTS: async () => {
     await apiClient("/api/tts-local/stop", { method: "POST" });
-    const data = await apiClient<LocalTTSStatus>("/api/tts-local/status");
-    set({ localTTS: data });
-  },
-  fetchAvailableTTSModels: async () => {
-    try {
-      const data = await apiClient<{ models: TTSModel[] }>("/api/tts-local/models");
-      set({ availableTTSModels: data.models });
-    } catch {
-      // Ignore
-    }
-  },
-  downloadTTSModel: async (modelId: string) => {
-    await apiClient("/api/tts-local/models/download", { 
-      method: "POST", 
-      body: { modelId },
-      showError: true,
-      showSuccess: "Descarga iniciada",
-    });
-    set({ isDownloadingModel: true, downloadLogs: [] });
-    // Poll status until download completes
-    const pollInterval = setInterval(async () => {
-      const statusData = await apiClient<LocalTTSStatus>("/api/tts-local/status");
-      set({ localTTS: statusData });
-      const logsData = await apiClient<{ logs: string[]; downloading: boolean }>("/api/tts-local/models/logs");
-      set({ downloadLogs: logsData.logs, isDownloadingModel: logsData.downloading });
-      if (!logsData.downloading) {
-        clearInterval(pollInterval);
-        await get().fetchAvailableTTSModels();
-      }
-    }, 2000);
-  },
-  fetchDownloadLogs: async () => {
-    try {
-      const data = await apiClient<{ logs: string[]; downloading: boolean }>("/api/tts-local/models/logs");
-      set({ downloadLogs: data.logs, isDownloadingModel: data.downloading });
-    } catch {
-      // Ignore
-    }
+    await get().fetchLocalTTSStatus();
   },
 
 }));
@@ -1390,30 +1316,9 @@ export function useVoice() {
 }
 
 export function useLocalTTS() {
-  const localTTS = useGlobalConfigStore((state) => state.localTTS);
-  const availableTTSModels = useGlobalConfigStore((state) => state.availableTTSModels);
-  const isDownloadingModel = useGlobalConfigStore((state) => state.isDownloadingModel);
-  const downloadLogs = useGlobalConfigStore((state) => state.downloadLogs);
-  const fetchLocalTTSStatus = useGlobalConfigStore((state) => state.fetchLocalTTSStatus);
-  const installLocalTTS = useGlobalConfigStore((state) => state.installLocalTTS);
-  const startLocalTTS = useGlobalConfigStore((state) => state.startLocalTTS);
-  const stopLocalTTS = useGlobalConfigStore((state) => state.stopLocalTTS);
-  const fetchAvailableTTSModels = useGlobalConfigStore((state) => state.fetchAvailableTTSModels);
-  const downloadTTSModel = useGlobalConfigStore((state) => state.downloadTTSModel);
-  const fetchDownloadLogs = useGlobalConfigStore((state) => state.fetchDownloadLogs);
-
-  return { 
-    localTTS, 
-    availableTTSModels,
-    isDownloadingModel,
-    downloadLogs,
-    fetchLocalTTSStatus, 
-    installLocalTTS, 
-    startLocalTTS, 
-    stopLocalTTS,
-    fetchAvailableTTSModels,
-    downloadTTSModel,
-    fetchDownloadLogs,
-  };
+  const localTTS = useGlobalConfigStore(state => state.localTTS);
+  const fetchLocalTTSStatus = useGlobalConfigStore(state => state.fetchLocalTTSStatus);
+  const startLocalTTS = useGlobalConfigStore(state => state.startLocalTTS);
+  const stopLocalTTS = useGlobalConfigStore(state => state.stopLocalTTS);
+  return { localTTS, fetchLocalTTSStatus, startLocalTTS, stopLocalTTS };
 }
-

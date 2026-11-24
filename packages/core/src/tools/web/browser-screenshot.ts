@@ -9,12 +9,18 @@
 import type { Tool } from "../types.ts";
 import { logger } from "../../utils/logger.ts";
 import { getBrowserService, screenshotElement } from "./browser-service.ts";
+import { getWorkspace } from "../filesystem/workspace-guard.ts";
 import { createArtifact } from "../../artifacts/store.ts";
 
 const log = logger.child("browser-screenshot");
 
 // Default viewport for screenshots — keeps base64 small (~30-60KB vs ~300KB)
 const DEFAULT_VIEWPORT = { width: 1280, height: 720 };
+
+/** Nombre del archivo de la captura: el dominio de la página (about:blank u otros sin host → "captura"). */
+function hostLabel(url: string | undefined): string {
+  try { return new URL(url || "").hostname || "captura" } catch { return "captura" }
+}
 
 export const browserScreenshotTool: Tool = {
   name: "browser_screenshot",
@@ -119,6 +125,7 @@ export const browserScreenshotTool: Tool = {
         runId: configurable.run_id ? String(configurable.run_id) : null,
         taskId: configurable.task_id ? String(configurable.task_id) : null,
         rootDir: configurable.artifact_dir ? String(configurable.artifact_dir) : undefined,
+        visible: { workspace: getWorkspace(config), folder: "capturas", label: hostLabel(currentUrl) },
         width,
         height,
       });

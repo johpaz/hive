@@ -305,6 +305,8 @@ export interface ConversationDoc {
   reasoning_content: string | null
   /** null on rows written before this field existed (legacy). */
   source: MessageSource | null
+  /** JSON `[{artifactId, mimeType}]` de las imágenes que las herramientas entregaron con esta respuesta. */
+  images_json?: string | null
   token_count: number
   created_at: number
   updated_at: number

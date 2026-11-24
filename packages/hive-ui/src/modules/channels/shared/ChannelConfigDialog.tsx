@@ -20,13 +20,14 @@ import { Settings, AlertCircle, Loader2, CheckCircle2, Eye, EyeOff, QrCode, Refr
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import QRCode from "qrcode";
 
-// Los modelos de voz (STT/TTS) se leen de la BD vía el store (tabla models).
+const CHANNEL_SETTINGS = [
+    "voice_enabled", "tts_enabled", "stt_provider", "tts_provider", "tts_voice_id", "step_delivery_mode",
+] as const;
 
-const OCR_PROVIDERS = [
-    { id: "gemini", name: "Google Gemini", provider: "gemini" },
-    { id: "openai", name: "OpenAI", provider: "openai" },
-    { id: "anthropic", name: "Anthropic Claude", provider: "anthropic" },
-];
+const modelProviderId = (model: { provider_id?: string; providerId?: string }) =>
+    model.provider_id || model.providerId || "";
+const isSttModel = (model: { model_type?: string; supports_stt?: boolean }) =>
+    model.supports_stt ?? model.model_type === "stt";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Step = "type" | "credentials" | "reconnect" | "qr" | "connecting" | "success" | "settings";
@@ -68,40 +69,27 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
     const navigate = useNavigate();
     const { createChannel, reconnectChannel, fetchChannels } = useChannels();
     const { configuredVoiceProviders, fetchConfiguredVoiceProviders } = useVoice();
-    const { models } = useModels();
-    const { providers } = useProviders();
+    const { models, fetchModels } = useModels();
+    const { providers, fetchProviders } = useProviders();
+    const [loadingCatalog, setLoadingCatalog] = useState(true);
 
-    // Modelos de voz desde la BD, limitados a providers con API key configurada
-    const modelProviderId = (m: { provider_id?: string; providerId?: string }) =>
-        (m.provider_id || m.providerId || "") as string;
-
-    const sttModels = useMemo(
-        () => models.filter(m => m.model_type === "stt" && configuredVoiceProviders[modelProviderId(m)]),
-        [models, configuredVoiceProviders]
-    );
-
-    const ttsGroups = useMemo(() => {
-        const byProvider = new Map<string, typeof models>();
-        for (const m of models) {
-            if (m.model_type !== "tts") continue;
-            const pid = modelProviderId(m);
-            if (!configuredVoiceProviders[pid]) continue;
-            if (!byProvider.has(pid)) byProvider.set(pid, []);
-            byProvider.get(pid)!.push(m);
-        }
-        return Array.from(byProvider.entries()).map(([pid, ms]) => ({
-            provider: pid,
-            group: providers.find(p => p.id === pid)?.name || pid,
-            models: ms,
-        }));
+    const availableVoiceModels = useMemo(() => {
+        const active = new Set(providers.filter(p => p.active && p.enabled).map(p => p.id));
+        return models.filter(model => {
+            const provider = modelProviderId(model);
+            if (model.unlisted || !active.has(provider) || configuredVoiceProviders[provider] !== true) return false;
+            // STT is enabled for this channel by selecting a compatible model here.
+            return isSttModel(model) || (model.model_type === "tts" && model.active && model.enabled);
+        });
     }, [models, providers, configuredVoiceProviders]);
-
-    // Provider de un modelo TTS guardado en el canal (con fallback a id de provider para canales antiguos)
-    const resolveTTSProvider = useCallback((modelId: string): string | null => {
-        const model = models.find(m => m.id === modelId);
-        if (model) return modelProviderId(model);
-        return providers.some(p => p.id === modelId) ? modelId : null;
-    }, [models, providers]);
+    const sttModels = availableVoiceModels.filter(isSttModel);
+    const ttsModels = availableVoiceModels.filter(model => model.model_type === "tts");
+    const groupModels = (list: typeof availableVoiceModels) => providers.map(provider => ({
+        provider,
+        models: list.filter(model => modelProviderId(model) === provider.id),
+    })).filter(group => group.models.length);
+    const sttGroups = groupModels(sttModels);
+    const ttsGroups = groupModels(ttsModels);
 
     // ── new channel wizard state ──────────────────────────────────────────
     const [step, setStep] = useState<Step>(channel ? "settings" : "type");
@@ -121,8 +109,19 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
   // ── edit channel state ────────────────────────────────────────────────
   const [formData, setFormData] = useState<Partial<ConnectedChannel>>({});
   const [isSaving, setIsSaving] = useState(false);
-  const [voices, setVoices] = useState<Array<{ id: string; name: string }>>([]);
-  const [loadingVoices, setLoadingVoices] = useState(false);
+  const [voiceOptions, setVoiceOptions] = useState<{
+      modelId: string;
+      voices: Array<{ id: string; name: string }>;
+      failed?: boolean;
+  } | null>(null);
+  const selectedTTSModel = ttsModels.find(model => model.id === formData.tts_provider);
+  const selectedTTSModelId = selectedTTSModel?.id;
+  const selectedTTSProvider = selectedTTSModel ? modelProviderId(selectedTTSModel) : "";
+  const matchingVoices = voiceOptions?.modelId === selectedTTSModelId ? voiceOptions : null;
+  const voices = matchingVoices?.voices ?? [];
+  const loadingVoices = !!selectedTTSModelId && !matchingVoices;
+  const unavailableSTT = !!formData.stt_provider && !sttModels.some(model => model.id === formData.stt_provider);
+  const unavailableTTS = !!formData.tts_provider && !selectedTTSModel;
   const [showChangeToken, setShowChangeToken] = useState(false);
   const [newToken, setNewToken] = useState("");
   const [showNewToken, setShowNewToken] = useState(false);
@@ -138,6 +137,11 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
   const [waConfigLoaded, setWaConfigLoaded] = useState(false);
 
     // ── helpers ───────────────────────────────────────────────────────────
+    const openVoiceSettings = () => {
+        onClose();
+        navigate("/providers?tab=voice");
+    };
+
     const isDisconnected = channel && channel.status !== "connected";
     const isUnconfigured = channel && channel.isConfigured === false;
 
@@ -176,8 +180,18 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
     }, [isOpen, channel]);
 
   useEffect(() => {
-    fetchConfiguredVoiceProviders();
-  }, [fetchConfiguredVoiceProviders]);
+    if (!isOpen) return;
+    let cancelled = false;
+    setLoadingCatalog(true);
+    void Promise.all([fetchProviders(), fetchModels(), fetchConfiguredVoiceProviders()]).finally(() => {
+      if (!cancelled) setLoadingCatalog(false);
+    });
+    const timer = setInterval(() => void fetchConfiguredVoiceProviders(), 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [isOpen, fetchProviders, fetchModels, fetchConfiguredVoiceProviders]);
 
   useEffect(() => {
     if (!isOpen || !channel || channel.type !== "whatsapp") {
@@ -207,16 +221,20 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
     return () => { cancelled = true; };
   }, [isOpen, channel]);
 
-    // ── voice selector for TTS ────────────────────────────────────────────
     useEffect(() => {
-        const provider = formData.tts_provider ? resolveTTSProvider(formData.tts_provider) : null;
-        if (!provider) { setVoices([]); return; }
-        setLoadingVoices(true);
-        apiClient<{ voices: Array<{ id: string; name: string }> }>(`/api/voice/${provider}/voices`, { showError: false })
-            .then(data => setVoices(data.voices || []))
-            .catch(() => setVoices([]))
-            .finally(() => setLoadingVoices(false));
-    }, [formData.tts_provider, resolveTTSProvider]);
+        if (!isOpen || !formData.tts_enabled || !selectedTTSModelId || !selectedTTSProvider) return;
+        let cancelled = false;
+        const modelId = selectedTTSModelId;
+        const endpoint = `/api/voice/${encodeURIComponent(selectedTTSProvider)}/voices?model=${encodeURIComponent(modelId)}`;
+        apiClient<{ voices: Array<{ id: string; name: string }>; error?: string }>(endpoint, { showError: false })
+            .then(data => {
+                if (!cancelled) setVoiceOptions({ modelId, voices: data.voices, failed: !!data.error });
+            })
+            .catch(() => {
+                if (!cancelled) setVoiceOptions({ modelId, voices: [], failed: true });
+            });
+        return () => { cancelled = true; };
+    }, [isOpen, formData.tts_enabled, selectedTTSModelId, selectedTTSProvider]);
 
     // ─── polling helpers ─────────────────────────────────────────────────
     const stopPoll = useCallback(() => {
@@ -318,7 +336,10 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
         const config: Record<string, unknown> = { botToken: newToken.trim() };
         await reconnectChannel(channel.id, config);
       }
-      await onSave(channel.id, formData);
+      const changed = CHANNEL_SETTINGS.filter(key => formData[key] !== channel[key]);
+      if (changed.length > 0) {
+        await onSave(channel.id, Object.fromEntries(changed.map(key => [key, formData[key]])));
+      }
 
       // Save WhatsApp message reception config
       if (channel.type === "whatsapp") {
@@ -838,7 +859,7 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                 <Label className="text-right text-xs">Voz (STT)</Label>
                 <div className="flex items-center gap-2 col-span-3">
                     <Switch
-                        checked={formData.voice_enabled}
+                        checked={!!formData.voice_enabled}
                         onCheckedChange={(v) => setFormData(prev => ({ ...prev, voice_enabled: v }))}
                     />
                     <span className="text-xs text-muted-foreground">Procesar notas de voz</span>
@@ -849,7 +870,7 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                 <Label className="text-right text-xs">TTS</Label>
                 <div className="flex items-center gap-2 col-span-3">
                     <Switch
-                        checked={formData.tts_enabled}
+                        checked={!!formData.tts_enabled}
                         onCheckedChange={(v) => setFormData(prev => ({ ...prev, tts_enabled: v }))}
                     />
                     <span className="text-xs text-muted-foreground">Responder por voz</span>
@@ -859,16 +880,26 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
             {formData.voice_enabled && (
                 <div className="grid grid-cols-4 items-center gap-4">
                     <Label className="text-right text-xs">Modelo STT</Label>
-                    <Select value={formData.stt_provider || ""} onValueChange={v => setFormData(p => ({ ...p, stt_provider: v }))}>
+                    <Select disabled={loadingCatalog || sttModels.length === 0} value={unavailableSTT ? "" : formData.stt_provider || ""} onValueChange={v => setFormData(p => ({ ...p, stt_provider: v }))}>
                         <SelectTrigger className="col-span-3">
-                            <SelectValue placeholder="Selecciona modelo STT" />
+                            <SelectValue placeholder={loadingCatalog ? "Cargando modelos…" : unavailableSTT ? "Modelo actual no disponible" : "Selecciona modelo STT"} />
                         </SelectTrigger>
                         <SelectContent>
-                            {sttModels.map(m => (
-                                <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                            {sttGroups.map(group => (
+                                <SelectGroup key={group.provider.id}>
+                                    <SelectLabel>{group.provider.name}</SelectLabel>
+                                    {group.models.map(model => (
+                                        <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>
+                                    ))}
+                                </SelectGroup>
                             ))}
                         </SelectContent>
                     </Select>
+                    {!loadingCatalog && sttModels.length === 0 && (
+                        <button type="button" onClick={openVoiceSettings} className="col-start-2 col-span-3 text-left text-xs text-muted-foreground underline">
+                            No hay modelos STT disponibles. Ir a Providers → Voz
+                        </button>
+                    )}
                 </div>
             )}
 
@@ -876,14 +907,21 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                 <>
                     <div className="grid grid-cols-4 items-center gap-4">
                         <Label className="text-right text-xs">Modelo TTS</Label>
-                        <Select value={formData.tts_provider || ""} onValueChange={v => setFormData(p => ({ ...p, tts_provider: v, tts_voice_id: "" }))}>
+                        <Select
+                            disabled={loadingCatalog || ttsModels.length === 0}
+                            value={unavailableTTS ? "" : formData.tts_provider || ""}
+                            onValueChange={value => {
+                                setVoiceOptions(null);
+                                setFormData(data => ({ ...data, tts_provider: value, tts_voice_id: "" }));
+                            }}
+                        >
                             <SelectTrigger className="col-span-3">
-                                <SelectValue placeholder="Selecciona modelo TTS" />
+                                <SelectValue placeholder={loadingCatalog ? "Cargando modelos…" : unavailableTTS ? "Modelo actual no disponible" : "Selecciona modelo TTS"} />
                             </SelectTrigger>
                             <SelectContent>
                                 {ttsGroups.map(group => (
-                                    <SelectGroup key={group.provider}>
-                                        <SelectLabel>{group.group}</SelectLabel>
+                                    <SelectGroup key={group.provider.id}>
+                                        <SelectLabel>{group.provider.name}</SelectLabel>
                                         {group.models.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
                                     </SelectGroup>
                                 ))}
@@ -891,16 +929,16 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                         </Select>
                     </div>
 
-                    {formData.tts_provider && (
+                    {selectedTTSModel && (
                         <div className="grid grid-cols-4 items-center gap-4">
                             <Label className="text-right text-xs">Voz</Label>
                             <Select
-                                value={formData.tts_voice_id || ""}
+                                value={voices.some(voice => voice.id === formData.tts_voice_id) ? formData.tts_voice_id : ""}
                                 onValueChange={v => setFormData(p => ({ ...p, tts_voice_id: v }))}
                                 disabled={loadingVoices || voices.length === 0}
                             >
                                 <SelectTrigger className="col-span-3">
-                                    <SelectValue placeholder={loadingVoices ? "Cargando..." : "Selecciona una voz"} />
+                                    <SelectValue placeholder={loadingVoices ? "Cargando voces…" : matchingVoices?.failed ? "No se pudieron cargar las voces" : voices.length ? "Selecciona una voz" : "Sin voces disponibles"} />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {voices.map(v => <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>)}
@@ -909,16 +947,10 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                         </div>
                     )}
 
-                    {!configuredVoiceProviders.elevenlabs && !configuredVoiceProviders.openai && !configuredVoiceProviders.gemini && !configuredVoiceProviders.qwen && !configuredVoiceProviders.piper && (
-                        <Alert variant="destructive" className="bg-yellow-500/10 border-yellow-500/30 text-yellow-200">
-                            <AlertCircle className="h-4 w-4" />
-                            <AlertDescription className="text-yellow-200/80">
-                                Configura un provider TTS.{" "}
-                                <button className="underline" onClick={() => { onClose(); navigate("/settings/voz"); }}>
-                                    Ir a Configuración de Voz
-                                </button>
-                            </AlertDescription>
-                        </Alert>
+                    {!loadingCatalog && ttsModels.length === 0 && (
+                        <button type="button" onClick={openVoiceSettings} className="text-left text-xs text-muted-foreground underline">
+                            No hay modelos TTS disponibles. Ir a Providers → Voz
+                        </button>
                     )}
                 </>
             )}
@@ -950,40 +982,7 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                 </div>
             )}
 
-            <div className="pt-4 mt-2 border-t border-white/5 space-y-4">
-                <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                        <Label className="text-xs font-bold uppercase tracking-wider text-blue-400">Visión / Multimodal</Label>
-                        <p className="text-[10px] text-white/30">Procesamiento de imágenes y documentos</p>
-                    </div>
-                    <Switch
-                        checked={formData.vision_enabled}
-                        onCheckedChange={(v) => setFormData(prev => ({ ...prev, vision_enabled: v }))}
-                    />
-                </div>
 
-                {formData.vision_enabled && (
-                    <div className="grid grid-cols-4 items-center gap-4 animate-in fade-in slide-in-from-top-1 duration-200">
-                        <Label className="text-right text-xs">OCR Fallback</Label>
-                        <Select 
-                            value={formData.ocr_provider || ""} 
-                            onValueChange={v => setFormData(p => ({ ...p, ocr_provider: v }))}
-                        >
-                            <SelectTrigger className="col-span-3">
-                                <SelectValue placeholder="Selecciona provider de OCR" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {OCR_PROVIDERS.map(m => (
-                                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <div className="col-start-2 col-span-3 text-[10px] text-white/30 italic">
-                            Se usa cuando el modelo del agente no soporta visión nativa.
-                        </div>
-                    </div>
-                )}
-            </div>
         </div>
     );
 

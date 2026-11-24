@@ -6,6 +6,7 @@
  */
 import type { ToolParameter } from "../types.ts";
 import { googleJson } from "../../google/client.ts";
+import { getWorkspace } from "../filesystem/workspace-guard.ts";
 import { createArtifact, readArtifactBytes } from "../../artifacts/store.ts";
 import { CONFIRMED_PARAM, googleTool, headerSafe, needsConfirmation, num, str } from "./shared.ts";
 
@@ -563,6 +564,7 @@ export const gmailAttachmentTool = googleTool({
     const mime = ext === "pdf" ? "application/pdf" : "application/octet-stream";
     const artifact = await createArtifact({
       bytes, mimeType: mime, kind: "gmail_attachment", userId, extension: ext,
+      visible: { workspace: getWorkspace(config), folder: "descargas", label: filename ? filename.replace(/\.[^.]+$/, "") : "adjunto" },
       runId: config?.configurable?.run_id ?? null, taskId: config?.configurable?.task_id ?? null,
     });
     return { ok: true, artifact_id: artifact.id, size: bytes.byteLength, filename };

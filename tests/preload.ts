@@ -24,6 +24,10 @@ if (!process.env.HIVE_HOME) {
   process.on("exit", () => rmSync(testHome, { recursive: true, force: true }));
 }
 
+// Las herramientas dejan lo que crean para el usuario (imágenes, descargas, capturas) en una
+// carpeta visible, ~/Hive por defecto: los tests la redirigen a la carpeta temporal.
+process.env.HIVE_OUTPUT_DIR ||= join(process.env.HIVE_HOME!, "salidas");
+
 // Red de seguridad al cerrar la suite: cualquier archivo que haya dejado un
 // worker de tools vivo lo paga el proceso entero. Bun se cayó en CI con
 // SIGSEGV al salir con workers sin terminar (workers_spawned 13, terminated 11),

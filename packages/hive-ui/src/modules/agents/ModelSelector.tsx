@@ -46,7 +46,7 @@ export function ModelSelector({
   // Dropdown options: only LLM providers that are both enabled AND active, with an API key.
   // Requiring both (not enabled||active) means a stale/desynced flag can never leak a
   // provider into this list on its own. category gates out providers activated purely
-  // for voice/OCR (e.g. elevenlabs, piper) from ever appearing as a chat provider option.
+  // for voice/OCR (e.g. elevenlabs, kitten) from ever appearing as a chat provider option.
   const providerOptions = providers.filter(p => p.enabled && p.active && hasApiKey(p) && (p.category ?? "llm") === "llm");
 
   // Configured provider (even if inactive) for display in trigger

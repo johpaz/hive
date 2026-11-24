@@ -4,6 +4,7 @@ import type { ModelDoc, AgentDoc, ProviderDoc } from "../../storage/collections.
 import { catalogModelKey, wireModelId } from "../../storage/model-id.ts"
 import { invalidateModelPricingCache } from "../../storage/usage.ts"
 import type { Config } from "../../config/loader.ts"
+import { supportsStt } from "../../voice/stt-models"
 
 export async function handleGetModels(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const url = new URL(req.url)
@@ -13,12 +14,17 @@ export async function handleGetModels(req: Request, addCorsHeaders: (r: Response
   const entries = providerId
     ? await modelsCol.findBy("provider_id", providerId)
     : await modelsCol.scan({})
+  const nvidia = await (await col<ProviderDoc>("providers")).get("nvidia")
 
   // `wire_id` = el nombre que el provider espera, derivado acá y no en el front:
   // la lista de providers revendedores vive en storage/model-id.ts y no debe
   // duplicarse en la UI.
   const models = entries
-    .map(e => ({ ...e.doc, wire_id: wireModelId(e.doc.provider_id, e.doc.id) }))
+    .map(e => ({
+      ...e.doc,
+      wire_id: wireModelId(e.doc.provider_id, e.doc.id),
+      supports_stt: supportsStt(e.doc, nvidia?.doc.base_url),
+    }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
   return addCorsHeaders(Response.json({ models }), req)

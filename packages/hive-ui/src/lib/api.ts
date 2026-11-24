@@ -9,6 +9,8 @@ interface RequestOptions {
   body?: unknown;
   headers?: Record<string, string>;
   requireAuth?: boolean;
+  responseType?: "json" | "blob";
+  signal?: AbortSignal;
   showLoader?: boolean | string;
   showError?: boolean;
   showSuccess?: boolean | string | ((data: any) => boolean | string);
@@ -22,6 +24,8 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
     body,
     headers = {},
     requireAuth = true,
+    responseType = "json",
+    signal,
     showLoader = false,
     showError = true,
     showSuccess = false
@@ -39,11 +43,12 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
     method,
     headers: {
       "Content-Type": "application/json",
-      "Accept": "application/json",
+      "Accept": responseType === "blob" ? "*/*" : "application/json",
       ...(requireAuth && token ? { "Authorization": `Bearer ${token}` } : {}),
       ...headers,
     },
     body: body ? JSON.stringify(body) : undefined,
+    signal,
   }
 
   // Retry on network errors (gateway may still be starting up)
@@ -55,6 +60,10 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
       break
     } catch (err) {
       // TypeError: Failed to fetch = network error (CORS, connection refused, gateway starting)
+      if (signal?.aborted) {
+        if (showLoader) useLoaderStore.getState().hideLoader();
+        throw err;
+      }
       if (attempt < MAX_RETRIES) {
         await sleep((attempt + 1) * 2000)
       } else {
@@ -100,7 +109,7 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
     throw new Error(errorMessage);
   }
 
-  const data = await response.json();
+  const data = await (responseType === "blob" ? response.blob() : response.json());
 
   if (showSuccess) {
     let message: string | boolean = "Operación exitosa";

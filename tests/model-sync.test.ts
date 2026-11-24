@@ -61,6 +61,7 @@ describe("clasificar un id sin más datos", () => {
     expect(classifyModelId("text-embedding-3-large")).toBe("embedding");
     expect(classifyModelId("whisper-1")).toBe("stt");
     expect(classifyModelId("scribe_v3")).toBe("stt");
+    expect(classifyModelId("gpt-live-transcribe")).toBe("realtime");
     expect(classifyModelId("gpt-realtime-2.1")).toBe("realtime");
     expect(classifyModelId("gemini-3.8-live")).toBe("realtime");
     expect(classifyModelId("gemini-3.8-flash-tts")).toBe("tts");
@@ -82,6 +83,7 @@ describe("clasificar un id sin más datos", () => {
 describe("OpenAI-compatible (DeepSeek, NVIDIA, Groq, OpenRouter, Mistral…)", () => {
   test("guarda lo que el proveedor declara y deja los nuevos apagados", async () => {
     const f = fake({
+      "/models?output_modalities=transcription": () => json({ data: [{ id: "nvidia/nemotron-3.5-transcribe", name: "Nemotron Transcribe" }] }),
       "/models": () => json({ data: [
         // OpenRouter: ventana, modalidades, parámetros y precio publicados.
         { id: "vendor/nuevo", name: "Nuevo", context_length: 262144, architecture: { input_modalities: ["text", "image"], output_modalities: ["text"] },
@@ -100,7 +102,8 @@ describe("OpenAI-compatible (DeepSeek, NVIDIA, Groq, OpenRouter, Mistral…)", (
     const result = await syncProviderModels("openrouter", deps(f));
     // 5 filas, una es generación de imágenes (no se cuenta ni se guarda): quedan 4. Los 26 modelos que el catálogo
     // sembró para OpenRouter y esta respuesta no lista se marcan como "ya no listados", no se tocan de otro modo.
-    expect(result).toMatchObject({ provider: "openrouter", ok: true, found: 4, added: 4, updated: 0, unlisted: 26 });
+    expect(result).toMatchObject({ provider: "openrouter", ok: true, found: 5, added: 5, updated: 0, unlisted: 26 });
+    expect(await model("openrouter/nvidia/nemotron-3.5-transcribe")).toMatchObject({ model_type: "stt", active: false });
 
     const nuevo = (await model(catalogModelKey("openrouter", "vendor/nuevo")))!;
     expect(nuevo).toMatchObject({ source: "discovered", enabled: false, active: false, context_window: 262144, name: "Nuevo", model_type: "llm" });

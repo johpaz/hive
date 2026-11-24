@@ -5,6 +5,7 @@
  * @spanish drive, archivos, documentos de google, hojas de cálculo, subir archivo
  */
 import { googleFetch, googleJson, GoogleApiError } from "../../google/client.ts";
+import { getWorkspace } from "../filesystem/workspace-guard.ts";
 import { createArtifact, readArtifactBytes } from "../../artifacts/store.ts";
 import { googleTool, num, str } from "./shared.ts";
 
@@ -94,6 +95,7 @@ export const gdriveDownloadTool = googleTool({
     const ext = exp?.ext ?? (/\.([A-Za-z0-9]{1,8})$/.exec(meta.name)?.[1]?.toLowerCase());
     const artifact = await createArtifact({
       bytes, mimeType, kind: "gdrive_download", userId, extension: ext,
+      visible: { workspace: getWorkspace(config), folder: "descargas", label: meta.name.replace(/\.[^.]+$/, "") },
       runId: config?.configurable?.run_id ?? null, taskId: config?.configurable?.task_id ?? null,
     });
     const isText = exp?.text ?? /^text\//.test(mimeType);

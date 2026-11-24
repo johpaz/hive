@@ -200,11 +200,14 @@ export async function handleChat(
 
 // ── Original Chat API Functions ─────────────────────────────────────────────
 
-/** Busca un artifact_ref de imagen en el texto guardado de un resultado de herramienta (JSON o TOON). */
-function extractImageArtifact(content: string): { url: string; mimeType: string } | null {
-  const m = /artifact_id:?"?\s*"?([0-9a-fA-F-]{36})"?[\s\S]{0,200}?mime_type:?"?\s*"?(image\/[a-z0-9.+-]+)/i.exec(content || "")
-    ?? /"artifact_id"\s*:\s*"([0-9a-fA-F-]{36})"[\s\S]{0,200}?"mime_type"\s*:\s*"(image\/[a-z0-9.+-]+)"/i.exec(content || "")
-  return m ? { url: `/api/artifacts/${m[1]}/download`, mimeType: m[2] } : null
+/** Última imagen guardada junto a una respuesta del asistente, como la espera la web. */
+function storedImage(imagesJson: string | null | undefined): { image: string; imageMimeType: string } | null {
+  if (!imagesJson) return null
+  try {
+    const list = JSON.parse(imagesJson) as Array<{ artifactId: string; mimeType: string }>
+    const last = list[list.length - 1]
+    return last ? { image: `/api/artifacts/${last.artifactId}/download`, imageMimeType: last.mimeType } : null
+  } catch { return null }
 }
 
 export async function handleGetChatHistory(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
@@ -218,24 +221,6 @@ export async function handleGetChatHistory(req: Request, addCorsHeaders: (r: Res
 
   const conversationsCol = await col<ConversationDoc>("conversations")
   const all = await conversationsCol.scan({ prefix: `${threadId}:`, reverse: true })
-
-  // Las imágenes que una herramienta entregó al chat (artifact_ref image/*) solo
-  // viajaban por el socket: al recargar el historial desaparecían. Se recuperan
-  // de los resultados de herramienta guardados y se anclan a la respuesta del
-  // agente que cierra ese turno.
-  const imageByMessage = new Map<string, { url: string; mimeType: string }>()
-  let pending: { url: string; mimeType: string } | null = null
-  for (const e of [...all].reverse()) {
-    if (e.doc.role === "tool") {
-      const found = extractImageArtifact(e.doc.content)
-      if (found) pending = found
-    } else if (e.doc.role === "user") {
-      pending = null
-    } else if (e.doc.role === "assistant" && !e.doc.tool_calls_json && pending) {
-      imageByMessage.set(e.id, pending)
-      pending = null
-    }
-  }
 
   const entries = all
     // Legacy internal turns still carry role:"system" and are excluded by the
@@ -257,10 +242,7 @@ export async function handleGetChatHistory(req: Request, addCorsHeaders: (r: Res
     token_count: e.doc.token_count,
     created_at: e.doc.created_at,
     updated_at: e.doc.updated_at,
-    ...(imageByMessage.has(e.id) && {
-      image: imageByMessage.get(e.id)!.url,
-      imageMimeType: imageByMessage.get(e.id)!.mimeType,
-    }),
+    ...storedImage(e.doc.images_json),
   })).reverse()
 
   return addCorsHeaders(Response.json({ messages }), req)

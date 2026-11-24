@@ -116,8 +116,6 @@
     "test": "bun test --parallel tests --timeout 15000",
     "test:ci": "bun test tests --coverage",
     "test:ui": "bun --cwd=packages/hive-ui run test",
-    "bench:compaction": "HIVE_HOME=${HIVE_HOME:-$HOME/.hive-dev} bun bench/compaction/run.ts",
-    "bench:history-timeline": "bun bench/history-timeline/run.ts",
     "docs:generate": "bun scripts/generate-docs.ts",
     "docs:check": "bun scripts/generate-docs.ts --check",
     "lint": "bunx tsc --noEmit",

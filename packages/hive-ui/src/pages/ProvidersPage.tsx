@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useProviders, useModels } from "@/hooks/useProviders";
 import { ProviderGuideDialog } from "@/modules/providers/models/ProviderGuideDialog";
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import type React from "react";
 
 const PlusIcon = Plus as React.ComponentType<LucideProps>;
@@ -22,7 +23,15 @@ export function ProvidersPage() {
   const [open, setOpen] = useState(false);
   // La guía vive acá, no en cada tarjeta: es documentación global.
   const [guideOpen, setGuideOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("providers");
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("tab");
+  const activeTab = tab === "voice" || tab === "vision" ? tab : "providers";
+  const setActiveTab = (value: string) => setParams(previous => {
+    const next = new URLSearchParams(previous);
+    if (value === "providers") next.delete("tab");
+    else next.set("tab", value);
+    return next;
+  }, { replace: true });
 
   const handleAdd = async (data: {
     id: string;
