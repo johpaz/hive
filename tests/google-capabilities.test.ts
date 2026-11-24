@@ -12,7 +12,7 @@ import { handleGoogleCallback, handleGoogleConnect, handleGoogleDisconnect, hand
 import { handleUpdateAgent } from "../packages/core/src/gateway/routes/agents";
 import { resetGoogleHostState } from "../packages/core/src/gateway/google-host";
 import { syncGoogleCapabilities } from "../packages/core/src/storage/google-capabilities";
-import { MemoryGoogleTokenStore, configureGoogle, resetGoogle } from "../packages/core/src/google";
+import { MemoryGoogleTokenStore, configureGoogle, getGoogleConfig, resetGoogle } from "../packages/core/src/google";
 import { searchCapabilities } from "../packages/core/src/agent/capability-search";
 import { syncToolCatalogToIndex } from "../packages/core/src/agent/tool-selector";
 import { syncCatalogAgentsToIndex } from "../packages/core/src/agent/catalog-selector";
@@ -93,6 +93,25 @@ describe("agentes y tools de Google", () => {
     await connectGmail();
     await patchAgent("google_mail_agent", { enabled: false });
     await syncGoogleCapabilities("boot");
+    expect((await agent("google_mail_agent")).enabled).toBe(false);
+  });
+
+  test("migración: una conexión que ya existía activa sus agentes una sola vez y luego respeta lo apagado a mano", async () => {
+    // Estado de quien conectó antes de que los agentes nacieran apagados: tokens + vínculo, agentes inactivos.
+    const userId = await saveUserProfile({ userName: "Ada" });
+    await getGoogleConfig().tokenStore.put(userId, {
+      accessToken: "A", refreshToken: "R", expiresAt: Date.now() + 3_600_000, email: "ada@example.com",
+      scopes: [`${GM}.modify`, `${GM}.send`],
+    });
+    expect((await agent("google_mail_agent")).enabled).toBe(false);
+
+    await syncGoogleCapabilities("boot");
+    expect((await agent("google_mail_agent")).enabled).toBe(true);
+    expect((await agent("google_calendar_agent")).enabled).toBe(false); // sin ese permiso
+
+    await patchAgent("google_mail_agent", { enabled: false });
+    await syncGoogleCapabilities("boot");
+    await syncGoogleCapabilities("seed");
     expect((await agent("google_mail_agent")).enabled).toBe(false);
   });
 

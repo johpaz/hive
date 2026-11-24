@@ -15,6 +15,7 @@ const MODEL_TYPES = [
   { value: "stt", label: "STT (voz → texto)" },
   { value: "tts", label: "TTS (texto → voz)" },
   { value: "embedding", label: "Embeddings" },
+  { value: "image", label: "Imagen (generar)" },
 ];
 
 const CAPABILITIES = [

@@ -102,7 +102,7 @@ import { handleGetChannels, handleGetChannelConfig, handleActivateChannel, handl
 import { handleGetMcpServers, handleGetMcpServerDetail, handleCreateMcpServer, handleUpdateMcpServer, handleDeleteMcpServer, handleToggleMcpServer, handleGetMCPServerTools } from "./routes/mcp";
 import { handleGetModels, handleCreateModel, handleToggleModel, handleGetModelsConfig, handleUpdateModelsConfig, handleDeleteModel, handleUpdateModel } from "./routes/models";
 import { handleGetVoiceProviders, handleGetConfiguredVoiceProviders, handleSaveVoiceProviderKey, handleTestVoice, handleGetChannelVoice, handleUpdateChannelVoice, handleGetVoiceProviderVoices } from "./routes/voice";
-import { handleGetVisionProviders, handleGetChannelVision, handleUpdateChannelVision, handleOcrImage, handleGetVisionAnalyzer, handleSetVisionAnalyzer } from "./routes/multimodal";
+import { handleGetVisionProviders, handleGetChannelVision, handleUpdateChannelVision, handleOcrImage, handleGetVisionAnalyzer, handleSetVisionAnalyzer, handleGetImageModel, handleSetImageModel } from "./routes/multimodal";
 import { handleGetLocalTTSStatus, handleGetLocalTTSLogs, handleInstallLocalTTS, handleStartLocalTTS, handleStopLocalTTS, handleSpeakLocalTTS, handleGetAvailableModels, handleGetInstalledVoices, handleDownloadModel, handleGetDownloadLogs, initializeLocalTTS } from "./routes/tts-local";
 import { handleCreateMeeting, handleListMeetings, handleGetMeeting, handleAddMeetingSegment, handleStopMeeting, handleGenerateMeetingReport, handleDownloadMeetingReport } from "./routes/meeting";
 import { handleDownloadArtifact } from "./routes/artifacts";
@@ -1965,6 +1965,14 @@ export async function startGateway(
 
         if (url.pathname === "/api/multimodal/analyzer" && req.method === "PUT") {
           return await handleSetVisionAnalyzer(req, addCorsHeaders)
+        }
+
+        if (url.pathname === "/api/multimodal/image-model" && req.method === "GET") {
+          return await handleGetImageModel(req, addCorsHeaders)
+        }
+
+        if (url.pathname === "/api/multimodal/image-model" && req.method === "PUT") {
+          return await handleSetImageModel(req, addCorsHeaders)
         }
 
         if (url.pathname === "/api/multimodal/ocr" && req.method === "POST") {

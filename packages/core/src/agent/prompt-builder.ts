@@ -148,7 +148,22 @@ export async function buildSystemPrompt(opts: BuildSystemPromptOpts): Promise<st
   // ──────────────────────────────────────────────────────────────────────────
   // Ensamblar secciones en orden
   // ──────────────────────────────────────────────────────────────────────────
-  const systemPrompt = `${ethicsSection}${agentSection}${userSection}`.trim()
+  // Capacidad de imágenes: solo se anuncia si hay un modelo generador elegido,
+  // para no prometer algo que la herramienta no puede cumplir.
+  let capabilitiesSection = ""
+  if (agent.role === "coordinator") {
+    try {
+      const { getImageModelId } = await import("../multimodal/image-generation")
+      if (await getImageModelId()) {
+        capabilitiesSection = `# CAPACIDADES\n\n` +
+          `Puedes crear imágenes nuevas (ilustraciones, logos, pósters, arte) con la herramienta \`image_generate\`: ` +
+          `se muestran solas al usuario en el chat y en Telegram. No puedes editar imágenes existentes. ` +
+          `Si el usuario te pide una imagen, úsala; si te pregunta si puedes generarlas, responde que sí.\n\n`
+      }
+    } catch { /* sin modelo de imagen: no se anuncia */ }
+  }
+
+  const systemPrompt = `${ethicsSection}${agentSection}${userSection}${capabilitiesSection}`.trim()
 
   log.info(`[prompt-builder] Built system prompt for agent=${agent.name} role=${agent.role}`)
 

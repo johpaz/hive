@@ -44,7 +44,7 @@ export interface ModelDoc {
   provider_id: string
   name: string
   /** "realtime": voz full-duplex (Live API), no confundir con stt+tts encadenados. */
-  model_type: "llm" | "stt" | "tts" | "vision" | "embedding" | "realtime" | "decision"
+  model_type: "llm" | "stt" | "tts" | "vision" | "embedding" | "realtime" | "decision" | "image"
   context_window: number
   capabilities: string | null
   enabled: boolean
@@ -534,7 +534,8 @@ export interface ArtifactDoc {
   height: number | null
   status: "active" | "expired"
   created_at: number
-  expires_at: number
+  /** `null` = no caduca (contenido del usuario). */
+  expires_at: number | null
   expired_at: number | null
 }
 

@@ -27,7 +27,7 @@ const packagePaths = [
 ];
 // Cargo.toml no es JSON — se valida aparte con un regex en validateContracts().
 const desktopCargoTomlPath = "apps/hive-desktop/src-tauri/Cargo.toml";
-const categories = ["filesystem", "web", "cron", "cli", "agents", "a2ui", "core", "office", "api"];
+const categories = ["filesystem", "web", "cron", "cli", "agents", "a2ui", "core", "office", "api", "image", "google"];
 
 function markdown(value: unknown): string {
   return String(value ?? "").replaceAll("|", "\\|").replaceAll("\n", " ");

@@ -11,6 +11,9 @@ import { logger } from "../utils/logger.ts";
 
 const log = logger.child("google-capabilities");
 
+const SETTINGS_COLLECTION = "system_settings";
+const SETTING_ID = "google_capabilities";
+
 export const GOOGLE_AGENT_BY_SERVICE: Record<GoogleService, string> = {
   gmail: "google_mail_agent",
   calendar: "google_calendar_agent",
@@ -45,11 +48,18 @@ export async function connectedGoogleServices(): Promise<GoogleService[]> {
  * Alinea filas de tools y agentes con la conexión real.
  *  · `reason: "connect"`  — activa lo conectado y desactiva lo demás.
  *  · `reason: "boot"`/`"seed"` — solo desactiva lo no conectado: respeta que el
- *    usuario haya apagado a mano algo que sí está conectado.
+ *    usuario haya apagado a mano algo que sí está conectado. Excepción: la primera
+ *    vez que encuentra una conexión ya existente (migración), activa sus agentes.
  */
 export async function syncGoogleCapabilities(reason: "connect" | "disconnect" | "boot" | "seed"): Promise<void> {
   const connected = new Set(await connectedGoogleServices());
-  const enable = reason === "connect";
+  // Migración de una sola vez: quien conectó Google antes de que los agentes nacieran apagados
+  // tiene una conexión viva y agentes inactivos. La primera vez que se ve una conexión se
+  // activan; después, un arranque nunca reactiva lo que el usuario apagó a mano.
+  const settings = await col<{ initialized: boolean }>(SETTINGS_COLLECTION);
+  const initialized = (await settings.get(SETTING_ID))?.doc.initialized === true;
+  const adopt = !initialized && connected.size > 0 && (reason === "boot" || reason === "seed");
+  const enable = reason === "connect" || adopt;
   let changed = 0;
 
   const toolsCol = await col<ToolDoc>("tools");
@@ -72,6 +82,10 @@ export async function syncGoogleCapabilities(reason: "connect" | "disconnect" | 
     if (row.doc.enabled === wanted) continue;
     await agentsCol.put(agentId, { ...row.doc, enabled: wanted, updated_at: Date.now() }, { expectedVersion: row.version });
     changed++;
+  }
+  if (enable && connected.size > 0 && !initialized) {
+    const current = await settings.get(SETTING_ID);
+    await settings.put(SETTING_ID, { initialized: true }, { expectedVersion: current?.version ?? 0 });
   }
   if (changed > 0) log.info(`[google] ${changed} capacidad(es) sincronizada(s) (${reason}; conectado: ${[...connected].join(", ") || "nada"})`);
 }

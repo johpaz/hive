@@ -38,6 +38,9 @@ import * as office from "./office/index.ts";
 // API (1) - HTTP client for REST APIs
 import * as api from "./api/index.ts";
 
+// Image (1) - generación de imágenes con el modelo elegido en Providers → Imagen
+import * as image from "./image/index.ts";
+
 // Google Workspace (21) - Gmail, Calendar, Drive. Sólo si el host configuró Google.
 import * as google from "./google/index.ts";
 import { isGoogleConfigured } from "../google/config.ts";
@@ -77,6 +80,9 @@ export function createAllTools(config: Config): Tool[] {
     // API (1)
     ...api.createTools(),
 
+    // IMAGE (1)
+    ...image.createTools(),
+
     // GOOGLE (21) — opt-in: sin credenciales no hay tools que fallen en silencio
     ...(isGoogleConfigured() ? google.createTools() : []),
 
@@ -108,6 +114,8 @@ export function createToolsByCategory(category: string, config: Config): Tool[] 
       return office.createTools();
     case "api":
       return api.createTools();
+    case "image":
+      return image.createTools();
     case "google":
       return google.createTools();
     default:
@@ -117,6 +125,8 @@ export function createToolsByCategory(category: string, config: Config): Tool[] 
 
 // Export types
 export * from "./types.ts";
+
+export { imageGenerateTool } from "./image/index.ts";
 
 export {
   gmailSearchTool, gmailReadTool, gmailThreadTool, gmailSendTool, gmailReplyTool, gmailForwardTool,

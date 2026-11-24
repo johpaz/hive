@@ -58,6 +58,11 @@ export async function createArtifact(input: {
   width?: number | null;
   height?: number | null;
   now?: number;
+  /**
+   * Cuándo caduca. `null` = nunca, para lo que es del usuario y no basura
+   * transitoria (p. ej. una imagen que pidió generar). Por omisión, 7 días.
+   */
+  expiresAt?: number | null;
 }): Promise<ArtifactDoc> {
   const now = input.now ?? Date.now();
   const id = randomUUID();
@@ -83,7 +88,7 @@ export async function createArtifact(input: {
     height: input.height ?? null,
     status: "active",
     created_at: now,
-    expires_at: now + ARTIFACT_RETENTION_MS,
+    expires_at: input.expiresAt !== undefined ? input.expiresAt : now + ARTIFACT_RETENTION_MS,
     expired_at: null,
   };
 
@@ -233,7 +238,9 @@ export async function expireArtifacts(now = Date.now()): Promise<{ expired: numb
   const rows = await artifacts.scan({});
   let expired = 0;
   for (const row of rows) {
-    if (row.doc.status !== "active" || row.doc.expires_at > now) continue;
+    // `null` es explícito: el usuario pidió conservarlo. Saltarlo ANTES de
+    // comparar fechas evita que un `null > now` (que es false) lo borre.
+    if (row.doc.status !== "active" || row.doc.expires_at === null || row.doc.expires_at > now) continue;
     try {
       if (existsSync(row.doc.path)) unlinkSync(row.doc.path);
     } catch {

@@ -74,6 +74,11 @@ export const SEED_DATA: SeedData = {
     { id: "gdrive_download", name: "gdrive_download", category: "google", description: "Descargar o exportar un archivo de Google Drive a un artifact. Sinónimos: leer documento de google (Requiere conectar tu cuenta de Google en tu perfil.)" },
     { id: "gdrive_upload", name: "gdrive_upload", category: "google", description: "Subir un archivo nuevo a Google Drive. Sinónimos: guardar en drive (Requiere conectar tu cuenta de Google en tu perfil.)" },
 
+    // ─────────────────────────────────────────
+    // IMAGEN — usa el modelo elegido en Providers → Imagen
+    // ─────────────────────────────────────────
+    { id: "image_generate", name: "image_generate", category: "image", description: "Crear una imagen nueva a partir de una descripción (ilustración, logo, póster, arte conceptual) con el modelo elegido en Providers → Imagen. Sinónimos: crear imagen, generar imagen, dibujar, hazme una imagen" },
+
     { id: "api_request", name: "api_request", category: "api", description: "Ejecutar una petición HTTP autorizada contra un endpoint REST y validar la respuesta. Sinónimos: llamar api, request rest, consumir endpoint, petición http, hacer get, hacer post" },
     { id: "web_search", name: "web_search", category: "web", description: "Buscar en la web información actual y noticias. Sinónimos: búsqueda web, noticias, información, buscar en internet, google" },
     { id: "web_fetch", name: "web_fetch", category: "web", description: "Obtener contenido de texto de una URL (ligero, sin JS). Sinónimos: descargar página, extraer texto, obtener contenido, leer url" },
@@ -398,6 +403,13 @@ export const SEED_DATA: SeedData = {
     // julio/agosto con "Free Endpoint" en el catálogo de NGC, y responden con
     // tool calling en una cuenta gratuita. Contexto según la referencia de la API
     // de NVIDIA (Kimi K3) y OpenRouter (el resto). Verificado 2026-09-10.
+    // ── Generación de imágenes (NVIDIA, endpoints alojados ai.api.nvidia.com/v1/genai) ──
+    // Solo entran los verificados con una cuenta gratuita el 2026-11-23: responden con una
+    // imagen JPEG en `artifacts[0].base64`. flux.1-dev se colgó (>150 s) y su licencia es no
+    // comercial; los de edición (Kontext, klein con imagen) solo admiten imágenes de ejemplo
+    // predefinidas y Qwen-Image no tiene endpoint alojado, así que no se listan.
+    { id: "black-forest-labs/flux.2-klein-4b", providerId: "nvidia", name: "FLUX.2 Klein 4B (NVIDIA)", modelType: "image", contextWindow: 0, capabilities: JSON.stringify(["image_generation"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "black-forest-labs/flux.1-schnell", providerId: "nvidia", name: "FLUX.1 Schnell (NVIDIA)", modelType: "image", contextWindow: 0, capabilities: JSON.stringify(["image_generation"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "meta/muse-glimmer-30b", providerId: "nvidia", name: "Muse Glimmer 30B (NVIDIA)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "vision", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "nvidia/nemotron-3-ultra-550b-a55b", providerId: "nvidia", name: "Nemotron 3 Ultra 550B", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
     // Revisado el 2026-11-16 con llamadas reales a /v1/models y a cada modelo (nivel gratuito, "Free Endpoint"): de 23

@@ -11,6 +11,7 @@ import { ChatHistory } from "@/modules/chat/ChatHistory";
 import { ConversationList } from "@/modules/chat/ConversationList";
 import { ChatInput, type ChatAttachment } from "@/modules/chat/ChatInput";
 import { apiClient } from "@/lib/api";
+import { getApiBaseUrl } from "@/lib/gateway-url";
 import { generateId } from "@/lib/utils";
 import { Bot, Volume2, VolumeX, AlertCircle, RefreshCw } from "lucide-react";
 
@@ -92,6 +93,7 @@ export function WebChatPage() {
               content: m.content,
               agentId,
               timestamp: m.created_at,
+              ...(m.image && { image: { url: `${getApiBaseUrl()}${m.image}`, mimeType: m.imageMimeType } }),
             }));
           setMessages(formattedMessages);
           // Si la última palabra es del agente, el turno terminó aunque su

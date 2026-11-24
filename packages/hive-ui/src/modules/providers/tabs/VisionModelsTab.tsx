@@ -4,7 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useProviders } from "@/hooks/useProviders";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ModelCard } from "@/modules/providers/models/ModelCard";
-import { Search, Eye } from "lucide-react";
+import { Search, Eye, ImagePlus } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { useGlobalConfigStore } from "@/stores/useGlobalConfigStore";
 import { parseCapabilities } from "@/lib/capabilities";
@@ -17,6 +17,8 @@ export function VisionModelsTab() {
   const [providerFilter, setProviderFilter] = useState("all");
   // Modelo que describe imágenes y documentos cuando el del chat no los ve. Uno solo para todos los canales.
   const [analyzerId, setAnalyzerId] = useState<string>("");
+  // Modelo que CREA imágenes (tool image_generate): chat web, Telegram y demás canales.
+  const [generatorId, setGeneratorId] = useState<string>("");
 
   // Force fresh data from the DB every time this tab is opened
   useEffect(() => {
@@ -28,6 +30,27 @@ export function VisionModelsTab() {
       .then((r) => setAnalyzerId(r.modelId ?? ""))
       .catch(() => { /* sin ajuste guardado: queda en "Ninguno" */ });
   }, []);
+
+  useEffect(() => {
+    apiClient<{ modelId: string | null }>("/api/multimodal/image-model", { showError: true })
+      .then((r) => setGeneratorId(r.modelId ?? ""))
+      .catch(() => { /* sin ajuste guardado: queda en "Ninguno" */ });
+  }, []);
+
+  const changeGenerator = async (value: string) => {
+    const previous = generatorId;
+    setGeneratorId(value === "none" ? "" : value);
+    try {
+      await apiClient("/api/multimodal/image-model", {
+        method: "PUT",
+        body: { modelId: value === "none" ? null : value },
+        showError: true,
+        showSuccess: value === "none" ? "Generación de imágenes desactivada" : "Modelo generador actualizado",
+      });
+    } catch {
+      setGeneratorId(previous);
+    }
+  };
 
   const changeAnalyzer = async (value: string) => {
     const previous = analyzerId;
@@ -48,6 +71,14 @@ export function VisionModelsTab() {
     () =>
       availableModels
         .filter((m) => parseCapabilities(m.capabilities).includes("vision"))
+        .sort((a, b) => Number(!!b.active) - Number(!!a.active)),
+    [availableModels],
+  );
+
+  const generatorOptions = useMemo(
+    () =>
+      availableModels
+        .filter((m) => parseCapabilities(m.capabilities).includes("image_generation"))
         .sort((a, b) => Number(!!b.active) - Number(!!a.active)),
     [availableModels],
   );
@@ -94,6 +125,33 @@ export function VisionModelsTab() {
             ))}
           </SelectContent>
         </Select>
+      </div>
+      <div className="rounded-lg border p-3 space-y-2">
+        <div>
+          <p className="flex items-center gap-1.5 text-sm font-semibold">
+            <ImagePlus className="h-4 w-4" /> Modelo generador de imagenes
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Crea imagenes nuevas cuando el usuario las pide, en el chat web y en Telegram u otros canales. Solo aparecen modelos de
+            providers con generacion de imagenes disponible (hoy NVIDIA); necesitas la API key del provider. No edita imagenes existentes.
+          </p>
+        </div>
+        <Select value={generatorId || "none"} onValueChange={changeGenerator}>
+          <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Ninguno" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Ninguno (no generar imagenes)</SelectItem>
+            {generatorOptions.map((m) => (
+              <SelectItem key={m.id} value={m.id}>
+                {m.name} · {m.providerId || m.provider_id}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {generatorOptions.length === 0 && (
+          <p className="text-xs text-amber-400">
+            No hay modelos de generacion de imagenes. Agrega y activa el provider NVIDIA en la tab Providers.
+          </p>
+        )}
       </div>
       <div className="flex gap-2">
         <div className="relative flex-1">

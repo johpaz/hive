@@ -99,3 +99,22 @@ export async function handleSetVisionAnalyzer(req: Request, addCorsHeaders: (r: 
   }
   return addCorsHeaders(Response.json({ success: true, modelId: await getVisionAnalyzerModelId() }), req)
 }
+
+export async function handleGetImageModel(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
+  const { getImageModelId } = await import("../../multimodal/image-generation")
+  return addCorsHeaders(Response.json({ modelId: await getImageModelId() }), req)
+}
+
+export async function handleSetImageModel(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
+  const body = await req.json().catch(() => ({})) as { modelId?: string | null }
+  if (body.modelId !== null && typeof body.modelId !== "string") {
+    return addCorsHeaders(Response.json({ success: false, error: "modelId debe ser un id o null" }, { status: 400 }), req)
+  }
+  const { setImageModelId, getImageModelId } = await import("../../multimodal/image-generation")
+  try {
+    await setImageModelId(body.modelId || null)
+  } catch (err) {
+    return addCorsHeaders(Response.json({ success: false, error: (err as Error).message }, { status: 400 }), req)
+  }
+  return addCorsHeaders(Response.json({ success: true, modelId: await getImageModelId() }), req)
+}
