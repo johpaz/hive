@@ -2,6 +2,12 @@ import { describe, expect, test } from "bun:test"
 import { createA2UISurfaceTool, createA2UIUpdateComponentsTool, findIncompleteComponents } from "../packages/core/src/tools/a2ui"
 import { canvasManager } from "../packages/core/src/canvas/canvas-manager"
 
+/** execute() devuelve string u objeto según la herramienta: se normaliza a objeto para los asserts. */
+async function run(tool: { execute: (a: any, c: any) => Promise<string | object> }, args: unknown): Promise<any> {
+  const out = await tool.execute(args, {} as any)
+  return typeof out === "string" ? JSON.parse(out) : out
+}
+
 // Lo que el especialista envió de verdad (frames capturados): 8 componentes con solo id, component y weight.
 const REAL_SKELETON = [
   { id: "root", component: "Column", weight: 1 },
@@ -89,11 +95,11 @@ describe("A2UI components must arrive complete", () => {
     const create = createA2UISurfaceTool({} as any)
     const sessionId = "canvas:test-recreate"
     const args = { sessionId, surfaceId: "simple_form", catalogId: "basic" }
-    expect(JSON.parse(await create.execute(args, {} as any)).status).toBe("created")
+    expect((await run(create, args)).status).toBe("created")
     await canvasManager.sendA2UIMessage(sessionId, "a2ui:updateComponents", { surfaceId: "simple_form", components: COMPLETE_FORM })
     expect(canvasManager.getCachedComponents(sessionId, "simple_form")).toHaveLength(6)
 
-    const again = JSON.parse(await create.execute(args, {} as any))
+    const again = await run(create, args)
     expect(again.status).toBe("exists")
     expect(again.componentCount).toBe(6)
     expect(again.hint).toContain("a2ui_update_components")
@@ -104,14 +110,14 @@ describe("A2UI components must arrive complete", () => {
     const create = createA2UISurfaceTool({} as any)
     const sessionId = "canvas:test-restart"
     const args = { sessionId, surfaceId: "s", catalogId: "basic" }
-    const first = JSON.parse(await create.execute(args, {} as any))
+    const first = await run(create, args)
     expect(first.status).toBe("created")
     expect(first.next).toContain("VACÍA") // tells the model the work is not done
-    expect(JSON.parse(await create.execute(args, {} as any)).status).toBe("created") // aún sin componentes
+    expect((await run(create, args)).status).toBe("created") // aún sin componentes
     await canvasManager.sendA2UIMessage(sessionId, "a2ui:updateComponents", { surfaceId: "s", components: COMPLETE_FORM })
-    expect(JSON.parse(await create.execute(args, {} as any)).status).toBe("exists")
+    expect((await run(create, args)).status).toBe("exists")
     await canvasManager.sendA2UIMessage(sessionId, "a2ui:deleteSurface", { surfaceId: "s" })
-    expect(JSON.parse(await create.execute(args, {} as any)).status).toBe("created")
+    expect((await run(create, args)).status).toBe("created")
     expect(canvasManager.getCachedComponents(sessionId, "s")).toEqual([])
   })
 
