@@ -98,30 +98,20 @@ async function verifyChecksum(archive: string, checksum: string, name: string) {
 }
 
 /**
- * El tar de GNU (el de Git for Windows, que es el que aparece primero en el PATH
- * de los runners) toma `C:\ruta` por `equipo:ruta` y falla con «Cannot connect
- * to C: resolve failed». `--force-local` lo evita, pero el bsdtar de Windows no
- * lo conoce, así que solo se añade si el tar que responde es el de GNU.
+ * En Windows se usa el tar propio del sistema (`System32\\tar.exe`, bsdtar), no
+ * el primero del PATH: en los runners es el de GNU que trae Git for Windows, que
+ * toma `C:\\ruta` por `equipo:ruta` («Cannot connect to C: resolve failed») y
+ * con `--force-local` sigue sin entender las rutas con barra invertida de `-C`.
  */
-let gnuTar: boolean | undefined
-async function tarIsGnu(): Promise<boolean> {
-  if (process.platform !== "win32") return false
-  if (gnuTar === undefined) {
-    try {
-      const p = Bun.spawn(["tar", "--version"], { stdout: "pipe", stderr: "ignore", windowsHide: true })
-      gnuTar = /GNU tar/i.test(await new Response(p.stdout).text())
-      await p.exited
-    } catch {
-      gnuTar = false
-    }
-  }
-  return gnuTar
+function tarCommand(): string {
+  if (process.platform !== "win32") return "tar"
+  const system = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
+  return existsSync(system) ? system : "tar"
 }
 
 async function unpack(archive: string, destination: string, signal: AbortSignal) {
   await mkdir(destination)
-  const local = (await tarIsGnu()) ? ["--force-local"] : []
-  const tar = Bun.spawn(["tar", ...local, "-xf", archive, "-C", destination], { stderr: "pipe", signal, windowsHide: true })
+  const tar = Bun.spawn([tarCommand(), "-xf", archive, "-C", destination], { stderr: "pipe", signal, windowsHide: true })
   const [code, stderr] = await Promise.all([tar.exited, new Response(tar.stderr).text()])
   signal.throwIfAborted()
   if (code !== 0) throw new Error(`No se pudo extraer el paquete: ${stderr.trim()}`)
