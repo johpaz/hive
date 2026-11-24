@@ -25,7 +25,7 @@ export const PIPER_URLS: Record<Platform, string> = {
   "linux-x64": `${PIPER_BASE_URL}/piper_linux_x86_64.tar.gz`,
   "linux-arm64": `${PIPER_BASE_URL}/piper_linux_aarch64.tar.gz`,
   "windows-x64": `${PIPER_BASE_URL}/piper_windows_amd64.zip`,
-  "macos-x64": `${PIPER_BASE_URL}/piper_macos_x86_64.tar.gz`,
+  "macos-x64": `${PIPER_BASE_URL}/piper_macos_x64.tar.gz`,
   "macos-arm64": `${PIPER_BASE_URL}/piper_macos_aarch64.tar.gz`,
 }
 
