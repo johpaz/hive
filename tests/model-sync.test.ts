@@ -81,7 +81,7 @@ describe("clasificar un id sin más datos", () => {
 });
 
 describe("OpenAI-compatible (DeepSeek, NVIDIA, Groq, OpenRouter, Mistral…)", () => {
-  test("guarda lo que el proveedor declara y deja los nuevos apagados", async () => {
+  test("activa los nuevos modelos de voz de un proveedor activo y deja los nuevos modelos de chat apagados", async () => {
     const f = fake({
       "/models?output_modalities=transcription": () => json({ data: [{ id: "nvidia/nemotron-3.5-transcribe", name: "Nemotron Transcribe" }] }),
       "/models": () => json({ data: [
@@ -103,7 +103,7 @@ describe("OpenAI-compatible (DeepSeek, NVIDIA, Groq, OpenRouter, Mistral…)", (
     // 5 filas, una es generación de imágenes (no se cuenta ni se guarda): quedan 4. Los 26 modelos que el catálogo
     // sembró para OpenRouter y esta respuesta no lista se marcan como "ya no listados", no se tocan de otro modo.
     expect(result).toMatchObject({ provider: "openrouter", ok: true, found: 5, added: 5, updated: 0, unlisted: 26 });
-    expect(await model("openrouter/nvidia/nemotron-3.5-transcribe")).toMatchObject({ model_type: "stt", active: false });
+    expect(await model("openrouter/nvidia/nemotron-3.5-transcribe")).toMatchObject({ model_type: "stt", active: true, enabled: true });
 
     const nuevo = (await model(catalogModelKey("openrouter", "vendor/nuevo")))!;
     expect(nuevo).toMatchObject({ source: "discovered", enabled: false, active: false, context_window: 262144, name: "Nuevo", model_type: "llm" });
@@ -197,7 +197,7 @@ describe("adaptadores propios", () => {
     expect(f.calls[0].url).not.toContain("clave-secreta-123"); // la clave va en cabecera, nunca en la URL
     expect((await model("gemini-9-flash"))).toMatchObject({ model_type: "llm", context_window: 1048576 });
     expect((await model("gemini-9-live"))).toMatchObject({ model_type: "realtime" });
-    expect((await model("gemini-9-flash-tts"))).toMatchObject({ model_type: "tts" });
+    expect((await model("gemini-9-flash-tts"))).toMatchObject({ model_type: "tts", active: true, enabled: true });
     expect((await model("text-embedding-9"))).toMatchObject({ model_type: "embedding" });
     expect(await model("imagen-9")).toBeUndefined();
   });

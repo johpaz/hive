@@ -278,6 +278,7 @@ export function ProviderCard({ provider, updateProvider, onManageModels, usage, 
               )}
               {providerModels.map((model) => {
                 const modelActive = model.enabled || !!model.active;
+                const inheritsActivation = !model.unlisted && (model.model_type === "tts" || model.supports_stt);
                 return (
                   <div
                     key={model.id}
@@ -310,6 +311,8 @@ export function ProviderCard({ provider, updateProvider, onManageModels, usage, 
                         </button>
                         <Switch
                           checked={modelActive}
+                          disabled={inheritsActivation}
+                          title={inheritsActivation ? "La activación se controla desde el proveedor" : undefined}
                           onCheckedChange={(checked) => handleModelToggle(model, checked)}
                           className="scale-[0.7] origin-right data-[state=checked]:bg-blue-400 ml-0.5"
                         />

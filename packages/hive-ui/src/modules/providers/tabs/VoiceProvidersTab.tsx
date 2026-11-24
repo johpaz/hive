@@ -7,23 +7,25 @@ import { useProviders } from "@/hooks/useProviders";
 import { ModelCard } from "@/modules/providers/models/ModelCard";
 import { Search, Mic } from "lucide-react";
 import { KittenTTSCard } from "@/modules/agent-config/voice/KittenTTSCard";
-import { parseCapabilities } from "@/lib/capabilities";
 
 export function VoiceProvidersTab() {
-  const { availableModels, activeProviders } = useProviders();
+  const { models, providers } = useProviders();
   const [filter, setFilter] = useState("");
   const [providerFilter, setProviderFilter] = useState("all");
+  const activeProviders = useMemo(() => providers.filter(provider => provider.active && provider.enabled), [providers]);
+  const activeProviderIds = useMemo(() => new Set(activeProviders.map(provider => provider.id)), [activeProviders]);
+  const selectedProvider = activeProviderIds.has(providerFilter) ? providerFilter : "all";
 
   const voiceModels = useMemo(() => {
-    return availableModels.filter((m) => {
+    const query = filter.toLowerCase();
+    return models.filter((m) => {
+      const providerId = m.providerId || m.provider_id;
       const isVoiceType = (m.supports_stt ?? m.model_type === "stt") || m.model_type === "tts";
-      const caps = parseCapabilities(m.capabilities);
-      const hasVoiceCap = caps.includes("transcription") || caps.includes("tts") || caps.includes("speech");
-      const matchesSearch = m.name.toLowerCase().includes(filter.toLowerCase()) || m.id.toLowerCase().includes(filter.toLowerCase());
-      const matchesProvider = providerFilter === "all" || m.providerId === providerFilter || m.provider_id === providerFilter;
-      return (isVoiceType || hasVoiceCap) && matchesSearch && matchesProvider;
+      const matchesSearch = m.name.toLowerCase().includes(query) || m.id.toLowerCase().includes(query);
+      return isVoiceType && m.active && m.enabled && !m.unlisted && activeProviderIds.has(providerId) &&
+        (selectedProvider === "all" || providerId === selectedProvider) && matchesSearch;
     });
-  }, [availableModels, filter, providerFilter]);
+  }, [models, filter, selectedProvider, activeProviderIds]);
 
   return (
     <div className="space-y-6">
@@ -40,7 +42,7 @@ export function VoiceProvidersTab() {
             <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Buscar modelo..." className="h-8 pl-8 text-sm" value={filter} onChange={(e) => setFilter(e.target.value)} />
           </div>
-          <Select value={providerFilter} onValueChange={setProviderFilter}>
+          <Select value={selectedProvider} onValueChange={setProviderFilter}>
             <SelectTrigger className="h-8 w-40 text-sm"><SelectValue placeholder="Provider" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>

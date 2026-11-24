@@ -30,6 +30,7 @@ vi.mock("@/stores/useGlobalConfigStore", () => {
     { id: "gemini", name: "Gemini", active: true, enabled: true },
     { id: "openrouter", name: "OpenRouter", active: true, enabled: true },
     { id: "inactive", active: false, enabled: false },
+    { id: "partially-active", active: true, enabled: false },
     { id: "no-key", active: true, enabled: true },
   ];
   const model = (id: string, provider_id: string, model_type: string, active = true) =>
@@ -38,15 +39,19 @@ vi.mock("@/stores/useGlobalConfigStore", () => {
     model("kitten-mini", "kitten", "tts"),
     model("orpheus", "groq", "tts"),
     model("whisper", "groq", "stt"),
-    { ...model("Gemini Flash", "gemini", "llm", false), supports_stt: true },
-    { ...model("Nemotron Transcribe", "openrouter", "stt", false), supports_stt: true },
+    { ...model("Gemini Flash", "gemini", "llm"), supports_stt: true },
+    { ...model("Nemotron Transcribe", "openrouter", "stt"), supports_stt: true },
+    { ...model("STT apagado", "gemini", "llm", false), supports_stt: true },
+    { ...model("STT de proveedor apagado", "inactive", "stt"), supports_stt: true },
     { ...model("Retired STT", "groq", "stt"), unlisted: true },
     model("disabled", "groq", "tts", false),
     model("inactive-provider-model", "inactive", "tts"),
+    model("STT proveedor deshabilitado", "partially-active", "stt"),
+    model("TTS proveedor deshabilitado", "partially-active", "tts"),
     model("unconfigured-model", "no-key", "tts"),
     { ...model("Unconfigured STT", "no-key", "stt"), supports_stt: true },
   ];
-  const configuredVoiceProviders = { kitten: true, groq: true, gemini: true, openrouter: true, inactive: true };
+  const configuredVoiceProviders = { kitten: true, groq: true, gemini: true, openrouter: true, inactive: true, "partially-active": true };
   return {
     useChannels: () => ({ createChannel: refresh, reconnectChannel: refresh, fetchChannels: refresh }),
     useModels: () => ({ models, fetchModels: refresh }),
@@ -79,6 +84,9 @@ it("muestra modelos disponibles y guarda los cambios de voz sin sobrescribir vis
   expect(screen.getByRole("option", { name: "whisper" })).toBeTruthy();
   expect(screen.getByRole("option", { name: "Gemini Flash" })).toBeTruthy();
   expect(screen.getByRole("option", { name: "Nemotron Transcribe" })).toBeTruthy();
+  expect(screen.queryByRole("option", { name: "STT apagado" })).toBeNull();
+  expect(screen.queryByRole("option", { name: "STT de proveedor apagado" })).toBeNull();
+  expect(screen.queryByRole("option", { name: /proveedor deshabilitado/ })).toBeNull();
   expect(screen.queryByRole("option", { name: "Retired STT" })).toBeNull();
   expect(screen.queryByRole("option", { name: "Unconfigured STT" })).toBeNull();
   expect(screen.getByRole("option", { name: "kitten-mini" })).toBeTruthy();

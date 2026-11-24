@@ -6,7 +6,6 @@ import { closeHiveDb } from "../packages/core/src/storage/hivedb"
 import { handleGetModels } from "../packages/core/src/gateway/routes/models"
 import { handleGetConfiguredVoiceProviders } from "../packages/core/src/gateway/routes/voice"
 import { deleteProviderApiKey, storeProviderApiKey } from "../packages/core/src/storage/crypto"
-import { deleteProviderApiKey } from "../packages/core/src/storage/crypto"
 import { voiceService } from "../packages/core/src/voice"
 
 const realFetch = globalThis.fetch

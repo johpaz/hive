@@ -7,10 +7,11 @@
  *
  * Reglas, para que sea seguro correrlo siempre:
  *  - Solo los providers ACTIVOS (`syncActiveProviderModels`); uno concreto solo si se pide (`syncProviderModels`).
- *  - Un modelo NUEVO entra apagado (`enabled: false`): un proveedor puede listar cientos y no se llena la interfaz.
- *    Los locales (Ollama) entran encendidos, como siempre.
+ *  - Los modelos de voz heredan la activación del proveedor. Los demás modelos nuevos entran apagados,
+ *    salvo la disponibilidad local de Ollama.
  *  - Un modelo que YA existe conserva lo que es del usuario: nombre, `enabled`, `active` y el precio que ya tuviera.
- *    El proveedor es la autoridad de la ventana de contexto y de las capacidades que declara (se suman a las que ya
+ *    La activación de los modelos de voz se reconcilia con el proveedor. El proveedor es la autoridad
+ *    de la ventana de contexto y de las capacidades que declara (se suman a las que ya
  *    había; nunca se quita ninguna).
  *  - Un modelo que el proveedor ya NO lista no se borra ni se apaga (podría haber agentes apuntándole): se marca
  *    `unlisted: true` para poder avisarlo, y se desmarca si vuelve a aparecer.
@@ -20,6 +21,7 @@
 import { col } from "./hive"
 import type { ProviderDoc, ModelDoc } from "./collections"
 import { catalogModelKey } from "./model-id"
+import { voiceModelActivation } from "./model-activation"
 import { loadProviderApiKey, loadProviderHeaders } from "./crypto"
 import { logger } from "../utils/logger"
 import { GEMINI_AUDIO_INPUT, isGeminiAudioFamily, nvidiaSttBase } from "../voice/stt-models"
@@ -326,7 +328,7 @@ export async function applyDiscoveredModels(provider: ProviderDoc, found: Discov
     const row = await models.get(key)
     if (!row) {
       if (type === null) continue // un tipo que la app no maneja
-      await models.put(key, {
+      const doc: ModelDoc = {
         id: key, provider_id: provider.id, name: model.name ?? model.wireId, model_type: type,
         context_window: model.contextWindow ?? 0,
         capabilities: model.capabilities?.length ? JSON.stringify(model.capabilities) : null,
@@ -334,7 +336,8 @@ export async function applyDiscoveredModels(provider: ProviderDoc, found: Discov
         input_per_1m: model.inputPer1M ?? (local ? 0 : null),
         output_per_1m: model.outputPer1M ?? (local ? 0 : null),
         synced_at: now,
-      }, { expectedVersion: 0 })
+      }
+      await models.put(key, { ...doc, ...voiceModelActivation(doc, provider) }, { expectedVersion: 0 })
       result.added++
       continue
     }
@@ -353,6 +356,11 @@ export async function applyDiscoveredModels(provider: ProviderDoc, found: Discov
     if ((doc.input_per_1m === null || doc.input_per_1m === undefined) && model.inputPer1M !== undefined) { next.input_per_1m = model.inputPer1M; changed = true }
     if ((doc.output_per_1m === null || doc.output_per_1m === undefined) && model.outputPer1M !== undefined) { next.output_per_1m = model.outputPer1M; changed = true }
     if (doc.unlisted) { delete next.unlisted; changed = true }
+    const activation = voiceModelActivation(next, provider)
+    if (activation && (next.active !== activation.active || next.enabled !== activation.enabled)) {
+      Object.assign(next, activation)
+      changed = true
+    }
     if (changed) {
       next.synced_at = now
       await models.put(key, next, { expectedVersion: row.version })
@@ -416,7 +424,11 @@ export async function syncProviderModels(providerId: string, deps: SyncDeps = {}
       fetch: deps.fetch ?? fetch, timeoutMs: deps.timeoutMs ?? 10_000,
     })
     if (found.length === 0) return { provider: providerId, ok: false, found: 0, error: "el proveedor no devolvió ningún modelo" }
-    const applied = await applyDiscoveredModels(entry.doc, found, (deps.now ?? Date.now)())
+    const latest = await providers.get(providerId)
+    if (!latest || latest.doc.base_url !== entry.doc.base_url) {
+      return { provider: providerId, ok: false, error: "la configuración del proveedor cambió durante la sincronización" }
+    }
+    const applied = await applyDiscoveredModels(latest.doc, found, (deps.now ?? Date.now)())
     return { provider: providerId, ok: true, found: found.length, ...applied }
   } catch (err) {
     if (err instanceof ProviderHttpError) return { provider: providerId, ok: false, error: `el proveedor respondió ${err.status}`, status: err.status }

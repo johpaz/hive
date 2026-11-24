@@ -12,6 +12,7 @@ interface ModelCardProps {
 
 export function ModelCard({ model }: ModelCardProps) {
   const { toggleModel } = useModels();
+  const inheritsActivation = !model.unlisted && (model.model_type === "tts" || model.supports_stt);
 
   return (
     <Card className={!model.active ? "opacity-70 bg-muted/30" : ""}>
@@ -29,6 +30,8 @@ export function ModelCard({ model }: ModelCardProps) {
         <div className="flex flex-col items-end gap-2">
           <Switch
             checked={!!model.active}
+            disabled={inheritsActivation}
+            title={inheritsActivation ? "La activación se controla desde el proveedor" : undefined}
             onCheckedChange={(checked) => toggleModel(model.id, checked)}
           />
           <Badge variant={model.active ? "default" : "secondary"} className="text-[10px]">

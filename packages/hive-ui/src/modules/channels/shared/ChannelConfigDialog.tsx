@@ -77,9 +77,8 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
         const active = new Set(providers.filter(p => p.active && p.enabled).map(p => p.id));
         return models.filter(model => {
             const provider = modelProviderId(model);
-            if (model.unlisted || !active.has(provider) || configuredVoiceProviders[provider] !== true) return false;
-            // STT is enabled for this channel by selecting a compatible model here.
-            return isSttModel(model) || (model.model_type === "tts" && model.active && model.enabled);
+            return model.active && model.enabled && !model.unlisted &&
+                active.has(provider) && configuredVoiceProviders[provider] === true;
         });
     }, [models, providers, configuredVoiceProviders]);
     const sttModels = availableVoiceModels.filter(isSttModel);
@@ -887,9 +886,9 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                         <SelectContent>
                             {sttGroups.map(group => (
                                 <SelectGroup key={group.provider.id}>
-                                    <SelectLabel>{group.provider.name}</SelectLabel>
+                                    <SelectLabel className="sticky top-0 z-10 bg-popover">{group.provider.name}</SelectLabel>
                                     {group.models.map(model => (
-                                        <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>
+                                        <SelectItem key={model.id} value={model.id} title={model.wire_id ?? model.id}>{model.name}</SelectItem>
                                     ))}
                                 </SelectGroup>
                             ))}
@@ -921,7 +920,7 @@ export function ChannelConfigDialog({ channel, isOpen, onClose, onSave }: Channe
                             <SelectContent>
                                 {ttsGroups.map(group => (
                                     <SelectGroup key={group.provider.id}>
-                                        <SelectLabel>{group.provider.name}</SelectLabel>
+                                        <SelectLabel className="sticky top-0 z-10 bg-popover">{group.provider.name}</SelectLabel>
                                         {group.models.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
                                     </SelectGroup>
                                 ))}

@@ -1,6 +1,7 @@
 import { logger } from "../utils/logger.ts";
 import { ensureHiveDb } from "./bootstrap";
 import { col, toIndexable, fromIndexable } from "./hive";
+import { reconcileProviderVoiceModels } from "./model-activation";
 import {
   storeProviderApiKey,
   storeChannelConfig,
@@ -379,9 +380,11 @@ export async function saveProviderConfig(data: {
     // 1️⃣ Primero: Actualizar provider global con API key del usuario
     const existingProvider = await providersCol.get(data.provider);
     if (existingProvider) {
-      await providersCol.put(data.provider, {
+      const provider = {
         ...existingProvider.doc, base_url: data.baseUrl || null, enabled: true, active: true,
-      }, { expectedVersion: existingProvider.version });
+      };
+      await providersCol.put(data.provider, provider, { expectedVersion: existingProvider.version });
+      await reconcileProviderVoiceModels(provider);
     }
 
     if (data.apiKey) {

@@ -66,7 +66,29 @@ describe("re-seed de modelos", () => {
     }
     await models.put(kitten.id, { ...kitten, active: false, enabled: false });
     await seedAllData();
-    expect((await models.get(kitten.id))?.doc.active).toBe(false);
+    expect((await models.get(kitten.id))?.doc).toMatchObject({ active: true, enabled: true });
+  });
+
+  test("reconcilia modelos de voz sembrados y descubiertos con sus proveedores", async () => {
+    const models = await col<ModelDoc>("models");
+    const providers = await col<ProviderDoc>("providers");
+    const gemini = (await providers.get("gemini"))!.doc;
+    await providers.put(gemini.id, { ...gemini, active: true, enabled: true });
+    const id = "gemini-descubierto";
+    await models.put(id, {
+      id, provider_id: gemini.id, name: id, model_type: "llm", context_window: 0,
+      capabilities: '["audio_input"]', source: "discovered", active: false, enabled: false,
+    });
+    const groq = (await providers.get("groq"))!.doc;
+    await providers.put(groq.id, { ...groq, active: false, enabled: false });
+    const whisper = (await models.get(catalogModelKey("groq", "whisper-large-v3-turbo")))!.doc;
+    await models.put(whisper.id, { ...whisper, active: true, enabled: true });
+
+    await seedAllData();
+
+    expect((await models.get(id))?.doc).toMatchObject({ active: true, enabled: true });
+    expect((await models.get("gemini-3.1-flash-lite"))?.doc).toMatchObject({ active: true, enabled: true });
+    expect((await models.get(whisper.id))?.doc).toMatchObject({ active: false, enabled: false });
   });
 
   test("preserva enabled/active de los ids que sobreviven", async () => {

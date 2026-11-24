@@ -11,6 +11,8 @@ import { getJevStatus, resetJevStatus } from "../../agent/jev-decisions"
 import { loadHiveAgentsModel, getHiveAgentsModelStatus } from "../../agent/llm-providers/hiveagents"
 import { logger } from "../../utils/logger"
 import { fetchProviderModels, syncProviderModels } from "../../storage/model-sync"
+import { reconcileProviderVoiceModels } from "../../storage/model-activation"
+import { supportsStt } from "../../voice/stt-models"
 
 const log = logger.child("gateway")
 
@@ -56,14 +58,16 @@ export async function handleCreateProvider(req: Request, addCorsHeaders: (r: Res
   const providersCol = await col<ProviderDoc>("providers")
   const existing = await providersCol.get(body.id)
 
-  await providersCol.put(body.id, {
+  const active = body.enabled === undefined || !!body.enabled
+  const provider: ProviderDoc = {
     id: body.id, name: body.name, base_url: body.base_url || null,
     category: existing?.doc.category ?? "llm",
     num_ctx: existing?.doc.num_ctx ?? null, num_gpu: existing?.doc.num_gpu ?? -1,
-    enabled: body.enabled !== undefined ? !!body.enabled : true,
-    active: true,
+    enabled: active, active,
     created_at: existing?.doc.created_at ?? Date.now(),
-  }, existing ? { expectedVersion: existing.version } : undefined)
+  }
+  await providersCol.put(body.id, provider, existing ? { expectedVersion: existing.version } : undefined)
+  await reconcileProviderVoiceModels(provider)
 
   return addCorsHeaders(Response.json({ ok: true }), req)
 }
@@ -102,8 +106,8 @@ export async function handleUpdateProvider(req: Request, addCorsHeaders: (r: Res
   if (body.name) patch.name = body.name
   const baseUrl = body.base_url !== undefined ? body.base_url : body.baseUrl
   if (baseUrl !== undefined) patch.base_url = baseUrl || null
-  if (body.enabled !== undefined) patch.enabled = !!body.enabled
-  if (body.active !== undefined) patch.active = !!body.active
+  const active = body.active ?? body.enabled
+  if (active !== undefined) patch.active = patch.enabled = !!active
   if (body.config?.apiKey || body.apiKey) {
     await storeProviderApiKey(id, body.config?.apiKey || body.apiKey)
     if (id === "openrouter") {
@@ -123,14 +127,14 @@ export async function handleUpdateProvider(req: Request, addCorsHeaders: (r: Res
   if (numCtx !== undefined) patch.num_ctx = numCtx ? Number(numCtx) : null
 
   if (Object.keys(patch).length > 0) {
-    await updateDoc<ProviderDoc>("providers", id, patch).catch(() => { /* provider not found */ })
+    const provider = await updateDoc<ProviderDoc>("providers", id, patch).catch(() => { /* provider not found */ })
     if ((id === "openrouter" || id === "hiveagents") && (patch.active !== undefined || patch.enabled !== undefined)) resetJevStatus()
 
     // Cascade active/enabled changes to models
     if (patch.active !== undefined) {
       await updateManyByIndex<ModelDoc>("models", "provider_id", id, { active: patch.active, enabled: patch.active })
-    } else if (patch.enabled !== undefined) {
-      await updateManyByIndex<ModelDoc>("models", "provider_id", id, { enabled: patch.enabled, active: patch.enabled })
+    } else if (provider && patch.base_url !== undefined) {
+      await reconcileProviderVoiceModels(provider)
     }
   }
 
@@ -231,7 +235,7 @@ export async function handleSyncProviderModels(
     return addCorsHeaders(new Response("Provider not found", { status: 404 }), req)
   }
 
-  // Lo que el proveedor declara de cada modelo se guarda sin tocar lo que es del usuario (nombre, activación, precio) y
+  // Lo que el proveedor declara de cada modelo se guarda conservando los datos del usuario y
   // sin apagar ni borrar los que el proveedor ya no lista: ver storage/model-sync.ts.
   const result = await syncProviderModels(providerId)
   if (!result.ok) {
@@ -240,7 +244,11 @@ export async function handleSyncProviderModels(
   }
   // Se devuelve el doc completo: recortar los campos dejaba a la UI sin
   // context_window ni precio justo después de sincronizar.
-  const models = (await (await col<ModelDoc>("models")).findBy("provider_id", providerId)).map(m => m.doc)
+  const provider = await providersCol.get(providerId)
+  const models = (await (await col<ModelDoc>("models")).findBy("provider_id", providerId)).map(m => ({
+    ...m.doc,
+    supports_stt: supportsStt(m.doc, provider?.doc.base_url),
+  }))
   return addCorsHeaders(Response.json({ success: true, synced: result.found, ...result, models }), req)
 }
 

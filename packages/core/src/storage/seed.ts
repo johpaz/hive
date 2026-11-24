@@ -2,6 +2,7 @@ import { col, toIndexable, nextId } from "./hive"
 import type { Collection } from "@johpaz/hive-db"
 import { logger } from "../utils/logger"
 import { catalogModelKey } from "./model-id"
+import { voiceModelActivation } from "./model-activation"
 import { invalidateModelPricingCache } from "./usage"
 import { DEFAULT_LOCAL_VOICE, isLegacyPiper, LOCAL_TTS_MODEL, LOCAL_TTS_PROVIDER } from "../voice/local-model"
 
@@ -921,30 +922,37 @@ export async function seedAllData(): Promise<void> {
     // o corregida. Un upsert en sitio no daba esa garantía.
     //
     // Se preservan a propósito:
-    //   - enabled/active por id, para no desactivar el modelo que el usuario
-    //     eligió cada vez que se publica un catálogo nuevo;
+    //   - enabled/active por id, salvo para voz, que hereda el estado del proveedor;
     //   - las filas source != "catalog" (Ollama tags, /v1/models), que no tienen
     //     origen canónico desde el que recrearse.
     //   - el resultado de la última consulta al proveedor sobre disponibilidad.
     log.info("[seed] 🔄 Re-seeding models (wipe & recreate)...");
     const modelsCol = await col<ModelDoc>("models");
     const beforeWipe = await modelsCol.scan({});
+    const providersById = new Map((await providersCol.scan({})).map(({ id, doc }) => [id, doc]));
 
     const previousModels = new Map(beforeWipe.map(({ id, doc }) => [id, doc]));
 
     const piperModelIds = new Set(beforeWipe.filter(row => row.doc.provider_id === "piper").map(row => row.id));
     let wipedModels = 0;
     for (const row of beforeWipe) {
-      if (row.doc.source !== "catalog" || piperModelIds.has(row.id)) continue;
-      await modelsCol.delete(row.id);
-      wipedModels++;
+      if (piperModelIds.has(row.id)) continue;
+      if (row.doc.source === "catalog") {
+        await modelsCol.delete(row.id);
+        wipedModels++;
+        continue;
+      }
+      const activation = voiceModelActivation(row.doc, providersById.get(row.doc.provider_id));
+      if (activation && (row.doc.active !== activation.active || row.doc.enabled !== activation.enabled)) {
+        await modelsCol.put(row.id, { ...row.doc, ...activation }, { expectedVersion: row.version });
+      }
     }
 
     let modelCount = 0;
     for (const model of SEED_DATA.models) {
       const key = catalogModelKey(model.providerId, model.id);
       const previous = previousModels.get(key);
-      await modelsCol.put(key, {
+      const doc: ModelDoc = {
         id: key, provider_id: model.providerId, name: model.name,
         model_type: model.modelType as ModelDoc["model_type"],
         context_window: model.contextWindow || 0, capabilities: model.capabilities || null,
@@ -954,7 +962,8 @@ export async function seedAllData(): Promise<void> {
         source: "catalog",
         input_per_1m: model.inputPer1M ?? null,
         output_per_1m: model.outputPer1M ?? null,
-      });
+      };
+      await modelsCol.put(key, { ...doc, ...voiceModelActivation(doc, providersById.get(model.providerId)) });
       modelCount++;
     }
     log.info(`[seed] 🗑️  ${wipedModels} modelo(s) de catálogo borrados y recreados desde SEED_DATA`);

@@ -5,6 +5,12 @@ import { catalogModelKey, wireModelId } from "../../storage/model-id.ts"
 import { invalidateModelPricingCache } from "../../storage/usage.ts"
 import type { Config } from "../../config/loader.ts"
 import { supportsStt } from "../../voice/stt-models"
+import { voiceModelActivation } from "../../storage/model-activation"
+
+async function loadVoiceModelActivation(model: ModelDoc) {
+  const provider = await (await col<ProviderDoc>("providers")).get(model.provider_id)
+  return voiceModelActivation(model, provider?.doc)
+}
 
 export async function handleGetModels(req: Request, addCorsHeaders: (r: Response, req: Request) => Response): Promise<Response> {
   const url = new URL(req.url)
@@ -78,6 +84,7 @@ export async function handleCreateModel(req: Request, addCorsHeaders: (r: Respon
     input_per_1m: parsePrice(body.input_per_1m ?? body.inputPer1M),
     output_per_1m: parsePrice(body.output_per_1m ?? body.outputPer1M),
   }
+  Object.assign(model, await loadVoiceModelActivation(model))
   await modelsCol.put(id, model, { expectedVersion: 0 })
   invalidateModelPricingCache()
 
@@ -96,9 +103,13 @@ export async function handleToggleModel(req: Request, addCorsHeaders: (r: Respon
     return addCorsHeaders(Response.json({ success: false, error: "model id and active required" }), req)
   }
 
-  await updateDoc<ModelDoc>("models", modelId, { active: !!active, enabled: !!active }).catch(() => { /* not found */ })
+  const row = await (await col<ModelDoc>("models")).get(modelId)
+  if (!row) return addCorsHeaders(Response.json({ success: false, error: "Model not found" }, { status: 404 }), req)
 
-  return addCorsHeaders(Response.json({ success: true, active }), req)
+  const inherited = await loadVoiceModelActivation(row.doc)
+  const activation = inherited ?? { active: !!active, enabled: !!active }
+  const model = await updateDoc<ModelDoc>("models", modelId, activation)
+  return addCorsHeaders(Response.json({ success: true, active: model.active, enabled: model.enabled }), req)
 }
 
 export async function handleGetModelsConfig(
@@ -181,8 +192,10 @@ export async function handleUpdateModel(req: Request, addCorsHeaders: (r: Respon
   if ("input_per_1m" in body || "inputPer1M" in body) patch.input_per_1m = parsePrice(body.input_per_1m ?? body.inputPer1M)
   if ("output_per_1m" in body || "outputPer1M" in body) patch.output_per_1m = parsePrice(body.output_per_1m ?? body.outputPer1M)
 
-  if (!newId || newId === oldId) {
-    await modelsCol.put(oldId, { ...existing.doc, ...patch }, { expectedVersion: existing.version })
+  const newModel: ModelDoc = { ...existing.doc, ...patch, id: newId ?? oldId }
+  Object.assign(newModel, await loadVoiceModelActivation(newModel))
+  if (newModel.id === oldId) {
+    await modelsCol.put(oldId, newModel, { expectedVersion: existing.version })
     invalidateModelPricingCache()
     const model = (await modelsCol.get(oldId))?.doc
     return addCorsHeaders(Response.json({ ok: true, model }), req)
@@ -190,24 +203,21 @@ export async function handleUpdateModel(req: Request, addCorsHeaders: (r: Respon
 
   // ID is changing — atomically rename the model and re-point every agent
   // that referenced the old id (this is the repo's one "transaction").
-  const checkConflict = await modelsCol.get(newId)
+  const checkConflict = await modelsCol.get(newModel.id)
   if (checkConflict) {
     return addCorsHeaders(Response.json({ ok: false, error: "Ya existe un modelo con ese ID" }, { status: 409 }), req)
   }
-
-  // El rename arrastra también el resto de campos editados en el mismo submit.
-  const newModel: ModelDoc = { ...existing.doc, ...patch, id: newId }
 
   const agentsCol = await col<AgentDoc>("agents")
   const affectedAgents = await agentsCol.findBy("model_id", oldId)
 
   const db = await getHiveDb()
   await db.batch([
-    { op: "put", collection: "models", id: newId, doc: newModel, expectedVersion: 0 },
+    { op: "put", collection: "models", id: newModel.id, doc: newModel, expectedVersion: 0 },
     { op: "delete", collection: "models", id: oldId },
     ...affectedAgents.map(a => ({
       op: "put" as const, collection: "agents", id: a.id,
-      doc: { ...a.doc, model_id: newId }, expectedVersion: a.version,
+      doc: { ...a.doc, model_id: newModel.id }, expectedVersion: a.version,
     })),
   ])
   invalidateModelPricingCache()

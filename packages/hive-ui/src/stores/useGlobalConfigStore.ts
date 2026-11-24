@@ -168,7 +168,7 @@ const createModelsSlice = (set: any, get: any) => ({
 
   toggleModel: async (id: string, active: boolean) => {
     try {
-      await apiClient(`/api/models/${encodeURIComponent(id)}/toggle`, {
+      const activation = await apiClient<{ active: boolean; enabled: boolean }>(`/api/models/${encodeURIComponent(id)}/toggle`, {
         method: "POST",
         body: { active },
         showLoader: active ? "Activando modelo..." : "Desactivando modelo...",
@@ -176,7 +176,7 @@ const createModelsSlice = (set: any, get: any) => ({
       });
       const state = get();
       const updatedModels = state.models.map(m =>
-        m.id === id ? { ...m, active, enabled: active } : m
+        m.id === id ? { ...m, active: activation.active, enabled: activation.enabled } : m
       );
       const availableModels = get().filterModelsByProviderStatus(updatedModels, state.providers);
       set({

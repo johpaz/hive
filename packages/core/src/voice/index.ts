@@ -129,9 +129,10 @@ class VoiceService {
       const provider = await providersCol.get(stored);
       if (!provider?.doc.id) return null;
 
+      // An explicit legacy provider selection resolves like an explicit model ID.
       const candidates = (await modelsCol.findBy("provider_id", provider.doc.id))
-        .filter(({ doc }) => doc.enabled && (type === "stt" ? supportsStt(doc, provider.doc.base_url) : doc.model_type === type));
-      const pick = candidates.find((e) => e.doc.active) ?? candidates[0];
+        .filter(({ doc }) => !doc.unlisted && (type === "stt" ? supportsStt(doc, provider.doc.base_url) : doc.model_type === "tts"));
+      const pick = candidates.find(({ doc }) => doc.active && doc.enabled) ?? candidates[0];
       if (!pick) return null;
 
       log.warn(
@@ -150,9 +151,9 @@ class VoiceService {
       const providersCol = await col<ProviderDoc>("providers");
       const rows = type === "stt" ? await modelsCol.scan({}) : await modelsCol.findBy("model_type", type);
       for (const { doc } of rows) {
-        if (!doc.active || (type === "stt" && doc.model_type !== "stt" && doc.provider_id !== "gemini")) continue;
+        if (!doc.active || !doc.enabled || doc.unlisted || (type === "stt" && doc.model_type !== "stt" && doc.provider_id !== "gemini")) continue;
         const provider = await providersCol.get(doc.provider_id);
-        if (provider?.doc.active && (type === "tts" || supportsStt(doc, provider.doc.base_url))) {
+        if (provider?.doc.active && provider.doc.enabled && (type === "tts" || supportsStt(doc, provider.doc.base_url))) {
           return { id: doc.id, provider: doc.provider_id, doc };
         }
       }
