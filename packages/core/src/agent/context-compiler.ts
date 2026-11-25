@@ -21,6 +21,7 @@
  * TODOS los datos se formatean en TOON para ahorro de tokens.
  */
 
+import { normalizeJsonSchema } from "./llm-providers/schema-normalizer"
 import { col, fromIndexable } from "../storage/hive"
 import type { AgentDoc, ModelDoc } from "../storage/collections"
 import { logger } from "../utils/logger"
@@ -348,7 +349,7 @@ export async function compileContext(opts: {
             mcpToolExecutors.push({
               name: fullName,
               description: mcpTool.description || `Tool from ${server.name}`,
-              parameters: mcpTool.inputSchema || { type: "object", properties: {} },
+              parameters: normalizeJsonSchema(mcpTool.inputSchema || { type: "object", properties: {} }),
               execute: async (params: Record<string, unknown>, config?: { configurable?: Record<string, unknown> }) => {
                 // Return raw JS value — agent-loop will TOON-encode via formatToolResult.
                 // Never pre-stringify here: formatToolResult(string) double-encodes.

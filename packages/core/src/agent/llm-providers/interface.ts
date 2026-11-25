@@ -2,6 +2,7 @@
  * Shared types and utilities for LLM providers.
  */
 
+import { normalizeJsonSchema } from "./schema-normalizer"
 import type { LLMCallOptions, LLMMessage, LLMResponse, LLMToolCall, ContentPart, ThinkingBlock } from "../llm-client"
 export type { LLMCallOptions, LLMMessage, LLMResponse, LLMToolCall, ContentPart, ThinkingBlock }
 
@@ -121,7 +122,7 @@ export function normalizeToolSchema(
   schema: Record<string, unknown>,
   profile: ProviderProfile
 ): Record<string, unknown> {
-  const withItems = ensureArrayItems(schema)
+  const withItems = ensureArrayItems(normalizeJsonSchema(schema))
   if (!profile.stripAdditionalProperties) return withItems
   return deepStripSchema(withItems)
 }
@@ -150,6 +151,9 @@ export function ensureArrayItems(obj: unknown): any {
   }
   return result
 }
+
+/** Alias histórico: Gemini necesita el mismo esquema plano que el resto (ver schema-normalizer.ts). */
+export const toGeminiSchema = normalizeJsonSchema
 
 function deepStripSchema(obj: unknown): any {
   if (typeof obj !== "object" || obj === null) return obj

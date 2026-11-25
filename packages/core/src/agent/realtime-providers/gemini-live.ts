@@ -14,7 +14,7 @@
  */
 
 import { logger } from "../../utils/logger";
-import { ensureArrayItems } from "../llm-providers/interface";
+import { ensureArrayItems, toGeminiSchema } from "../llm-providers/interface";
 import type {
   RealtimeProvider,
   RealtimeSession,
@@ -139,7 +139,7 @@ export class GeminiLiveProvider implements RealtimeProvider {
           functionDeclarations: options.tools.map((t) => ({
             name: t.function.name,
             description: t.function.description,
-            parameters: ensureArrayItems(t.function.parameters),
+            parameters: toGeminiSchema(ensureArrayItems(t.function.parameters)),
           })),
         },
       ];
