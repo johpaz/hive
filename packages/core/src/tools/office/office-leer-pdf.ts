@@ -71,7 +71,7 @@ export const officeLeerPdfTool: Tool = {
           totalPaginas: r.totalPaginas,
           paginasLeidas: r.paginasLeidas,
           texto: "",
-          aviso: "Estas páginas no tienen texto extraíble: el PDF parece escaneado (solo imágenes). Esta herramienta no hace OCR; pídele al usuario el documento en formato editable o que copie el texto.",
+          aviso: "Estas páginas no tienen texto extraíble: el PDF parece escaneado (solo imágenes). Esta herramienta no hace OCR: para leerlo usa office_leer_imagenes con la misma ruta (transcribe cada página con el modelo de visión, una llamada por página). Si no hay modelo de visión configurado, pídele al usuario el documento en formato editable o que copie el texto.",
         };
       }
       const vacias = r.caracteresPorPagina.filter((c) => c === 0).length;

@@ -62,6 +62,33 @@ describe("voz con Groq", () => {
       expect(text).toBe("hola");
     });
 
+    it("STT acepta el id del cable sin prefijo (así lo guardan las reuniones) y no cae en otro proveedor", async () => {
+      // Las reuniones guardaban "whisper-large-v3-turbo" a secas. No coincidía con ninguna
+      // fila (que se llaman `groq/whisper-…`), y la transcripción caía en silencio al primer
+      // STT activo de OTRO proveedor — Gemini, que contestaba 404.
+      for (const id of ["whisper-large-v3-turbo", "whisper-large-v3"]) {
+        const groq = stubGroq();
+        const text = await voiceService.transcribe(AUDIO, id);
+
+        expect(groq.last()?.url).toContain("api.groq.com");
+        expect(groq.last()?.model).toBe(id);
+        expect(text).toBe("hola");
+      }
+    });
+
+    it("STT con un modelo que no existe falla con un mensaje claro y no manda el audio a otro proveedor", async () => {
+      // Antes caía en silencio al primer STT activo de cualquier proveedor.
+      const groq = stubGroq();
+      await expect(voiceService.transcribe(AUDIO, "modelo-que-no-existe")).rejects.toThrow(/no existe en el catálogo/);
+      expect(groq.last()).toBeNull();
+    });
+
+    it("STT sigue entendiendo el id viejo groq-whisper que pudo quedar guardado en un canal", async () => {
+      const groq = stubGroq();
+      await voiceService.transcribe(AUDIO, "groq-whisper");
+      expect(groq.last()?.model).toBe("whisper-large-v3-turbo");
+    });
+
     it("TTS manda el id del cable, con el namespace del dueño intacto", async () => {
       // Ojo con este: el id lleva DOS niveles. `groq/` es el prefijo de
       // revendedor y se saca; `canopylabs/` es el namespace del dueño del modelo
@@ -109,6 +136,12 @@ describe("voz con Groq", () => {
 
       expect(ids).not.toContain("groq/distil-whisper-large-v3-en");
       expect(ids).toContain("groq/whisper-large-v3-turbo");
+    });
+
+    it("TTS con un modelo que no existe falla con un mensaje claro y no usa la voz de otro proveedor", async () => {
+      const groq = stubGroq();
+      await expect(voiceService.speak("hola", "voz-que-no-existe")).rejects.toThrow(/no existe en el catálogo/);
+      expect(groq.last()).toBeNull();
     });
 
     it("siembra los Orpheus como TTS de Groq", async () => {

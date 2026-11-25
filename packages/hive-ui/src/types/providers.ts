@@ -123,7 +123,6 @@ export interface Provider {
   has_api_key?: boolean;
   has_headers?: boolean;
   masked_api_key?: string | null;
-  jev?: { state: "off" | "ready" | "fallback"; backend?: "kev" | "jev" | null; lastError: string | null; lastSuccessAt: number | null; totals?: { decisions: number; savedTokens: number; costUsd: number } };
 }
 
 export interface ProviderUsageStats {

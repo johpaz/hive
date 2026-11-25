@@ -1,7 +1,7 @@
 import { Suspense, useRef } from "react";
 import { Canvas } from "@react-three/fiber";
 import { PerformanceMonitor } from "@react-three/drei";
-import type { CanvasJevDecision, CanvasWorkEvent, GraphNode, JevStatus } from "@/stores/canvasStore";
+import type { CanvasWorkEvent, GraphNode } from "@/stores/canvasStore";
 import type { DeskModel, OfficeInteraction } from "@/modules/office3d/state/useOfficeModel";
 import { useOffice3DStore } from "../state/office3dStore";
 import { CameraRig } from "./CameraRig";
@@ -15,7 +15,6 @@ import { SwarmDriver } from "./SwarmDriver";
 import { LightBee } from "./LightBee";
 import { WorkTransfers } from "./WorkTransfers";
 import { SceneDirector } from "./SceneDirector";
-import { JevOracle } from "./JevOracle";
 import type { BeeState } from "./swarm";
 
 interface HoloSceneProps {
@@ -23,10 +22,9 @@ interface HoloSceneProps {
   coordinator: GraphNode | null;
   interactions: OfficeInteraction[];
   workEvents: CanvasWorkEvent[];
-  jev: { status: JevStatus | null; decisions: CanvasJevDecision[] };
 }
 
-export function HoloScene({ desks, coordinator, interactions, workEvents, jev }: HoloSceneProps) {
+export function HoloScene({ desks, coordinator, interactions, workEvents }: HoloSceneProps) {
   const quality = useOffice3DStore((s) => s.quality);
   const setQuality = useOffice3DStore((s) => s.setQuality);
   const motion = useOffice3DStore((s) => s.motion);
@@ -76,13 +74,6 @@ export function HoloScene({ desks, coordinator, interactions, workEvents, jev }:
           interactions={interactions}
           swarmRef={swarmRef}
           coordinatorId={coordinator?.id ?? null}
-        />
-        <JevOracle
-          status={jev.status}
-          decisions={jev.decisions}
-          swarmRef={swarmRef}
-          coordinatorId={coordinator?.id ?? null}
-          motion={effectiveMotion}
         />
         {effectiveMotion === "calm" && (
           <WorkTransfers

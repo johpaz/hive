@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type KeyboardEvent, type ChangeEvent } from "react";
+import { useState, useRef, useEffect, type KeyboardEvent, type ChangeEvent, type ClipboardEvent, type DragEvent } from "react";
 import { Textarea } from "@/components/ui/textarea";
 export interface ChatAttachment {
   type: "image" | "document";
@@ -55,11 +55,45 @@ function describeMicError(error: unknown): string {
 /** Mismo tope que el gateway (MAX_ATTACHMENT_BYTES). */
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
+const EXTENSION_BY_MIME: Record<string, string> = {
+  "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif",
+  "image/bmp": "bmp", "image/svg+xml": "svg", "application/pdf": "pdf",
+};
+
+/**
+ * Una captura pegada llega como "image.png" (o sin nombre): el agente y el usuario
+ * ven mejor "captura-2026-11-25-1432.png". Los archivos con nombre propio se respetan.
+ */
+function nameForPasted(file: File): string {
+  if (file.name && !/^image\.\w+$/i.test(file.name)) return file.name;
+  const ext = EXTENSION_BY_MIME[file.type] ?? (file.type.split("/")[1] || "bin");
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  return `${file.type.startsWith("image/") ? "captura" : "archivo"}-${stamp}.${ext}`;
+}
+
+function readAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error(`No se pudo leer «${file.name}».`));
+    reader.onload = () => resolve((reader.result as string).split(",")[1] ?? "");
+    reader.readAsDataURL(file);
+  });
+}
+
+/** ¿El arrastre trae archivos del sistema (y no, por ejemplo, texto seleccionado)? */
+function dragHasFiles(e: DragEvent): boolean {
+  return Array.from(e.dataTransfer?.types ?? []).includes("Files");
+}
+
 export function ChatInput({ onSendMessage, onStop, disabled = false, isStreaming = false }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragDepth = useRef(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -85,32 +119,87 @@ export function ChatInput({ onSendMessage, onStop, disabled = false, isStreaming
     }
   };
 
-  const handleFileSelect = async (e: ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
+  /** Punto único de entrada de archivos: el botón, pegar y arrastrar pasan por aquí. */
+  const addFiles = async (files: File[]) => {
+    if (files.length === 0 || disabled) return;
     setMicError(null);
-    for (const file of Array.from(files)) {
+    for (const file of files) {
       if (file.size > MAX_ATTACHMENT_BYTES) {
         setMicError(`«${file.name}» pesa ${(file.size / 1048576).toFixed(1)} MB y el máximo es ${MAX_ATTACHMENT_BYTES / 1048576} MB.`);
         continue;
       }
-      const reader = new FileReader();
-      reader.onerror = () => setMicError(`No se pudo leer «${file.name}».`);
-      reader.readAsDataURL(file);
-      reader.onload = () => {
-        const base64 = (reader.result as string).split(",")[1];
-        const isImage = file.type.startsWith("image/");
-        const newAttachment: ChatAttachment = {
-          type: isImage ? "image" : "document",
+      try {
+        const base64 = await readAsBase64(file);
+        setAttachments(prev => [...prev, {
+          type: file.type.startsWith("image/") ? "image" : "document",
           base64,
-          mimeType: file.type,
-          fileName: file.name
-        };
-        setAttachments(prev => [...prev, newAttachment]);
-      };
+          mimeType: file.type || "application/octet-stream",
+          fileName: file.name,
+        }]);
+      } catch (err) {
+        setMicError((err as Error).message);
+      }
     }
+  };
+
+  const handleFileSelect = async (e: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
     if (fileInputRef.current) fileInputRef.current.value = "";
+    await addFiles(files);
+  };
+
+  /**
+   * Pegar: una captura (Ctrl+V tras PrintScreen), una imagen copiada del navegador o un
+   * archivo copiado en el explorador. El texto pegado sigue su camino normal: si el
+   * portapapeles trae texto Y una imagen (celdas de Excel, párrafos de Word), gana el texto.
+   */
+  const handlePaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const data = e.clipboardData;
+    if (!data || disabled) return;
+    const files = Array.from(data.files ?? []);
+    if (files.length === 0) {
+      // Algunos motores solo exponen el archivo como item, no en `files`.
+      for (const item of Array.from(data.items ?? [])) {
+        if (item.kind === "file") {
+          const f = item.getAsFile();
+          if (f) files.push(f);
+        }
+      }
+    }
+    if (files.length === 0) return;
+    if (data.getData("text/plain").trim() && files.every(f => f.type.startsWith("image/"))) return;
+    e.preventDefault();
+    void addFiles(files.map(f => {
+      const name = nameForPasted(f);
+      return name === f.name ? f : new File([f], name, { type: f.type });
+    }));
+  };
+
+  const handleDragEnter = (e: DragEvent) => {
+    if (disabled || !dragHasFiles(e)) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setIsDragging(true);
+  };
+
+  const handleDragOver = (e: DragEvent) => {
+    if (disabled || !dragHasFiles(e)) return;
+    e.preventDefault(); // sin esto el navegador no permite soltar
+    e.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleDragLeave = (e: DragEvent) => {
+    if (!dragHasFiles(e)) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setIsDragging(false);
+  };
+
+  const handleDrop = (e: DragEvent) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    dragDepth.current = 0;
+    setIsDragging(false);
+    void addFiles(Array.from(e.dataTransfer.files));
   };
 
   const removeAttachment = (index: number) => {
@@ -209,7 +298,14 @@ export function ChatInput({ onSendMessage, onStop, disabled = false, isStreaming
   };
 
   return (
-    <div className="px-4 pb-4 pt-2 shrink-0 bg-transparent">
+    <div
+      className="px-4 pb-4 pt-2 shrink-0 bg-transparent"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      data-dragging={isDragging || undefined}
+    >
       <div className="max-w-3xl mx-auto">
         {/* Attachment Previews */}
         {attachments.length > 0 && (
@@ -234,7 +330,11 @@ export function ChatInput({ onSendMessage, onStop, disabled = false, isStreaming
         )}
 
         <div
-          className={`flex items-end gap-2 rounded-[2rem] bg-black/40 backdrop-blur-md px-4 py-3 transition-all shadow-sm border border-white/10 ${
+          className={`flex items-end gap-2 rounded-[2rem] bg-black/40 backdrop-blur-md px-4 py-3 transition-all shadow-sm border ${
+            isDragging
+              ? "border-blue-400 border-dashed bg-blue-500/10 shadow-blue-glow"
+              : "border-white/10"
+          } ${
             disabled
               ? "opacity-60 bg-black/20"
               : "hover:border-white/20 focus-within:border-blue-500/50 focus-within:shadow-blue-glow"
@@ -271,6 +371,7 @@ export function ChatInput({ onSendMessage, onStop, disabled = false, isStreaming
             value={message}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={disabled ? "Conectando al agente..." : isStreaming ? "Escribe mientras espera..." : "Escribe un mensaje..."}
             disabled={disabled}
             rows={1}
@@ -314,7 +415,9 @@ export function ChatInput({ onSendMessage, onStop, disabled = false, isStreaming
           <p className="text-[11px] font-medium text-white/30 mt-2.5 text-center font-manrope tracking-wide">
             {isRecording
               ? "Grabando... haz clic para enviar"
-              : "Enter para enviar · Shift+Enter nueva línea"}
+              : isDragging
+                ? "Suelta para adjuntar"
+                : "Enter para enviar · Shift+Enter nueva línea · Pega o arrastra archivos"}
           </p>
         )}
       </div>

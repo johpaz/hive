@@ -15,6 +15,8 @@ fn main() {
         tauri_build::Attributes::new().app_manifest(
             tauri_build::AppManifest::new().commands(&[
                 "gateway_info",
+                "prepare_for_update",
+                "resume_gateway",
                 "audio_outputs",
                 "set_audio_output",
                 "bluetooth_names",

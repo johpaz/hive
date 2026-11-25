@@ -541,7 +541,7 @@ export const reportProgressTool: Tool = {
 /** Máximo de mensajes que devuelve conversation_read. */
 const MESSAGE_LIMIT = 8;
 
-/** Recover a small, scoped slice of conversation omitted by Jev's context plan. */
+/** Recover a small, scoped slice of conversation omitted from the context window. */
 export const conversationReadTool: Tool = {
   name: "conversation_read",
   description: "Read earlier messages from the current conversation by message IDs or text query when selected context is insufficient. Searches by meaning across the whole history, including messages already compacted into the summary.",

@@ -17,7 +17,7 @@ Generado desde el código fuente para Hive **1.1.10**.
 | `@johpaz/hive-desktop` | `1.1.10` |
 | `apps/hive-desktop/src-tauri/tauri.conf.json` | `1.1.10` |
 
-## Herramientas (125)
+## Herramientas (126)
 
 | Herramienta | Categoría | Descripción |
 |---|---|---|
@@ -133,6 +133,7 @@ Generado desde el código fuente para Hive **1.1.10**.
 | `office_escribir_pptx` | office | Generar una presentación PowerPoint (.pptx) 16:9 con estilo: portada opcional con fondo propio, diapositivas con título, acento de color, texto libre o viñetas, número de diapositiva y notas del presentador. `tema.preset` elige modern, light, dark, corporate o warm y puede sobreescribir colores y fuentes. Spanish: crear powerpoint, generar pptx, escribir presentacion, exportar a pptx, diapositivas, slides |
 | `office_escribir_xlsx` | office | Generar un archivo Excel (.xlsx) con estilo desde hojas de objetos o de arrays. La primera fila es el encabezado (se estiliza, se fija y recibe autofiltro por defecto). Por hoja, `columnas` fija formato (fecha, fecha_hora, hora, entero, decimal, miles, porcentaje, moneda, texto o un código de formato de Excel; los textos ISO como 2025-03-01 en una columna de fecha se guardan como fechas reales), ancho, negrita, color, relleno, alineacion y ajustar para una columna indicada por el texto de su encabezado o su índice. Colores #RRGGBB. Las celdas son siempre valores: un texto que empieza por = nunca es fórmula. Spanish: crear excel, generar xlsx, escribir excel, exportar a xlsx, hoja de cálculo, reporte |
 | `office_leer_docx` | office | Leer un archivo Word (.docx) y retornar el contenido de texto preservando párrafos y tablas. Spanish: leer word, abrir docx, extraer texto de word, contenido word |
+| `office_leer_imagenes` | image | Read the IMAGES inside a Word (.docx), PowerPoint (.pptx) or PDF file — screenshots, charts, diagrams, photos and SCANNED pages — which office_leer_docx / office_leer_pptx / office_leer_pdf cannot see because they only return text. Each image is described and its text transcribed with the vision model chosen in Providers → Imagen, and comes with where it was in the document (slide, page, nearby text). Use it when the document mentions figures, its text looks incomplete, or a PDF has no extractable text (scanned). In a PDF each page image is one model call. Returns up to max_imagenes per call; continue with desde_imagen. Vector drawings inside a PDF are not images and are not covered. Spanish: leer imágenes de un documento, ocr de pdf escaneado, ocr de word, ocr de powerpoint, capturas dentro de un documento, gráficos de una presentación |
 | `office_leer_pdf` | office | Leer el texto de un PDF (capa de texto nativa, sin OCR ni modelos), conservando renglones y columnas, por páginas y con tope de tamaño. Un PDF escaneado devuelve aviso en vez de texto. Spanish: leer pdf, abrir pdf, extraer texto de pdf, pdf a texto |
 | `office_leer_pptx` | office | Leer un PowerPoint (.pptx): texto de cada diapositiva en su orden real, con título y notas del orador, con tope de tamaño. Spanish: leer powerpoint, abrir pptx, extraer texto de presentacion, contenido slides |
 | `office_leer_xlsx` | office | Leer un archivo Excel (.xlsx) y retornar las hojas con sus datos como objetos JSON. Spanish: leer excel, abrir xlsx, extraer datos de excel, hojas excel |

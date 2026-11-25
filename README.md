@@ -32,7 +32,6 @@ Hive reemplaza el patrón de "un agente gigante con 80 herramientas cargadas de 
 - **Ejecución durable.** Jobs, leases y reintentos con backoff sobreviven caídas y reinicios del gateway — nada se pierde a mitad de camino.
 - **Multi-canal de verdad.** Webchat, Telegram, Discord, Slack y WhatsApp corren sobre el mismo runtime y el mismo coordinador.
 - **Local-first.** Tus datos viven en `~/.hive`. Elige proveedores locales (Ollama) o remotos, por agente.
-- **Menos tokens con Jev (opcional).** Con una clave de OpenRouter, Jev decide en cada turno qué historial, herramientas, skills, notas y reglas necesita el modelo principal, y omite resultados viejos entre iteraciones. Sin la clave, todo funciona igual que antes.
 
 ## 🧠 Cómo funciona
 
@@ -57,8 +56,6 @@ flowchart TD
     HD --> DB
 ```
 
-Con OpenRouter configurado, [Jev](docs/internals/jev.md) filtra ese contexto antes de cada llamada al modelo; si no responde en tres segundos, el turno sigue por el camino clásico.
-
 Profundiza en la [arquitectura](docs/architecture/overview.md) y el [ciclo de ejecución](docs/architecture/runtime.md).
 
 ## 🧰 Stack tecnológico
@@ -72,7 +69,6 @@ Profundiza en la [arquitectura](docs/architecture/overview.md) y el [ciclo de ej
 | Visualización | React Three Fiber / drei (Office3D), Recharts |
 | Integración externa | Model Context Protocol (`@modelcontextprotocol/sdk`) con hot reload y leases por ejecución |
 | Proveedores de IA | Anthropic, OpenAI, Google Gemini, OpenRouter, Groq, NVIDIA, Mistral, DeepSeek, Ollama (local) y otros — selección por agente |
-| Plano de decisión | Jev sobre la API Decisions de OpenRouter (opcional) |
 | Mensajería | Telegram (grammY), Discord (discord.js), Slack (Bolt), WhatsApp (Baileys), Webchat |
 | Documentos ofimáticos | docx, pdf-lib / pdfjs-dist, pptxgenjs, xlsx |
 | Testing | `bun test`, Vitest |
@@ -83,7 +79,6 @@ Profundiza en la [arquitectura](docs/architecture/overview.md) y el [ciclo de ej
 - Herramientas nativas para filesystem, web, cron, CLI, agentes, A2UI, Office y APIs.
 - 26 skills incluidas y descubrimiento bajo demanda con `search_knowledge`.
 - Proveedores locales y remotos, selección de modelo por agente y herencia desde el coordinador.
-- Jev: selección de contexto por turno, poda de resultados entre iteraciones y decisión de paralelismo, con costo y ahorro estimado en el dashboard y un oráculo en la Oficina 3D.
 - Webchat, Telegram, Discord, Slack y WhatsApp.
 - MCP con sincronización de herramientas, hot reload y leases por ejecución.
 - Tareas durables, reintentos, proof packets, artefactos verificables y observabilidad causal.
@@ -172,7 +167,6 @@ Hive genera un token al primer arranque y lo guarda con permisos restringidos en
 - [Seguridad](docs/guides/seguridad.md)
 - [Canales](docs/guides/canales.md)
 - [MCP](docs/reference/mcp.md)
-- [Jev: plano de decisión](docs/internals/jev.md) y [qué datos envía a OpenRouter](docs/guides/seguridad.md#datos-enviados-a-jev)
 
 ## 🛠️ Desarrollo
 

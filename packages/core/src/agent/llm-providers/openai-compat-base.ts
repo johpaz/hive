@@ -270,7 +270,7 @@ export abstract class OpenAICompatBase implements LLMProvider {
   ): Promise<LLMResponse> {
     // Without stream_options.include_usage an OpenAI-compatible stream reports
     // no tokens at all: every NVIDIA call was recorded as 0 in / 0 out, so its
-    // cost and Jev's savings on it never reached the dashboard. A server that
+    // cost never reached the dashboard. A server that
     // does not know the field gets the same request without it.
     const createStream = async (request: any) => {
       try {

@@ -12,6 +12,7 @@ import { createArtifact } from "../artifacts/store"
 import { cargarXlsx } from "../tools/office/xlsx-loader"
 import { extraerTextoPdf } from "../tools/office/pdf-text"
 import { listarSlides, textoDeXml } from "../tools/office/pptx-slides"
+import { listarImagenes } from "../tools/office/office-images"
 import { logger } from "../utils/logger"
 
 const log = logger.child("attachment-ingest")
@@ -34,6 +35,8 @@ export interface IngestedAttachment {
   preview: string
   /** Páginas del PDF (solo PDF). */
   pages?: number
+  /** Imágenes útiles dentro de un Word o PowerPoint (el texto de la vista previa no las incluye). */
+  images?: number
   /** true si es un PDF sin capa de texto (escaneado): no se puede leer sin OCR. */
   scanned: boolean
 }
@@ -69,13 +72,14 @@ function clip(text: string): string {
   return t.length > PREVIEW_CHARS ? `${t.slice(0, PREVIEW_CHARS)}…` : t
 }
 
-async function extractPreview(kind: AttachmentKind, bytes: Buffer, info: { pages?: number; sinTexto?: boolean }): Promise<string> {
+async function extractPreview(kind: AttachmentKind, bytes: Buffer, info: { pages?: number; sinTexto?: boolean; images?: number }): Promise<string> {
   try {
     switch (kind) {
       case "text":
         return clip(bytes.toString("utf8"))
       case "docx": {
         const mammoth = await import("mammoth")
+        info.images = await contarImagenes(bytes, "docx")
         return clip((await mammoth.extractRawText({ buffer: bytes })).value)
       }
       case "xlsx": {
@@ -99,6 +103,7 @@ async function extractPreview(kind: AttachmentKind, bytes: Buffer, info: { pages
         const zip = await JSZip.loadAsync(bytes)
         const slides = await listarSlides(zip)
         info.pages = slides.length
+        info.images = (await listarImagenes(zip, "pptx")).imagenes.length
         const partes: string[] = []
         for (const slide of slides.slice(0, 5)) {
           const t = textoDeXml(await zip.file(slide.archivo)!.async("string"))
@@ -113,6 +118,13 @@ async function extractPreview(kind: AttachmentKind, bytes: Buffer, info: { pages
     log.warn(`No se pudo extraer vista previa (${kind}): ${(err as Error).message}`)
     return ""
   }
+}
+
+async function contarImagenes(bytes: Buffer, formato: "docx" | "pptx"): Promise<number> {
+  try {
+    const JSZip = (await import("jszip")).default
+    return (await listarImagenes(await JSZip.loadAsync(bytes), formato)).imagenes.length
+  } catch { return 0 }
 }
 
 async function toBytes(input: { buffer?: Buffer; base64?: string; url?: string }): Promise<Buffer> {
@@ -144,12 +156,12 @@ export async function ingestDocument(input: {
   const artifact = await createArtifact({
     bytes, mimeType, kind: "attachment", userId: input.userId, extension: extname(fileName),
   })
-  const info: { pages?: number; sinTexto?: boolean } = {}
+  const info: { pages?: number; sinTexto?: boolean; images?: number } = {}
   const preview = await extractPreview(kind, bytes, info)
   return {
     fileName, mimeType: artifact.mime_type, size: bytes.byteLength, kind,
     artifactId: artifact.id, path: artifact.path, preview,
-    pages: info.pages, scanned: !!info.sinTexto,
+    pages: info.pages, images: info.images, scanned: !!info.sinTexto,
   }
 }
 
@@ -169,7 +181,10 @@ export function formatAttachmentManifest(a: IngestedAttachment): string {
     reader ? `Para leerlo completo usa la tool ${reader} con esa ruta.` : "Formato sin lector nativo.",
   ]
   if (a.preview) lines.push(`Vista previa:\n${a.preview}`)
-  else if (a.scanned) lines.push("Este PDF no tiene texto extraíble (parece escaneado, solo imágenes) y no se puede leer sin OCR. Dile al usuario que lo envíe en formato editable o que pegue el texto.")
+  else if (a.scanned) lines.push("Este PDF no tiene texto extraíble (parece escaneado: solo imágenes). Para leerlo usa la tool office_leer_imagenes con esa ruta: transcribe cada página con el modelo de visión. Si responde que no hay modelo configurado, díselo al usuario o pídele el documento en formato editable.")
   else lines.push("No se pudo extraer texto.")
+  if (a.images) {
+    lines.push(`Contiene ${a.images} ${a.images === 1 ? "imagen" : "imágenes"} (capturas, gráficos, diagramas) que el texto NO incluye. Para verlas usa la tool office_leer_imagenes con esa ruta.`)
+  }
   return lines.join("\n")
 }

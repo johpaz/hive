@@ -3,7 +3,6 @@ import type { GraphNode } from "@/stores/canvasStore";
 import type { DeskModel } from "@/modules/office3d/state/useOfficeModel";
 import { humanizeTool } from "@/modules/office3d/state/toolLabels";
 import { useOffice3DStore } from "../state/office3dStore";
-import { JevInspectorRow } from "./JevPanel";
 
 const STATE_LABEL: Record<DeskModel["state"], string> = {
   archived: "Archivado manualmente",
@@ -65,7 +64,6 @@ export function AgentInspector({ desk, delegatorName }: { desk: DeskModel | null
         <span className="office3d-inspector-label">Workers</span>
         <span className="font-mono">{desk.workerCount}</span>
       </div>
-      <JevInspectorRow agentId={agent.id} />
       {agent.description && <p className="office3d-inspector-desc">{agent.description}</p>}
     </aside>
   );
@@ -97,7 +95,6 @@ export function CoordinatorInspector({ coordinator }: { coordinator: GraphNode |
           {coordinator.status === "tool_call" ? "Ejecutando herramienta" : coordinator.status === "thinking" ? "Pensando" : "En espera"}
         </span>
       </div>
-      <JevInspectorRow agentId={coordinator.id} />
       {typeof coordinator.description === "string" && (
         <p className="office3d-inspector-desc">{coordinator.description}</p>
       )}

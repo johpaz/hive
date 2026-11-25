@@ -39,7 +39,7 @@ let workerListo = false
  * paquete) ese módulo no existe y la carga muere con «DOMMatrix is not defined». Para
  * extraer texto no hace falta dibujar nada: bastan clases mínimas, solo si faltan.
  */
-function instalarPolyfillsPdf(): void {
+export function instalarPolyfillsPdf(): void {
   const g = globalThis as any
   if (typeof g.DOMMatrix === "undefined") {
     g.DOMMatrix = class DOMMatrix {
@@ -64,7 +64,7 @@ function instalarPolyfillsPdf(): void {
   }
 }
 
-async function registrarWorker(lib: any): Promise<void> {
+export async function registrarWorker(lib: any): Promise<void> {
   if (workerListo) return
   const g = globalThis as any
   if (!g.pdfjsWorker) {

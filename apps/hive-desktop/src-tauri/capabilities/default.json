@@ -16,6 +16,8 @@
     "updater:default",
     "process:allow-restart",
     "allow-gateway-info",
+    "allow-prepare-for-update",
+    "allow-resume-gateway",
     "allow-audio-outputs",
     "allow-set-audio-output",
     "allow-bluetooth-names",

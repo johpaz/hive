@@ -121,7 +121,7 @@ export async function handleCreateMeeting(
       const sttModelEntry = (await modelsCol.scan({}))
         .map(e => e.doc)
         .find(m => m.model_type === "stt" && m.active && activeProviderIds.has(m.provider_id));
-      sttModel = sttModelEntry?.id || "whisper-large-v3-turbo";
+      sttModel = sttModelEntry?.id || "groq/whisper-large-v3-turbo";
     }
 
     const id = crypto.randomUUID().replace(/-/g, "");

@@ -80,6 +80,7 @@ export const SEED_DATA: SeedData = {
     // IMAGEN — usa el modelo elegido en Providers → Imagen
     // ─────────────────────────────────────────
     { id: "image_generate", name: "image_generate", category: "image", description: "Crear una imagen nueva a partir de una descripción (ilustración, logo, póster, arte conceptual) con el modelo elegido en Providers → Imagen. Sinónimos: crear imagen, generar imagen, dibujar, hazme una imagen" },
+    { id: "office_leer_imagenes", name: "office_leer_imagenes", category: "image", description: "Leer las imágenes dentro de un Word (.docx) o PowerPoint (.pptx): capturas, gráficos, diagramas, escaneos. Las describe y transcribe con el modelo de visión de Providers → Imagen. Sinónimos: leer imágenes de un documento, ocr de word, ocr de powerpoint, capturas dentro de un documento" },
 
     { id: "api_request", name: "api_request", category: "api", description: "Ejecutar una petición HTTP autorizada contra un endpoint REST y validar la respuesta. Sinónimos: llamar api, request rest, consumir endpoint, petición http, hacer get, hacer post" },
     { id: "web_search", name: "web_search", category: "web", description: "Buscar en la web información actual y noticias. Sinónimos: búsqueda web, noticias, información, buscar en internet, google" },
@@ -258,7 +259,7 @@ export const SEED_DATA: SeedData = {
     // el primero no existe en el catálogo y el segundo ya salió de preview.
     // 3.8 Flash tiene precio de lanzamiento hasta el 31-dic-2026 ($0.75 / $3.75).
     // Desde el 1-ene-2027 pasa a $1.50 / $7.50: actualizar aquí ese día o el
-    // dashboard subestimará el costo y el ahorro de Jev a la mitad.
+    // dashboard subestimará el costo a la mitad.
     // contextWindow: el que reporta la propia API de modelos de Gemini.
     { id: "gemini-3.8-flash", providerId: "gemini", name: "Gemini 3.8 Flash", modelType: "llm", contextWindow: 1050000, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0.75, outputPer1M: 3.75 },
     { id: "gemini-3.6-flash", providerId: "gemini", name: "Gemini 3.6 Flash", modelType: "llm", contextWindow: 1048576, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 1.5, outputPer1M: 7.5 },
@@ -304,7 +305,6 @@ export const SEED_DATA: SeedData = {
     { id: "kimi-k2.6", providerId: "kimi", name: "Kimi K2.6", modelType: "llm", contextWindow: 262144, capabilities: JSON.stringify(["chat", "vision", "json_mode", "function_calling", "streaming", "code"]), inputPer1M: 0.6, outputPer1M: 3.41 },
 
     // ── OpenRouter (fuente: GET https://openrouter.ai/api/v1/models) ──
-    { id: "typesafe/jev-1.13", providerId: "openrouter", name: "Jev 1.13 (Decisions)", modelType: "decision", contextWindow: 32000, capabilities: JSON.stringify(["choice", "noul", "score"]), inputPer1M: 0.042, outputPer1M: 0 },
     // Solo modelos vivos con `tools` en supported_parameters y publicados desde
     // 2025-07. contextWindow = context_length reportado por el propio catálogo.
     // Anthropic

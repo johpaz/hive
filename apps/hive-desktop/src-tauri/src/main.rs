@@ -354,6 +354,31 @@ fn gateway_response_is_healthy(response: &str) -> bool {
         && response.contains("\"status\":\"ok\"")
 }
 
+/// Mata el gateway y todo lo que lanzó.
+///
+/// Lo que Tauri arranca es el envoltorio de la CLI; el servidor real es un
+/// proceso hijo suyo, separado (`detached`). `child.kill()` solo alcanza al
+/// envoltorio: el servidor sigue vivo, con su `.exe` bloqueado en Windows y
+/// con el binario viejo en memoria en macOS tras una actualización. Por eso se
+/// termina primero el árbol y después el envoltorio.
+fn kill_gateway_tree(pid: u32) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = std::process::Command::new("pkill")
+            .args(["-TERM", "-P", &pid.to_string()])
+            .status();
+    }
+}
+
 fn stop_gateway(state: &GatewayState) {
     state.shutting_down.store(true, Ordering::SeqCst);
     if state.external {
@@ -363,11 +388,48 @@ fn stop_gateway(state: &GatewayState) {
     }
     if let Ok(mut child) = state.child.lock() {
         if let Some(child) = child.take() {
+            kill_gateway_tree(child.pid());
             if let Err(error) = child.kill() {
                 eprintln!("[Hive Agents] no se pudo detener el gateway: {error}");
             }
         }
     }
+}
+
+/// Detiene el gateway antes de que el instalador reemplace los archivos.
+///
+/// El updater de Tauri sale con `process::exit` (Windows) o `restart` (macOS)
+/// una vez aplicada la actualización, y ninguno de los dos pasa por
+/// `RunEvent::Exit`: sin esto el gateway queda huérfano y bloquea su `.exe`
+/// (Windows) o sigue sirviendo la versión vieja (macOS).
+#[tauri::command]
+async fn prepare_for_update(state: State<'_, GatewayState>) -> Result<(), String> {
+    stop_gateway(&state);
+    // Darle un respiro al sistema operativo para soltar los archivos.
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    Ok(())
+}
+
+/// Vuelve a levantar el gateway si la instalación falló después de detenerlo
+/// (por ejemplo, el usuario rechazó el aviso de permisos).
+#[tauri::command]
+async fn resume_gateway(app: AppHandle, state: State<'_, GatewayState>) -> Result<(), String> {
+    if state.external || !state.shutting_down.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+    let (events, child) = spawn_gateway(&app, state.port, &state.hive_home)?;
+    monitor_gateway(events);
+    if let Ok(mut slot) = state.child.lock() {
+        *slot = Some(child);
+    }
+    state.shutting_down.store(false, Ordering::SeqCst);
+    watch_gateway_health(
+        app.clone(),
+        state.port,
+        state.hive_home.clone(),
+        state.shutting_down.clone(),
+    );
+    wait_for_gateway(state.port).await
 }
 
 /// ¿Puede esta instalación reemplazarse a sí misma?
@@ -941,6 +1003,11 @@ fn create_window(app: &AppHandle, port: u16) -> Result<(), String> {
         .inner_size(1440.0, 900.0)
         .min_inner_size(1024.0, 700.0)
         .resizable(true)
+        // Tauri intercepta por defecto los archivos que se sueltan sobre la ventana y no se
+        // los pasa a la página: en Windows el chat nunca recibía el `drop` y arrastrar un
+        // archivo al input no hacía nada. La app no usa el evento propio de Tauri, así que
+        // se deja que el navegador maneje el arrastre.
+        .disable_drag_drop_handler()
         .build()
         .map_err(|error| error.to_string())?;
     enable_media_capture(&window);
@@ -990,6 +1057,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .manage(media::MediaState::default())
         .invoke_handler(tauri::generate_handler![
             gateway_info,
+            prepare_for_update,
+            resume_gateway,
             audio_outputs,
             bluetooth_names,
             set_audio_output,

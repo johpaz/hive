@@ -102,7 +102,7 @@ describe("OpenAI-compatible (DeepSeek, NVIDIA, Groq, OpenRouter, Mistral…)", (
     const result = await syncProviderModels("openrouter", deps(f));
     // 5 filas, una es generación de imágenes (no se cuenta ni se guarda): quedan 4. Los 26 modelos que el catálogo
     // sembró para OpenRouter y esta respuesta no lista se marcan como "ya no listados", no se tocan de otro modo.
-    expect(result).toMatchObject({ provider: "openrouter", ok: true, found: 5, added: 5, updated: 0, unlisted: 26 });
+    expect(result).toMatchObject({ provider: "openrouter", ok: true, found: 5, added: 5, updated: 0, unlisted: 25 });
     expect(await model("openrouter/nvidia/nemotron-3.5-transcribe")).toMatchObject({ model_type: "stt", active: true, enabled: true });
 
     const nuevo = (await model(catalogModelKey("openrouter", "vendor/nuevo")))!;

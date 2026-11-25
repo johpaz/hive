@@ -26,7 +26,8 @@ export type UpdatePhase =
 type PendingUpdate = {
   version: string;
   notes?: string;
-  downloadAndInstall: (onEvent: (event: DownloadEvent) => void) => Promise<void>;
+  download: (onEvent: (event: DownloadEvent) => void) => Promise<void>;
+  install: () => Promise<void>;
 };
 
 type DownloadEvent =
@@ -113,8 +114,12 @@ export const useDesktopUpdateStore = create<DesktopUpdateState>((set, get) => ({
     let total = 0;
     let received = 0;
 
+    // El gateway se detiene entre la descarga y la instalación: el updater cierra
+    // la app sin pasar por su apagado normal, y un gateway huérfano bloquea el
+    // instalador en Windows o sigue sirviendo la versión vieja en macOS.
+    let gatewayStopped = false;
     try {
-      await update.downloadAndInstall((event) => {
+      await update.download((event) => {
         if (event.event === "Started") {
           total = event.data.contentLength ?? 0;
         } else if (event.event === "Progress") {
@@ -126,11 +131,26 @@ export const useDesktopUpdateStore = create<DesktopUpdateState>((set, get) => ({
         }
       });
 
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("prepare_for_update");
+      gatewayStopped = true;
+
+      await update.install();
+
       set({ phase: "restarting" });
       const { relaunch } = await import("@tauri-apps/plugin-process");
       await relaunch();
     } catch (err) {
       set({ phase: "error", error: err instanceof Error ? err.message : String(err) });
+      if (gatewayStopped) {
+        // La instalación falló con el gateway apagado: devolverle la app al usuario.
+        try {
+          const { invoke } = await import("@tauri-apps/api/core");
+          await invoke("resume_gateway");
+        } catch (resumeError) {
+          console.warn("[updater] no se pudo reanudar el gateway:", resumeError);
+        }
+      }
     }
   },
 

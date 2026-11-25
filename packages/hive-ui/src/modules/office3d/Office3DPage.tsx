@@ -1,6 +1,5 @@
 import { useLiveOffice } from "./state/useLiveOffice";
 import { useOffice3DStore } from "./state/office3dStore";
-import { useJevOffice } from "./state/jev";
 import { HoloScene } from "./scene/HoloScene";
 import { OfficeHUD } from "./hud/OfficeHUD";
 import "./office3d.css";
@@ -12,7 +11,6 @@ import "./office3d.css";
 export default function Office3DPage() {
   const { coordinator, desks, interactions, workEvents, isConnected } = useLiveOffice();
   const selectedAgentId = useOffice3DStore((s) => s.selectedAgentId);
-  const jev = useJevOffice();
 
   const selectedDesk = desks.find((d) => d.agent.id === selectedAgentId) ?? null;
   const coordinatorSelected = !!coordinator && selectedAgentId === coordinator.id;
@@ -25,7 +23,6 @@ export default function Office3DPage() {
         coordinator={coordinator ?? null}
         interactions={interactions}
         workEvents={workEvents}
-        jev={jev}
       />
       <OfficeHUD
         desks={desks}
@@ -36,7 +33,6 @@ export default function Office3DPage() {
         selectedDesk={selectedDesk}
         coordinatorSelected={coordinatorSelected}
         coordinatorName={coordinatorName}
-        jev={jev}
       />
     </div>
   );

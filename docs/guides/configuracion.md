@@ -65,24 +65,6 @@ Cada agente puede tener un workspace y un scope de lectura/escritura. Las herram
 
 El onboarding asigna proveedor y modelo al coordinador y completa agentes sin configuración. Un agente puede definir un override por capacidades; si no lo tiene, hereda el modelo del coordinador. Los cambios explícitos hechos en la UI no son sobrescritos durante un arranque normal.
 
-### Decisiones con Jev
-
-Al guardar una API key en **Proveedores → OpenRouter**, Hive activa OpenRouter y Jev inmediatamente. Jev usa la API Decisions de OpenRouter para escoger qué historial, herramientas, skills, notas y reglas incluir en el contexto; también recomienda especialistas y decide si los lotes de herramientas independientes pueden ejecutarse en paralelo. El modelo de texto sigue redactando respuestas, argumentos de herramientas y tareas delegadas.
-
-Jev decide sobre un mapa del enjambre que recibe en cada turno: todos los especialistas habilitados (los del catálogo y los creados con `agent_create`), con sus herramientas y sus servidores MCP, y el estado de cada servidor: `activo` (conectado), `disponible` (encendido, se conecta en el primer uso) o `apagado`. Solo propone herramientas MCP de servidores encendidos, conectados y permitidos para ese agente. Si el especialista indicado para una tarea depende de un MCP apagado, el coordinador no delega: le pide al usuario que lo encienda en **Ajustes → Entorno → MCP Servers** y continúa cuando quede conectado. Ningún agente puede encender un MCP por su cuenta, porque hacerlo arranca procesos y usa credenciales.
-
-Cada decisión añade entre 0,3 y 0,6 segundos: una al preparar el turno y otra antes de cada llamada al modelo cuando hay resultados de herramientas que valga la pena omitir. Con varios especialistas arrancando a la vez, alguna decisión puede pasar de los tres segundos; ese agente usa el flujo clásico en ese turno y los demás no se ven afectados.
-
-**Kev (opcional, con prioridad).** Si el proveedor **HiveAgents LLM** está activo con su clave y el servicio `kev-decision.service` del laboratorio responde `ready=true` en `GET /api/decisions/status`, las decisiones van a `POST /v1/systemone` de `llm.hiveagents.io` en lugar de OpenRouter, sin costo por token. Si Kev está apagado, tarda más de tres segundos, devuelve un error (401, 502, 504…) o una respuesta inválida, esa decisión pasa a Jev y, si tampoco hay clave de OpenRouter, al flujo clásico. Kev se enciende y apaga con systemd en el PC del laboratorio, no desde Hive; tras apagarlo, Hive vuelve a Jev en un máximo de 30 segundos.
-
-Antes de configurar la clave, revisa qué datos de la conversación viajan a OpenRouter en [Seguridad](seguridad.md#datos-enviados-a-jev).
-
-La tarjeta de OpenRouter muestra `activo`, `desactivado` o `usando flujo clásico`. Al quitar la clave o desactivar OpenRouter, Hive vuelve al compilador y al loop anteriores. También vuelve temporalmente a ese flujo si Jev tarda más de tres segundos, falla o devuelve una respuesta inválida. Las notas y mensajes omitidos se pueden recuperar mediante `conversation_read`, limitado al hilo actual.
-
-Una clave en `OPENROUTER_API_KEY` puede sustituir a la clave guardada, siempre que OpenRouter esté activo. La clave se envía solo al endpoint de decisiones; Jev no aparece como modelo de texto seleccionable para los agentes, ni en la UI ni en `get_available_models`. Los registros de uso incluyen sus tokens y latencia. El ahorro real depende del historial y de las herramientas de cada tarea, por lo que debe medirse en ejecuciones comparables con y sin la clave.
-
-El panel **Uso y Costos de API** del dashboard muestra, para el período elegido (6 h, 24 h o 7 días), las decisiones de Jev, su costo, los tokens de entrada que evitó al modelo principal y el ahorro neto, con un desglose por agente. En la **Oficina 3D**, Jev aparece como un cristal violeta sobre el coordinador que lanza un rayo al agente que asesora en cada decisión. Los tokens ahorrados son una estimación: se comparan los caracteres que habría enviado el flujo clásico con los del plan de Jev y se dividen entre 4. El valor en dólares usa la tarifa de entrada del modelo de cada agente; un modelo sin tarifa en el catálogo cuenta su ahorro como $0.
-
 Las tarifas viven en el catálogo de modelos (`packages/core/src/storage/seed.ts`) y el arranque las vuelve a sembrar. Gemini 3.8 Flash tiene precio de lanzamiento hasta el 31 de diciembre de 2026 (USD 0,75 de entrada y 3,75 de salida por millón de tokens) y pasa a 1,50 y 7,50 desde el 1 de enero de 2027: ese día hay que actualizar el catálogo o el dashboard mostrará la mitad del costo real.
 
 ### Ventana de contexto con Ollama

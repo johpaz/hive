@@ -61,6 +61,9 @@
       }
     },
     "windows": {
+      "nsis": {
+        "installerHooks": "windows/hooks.nsh"
+      },
       "webviewInstallMode": {
         "type": "offlineInstaller",
         "silent": true

@@ -7,6 +7,11 @@ import { nvidiaSttBase, supportsStt } from "./stt-models";
 import { wireModelId } from "../storage/model-id";
 import { logger } from "../utils/logger";
 
+/** Ids de STT de versiones anteriores que pueden seguir guardados en un canal. */
+const LEGACY_STT_IDS: Record<string, string> = {
+  "groq-whisper": "groq/whisper-large-v3-turbo",
+};
+
 export interface VoiceConfig {
   voiceEnabled: boolean;
   ttsEnabled: boolean;
@@ -125,6 +130,17 @@ class VoiceService {
       const model = await modelsCol.get(stored);
       if (model?.doc.provider_id) return { provider: model.doc.provider_id, modelId: model.doc.id, doc: model.doc };
 
+      // El id del cable sin el prefijo de revendedor ("whisper-large-v3-turbo" en vez de
+      // "groq/whisper-large-v3-turbo"): lo guardan las reuniones y cualquier cliente que
+      // conozca el nombre del modelo pero no la clave del catálogo. Sin esto no coincidía
+      // con ninguna fila y la transcripción caía en silencio en OTRO proveedor (Gemini, con 404).
+      const porCable = (await modelsCol.scan({}))
+        .map((e) => e.doc)
+        .filter((doc) => doc.provider_id && !doc.unlisted && wireModelId(doc.provider_id, doc.id) === stored
+          && (type === "stt" ? doc.model_type === "stt" : doc.model_type === "tts"));
+      const elegido = porCable.find((doc) => doc.active && doc.enabled) ?? porCable[0];
+      if (elegido) return { provider: elegido.provider_id, modelId: elegido.id, doc: elegido };
+
       const providersCol = await col<ProviderDoc>("providers");
       const provider = await providersCol.get(stored);
       if (!provider?.doc.id) return null;
@@ -144,33 +160,17 @@ class VoiceService {
     }
   }
 
-  /** Primer modelo STT/TTS activo de un provider activo, como fallback desde la BD. */
-  private async getFirstActiveVoiceModel(type: "stt" | "tts"): Promise<{ id: string; provider: string; doc: ModelDoc } | null> {
-    try {
-      const modelsCol = await col<ModelDoc>("models");
-      const providersCol = await col<ProviderDoc>("providers");
-      const rows = type === "stt" ? await modelsCol.scan({}) : await modelsCol.findBy("model_type", type);
-      for (const { doc } of rows) {
-        if (!doc.active || !doc.enabled || doc.unlisted || (type === "stt" && doc.model_type !== "stt" && doc.provider_id !== "gemini")) continue;
-        const provider = await providersCol.get(doc.provider_id);
-        if (provider?.doc.active && provider.doc.enabled && (type === "tts" || supportsStt(doc, provider.doc.base_url))) {
-          return { id: doc.id, provider: doc.provider_id, doc };
-        }
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
   async transcribe(audio: AudioInput, modelId: string): Promise<string> {
-    let resolved = await this.resolveVoiceModel(modelId, "stt");
+    const resolved = await this.resolveVoiceModel(LEGACY_STT_IDS[modelId] ?? modelId, "stt");
 
+    // Sin respaldo: usar "el primer STT activo" cuando el modelo pedido no existe mandaba el
+    // audio a OTRO proveedor sin avisar (Gemini, que contestaba 404) y escondía el verdadero
+    // problema. Es mejor decirle al usuario qué modelo falta y dónde elegir otro.
     if (!resolved) {
-      const fallback = await this.getFirstActiveVoiceModel("stt");
-      if (!fallback) throw new Error(`STT model "${modelId}" not found and no active STT models in the database`);
-      log.warn(`STT model ${modelId} not found in DB, falling back to ${fallback.provider}/${fallback.id}`);
-      resolved = { provider: fallback.provider, modelId: fallback.id, doc: fallback.doc };
+      throw new Error(
+        `El modelo de transcripción "${modelId}" no existe en el catálogo. ` +
+        `Elige uno en Canales → Modelo STT o revisa Providers → Voz.`,
+      );
     }
     const { provider, modelId: resolvedModelId, doc } = resolved;
     const providerRow = await (await col<ProviderDoc>("providers")).get(provider);
@@ -261,13 +261,15 @@ class VoiceService {
   async speak(text: string, modelId: string, voiceId?: string): Promise<AudioOutput> {
     if (isLegacyPiper(modelId)) return this.speakWithKitten(text, DEFAULT_LOCAL_VOICE);
 
-    let resolved = await this.resolveVoiceModel(modelId, "tts");
+    const resolved = await this.resolveVoiceModel(modelId, "tts");
 
+    // Igual que en STT: nada de caer en "el primer TTS activo" de otro proveedor. Cambiaría la
+    // voz del agente sin avisar, o fallaría contra un proveedor sin clave con un error ajeno.
     if (!resolved) {
-      const fallback = await this.getFirstActiveVoiceModel("tts");
-      if (!fallback) throw new Error(`TTS model "${modelId}" not found and no active TTS models in the database`);
-      log.warn(`TTS model ${modelId} not found in DB, falling back to ${fallback.provider}/${fallback.id}`);
-      resolved = { provider: fallback.provider, modelId: fallback.id, doc: fallback.doc };
+      throw new Error(
+        `El modelo de voz "${modelId}" no existe en el catálogo. ` +
+        `Elige uno en Canales → Modelo TTS o revisa Providers → Voz.`,
+      );
     }
     const { provider, modelId: resolvedModelId } = resolved;
 

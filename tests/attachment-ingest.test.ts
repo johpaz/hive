@@ -33,6 +33,15 @@ describe("formatAttachmentManifest", () => {
       fileName: "s.pdf", mimeType: "x", size: 10, kind: "pdf",
       artifactId: "i", path: "/p", preview: "", scanned: true,
     });
-    expect(m).toContain("no se puede leer sin OCR");
+    expect(m).toContain("office_leer_imagenes");
+    expect(m).toContain("parece escaneado");
+  });
+  test("avisa de las imágenes de un Word o PowerPoint y de la tool que las lee", () => {
+    const base = { mimeType: "x", size: 10, artifactId: "i", path: "/p", preview: "Hola", scanned: false };
+    const con = formatAttachmentManifest({ ...base, fileName: "a.pptx", kind: "pptx", images: 3 });
+    expect(con).toContain("Contiene 3 imágenes");
+    expect(con).toContain("office_leer_imagenes");
+    expect(formatAttachmentManifest({ ...base, fileName: "b.docx", kind: "docx", images: 1 })).toContain("Contiene 1 imagen ");
+    expect(formatAttachmentManifest({ ...base, fileName: "c.docx", kind: "docx" })).not.toContain("office_leer_imagenes");
   });
 });

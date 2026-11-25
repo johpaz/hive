@@ -37,8 +37,6 @@ Hive distingue tres estados para cada servidor:
 | `disponible` | Habilitado pero sin conexión abierta; se conecta la primera vez que un agente lo usa. |
 | `apagado` | Deshabilitado; ningún agente puede usarlo hasta que el usuario lo encienda. |
 
-Con Jev activo (clave de OpenRouter configurada), el coordinador ve ese estado junto a cada especialista (por ejemplo, `email_specialist · MCP: email (activo)`) y Jev lo usa para decidir. Si el especialista indicado para una tarea depende de un servidor `apagado`, el coordinador no delega: le pide al usuario que lo encienda en **Ajustes → Entorno → MCP Servers** y continúa cuando quede conectado. Sin Jev, el coordinador ve el catálogo de especialistas sin el estado de sus servidores y se entera de un servidor apagado cuando la tarea falla. Encender un servidor arranca procesos y usa credenciales, por eso es siempre una decisión del usuario y ningún agente tiene una herramienta para hacerlo.
-
 ## Fallos
 
 Una tool MCP ausente o un servidor desconectado no se presenta como éxito. El agente debe devolver evidencia del error y el coordinador puede elegir una alternativa nativa. No se reintentan automáticamente mutaciones no idempotentes.

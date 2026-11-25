@@ -40,9 +40,6 @@
         <mxCell id="agent" value="Agent Service" style="swimlane;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;startSize=30;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="400" y="320" width="600" height="250" as="geometry"/>
         </mxCell>
-        <mxCell id="jev" value="Jev (OpenRouter)&#xa;selecciona historial, tools,&#xa;skills, notas y reglas" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#82b366;dashed=1;fontColor=#000000;" vertex="1" parent="agent">
-          <mxGeometry x="20" y="50" width="170" height="70" as="geometry"/>
-        </mxCell>
         <mxCell id="ctx" value="Compilador de contexto&#xa;identidad · historial · notas&#xa;playbook ACE · presupuesto" style="rounded=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#82b366;fontColor=#000000;" vertex="1" parent="agent">
           <mxGeometry x="215" y="50" width="170" height="70" as="geometry"/>
         </mxCell>
@@ -87,7 +84,6 @@
         <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="inputs" target="gw"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="e2" value="encola turno" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="gw" target="queue"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="e3" value="ejecuta" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="queue" target="agent"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="jev" target="ctx"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="ctx" target="bee"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="e6" value="delega" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="bee" target="deleg"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="e7" value="al terminar todos" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontColor=#000000;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="deleg" target="fanin"><mxGeometry relative="1" as="geometry"/></mxCell>

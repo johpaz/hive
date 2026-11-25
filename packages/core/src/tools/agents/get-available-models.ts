@@ -60,9 +60,7 @@ export const getAvailableModelsTool: Tool = {
         .filter(m => m.enabled && providersById.has(m.provider_id));
 
       if (providerId) models = models.filter(m => m.provider_id === providerId);
-      // Decision models (Jev) only answer the Decisions API, never chat: an
-      // agent assigned one would fail every turn.
-      models = modelType ? models.filter(m => m.model_type === modelType) : models.filter(m => m.model_type !== "decision");
+      if (modelType) models = models.filter(m => m.model_type === modelType);
       if (capabilities) models = models.filter(m => (m.capabilities ?? "").includes(capabilities));
 
       // Transformar a formato amigable

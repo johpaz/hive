@@ -242,6 +242,7 @@ export const CORE_TOOL_CATALOG: ToolDescriptor[] = [
 
     // Imagen
     { name: "image_generate", description: "Create a new image from a text description (illustration, logo, poster, concept art, picture) using the image model chosen in Providers. Delivered to the user automatically. Cannot edit an existing image. Spanish keywords: crear imagen, generar imagen, dibujar, hazme una imagen, genera una foto, ilustración, logo, póster, arte, imagen de, dibuja", category: "image", abstractionLevel: "atomic" },
+    { name: "office_leer_imagenes", description: "Read the images inside a Word or PowerPoint file (screenshots, charts, diagrams, scanned pages) by describing and transcribing them with the vision model chosen in Providers. Complements office_leer_docx / office_leer_pptx, which only return text. Spanish keywords: leer imágenes de un documento, imágenes dentro de word, imágenes de powerpoint, ocr de documento, capturas, gráficos de una presentación, leer figuras", category: "image", abstractionLevel: "atomic" },
 
     // HTTP / REST
     { name: "api_request", description: "Perform an authorized HTTP request against a REST endpoint and validate the response. Spanish keywords: llamar api, request rest, consumir endpoint, petición http, hacer get, hacer post", category: "api", abstractionLevel: "atomic" },

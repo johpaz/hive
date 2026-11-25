@@ -85,8 +85,6 @@ El umbral de 16 000 y la compuerta son por tanto una suposición razonable, no u
 
 La ventaja de tener esto sobre HiveDB es que el estado, el historial indexado y la búsqueda híbrida viven en una sola base local, sin servicio de vectores aparte ni llamadas extra para recuperar. El modo de una acción por contexto del paper existe en `@johpaz/hive-sdk` pero no en Hive.
 
-Con una clave de OpenRouter activa, Jev selecciona antes de cada turno qué historial, herramientas, skills, notas y reglas entran al prompt, sobre un mapa de los especialistas y del estado de cada servidor MCP. Entre iteraciones puede omitir resultados viejos de herramientas. Si Jev no responde en tres segundos o falla, el turno sigue con la selección clásica. El detalle está en [Jev](../internals/jev.md).
-
 `search_knowledge` consulta el índice combinado de tools, skills, MCP y reglas ACE. Una capacidad seleccionada se incorpora al loadout del turno y puede activar su skill asociada.
 
 ## Loop

@@ -51,7 +51,7 @@ export const useMeetingStore = create<MeetingStore>((set, get) => ({
   error: null,
   wsConnection: null,
 
-  startSession: async (title, sttModel = "whisper-large-v3-turbo") => {
+  startSession: async (title, sttModel) => {
     set({ error: null, isConnecting: true });
     try {
       const res = await fetch(`${getApiBaseUrl()}/api/meetings`, {

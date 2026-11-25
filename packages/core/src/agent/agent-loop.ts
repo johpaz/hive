@@ -32,8 +32,6 @@ import { resolveUserId, resolveAgentId } from "../storage/onboarding"
 import type { ContentPart } from "../multimodal/types"
 import { loadConfig } from "../config/loader"
 import { executeToolBatch } from "../tool-runtime"
-import { jevWantsParallel, planJevIteration } from "./jev-planner"
-import { emitJevDecision } from "./jev-decisions"
 import { createStuckLoopDetector, getInterventionMessage, type StuckLoopState } from "./stuck-loop"
 import {
   createRun as createAgentRun,
@@ -53,10 +51,6 @@ import { publishNarration } from "../events/narration"
 import { getNarration } from "../events/tool-narration"
 
 const log = logger.child("agent-loop")
-
-const JEV_ACTION_LABELS: Record<string, string> = {
-  continue: "Continuar", delegate: "Delegar", discover: "Descubrir", finish: "Cerrar",
-}
 
 // Per-operation budget for a single LLM call — NOT an aggregate deadline for the
 // whole turn. Each call gets its own fresh window; a slow-but-healthy multi-step
@@ -376,12 +370,8 @@ export async function* runAgent(
     taskContext: opts.taskContext,
     userId: opts.userId,
     causalStreamId,
-    skipJev: !!opts.resume,
     contextWindow: providerCfg.contextWindow,
   })
-  if (ctx.jevDecision) {
-    emitJevDecision({ ...ctx.jevDecision, agentId: opts.agentId, kind: "context", provider: providerCfg.provider, model: providerCfg.model })
-  }
 
   // Force extra tools into the loadout (tests/evals)
   if (opts.extraTools?.length) {
@@ -413,8 +403,6 @@ export async function* runAgent(
   if (opts.isolated) {
     messages.push({ role: "user", content: opts.userMessage })
   }
-  const jevObjective = typeof opts.userMessage === "string" ? opts.userMessage :
-    opts.userMessage.filter((part) => part.type === "text").map((part) => (part as { text: string }).text).join("\n")
 
   // ── Resume from checkpoint ─────────────────────────────────────────────────
   let injectedToolNames: string[] = ctx.tools.map(t => t.function.name).filter(name => !MINIMAL_TOOLS.has(name))
@@ -531,28 +519,12 @@ export async function* runAgent(
       : null
     let streamedThisCall = false
     let response: Awaited<ReturnType<typeof callLLM>>
-    const jevIteration = await planJevIteration({ objective: jevObjective, messages, tools: ctx.tools })
-      .catch((err) => { log.warn(`[agent-loop] Jev iteration fallback: ${(err as Error).message}`); return null })
-    const callMessages = jevIteration?.messages ?? messages
-    const callTools = jevIteration?.tools ?? ctx.tools
-    if (jevIteration) {
-      log.info(`[agent-loop] Jev action=${jevIteration.action} omitted_results=${jevIteration.omittedResults} tools=${callTools.map(t => t.function.name).join(",")}`)
-      // Measured on what the provider actually receives, after the usual truncation.
-      const payloadChars = (msgs: LLMMessage[], tools: typeof ctx.tools) =>
-        JSON.stringify(clearOldToolResults(msgs)).length + JSON.stringify(tools).length
-      emitJevDecision({
-        agentId: opts.agentId, kind: "iteration", provider: providerCfg.provider, model: providerCfg.model,
-        summary: `${JEV_ACTION_LABELS[jevIteration.action] ?? jevIteration.action} · ${jevIteration.omittedResults} resultado(s) omitido(s) · ${callTools.length}/${ctx.tools.length} herramientas`,
-        savedTokens: Math.round((payloadChars(messages, ctx.tools) - payloadChars(callMessages, callTools)) / 4),
-        latencyMs: jevIteration.decision.latencyMs, costUsd: jevIteration.decision.costUsd,
-      })
-    }
     const llmCallStartedAt = performance.now()
     try {
       response = await withTimeout(() => callLLM({
         ...providerCfg,
-        messages: clearOldToolResults(callMessages) as LLMMessage[],
-        tools: callTools.length > 0 ? callTools : undefined,
+        messages: clearOldToolResults(messages) as LLMMessage[],
+        tools: ctx.tools.length > 0 ? ctx.tools : undefined,
         signal: opts.signal,
         sessionId: opts.threadId,
         onToken: opts.onToken && !delegationGroupAtCall
@@ -715,16 +687,6 @@ export async function* runAgent(
       }
     }
 
-    const jevParallel = await jevWantsParallel(response.tool_calls)
-      .catch((err) => { log.warn(`[agent-loop] Jev parallel fallback: ${(err as Error).message}`); return null })
-    if (jevParallel?.decision) {
-      log.info(`[agent-loop] Jev parallel=${jevParallel.parallel} calls=${response.tool_calls.length}`)
-      emitJevDecision({
-        agentId: opts.agentId, kind: "parallel", provider: providerCfg.provider, model: providerCfg.model,
-        summary: `${response.tool_calls.length} herramientas ${jevParallel.parallel ? "en paralelo" : "en secuencia"}`,
-        savedTokens: 0, latencyMs: jevParallel.decision.latencyMs, costUsd: jevParallel.decision.costUsd,
-      })
-    }
     const toolResults = await executeToolBatch({
       toolCalls: response.tool_calls,
       allTools: ctx.allTools,
@@ -745,7 +707,6 @@ export async function* runAgent(
       },
       hiveConfig,
       workerPool: hiveConfig.tools?.workerPool,
-      parallelToolCalls: jevParallel?.parallel,
       signal: opts.signal,
     })
 

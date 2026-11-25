@@ -99,39 +99,6 @@ export interface CanvasWorkEvent {
   timestamp: number;
 }
 
-/** A decision by Jev, the swarm's decision plane (see core jev-decisions.ts). */
-export interface CanvasJevDecision {
-  eventId: string;
-  agentId: string;
-  kind: "context" | "iteration" | "parallel";
-  summary: string;
-  /** Estimated main-model input tokens avoided; negative when Jev added context. */
-  savedTokens: number;
-  latencyMs: number;
-  costUsd: number;
-  recommendedAgentId?: string | null;
-  /** MCP que el especialista recomendado necesita y están apagados. */
-  mcpOff?: string[];
-  totals: JevTotals;
-  timestamp: number;
-}
-
-export interface JevTotals {
-  decisions: number;
-  savedTokens: number;
-  costUsd: number;
-}
-
-export interface JevStatus {
-  state: "off" | "ready" | "fallback";
-  backend?: "kev" | "jev" | null;
-  lastError: string | null;
-  lastSuccessAt: number | null;
-  totals?: JevTotals;
-}
-
-const JEV_DECISION_LIMIT = 24;
-
 interface CanvasState {
   isConnected: boolean;
   /**
@@ -145,11 +112,6 @@ interface CanvasState {
   graphNodes: GraphNode[];
   graphEdges: GraphEdge[];
   workEvents: CanvasWorkEvent[];
-  jevDecisions: CanvasJevDecision[];
-  /** Per-agent contribution since this window opened (the decision list is capped). */
-  jevByAgent: Record<string, JevTotals>;
-  /** null until the gateway reports it; the office then falls back to /api/providers. */
-  jevStatus: JevStatus | null;
 
   // A2UI v0.9 surfaces
   a2uiSurfaces: Map<string, A2UISurface>;
@@ -164,8 +126,6 @@ interface CanvasState {
   addGraphEdge: (edge: GraphEdge) => void;
   removeGraphEdge: (id: string) => void;
   addWorkEvent: (event: CanvasWorkEvent) => void;
-  addJevDecision: (decision: CanvasJevDecision) => void;
-  setJevStatus: (status: JevStatus) => void;
   // A2UI actions
   createA2UISurface: (surface: A2UISurface) => void;
   updateA2UIComponents: (surfaceId: string, components: ComponentDef[]) => void;
@@ -185,9 +145,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   graphNodes: [],
   graphEdges: [],
   workEvents: [],
-  jevDecisions: [],
-  jevByAgent: {},
-  jevStatus: null,
   a2uiSurfaces: new Map(),
   unseenA2UICount: 0,
 
@@ -226,27 +183,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   addWorkEvent: (event) =>
     set((s) => ({ workEvents: appendCanvasWorkEvent(s.workEvents, event) })),
-
-  addJevDecision: (decision) =>
-    set((s) => {
-      if (s.jevDecisions.some((d) => d.eventId === decision.eventId)) return s;
-      const agent = s.jevByAgent[decision.agentId] ?? { decisions: 0, savedTokens: 0, costUsd: 0 };
-      return {
-        jevByAgent: {
-          ...s.jevByAgent,
-          [decision.agentId]: {
-            decisions: agent.decisions + 1,
-            savedTokens: agent.savedTokens + decision.savedTokens,
-            costUsd: agent.costUsd + decision.costUsd,
-          },
-        },
-        jevDecisions: [...s.jevDecisions, decision].slice(-JEV_DECISION_LIMIT),
-        // A served decision proves Jev is answering, whatever the last status said.
-        jevStatus: { lastError: null, ...s.jevStatus, state: "ready", lastSuccessAt: decision.timestamp, totals: decision.totals },
-      };
-    }),
-
-  setJevStatus: (jevStatus) => set({ jevStatus }),
 
   createA2UISurface: (surface) =>
     set((s) => {
@@ -399,20 +335,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           ...data,
           timestamp: typeof msg.timestamp === "number" ? msg.timestamp : Date.now(),
         });
-      }),
-
-      ws.subscribe("canvas:jev_decision", (msg) => {
-        const data = msg.data as Omit<CanvasJevDecision, "timestamp"> | undefined;
-        if (!data?.eventId || !data.agentId || !data.kind) return;
-        get().addJevDecision({
-          ...data,
-          timestamp: typeof msg.timestamp === "number" ? msg.timestamp : Date.now(),
-        });
-      }),
-
-      ws.subscribe("canvas:jev_status", (msg) => {
-        const data = msg.data as JevStatus | undefined;
-        if (data?.state) get().setJevStatus(data);
       }),
 
       // ─── A2UI v0.9 handlers ───────────────────────────────────────────────

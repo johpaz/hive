@@ -59,7 +59,7 @@ export function ModelSelector({
     return models.filter((m) => {
       const pid = m.provider_id || m.providerId;
       const matchesProvider = pid === selectedProviderId;
-      const matchesType = typeFilter ? m.model_type === typeFilter : m.model_type !== "decision" && m.model_type !== "image";
+      const matchesType = typeFilter ? m.model_type === typeFilter : m.model_type !== "image";
       return matchesProvider && matchesType;
     });
   }, [selectedProviderId, models, typeFilter]);

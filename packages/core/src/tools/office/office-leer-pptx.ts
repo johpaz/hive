@@ -11,6 +11,7 @@
 
 import { resolveOfficeInput, ARTIFACT_ID_PARAM } from "./resolve-input.ts";
 import { listarSlides, textoDeXml, tituloDeXml, archivoDeNotas } from "./pptx-slides.ts";
+import { listarImagenes } from "./office-images.ts";
 import type { Tool } from "../types.ts";
 import { logger } from "../../utils/logger.ts";
 import * as fs from "node:fs";
@@ -83,12 +84,14 @@ export const officeLeerPptxTool: Tool = {
         usados += tam;
       }
 
-      log.info(`PPTX leído: ${slides.length} slides totales, ${diapositivas.length} leídas`);
+      const imagenes = (await listarImagenes(zip, "pptx").catch(() => ({ imagenes: [] }))).imagenes.length;
+      log.info(`PPTX leído: ${slides.length} slides totales, ${diapositivas.length} leídas, ${imagenes} imágenes`);
       return {
         ok: true,
         ruta: rutaAbsoluta,
         totalDiapositivas: slides.length,
         diapositivas,
+        ...(imagenes ? { imagenes, aviso_imagenes: `La presentación tiene ${imagenes} ${imagenes === 1 ? "imagen" : "imágenes"} que NO están en este texto (capturas, gráficos, diagramas). Si hacen falta, usa la tool office_leer_imagenes con la misma ruta.` } : {}),
         ...(siguiente ? { truncado: true, siguiente_diapositiva: siguiente, aviso: `Hay más diapositivas: vuelve a llamar con desde_diapositiva=${siguiente}.` } : {}),
       };
     } catch (error) {

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Hexagon, Wifi, WifiOff, Gauge, Activity, Volume2, VolumeX, Diamond } from "lucide-react";
-import type { CanvasJevDecision, CanvasWorkEvent, GraphNode, JevStatus } from "@/stores/canvasStore";
+import type { CanvasWorkEvent, GraphNode } from "@/stores/canvasStore";
 import type { DeskModel, OfficeInteraction } from "@/modules/office3d/state/useOfficeModel";
 import { useOffice3DStore } from "../state/office3dStore";
 import { EventTicker } from "./EventTicker";
@@ -8,8 +8,6 @@ import { useEventFeed } from "./useEventFeed";
 import { AgentInspector, CoordinatorInspector } from "./AgentInspector";
 import { OfficeRoster } from "./OfficeRoster";
 import { NowHappening } from "./NowHappening";
-import { JevPanel } from "./JevPanel";
-import { formatTokenCount, jevStateLabel, oracleName } from "../state/jev";
 import { playOfficeEventSound, primeOfficeAudio } from "../state/sound";
 
 interface OfficeHUDProps {
@@ -21,7 +19,6 @@ interface OfficeHUDProps {
   selectedDesk: DeskModel | null;
   coordinatorSelected: boolean;
   coordinatorName: string;
-  jev: { status: JevStatus | null; decisions: CanvasJevDecision[] };
 }
 
 export function OfficeHUD({
@@ -33,7 +30,6 @@ export function OfficeHUD({
   selectedDesk,
   coordinatorSelected,
   coordinatorName,
-  jev,
 }: OfficeHUDProps) {
   const quality = useOffice3DStore((s) => s.quality);
   const setQuality = useOffice3DStore((s) => s.setQuality);
@@ -41,7 +37,7 @@ export function OfficeHUD({
   const setMotion = useOffice3DStore((s) => s.setMotion);
   const soundEnabled = useOffice3DStore((s) => s.soundEnabled);
   const setSoundEnabled = useOffice3DStore((s) => s.setSoundEnabled);
-  const events = useEventFeed(desks, interactions, coordinator, workEvents, jev.decisions);
+  const events = useEventFeed(desks, interactions, coordinator, workEvents);
   const heardEvents = useRef(new Set<string>());
   const soundInitialized = useRef(false);
 
@@ -85,19 +81,6 @@ export function OfficeHUD({
             {isConnected ? "LIVE" : "OFFLINE"}
           </span>
 
-          {jev.status && jev.status.state !== "off" && (
-            <span
-              className={`office3d-jev-badge is-${jev.status.state}`}
-              title={`${oracleName(jev.status)} ${jevStateLabel(jev.status.state)}`}
-            >
-              <Diamond size={11} />
-              {oracleName(jev.status).toUpperCase()}
-              {jev.status.totals && jev.status.totals.savedTokens > 0 && (
-                <b>−{formatTokenCount(jev.status.totals.savedTokens)}</b>
-              )}
-            </span>
-          )}
-
           <button
             type="button"
             className="office3d-hud-btn"
@@ -133,7 +116,6 @@ export function OfficeHUD({
       </header>
 
       <NowHappening coordinator={coordinator} desks={desks} />
-      <JevPanel status={jev.status} decisions={jev.decisions} coordinator={coordinator} desks={desks} />
       <OfficeRoster
         coordinator={coordinator}
         desks={desks}

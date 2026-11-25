@@ -492,14 +492,14 @@ export async function startGateway(
       if (!voiceConfig.sttProvider) {
         log.warn(`⚠️ STT provider not configured for channel ${message.channel}`);
         await channelManager.send(message.channel, message.sessionId, {
-          content: `🎙️ Para usar notas de voz, necesitas configurar el proveedor STT en la configuración del canal. Ve a Configuración > Canales > [Tu canal] y configura "Prov. STT" (ej: groq-whisper o openai)`,
+          content: `🎙️ Para usar notas de voz, necesitas configurar el proveedor STT en la configuración del canal. Ve a Configuración > Canales > [Tu canal] y elige un "Modelo STT" (ej: Whisper Large V3 Turbo de Groq)`,
         });
         return;
       }
 
       try {
         const audioInput = voiceService.normalizeAudioFromChannel(message.channel, message.audio);
-        sttProviderUsed = voiceConfig.sttProvider || "groq-whisper";
+        sttProviderUsed = voiceConfig.sttProvider;
         messageContent = await voiceService.transcribe(audioInput, sttProviderUsed);
         log.info(`📝 Transcribed: ${messageContent.substring(0, 100)}...`);
 
@@ -2508,7 +2508,7 @@ export async function startGateway(
             ws.send(JSON.stringify({
               type: "message",
               sessionId: msg.sessionId,
-              content: "🎙️ Para usar notas de voz, configura el proveedor STT en Configuración > Canales > WebChat (ej: groq-whisper)"
+              content: "🎙️ Para usar notas de voz, configura el proveedor STT en Configuración > Canales > WebChat (ej: Whisper Large V3 Turbo de Groq)"
             } as OutboundMessage));
             return;
           }
@@ -2524,7 +2524,7 @@ export async function startGateway(
             // sale la extensión del archivo que se sube a Whisper, y Whisper
             // rechaza el audio si no coincide con el contenido.
             const audioInput = { type: "base64" as const, data: msg.audio, mimeType: msg.mimeType || "audio/webm" };
-            const sttProvider = voiceConfig.sttProvider || "groq-whisper";
+            const sttProvider = voiceConfig.sttProvider;
             const messageContent = await voiceService.transcribe(audioInput, sttProvider);
 
             log.info(`📝 Transcribed: ${messageContent.substring(0, 100)}...`);

@@ -47,7 +47,6 @@ import { getHiveDb } from "../storage/hivedb"
 import { listCatalogAgents, renderAgentRoutingCatalog } from "./catalog-selector"
 import { expandToolAllowlist } from "./delegation-runtime"
 import { MINIMAL_TOOLS } from "./minimal-loadout"
-import { describeSwarmCapabilities, planJevContext, renderSpecialistLine } from "./jev-planner"
 
 const log = logger.child("context-compiler")
 
@@ -102,8 +101,6 @@ export interface CompiledContext {
   tools: LLMToolDef[]
   allTools: ContextTool[]
   skills: SkillDescriptor[]  // Skills loaded (minimal + discovered)
-  /** Jev's context plan, for the caller to publish once it knows the agent's resolved model. */
-  jevDecision?: { summary: string; savedTokens: number; latencyMs: number; costUsd: number; recommendedAgentId: string | null; mcpOff: string[] }
 }
 
 // ─── G9 causal context (buildAgentContext) ────────────────────────────────
@@ -219,7 +216,6 @@ export async function compileContext(opts: {
   /** G9 causal stream id for this invocation (agent-loop.ts's causalStreamId). */
   causalStreamId?: string
   /** A resumed run restores the exact previously selected prompt and loadout. */
-  skipJev?: boolean
   /**
    * The window the provider will really read (resolveProviderConfig): the
    * smaller of the model's and, for Ollama, num_ctx. Falls back to the model row.
@@ -637,11 +633,7 @@ export async function compileContext(opts: {
   // (openai-compat-base.ts) — silently replaces the real prompt. The summary
   // lives in `systemPrompt` instead (see conversationSummarySection below).
   let messages: LLMMessage[] = toAPIMessages(recentMessages)
-  let selectedSkills = allSkills
-  let jevAgentId: string | null = null
-  let jevAgentMcpOff: string[] = []
-  let omittedMessageIds: number[] = []
-  let omittedScratchpadKeys: string[] = []
+  const selectedSkills = allSkills
   const objectiveSource = taskContext ?? userMessage
   const objective = typeof objectiveSource === "string" ? objectiveSource
     : objectiveSource.filter((p: ContentPart) => p.type === "text").map((p: ContentPart) => (p as { text: string }).text).join("\n")
@@ -649,33 +641,6 @@ export async function compileContext(opts: {
     if (!rule.applicable_to || !rule.applicable_to.includes("agent:")) return true
     return isCatalogAgent ? rule.applicable_to.includes(`agent:${agent.id}`) : false
   })
-  const swarm = opts.skipJev ? undefined : await describeSwarmCapabilities(effectiveMcpManager, { includeSpecialists: !isWorker })
-    .catch((err) => { log.warn(`[context-compiler] Swarm capability map failed: ${(err as Error).message}`); return undefined })
-  const jevPlan = opts.skipJev ? null : await planJevContext({
-    objective, messages, tools: toolsForLLM, allTools, skills: allSkills, scratchpadNotes, playbookRules, isWorker, swarm,
-  }).catch((err) => { log.warn(`[context-compiler] Jev planning failed: ${(err as Error).message}`); return null })
-  // Characters the classic path would have sent minus what Jev's plan sends,
-  // accumulated section by section; the office shows it as estimated savings.
-  let jevSavedChars = 0
-  const classicToolCount = toolsForLLM.length
-  if (jevPlan) {
-    jevSavedChars += JSON.stringify(messages).length - JSON.stringify(jevPlan.messages).length
-    jevSavedChars += JSON.stringify(toolsForLLM).length
-    messages = jevPlan.messages
-    toolsForLLM = jevPlan.tools
-    selectedSkills = allSkills.filter(s => minimalSkills.some(m => m.id === s.id) || jevPlan.selectedSkillNames.includes(s.name))
-    jevAgentId = jevPlan.agentId
-    jevAgentMcpOff = jevPlan.agentMcpOff
-    omittedMessageIds = recentMessages.filter((_, i) => !jevPlan.selectedMessageIds.includes(i)).map(row => row.id)
-    omittedScratchpadKeys = scratchpadNotes.filter(note => !jevPlan.selectedScratchpadKeys.includes(note.key)).map(note => note.key)
-    if (!isWorker && (omittedMessageIds.length > 0 || omittedScratchpadKeys.length > 0) && !toolsForLLM.some(t => t.function.name === "conversation_read")) {
-      const reader = allTools.find(t => t.name === "conversation_read")
-      if (reader) toolsForLLM.push({ type: "function", function: { name: reader.name, description: reader.description, parameters: reader.parameters } })
-    }
-    jevSavedChars -= JSON.stringify(toolsForLLM).length
-    log.info(`[context-compiler] Jev selected messages=${jevPlan.selectedMessageIds.join(",")} tools=${toolsForLLM.map(t => t.function.name).join(",")} skills=${selectedSkills.map(s => s.name).join(",")} agent=${jevAgentId ?? "coordinator"}`)
-  }
-
   // [STEP-10] STRATEGY 4: ISOLATE — Build context based on agent role
   log.info(`[context-compiler] [STEP-10] Building system prompt...`)
   let systemPrompt: string
@@ -716,49 +681,21 @@ export async function compileContext(opts: {
       log.info(`[context-compiler] Injected ${related.length} related thread summar${related.length === 1 ? "y" : "ies"}`)
     }
   }
-  if (omittedMessageIds.length > 0 || omittedScratchpadKeys.length > 0) {
-    const recoverable = `\n\n# CONTEXTO RECUPERABLE\nMensajes previos omitidos: ${omittedMessageIds.join(", ") || "ninguno"}. Notas omitidas: ${omittedScratchpadKeys.join(", ") || "ninguna"}. Si necesitas un dato de ellos, usa conversation_read con message_ids, note_keys o query antes de asumir que falta información.\n`
-    systemPrompt += recoverable
-    jevSavedChars -= recoverable.length
-  }
-
   // Only the live roster goes here — how to delegate, fan-out/fan-in and the
   // execution-truth rules are static doctrine and live in the coordinator's
   // stored prompt (storage/onboarding.ts), not duplicated per turn.
   if (!isWorker) {
     const catalogAgents = await listCatalogAgents()
-    const fullCatalog = `\n\n# COLMENA DE AGENTES\nWorkers disponibles ahora mismo (globales del sistema, ya existen):\n\n${renderAgentRoutingCatalog(catalogAgents)}\n`
-    if (jevPlan) {
-      // Ids, names and MCP state only: without them the coordinator spent
-      // iterations on agent_find just to learn who exists and what is
-      // connected. Descriptions stay behind agent_find.
-      const roster = swarm?.specialists.length
-        ? swarm.specialists.map(renderSpecialistLine).join("\n")
-        : catalogAgents.map(a => `- ${a.id} (${a.name})`).join("\n")
-      let rosterSection = roster ? `\n\n# COLMENA DE AGENTES\nWorkers disponibles (usa agent_find solo si necesitas su descripción). Un MCP "apagado" no está disponible; "disponible" se conecta al primer uso:\n${roster}\n` : ""
-      if (jevAgentId && jevAgentMcpOff.length > 0) {
-        // Turning a server on starts processes and uses credentials: that is
-        // the user's call, so the coordinator asks instead of delegating.
-        rosterSection += `\n\n# ESPECIALISTA RECOMENDADO — MCP APAGADO\nJev seleccionó ${jevAgentId} para esta tarea, pero depende de ${jevAgentMcpOff.length === 1 ? "el servidor MCP" : "los servidores MCP"} ${jevAgentMcpOff.join(", ")}, que está${jevAgentMcpOff.length === 1 ? "" : "n"} apagado${jevAgentMcpOff.length === 1 ? "" : "s"}. No lo delegues todavía: dile al usuario que para hacerlo hace falta encender ${jevAgentMcpOff.join(", ")} en Ajustes → Entorno → MCP Servers y que continúas en cuanto quede conectado. Si una parte se puede resolver sin ese MCP, ofrécela.\n`
-      } else if (jevAgentId) {
-        rosterSection += `\n\n# ESPECIALISTA RECOMENDADO\nJev seleccionó ${jevAgentId} para una subtarea acotada. Delega con task_delegate cuando puedas formular objetivo y criterios verificables.\n`
-      }
-      systemPrompt += rosterSection
-      jevSavedChars += fullCatalog.length - rosterSection.length
-    } else {
-      systemPrompt += fullCatalog
-    }
+    systemPrompt += `\n\n# COLMENA DE AGENTES\nWorkers disponibles ahora mismo (globales del sistema, ya existen):\n\n${renderAgentRoutingCatalog(catalogAgents)}\n`
   }
 
-  const selectedPlaybookRules = jevPlan ? playbookRules.filter(rule => jevPlan.selectedPlaybookIds.includes(rule.id)) : playbookRules
-  for (const rule of playbookRules) if (!selectedPlaybookRules.includes(rule)) jevSavedChars += rule.rule.length + 3
+  const selectedPlaybookRules = playbookRules
   if (selectedPlaybookRules.length > 0) {
     systemPrompt += `\n\n# PLAYBOOK APRENDIDO\n${selectedPlaybookRules.map((rule) => `- ${rule.rule}`).join("\n")}\n`
   }
 
   // Inject scratchpad (Strategy: WRITE) — usando TOON para ahorro de tokens
-  const selectedScratchpadNotes = jevPlan ? scratchpadNotes.filter(note => jevPlan.selectedScratchpadKeys.includes(note.key)) : scratchpadNotes
-  for (const note of scratchpadNotes) if (!selectedScratchpadNotes.includes(note)) jevSavedChars += note.key.length + note.value.length + 4
+  const selectedScratchpadNotes = scratchpadNotes
   if (selectedScratchpadNotes.length > 0) {
     const scratchpadData: Record<string, string> = {}
     for (const n of selectedScratchpadNotes) {
@@ -844,22 +781,11 @@ export async function compileContext(opts: {
 
       // Discovered skills: list only (body arrives via agent-loop when tools are injected)
       const discoveredOnly = selectedSkills.filter(s => !minimalNames.has(s.name))
-      if (jevPlan) {
-        // Classic lists every discovered skill in one line; Jev inlines the chosen bodies.
-        for (const skill of allSkills) {
-          if (minimalNames.has(skill.name)) continue
-          jevSavedChars += `- **${skill.name}**${skill.description ? ` — ${skill.description}` : ""}\n`.length
-          if (discoveredOnly.includes(skill)) jevSavedChars -= skill.body ? `\n## ${skill.name}\n${skill.body}\n`.length : 0
-        }
-      }
       if (discoveredOnly.length > 0) {
         let discoveredSection = `\n\n# SKILLS DESCUBIERTAS (relevantes para esta tarea)\n`
         for (const skill of discoveredOnly) {
-          if (jevPlan && skill.body) discoveredSection += `\n## ${skill.name}\n${skill.body}\n`
-          else {
-            const desc = skill.description ? ` — ${skill.description}` : ""
-            discoveredSection += `- **${skill.name}**${desc}\n`
-          }
+          const desc = skill.description ? ` — ${skill.description}` : ""
+          discoveredSection += `- **${skill.name}**${desc}\n`
         }
         systemPrompt += discoveredSection
       }
@@ -919,19 +845,6 @@ export async function compileContext(opts: {
     `total=${estimatedTotal}/${modelContextWindow} (${budgetPct}%)`
   )
 
-  const jevDecision = jevPlan ? {
-    summary: [
-      `${jevPlan.selectedMessageIds.length}/${recentMessages.length} mensajes`,
-      `${toolsForLLM.length}/${classicToolCount} herramientas`,
-      `${selectedSkills.length}/${allSkills.length} skills`,
-    ].join(" · "),
-    savedTokens: Math.round(jevSavedChars / 4),
-    latencyMs: jevPlan.decision.latencyMs,
-    costUsd: jevPlan.decision.costUsd,
-    recommendedAgentId: jevAgentId,
-    mcpOff: jevAgentMcpOff,
-  } : undefined
-
   return {
     systemPrompt,
     conversationSummarySection,
@@ -939,7 +852,6 @@ export async function compileContext(opts: {
     tools: toolsForLLM,
     allTools,
     skills: selectedSkills,
-    jevDecision,
   }
 }
 

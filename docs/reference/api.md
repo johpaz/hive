@@ -37,13 +37,6 @@ El Panel interactivo recibe eventos `a2ui:createSurface`,
 `a2ui:updateComponents`, `a2ui:updateDataModel` y `a2ui:deleteSurface`. Las
 acciones del usuario regresan como `a2ui:action`.
 
-La Oficina 3D recibe además `canvas:jev_decision`, con cada decisión de Jev
-(agente asesorado, tipo `context`, `iteration` o `parallel`, resumen, tokens
-ahorrados estimados, latencia, costo, especialista recomendado y MCP apagados
-que ese especialista necesita), y `canvas:jev_status` cuando Jev cambia entre
-`ready`, `fallback` y `off`. `GET /api/usage-stats` incluye el bloque `jev` con
-decisiones, costo, ahorro estimado y desglose por agente del período pedido.
-
 La suscripción al grafo de actividad y algunos eventos de sesión conservan
 nombres internos con el prefijo `canvas` por compatibilidad. Ese prefijo no
 expone una API Canvas: no existe un endpoint HTTP `/api/canvas` ni una ruta de

@@ -7,6 +7,7 @@
  */
 
 import { resolveOfficeInput, ARTIFACT_ID_PARAM } from "./resolve-input.ts";
+import { listarImagenes } from "./office-images.ts";
 import type { Tool } from "../types.ts";
 import { logger } from "../../utils/logger.ts";
 import * as fs from "node:fs";
@@ -77,7 +78,14 @@ export const officeLeerDocxTool: Tool = {
         .filter((m: any) => m.type === "warning")
         .map((m: any) => m.message);
 
-      log.info(`DOCX leído: ${resultadoTexto.value.length} caracteres`);
+      // Las imágenes no entran en el texto: se avisa para que el agente sepa que existen.
+      let imagenes = 0;
+      try {
+        const JSZip = (await import("jszip")).default;
+        imagenes = (await listarImagenes(await JSZip.loadAsync(buffer), "docx")).imagenes.length;
+      } catch { /* sin aviso de imágenes: el texto ya se leyó */ }
+
+      log.info(`DOCX leído: ${resultadoTexto.value.length} caracteres, ${imagenes} imágenes`);
 
       return {
         ok: true,
@@ -85,6 +93,7 @@ export const officeLeerDocxTool: Tool = {
         texto: resultadoTexto.value,
         tablas: textoTablas,
         advertencias: advertencias.length > 0 ? advertencias : undefined,
+        ...(imagenes ? { imagenes, aviso_imagenes: `El documento tiene ${imagenes} ${imagenes === 1 ? "imagen" : "imágenes"} que NO están en este texto (capturas, gráficos, diagramas). Si hacen falta, usa la tool office_leer_imagenes con la misma ruta.` } : {}),
       };
     } catch (error) {
       log.error(`Error leyendo DOCX: ${(error as Error).message}`);

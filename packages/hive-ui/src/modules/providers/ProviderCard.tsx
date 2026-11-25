@@ -178,12 +178,6 @@ export function ProviderCard({ provider, updateProvider, onManageModels, usage, 
           ) : null}
         </div>
 
-        {provider.id === "openrouter" && provider.jev ? (
-          <div className="text-[11px] text-white/50" title={provider.jev.lastError ?? undefined}>
-            {provider.jev.backend === "kev" ? "Kev" : "Jev"} · {provider.jev.state === "ready" ? "activo" : provider.jev.state === "fallback" ? "usando flujo clásico" : "desactivado"}
-          </div>
-        ) : null}
-
         {/* Base URL row */}
         {baseUrl && (
           <div className="flex items-center gap-2 min-w-0">
