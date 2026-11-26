@@ -162,6 +162,16 @@ export async function buildSystemPrompt(opts: BuildSystemPromptOpts): Promise<st
           `Nunca respondas que no puedes generar imágenes sin haber buscado antes la herramienta.\n\n`
       }
     } catch { /* sin modelo de imagen: no se anuncia */ }
+    // Estudio de video: solo se anuncia con la API key de Gemini (misma condición que activa al Director de video).
+    try {
+      const { isVideoStudioEnabled } = await import("../video/studio")
+      if (await isVideoStudioEnabled()) {
+        capabilitiesSection += `# ESTUDIO DE VIDEO\n\n` +
+          `Puedes hacer reels y videos cortos: delega en el agente \`video_director_agent\` (guion, escenas, personajes con Nano Banana y clips con Gemini). ` +
+          `El proyecto aparece en la pestaña «Estudio de video» de la web; producir cuesta dinero y SOLO lo aprueba el usuario allí: ` +
+          `nunca digas que ya se produjo sin que el Director lo confirme, y recuérdale al usuario que debe aprobar el costo.\n\n`
+      }
+    } catch { /* sin estudio de video: no se anuncia */ }
   }
 
   const systemPrompt = `${ethicsSection}${agentSection}${userSection}${capabilitiesSection}`.trim()

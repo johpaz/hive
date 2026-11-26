@@ -9,6 +9,7 @@ import {
 } from "../../storage/crypto"
 import { loadHiveAgentsModel, getHiveAgentsModelStatus } from "../../agent/llm-providers/hiveagents"
 import { logger } from "../../utils/logger"
+import { refreshVideoCapabilities } from "../../storage/video-capabilities"
 import { fetchProviderModels, syncProviderModels } from "../../storage/model-sync"
 import { reconcileProviderVoiceModels } from "../../storage/model-activation"
 import { supportsStt } from "../../voice/stt-models"
@@ -106,6 +107,7 @@ export async function handleUpdateProvider(req: Request, addCorsHeaders: (r: Res
   if (active !== undefined) patch.active = patch.enabled = !!active
   if (body.config?.apiKey || body.apiKey) {
     await storeProviderApiKey(id, body.config?.apiKey || body.apiKey)
+    await refreshVideoCapabilities(id)
     if (id === "openrouter") {
       patch.active = true
       patch.enabled = true
@@ -113,6 +115,7 @@ export async function handleUpdateProvider(req: Request, addCorsHeaders: (r: Res
   }
   if (body.clearApiKey === true) {
     await deleteProviderApiKey(id)
+    await refreshVideoCapabilities(id)
   }
   if (body.headers) {
     await storeProviderHeaders(id, body.headers)

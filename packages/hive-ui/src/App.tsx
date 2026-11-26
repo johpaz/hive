@@ -18,6 +18,7 @@ const ChannelsPage = lazy(() => import("@/pages/ChannelsPage").then(m => ({ defa
 const ProvidersPage = lazy(() => import("@/pages/ProvidersPage").then(m => ({ default: m.ProvidersPage })));
 const WebChatPage = lazy(() => import("@/pages/WebChatPage").then(m => ({ default: m.WebChatPage })));
 const MeetingPage = lazy(() => import("@/pages/MeetingPage").then(m => ({ default: m.MeetingPage })));
+const VideoPage = lazy(() => import("@/pages/VideoPage").then(m => ({ default: m.VideoPage })));
 const VoicePage = lazy(() => import("@/pages/VoicePage").then(m => ({ default: m.VoicePage })));
 const Office3DPage = lazy(() => import("@/modules/office3d/Office3DPage"));
 const ApiClientPage = lazy(() => import("@/pages/ApiClientPage").then(m => ({ default: m.ApiClientPage })));
@@ -169,6 +170,7 @@ const AppContent = () => {
           <Route path="/a2ui/:sessionId" element={<A2UIPage />} />
           <Route path="/meeting" element={<MeetingPage />} />
           <Route path="/voz" element={<VoicePage />} />
+          <Route path="/video" element={<VideoPage />} />
           <Route path="/channels" element={<ChannelsPage />} />
           <Route path="/providers" element={<ProvidersPage />} />
           <Route path="/logs" element={<LogsPage />} />

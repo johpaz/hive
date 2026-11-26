@@ -54,7 +54,8 @@ import {
 } from "./realtime/index";
 import { handleSetupStatus, handleVerifyProvider, handleCompleteSetup, handleSetupProviders, handleSetupEthics, handleSetupOllamaModels } from "./routes/setup";
 import { handleAuthStatus, handleLogin, handleSetupCredentials, handleChangePassword, handleRecover, handleDisableAuth, handleRecoveryKey, isAuthEnabled } from "./routes/auth";
-import { handleGoogleStatus, handleGoogleLoginStart, handleGoogleLoginStartExternal, handleGoogleTicket, handleGoogleConnect, handleGoogleCallback, handleGoogleExchange, handleGoogleDisconnect } from "./routes/google";
+import { handleVideoStatus, handleVideoProjects, handleVideoVoices, handleVideoImprove, handleVideoResearch, handleVideoScript, handleVideoAvatars } from "./routes/video";
+import { handleGoogleStatus, handleGoogleTicket, handleGoogleConnect, handleGoogleCallback, handleGoogleDisconnect } from "./routes/google";
 import { initGoogleFromEnv } from "./google-host.ts";
 import { resolveUserId } from "../storage/onboarding";
 import { handleGetAgents, handleCreateAgent, handleUpdateAgent, handleDeleteAgent, handleGetAgentProposals } from "./routes/agents";
@@ -779,9 +780,6 @@ export async function startGateway(
     if (url.pathname === "/api/auth/login") return true;
     if (url.pathname === "/api/auth/recover") return true;
     // Google: el inicio del flujo, el callback de Google y el canje del código son públicos
-    if (url.pathname === "/api/auth/google/start") return true;
-    if (url.pathname === "/api/auth/google/exchange") return true;
-    if (url.pathname === "/api/auth/google/start-external") return true;
     if (url.pathname === "/api/google/ticket") return true;
     if (url.pathname === "/api/google/oauth/callback") return true;
 
@@ -1176,17 +1174,8 @@ export async function startGateway(
           return handleAuthStatus(req, addCorsHeaders);
         }
         // ── Google ───────────────────────────────────────────────────────────
-        if (url.pathname === "/api/auth/google/start" && req.method === "GET") {
-          return handleGoogleLoginStart(req, addCorsHeaders);
-        }
-        if (url.pathname === "/api/auth/google/start-external" && req.method === "POST") {
-          return handleGoogleLoginStartExternal(req, addCorsHeaders);
-        }
         if (url.pathname === "/api/google/ticket" && req.method === "GET") {
           return handleGoogleTicket(req, addCorsHeaders);
-        }
-        if (url.pathname === "/api/auth/google/exchange" && req.method === "POST") {
-          return handleGoogleExchange(req, addCorsHeaders);
         }
         if (url.pathname === "/api/google/oauth/callback" && req.method === "GET") {
           return handleGoogleCallback(req);
@@ -1965,6 +1954,40 @@ export async function startGateway(
 
         if (url.pathname === "/api/multimodal/analyzer" && req.method === "PUT") {
           return await handleSetVisionAnalyzer(req, addCorsHeaders)
+        }
+
+        if (url.pathname === "/api/video/status" && req.method === "GET") {
+          return await handleVideoStatus(req, addCorsHeaders)
+        }
+
+        if (url.pathname.startsWith("/api/video/research")) {
+          const researchResponse = await handleVideoResearch(req, addCorsHeaders)
+          if (researchResponse) return researchResponse
+        }
+
+        if (url.pathname.startsWith("/api/video/avatars")) {
+          const avatarResponse = await handleVideoAvatars(req, addCorsHeaders)
+          if (avatarResponse) return avatarResponse
+        }
+
+        if (url.pathname === "/api/video/script") {
+          const scriptResponse = await handleVideoScript(req, addCorsHeaders)
+          if (scriptResponse) return scriptResponse
+        }
+
+        if (url.pathname === "/api/video/improve") {
+          const improveResponse = await handleVideoImprove(req, addCorsHeaders)
+          if (improveResponse) return improveResponse
+        }
+
+        if (url.pathname.startsWith("/api/video/voices")) {
+          const voiceResponse = await handleVideoVoices(req, addCorsHeaders)
+          if (voiceResponse) return voiceResponse
+        }
+
+        if (url.pathname.startsWith("/api/video/projects")) {
+          const videoResponse = await handleVideoProjects(req, addCorsHeaders)
+          if (videoResponse) return videoResponse
         }
 
         if (url.pathname === "/api/multimodal/image-model" && req.method === "GET") {

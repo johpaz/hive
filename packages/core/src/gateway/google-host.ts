@@ -53,11 +53,11 @@ export function initGoogleFromEnv(): boolean {
   return true;
 }
 
-// ─── Estado efímero del flujo OAuth y códigos de login ──────────────────────
+// ─── Estado efímero del flujo OAuth (conectar Gmail/Calendar/Drive) ─────────
 
 export interface OAuthState {
-  purpose: "login" | "connect";
-  userId: string | null;
+  purpose: "connect";
+  userId: string;
   codeVerifier: string;
   services: GoogleService[];
   /** El mismo que se envió a Google: el intercambio debe repetirlo idéntico. */
@@ -70,13 +70,10 @@ export interface OAuthState {
 }
 
 const STATE_TTL_MS = 10 * 60_000;
-const CODE_TTL_MS = 60_000;
 const states = new Map<string, OAuthState>();
-const loginCodes = new Map<string, number>();
 
 function sweep(now = Date.now()) {
   for (const [k, v] of states) if (v.expiresAt <= now) states.delete(k);
-  for (const [k, exp] of loginCodes) if (exp <= now) loginCodes.delete(k);
 }
 
 export function saveState(state: string, data: Omit<OAuthState, "expiresAt">): void {
@@ -92,20 +89,6 @@ export function takeState(state: string | null): OAuthState | null {
   return s && s.expiresAt > Date.now() ? s : null;
 }
 
-export function issueLoginCode(): string {
-  sweep();
-  const code = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
-  loginCodes.set(code, Date.now() + CODE_TTL_MS);
-  return code;
-}
-
-export function consumeLoginCode(code: string | undefined): boolean {
-  if (!code) return false;
-  const exp = loginCodes.get(code);
-  loginCodes.delete(code);
-  return !!exp && exp > Date.now();
-}
-
 // ─── Traspaso al navegador del sistema (app de escritorio) ──────────────────
 //
 // Google rechaza OAuth dentro de un WebView embebido (`disallowed_useragent`),
@@ -114,7 +97,7 @@ export function consumeLoginCode(code: string | undefined): boolean {
 
 export type TicketResult =
   | { status: "pending" }
-  | { status: "done"; purpose: "login" | "connect" }
+  | { status: "done"; purpose: "connect" }
   | { status: "error"; error: string };
 
 const tickets = new Map<string, { result: TicketResult; expiresAt: number }>();
@@ -222,7 +205,6 @@ export function setExternalOpener(fn: Opener | null): void {
 /** Sólo para tests. */
 export function resetGoogleHostState(): void {
   states.clear();
-  loginCodes.clear();
   tickets.clear();
   opener = defaultOpener;
 }

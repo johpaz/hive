@@ -51,12 +51,13 @@ async function generateTokens(userId: string): Promise<AuthTokens> {
 }
 
 /**
- * `true` cuando la instancia exige iniciar sesión: hay email y al menos un
- * método (contraseña o cuenta de Google vinculada). Es la única definición de
- * «acceso protegido»: server.ts y /api/auth/status deben usarla.
+ * `true` cuando la instancia exige iniciar sesión: hay email y contraseña. Es la
+ * única definición de «acceso protegido»: server.ts y /api/auth/status deben usarla.
  */
-export function isAuthEnabled(user: Pick<UserDoc, "email" | "password_hash" | "google_sub"> | undefined | null): boolean {
-  return !!(user?.email && (user.password_hash || user.google_sub));
+export function isAuthEnabled(user: Pick<UserDoc, "email" | "password_hash"> | undefined | null): boolean {
+  // Solo la contraseña protege el acceso. Vincular una cuenta de Google (Gmail, Calendar, Drive)
+  // NUNCA activa la protección ni es una forma de iniciar sesión.
+  return !!(user?.email && user.password_hash);
 }
 
 /** Token de acceso vigente (el mismo que devuelve /api/auth/login). */
@@ -84,13 +85,10 @@ export async function handleAuthStatus(
   const user = (await getSingleUser())?.doc;
 
   const hasCredentials = isAuthEnabled(user);
-  const googleConfigured = isGoogleConfigured();
   return cors(Response.json({
     hasCredentials,
     email: hasCredentials ? user?.email ?? null : null,
     hasPassword: !!user?.password_hash,
-    googleConfigured,
-    googleLogin: googleConfigured && !!user?.google_sub,
   }), req);
 }
 

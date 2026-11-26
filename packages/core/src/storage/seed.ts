@@ -79,6 +79,13 @@ export const SEED_DATA: SeedData = {
     // ─────────────────────────────────────────
     // IMAGEN — usa el modelo elegido en Providers → Imagen
     // ─────────────────────────────────────────
+    // VIDEO — estudio de reels; activos solo con API key de Gemini (storage/video-capabilities.ts)
+    { id: "video_avatar_list", name: "video_avatar_list", category: "video", description: "Listar los avatares guardados del usuario (rostro, nombre y voz) para usarlos al crear un reel sin pedir la foto otra vez. Sinónimos: mis avatares, avatares guardados, usar mi avatar (Requiere una API key de Gemini.)" },
+    { id: "video_project_create", name: "video_project_create", category: "video", description: "Crear un proyecto de reel o video corto en el Estudio de video (título, formato 9:16, duración). Gratis. Sinónimos: crear reel, nuevo video, proyecto de video (Requiere una API key de Gemini.)" },
+    { id: "video_project_update", name: "video_project_update", category: "video", description: "Editar un proyecto de video: guion, personajes y escenas de 3 a 15 s. Gratis. Sinónimos: guion del reel, escenas, personajes (Requiere una API key de Gemini.)" },
+    { id: "video_character_image", name: "video_character_image", category: "video", description: "Generar con Nano Banana la imagen de referencia de un personaje del reel (unos 0,04 USD). Sinónimos: imagen del personaje, diseñar personaje (Requiere una API key de Gemini.)" },
+    { id: "video_project_status", name: "video_project_status", category: "video", description: "Ver un proyecto de video: guion, escenas, costo estimado, gasto, aprobación y reel final. Sinónimos: estado del reel, cuánto cuesta, progreso (Requiere una API key de Gemini.)" },
+    { id: "video_project_produce", name: "video_project_produce", category: "video", description: "Producir los clips y el reel en segundo plano; cuesta dinero y exige que el usuario apruebe el costo en el Estudio de video. Sinónimos: producir video, generar reel (Requiere una API key de Gemini.)" },
     { id: "image_generate", name: "image_generate", category: "image", description: "Crear una imagen nueva a partir de una descripción (ilustración, logo, póster, arte conceptual) con el modelo elegido en Providers → Imagen. Sinónimos: crear imagen, generar imagen, dibujar, hazme una imagen" },
     { id: "office_leer_imagenes", name: "office_leer_imagenes", category: "image", description: "Leer las imágenes dentro de un Word (.docx) o PowerPoint (.pptx): capturas, gráficos, diagramas, escaneos. Las describe y transcribe con el modelo de visión de Providers → Imagen. Sinónimos: leer imágenes de un documento, ocr de word, ocr de powerpoint, capturas dentro de un documento" },
 
@@ -415,6 +422,20 @@ export const SEED_DATA: SeedData = {
     // predefinidas y Qwen-Image no tiene endpoint alojado, así que no se listan.
     { id: "black-forest-labs/flux.2-klein-4b", providerId: "nvidia", name: "FLUX.2 Klein 4B (NVIDIA)", modelType: "image", contextWindow: 0, capabilities: JSON.stringify(["image_generation"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "black-forest-labs/flux.1-schnell", providerId: "nvidia", name: "FLUX.1 Schnell (NVIDIA)", modelType: "image", contextWindow: 0, capabilities: JSON.stringify(["image_generation"]), inputPer1M: 0, outputPer1M: 0 },
+    // Nano Banana (imagen de Gemini). Requiere facturación en la API: la capa gratuita tiene límite 0.
+    // Nano Banana 2.1: el más reciente; admite varias imágenes de referencia para mantener la identidad (hasta 4 personajes).
+    { id: "gemini-nano-banana-2.1", providerId: "gemini", name: "Nano Banana 2.1 (Gemini)", modelType: "image", contextWindow: 0, capabilities: JSON.stringify(["image_generation", "image_reference"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "gemini-3.1-flash-image", providerId: "gemini", name: "Nano Banana 2 (Gemini)", modelType: "image", contextWindow: 0, capabilities: JSON.stringify(["image_generation", "image_reference"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "gemini-3-pro-image", providerId: "gemini", name: "Nano Banana Pro (Gemini)", modelType: "image", contextWindow: 0, capabilities: JSON.stringify(["image_generation", "image_reference"]), inputPer1M: 0, outputPer1M: 0 },
+    // OpenAI y OpenRouter (imagen). Ids según la documentación de cada provider; sin verificar con llamada real (requieren saldo).
+    { id: "gpt-image-1", providerId: "openai", name: "GPT Image 1 (OpenAI)", modelType: "image", contextWindow: 0, capabilities: JSON.stringify(["image_generation", "image_reference"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "gpt-image-1-mini", providerId: "openai", name: "GPT Image 1 Mini (OpenAI)", modelType: "image", contextWindow: 0, capabilities: JSON.stringify(["image_generation", "image_reference"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "google/gemini-2.5-flash-image", providerId: "openrouter", name: "Nano Banana (OpenRouter)", modelType: "image", contextWindow: 0, capabilities: JSON.stringify(["image_generation", "image_reference"]), inputPer1M: 0, outputPer1M: 0 },
+    // Qwen-Image (DashScope intl), Z.ai (GLM-Image) y MiniMax: ids según su documentación (2026-11-26); sin llamada real.
+    { id: "qwen-image-2.0-pro", providerId: "qwen", name: "Qwen-Image 2.0 Pro (Qwen)", modelType: "image", contextWindow: 0, capabilities: JSON.stringify(["image_generation"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "qwen-image-2.0", providerId: "qwen", name: "Qwen-Image 2.0 (Qwen)", modelType: "image", contextWindow: 0, capabilities: JSON.stringify(["image_generation"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "glm-image", providerId: "z-ai", name: "GLM-Image (Z.ai)", modelType: "image", contextWindow: 0, capabilities: JSON.stringify(["image_generation"]), inputPer1M: 0, outputPer1M: 0 },
+    { id: "image-01", providerId: "minimax", name: "MiniMax Image 01", modelType: "image", contextWindow: 0, capabilities: JSON.stringify(["image_generation"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "meta/muse-glimmer-30b", providerId: "nvidia", name: "Muse Glimmer 30B (NVIDIA)", modelType: "llm", contextWindow: 131072, capabilities: JSON.stringify(["chat", "vision", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
     { id: "nvidia/nemotron-3-ultra-550b-a55b", providerId: "nvidia", name: "Nemotron 3 Ultra 550B", modelType: "llm", contextWindow: 1000000, capabilities: JSON.stringify(["chat", "code", "json_mode", "function_calling", "streaming", "reasoning"]), inputPer1M: 0, outputPer1M: 0 },
     // Revisado el 2026-11-16 con llamadas reales a /v1/models y a cada modelo (nivel gratuito, "Free Endpoint"): de 23
@@ -575,6 +596,7 @@ import type {
 } from "./collections"
 import { createSeedCatalogAgents, ensureAgentsConfigured } from "../agent/agent-catalog"
 import { syncGoogleCapabilities } from "./google-capabilities.ts"
+import { syncVideoCapabilities } from "./video-capabilities.ts"
 
 const log = logger.child("seed");
 
@@ -822,6 +844,8 @@ async function reseedToolsAndSkills(): Promise<void> {
   log.info(`[seed] ✅ ${toolCount} tools re-seeded`);
   // Las tools de Google nacen activas en SEED_DATA: se alinean con la conexión real.
   await syncGoogleCapabilities("seed").catch((err) => log.warn(`[seed] google: ${(err as Error).message}`));
+  // Igual con el estudio de video: sus tools y su agente dependen de la API key de Gemini.
+  await syncVideoCapabilities("seed").catch((err) => log.warn(`[seed] video: ${(err as Error).message}`));
 
   // ── Skills: re-seed from the bundled skill files ──
   const skillsCol = await col<SkillDoc>("skills");

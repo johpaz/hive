@@ -42,8 +42,8 @@ const ERRORS: Record<string, string> = {
 };
 
 /**
- * Aquí se autentica la cuenta de Google: vincula el inicio de sesión y activa
- * los agentes de Gmail, Calendar y Drive que el usuario autorice.
+ * Aquí se conecta la cuenta de Google y se activan los agentes de Gmail, Calendar y Drive
+ * que el usuario autorice. No es un inicio de sesión: no cambia cómo se entra a Hive.
  */
 export function GoogleConnectionPanel() {
   const [status, setStatus] = useState<GoogleStatus | null>(null);
@@ -85,8 +85,7 @@ export function GoogleConnectionPanel() {
       const ctrl = new AbortController();
       setWaiting(ctrl);
       try {
-        const { authToken } = await connectGoogleExternal(selected, ctrl.signal);
-        if (authToken) localStorage.setItem("hive-auth-token", authToken);
+        await connectGoogleExternal(selected, ctrl.signal);
         await load();
         void swal.fire({ icon: "success", title: "Google conectado", text: "Tus agentes de Google ya están activos.", timer: 2500, showConfirmButton: false });
       } catch (err) {
@@ -111,7 +110,7 @@ export function GoogleConnectionPanel() {
   async function disconnect() {
     const ok = await swal.fire({
       icon: "warning", title: "¿Desconectar Google?", showCancelButton: true,
-      text: "Se desactivarán tus agentes de Gmail, Calendar y Drive y Hive dejará de acceder a tu cuenta. Podrás seguir iniciando sesión con Google.",
+      text: "Se desactivarán tus agentes de Gmail, Calendar y Drive y Hive dejará de acceder a tu cuenta.",
       confirmButtonText: "Desconectar", cancelButtonText: "Cancelar",
     });
     if (!ok.isConfirmed) return;

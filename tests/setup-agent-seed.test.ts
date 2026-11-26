@@ -84,7 +84,8 @@ describe("saveAgentConfig", () => {
       expect(doc.role).toBe("worker");
       // The rest of the persona survives the rewrite untouched. Los de Google
       // nacen apagados: solo se activan al conectar la cuenta.
-      expect(doc.enabled).toBe(!id.startsWith("google_"));
+      // El Director de video también nace apagado: se activa con la API key de Gemini.
+      expect(doc.enabled).toBe(!id.startsWith("google_") && id !== "video_director_agent");
       expect(doc.status).toBe("idle");
       expect(doc.source).toBe("catalog");
       expect(doc.tool_allowlist_json).toBeTruthy();

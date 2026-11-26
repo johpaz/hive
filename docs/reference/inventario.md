@@ -17,7 +17,7 @@ Generado desde el código fuente para Hive **1.1.12**.
 | `@johpaz/hive-desktop` | `1.1.12` |
 | `apps/hive-desktop/src-tauri/tauri.conf.json` | `1.1.12` |
 
-## Herramientas (126)
+## Herramientas (132)
 
 | Herramienta | Categoría | Descripción |
 |---|---|---|
@@ -145,6 +145,12 @@ Generado desde el código fuente para Hive **1.1.12**.
 | `task_list` | agents | List real delegated task executions for the current user. TaskDoc and JobDoc are the source of truth. Use this instead of agent_find to determine whether work is pending, running, completed, failed, or blocked. |
 | `task_revise` | agents | Send a completed or blocked delegated task back to its worker with concrete feedback, instead of reporting it as done. The worker resumes on the SAME thread — it keeps its prior context, so the feedback only needs to describe what's missing. Use this when a delivery doesn't meet its acceptance criteria and you can't fix it yourself. |
 | `task_status` | agents | Get execution status of one or more delegated tasks. Accepts string or numeric IDs. Spanish: estado tarea delegada, verificar progreso, consultar tarea |
+| `video_avatar_list` | externa | List the user's saved avatars (face + name + voice) from «Mis avatares» in the Video Studio. If the user already has an avatar for the person who appears in the video, create the project with that avatar_id instead of asking for the photo again. Spanish: mis avatares, avatares guardados, personajes guardados, usar mi avatar |
+| `video_character_image` | externa | Generate the reference image of a project character with Nano Banana (Gemini). The image is saved in the workspace folder estudio-videos/imagenes and is reused as reference so the character looks the same in every clip. Costs about 0.04 USD per image. Regenerating it resets the clips of the scenes where the character appears. Spanish: imagen del personaje, nano banana, diseñar personaje |
+| `video_project_create` | externa | Create a new video (reel) project in the Video Studio. Set title, brief, aspect ratio (9:16 vertical default for reels, or 16:9) and target duration in seconds. This costs nothing; it only prepares the project. Next: video_project_update with script, characters and scenes. Spanish: crear reel, nuevo proyecto de video, crear video, estudio de video |
+| `video_project_produce` | externa | Start producing the video clips and the final reel in the background. SPENDS MONEY, so it only works if the USER already approved the estimated cost in the Video Studio tab; you cannot approve it. If it answers not_approved, tell the user the estimated cost and ask them to approve it in the Video Studio tab. Returns right away; each step (scene image, clip, voice, subtitles, final join) is narrated to the user as it happens; follow progress with video_project_status. Spanish: producir video, generar reel, empezar producción |
+| `video_project_status` | externa | Read a video project: script, characters, scenes with their status, estimated cost, spend so far, whether the user approved the cost, and the final reel path. Use it before producing and to follow progress while it is being produced. Spanish: estado del reel, cuánto cuesta el video, progreso |
+| `video_project_update` | externa | Edit a video project: script text, characters (name + visual description) and scenes (each a clip of 3-15 s with a prompt). Send the complete list of scenes/characters you want (replaces the previous list); pass the existing id to keep an already generated clip. Scene seconds should add up to roughly the target duration. YOU decide each scene's wardrobe and setting (scenography); the face of a character comes from the reference photo the user uploaded and never changes. Changing scenes, format or resolution withdraws any cost approval. Free; nothing is generated here. Spanish: guion, escenas, personajes, editar reel |
 | `web_fetch` | web | Fetch plain content from a URL (lightweight, no JS). Spanish: obtener página, descargar contenido, extraer texto de url |
 | `web_search` | web | Search the web for current information and research. Spanish: buscar en internet, búsqueda web, noticias, información |
 
@@ -182,7 +188,7 @@ Generado desde el código fuente para Hive **1.1.12**.
 | `web_research` | web | 1.0.0 | `web_search`, `web_fetch` | — |
 | `workspace_file_operator` | filesystem | 1.0.0 | `fs_read`, `fs_write`, `fs_edit`, `fs_delete`, `fs_list`, `fs_glob`, `fs_exists` | `workspace_file_operator` |
 
-## Agentes de catálogo (12)
+## Agentes de catálogo (13)
 
 | ID | Nombre | Propósito | Herramientas autorizadas | Skills |
 |---|---|---|---|---|
@@ -198,6 +204,7 @@ Generado desde el código fuente para Hive **1.1.12**.
 | `google_mail_agent` | Operador de Gmail | Busca, lee, responde, envía, organiza y gestiona borradores y adjuntos de la cuenta de Gmail que el usuario conectó. | `gmail_*` | `google_gmail` |
 | `google_calendar_agent` | Operador de Google Calendar | Consulta, crea, modifica y cancela eventos y revisa disponibilidad en Google Calendar. | `gcal_*` | `google_calendar` |
 | `google_drive_agent` | Operador de Google Drive | Busca, descarga y sube archivos y documentos en Google Drive. | `gdrive_*` | `google_drive` |
+| `video_director_agent` | Director de video | Planea y produce reels y videos cortos con Gemini: guion, escenas, personajes con Nano Banana y clips con Omni, en el Estudio de video. | `video_*` |  |
 
 ## Exports públicos
 

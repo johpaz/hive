@@ -36,7 +36,7 @@ describe("user profile email", () => {
     expect(user?.doc.password_hash).toBeNull();
 
     const response = await handleAuthStatus(new Request("http://localhost/api/auth/status"), cors);
-    expect(await response.json()).toMatchObject({ hasCredentials: false, email: null, hasPassword: false, googleLogin: false });
+    expect(await response.json()).toMatchObject({ hasCredentials: false, email: null, hasPassword: false });
   });
 
   test("enables a password later using the profile email without asking for it again", async () => {

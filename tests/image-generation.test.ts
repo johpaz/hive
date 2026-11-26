@@ -65,8 +65,8 @@ afterEach(() => {
 describe("catálogo", () => {
   test("incluye los modelos de imagen verificados y la tool, y no los de edición ni flux.1-dev", async () => {
     const models = (await (await col<ModelDoc>("models")).scan({})).map((e) => e.doc).filter((m) => m.model_type === "image");
-    expect(models.map((m) => m.id).sort()).toEqual([SCHNELL, KLEIN]);
-    expect(models.every((m) => m.provider_id === "nvidia" && JSON.parse(m.capabilities!).includes("image_generation"))).toBe(true);
+    expect(models.map((m) => m.id).sort()).toEqual(["gemini-3-pro-image", "gemini-3.1-flash-image", "gemini-nano-banana-2.1", "gpt-image-1", "gpt-image-1-mini", "openrouter/google/gemini-2.5-flash-image", "qwen-image-2.0-pro", "qwen-image-2.0", "glm-image", "image-01", SCHNELL, KLEIN].sort());
+    expect(models.every((m) => ["nvidia", "gemini", "openai", "openrouter", "qwen", "z-ai", "minimax"].includes(m.provider_id) && JSON.parse(m.capabilities!).includes("image_generation"))).toBe(true);
     const tool = (await (await col<ToolDoc>("tools")).get("image_generate"))!.doc;
     expect(tool.category).toBe("image");
     expect(createAllTools({} as never).map((t) => t.name)).toContain("image_generate");
@@ -164,6 +164,83 @@ describe("generateImage (NVIDIA)", () => {
     expect(err.message).toMatch(/límite de solicitudes/);
     expect(err.retryable).toBe(true);
     expect(calls).toHaveLength(2);
+  });
+});
+
+describe("generateImage (OpenAI y OpenRouter)", () => {
+  const b64 = JPEG.toString("base64");
+
+  test("OpenAI: usa images/generations con el tamaño admitido y lee b64_json", async () => {
+    process.env.OPENAI_API_KEY = "sk-test";
+    try {
+      await setImageModelId("gpt-image-1");
+      respond = () => new Response(JSON.stringify({ data: [{ b64_json: b64 }] }), { status: 200 });
+      const img = await generateImage({ prompt: "una abeja", aspectRatio: "landscape" });
+      expect(calls[0]!.url).toBe("https://api.openai.com/v1/images/generations");
+      expect(calls[0]!.auth).toBe("Bearer sk-test");
+      expect(calls[0]!.body).toMatchObject({ model: "gpt-image-1", size: "1536x1024" });
+      expect(img.bytes.byteLength).toBe(JPEG.byteLength);
+      expect(img.providerId).toBe("openai");
+    } finally { delete process.env.OPENAI_API_KEY; }
+  });
+
+  test("OpenRouter: chat/completions con modalities y lee la imagen del mensaje", async () => {
+    process.env.OPENROUTER_API_KEY = "or-test";
+    try {
+      await setImageModelId("openrouter/google/gemini-2.5-flash-image");
+      respond = () => new Response(JSON.stringify({
+        choices: [{ message: { images: [{ image_url: { url: `data:image/jpeg;base64,${b64}` } }] } }],
+      }), { status: 200 });
+      const img = await generateImage({ prompt: "una abeja", aspectRatio: "portrait" });
+      expect(calls[0]!.url).toBe("https://openrouter.ai/api/v1/chat/completions");
+      expect(calls[0]!.body).toMatchObject({
+        model: "google/gemini-2.5-flash-image", modalities: ["image", "text"], image_config: { aspect_ratio: "9:16" },
+      });
+      expect(img.mimeType).toBe("image/jpeg");
+    } finally { delete process.env.OPENROUTER_API_KEY; }
+  });
+
+  test("OpenAI: un 401 se traduce a un mensaje sobre la API key", async () => {
+    process.env.OPENAI_API_KEY = "sk-bad";
+    try {
+      await setImageModelId("gpt-image-1");
+      respond = () => new Response(JSON.stringify({ error: { message: "bad key" } }), { status: 401 });
+      const err = await rejection(() => generateImage({ prompt: "x" }));
+      expect(err.message).toContain("API key");
+    } finally { delete process.env.OPENAI_API_KEY; }
+  });
+});
+
+describe("generateImage (Qwen, Z.ai y MiniMax)", () => {
+  const b64 = JPEG.toString("base64");
+
+  test("Qwen: pide la imagen y la descarga desde la URL devuelta", async () => {
+    process.env.QWEN_API_KEY = "qw-test";
+    try {
+      await setImageModelId("qwen-image-2.0-pro");
+      respond = (n) => n === 1
+        ? new Response(JSON.stringify({ output: { choices: [{ message: { content: [{ image: "https://oss.example.com/a.png" }] } }] } }), { status: 200 })
+        : new Response(JPEG, { status: 200 });
+      const img = await generateImage({ prompt: "una abeja", aspectRatio: "landscape" });
+      expect(calls[0]!.url).toContain("dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation");
+      expect(calls[0]!.body).toMatchObject({ model: "qwen-image-2.0-pro", parameters: { size: "2688*1536" } });
+      expect(calls[1]!.url).toBe("https://oss.example.com/a.png");
+      expect(img.bytes.byteLength).toBe(JPEG.byteLength);
+    } finally { delete process.env.QWEN_API_KEY; }
+  });
+
+  test("MiniMax: lee base64 y traduce un error de base_resp aunque el HTTP sea 200", async () => {
+    process.env.MINIMAX_API_KEY = "mm-test";
+    try {
+      await setImageModelId("image-01");
+      respond = () => new Response(JSON.stringify({ data: { image_base64: [b64] }, base_resp: { status_code: 0 } }), { status: 200 });
+      const img = await generateImage({ prompt: "x", aspectRatio: "portrait" });
+      expect(calls[0]!.body).toMatchObject({ model: "image-01", aspect_ratio: "9:16", response_format: "base64" });
+      expect(img.bytes.byteLength).toBe(JPEG.byteLength);
+      respond = () => new Response(JSON.stringify({ base_resp: { status_code: 1008, status_msg: "insufficient balance" } }), { status: 200 });
+      const err = await rejection(() => generateImage({ prompt: "x" }));
+      expect(err.message).toContain("saldo");
+    } finally { delete process.env.MINIMAX_API_KEY; }
   });
 });
 

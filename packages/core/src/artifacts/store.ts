@@ -23,6 +23,8 @@ function extensionFor(mimeType: string, hint?: string): string {
   if (mimeType === "image/png") return "png";
   if (mimeType === "image/jpeg") return "jpg";
   if (mimeType === "image/webp") return "webp";
+  if (mimeType === "video/mp4") return "mp4";
+  if (mimeType === "video/webm") return "webm";
   return "bin";
 }
 
@@ -92,7 +94,8 @@ export async function createArtifact(input: {
   /**
    * Guarda el archivo en una carpeta visible del usuario (workspace del agente
    * o ~/Hive) en lugar de ~/.hive/artifacts. `folder` es una subcarpeta fija
-   * ("imagenes", "descargas"…) y `label` da el nombre legible del archivo.
+   * ("imagenes", "descargas"…; admite niveles con "/", p. ej. "estudio-videos/videos")
+   * y `label` da el nombre legible del archivo.
    */
   visible?: { workspace?: string | null; folder: string; label: string };
 }): Promise<ArtifactDoc> {
@@ -103,7 +106,8 @@ export async function createArtifact(input: {
   const ext = extensionFor(mimeType, input.extension);
   let path: string;
   if (input.visible) {
-    const dir = join(resolveOutputDir(input.visible.workspace), input.visible.folder.replace(/[^A-Za-z0-9_-]/g, ""));
+    const segments = input.visible.folder.split("/").map((seg) => seg.replace(/[^A-Za-z0-9_-]/g, "")).filter(Boolean);
+    const dir = join(resolveOutputDir(input.visible.workspace), ...(segments.length ? segments : ["archivos"]));
     mkdirSync(dir, { recursive: true });
     const base = visibleFileBase(input.visible.label, now);
     // "wx" no pisa nada: si ya existe un archivo con ese nombre, se numera.

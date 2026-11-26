@@ -15,6 +15,7 @@ import {
   StickyNote,
   Clock,
   Video,
+  Clapperboard,
   Globe,
   Hexagon,
   ArrowUpCircle,
@@ -53,6 +54,7 @@ const navItems = [
   { title: "Oficina 3D", url: "/office", icon: Hexagon },
   { title: "Panel interactivo", url: "/a2ui", icon: Layers },
   { title: "Reuniones", url: "/meeting", icon: Video },
+  { title: "Estudio de video", url: "/video", icon: Clapperboard },
   { title: "API Client", url: "/api-client", icon: Globe },
 
 ];

@@ -1,5 +1,5 @@
 /**
- * Google en la app de escritorio. Google rechaza OAuth dentro de un WebView
+ * Conexión de Google en la app de escritorio. Google rechaza OAuth dentro de un WebView
  * embebido, así que el gateway abre el navegador del sistema y esta ventana
  * consulta un ticket hasta que el callback lo resuelve.
  */
@@ -7,7 +7,7 @@ import { apiClient } from "@/lib/api";
 
 type TicketResult =
   | { status: "pending" }
-  | { status: "done"; purpose: "login" | "connect"; authToken?: string }
+  | { status: "done"; purpose: "connect" }
   | { status: "error"; error: string };
 
 const POLL_MS = 1500;
@@ -30,24 +30,10 @@ async function waitForTicket(ticket: string, signal: AbortSignal): Promise<Extra
   throw new GoogleFlowError("expired");
 }
 
-/** «Continuar con Google» desde la ventana de escritorio. Devuelve el token de acceso. */
-export async function loginWithGoogleExternal(signal: AbortSignal): Promise<string> {
-  const { ticket } = await apiClient<{ ticket: string }>("/api/auth/google/start-external", {
-    method: "POST", requireAuth: false, showError: false,
-  });
-  const done = await waitForTicket(ticket, signal);
-  if (!done.authToken) throw new GoogleFlowError("no_token");
-  return done.authToken;
-}
-
-/**
- * Conecta Gmail/Calendar/Drive desde la ventana de escritorio. Si vincular Google
- * protegió una instancia que estaba abierta, devuelve el token para no perder la sesión.
- */
-export async function connectGoogleExternal(services: string[], signal: AbortSignal): Promise<{ authToken?: string }> {
+/** Conecta Gmail/Calendar/Drive desde la ventana de escritorio. No cambia el acceso a Hive. */
+export async function connectGoogleExternal(services: string[], signal: AbortSignal): Promise<void> {
   const { ticket } = await apiClient<{ ticket: string }>("/api/google/connect", {
     method: "POST", body: { services, external: true }, showError: false,
   });
-  const done = await waitForTicket(ticket, signal);
-  return { authToken: done.authToken };
+  await waitForTicket(ticket, signal);
 }

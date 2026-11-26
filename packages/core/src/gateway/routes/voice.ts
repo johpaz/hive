@@ -5,6 +5,7 @@ import { LOCAL_TTS_PROVIDER } from "../../voice/local-model"
 import { nvidiaSttBase, supportsStt } from "../../voice/stt-models"
 import { getLocalTTSStatus, getLocalVoices } from "../tts/kitten"
 import { storeProviderApiKey, loadProviderApiKey } from "../../storage/crypto"
+import { refreshVideoCapabilities } from "../../storage/video-capabilities"
 
 /** Providers de voz = providers con al menos un modelo STT/TTS en la BD. */
 async function getVoiceProviderIds(): Promise<string[]> {
@@ -81,6 +82,7 @@ export async function handleSaveVoiceProviderKey(
     // (ver handleGetConfiguredVoiceProviders) — activar el provider aquí lo expondría
     // como proveedor de chat completo sin que el usuario lo haya elegido para eso.
     await storeProviderApiKey(providerId, apiKey)
+    await refreshVideoCapabilities(providerId)
 
     return addCorsHeaders(Response.json({ success: true, provider: providerId }), req)
   } catch (error) {

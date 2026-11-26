@@ -133,7 +133,7 @@ export function VisionModelsTab() {
           </p>
           <p className="text-xs text-muted-foreground">
             Crea imagenes nuevas cuando el usuario las pide, en el chat web y en Telegram u otros canales. Solo aparecen modelos de
-            providers con generacion de imagenes disponible (hoy NVIDIA); necesitas la API key del provider. No edita imagenes existentes.
+            providers con generacion de imagenes disponible (NVIDIA, Gemini, OpenAI, OpenRouter, Qwen, Z.ai y MiniMax); necesitas la API key del provider. No edita imagenes existentes.
           </p>
         </div>
         <Select value={generatorId || "none"} onValueChange={changeGenerator}>
@@ -149,7 +149,7 @@ export function VisionModelsTab() {
         </Select>
         {generatorOptions.length === 0 && (
           <p className="text-xs text-amber-400">
-            No hay modelos de generacion de imagenes. Agrega y activa el provider NVIDIA en la tab Providers.
+            No hay modelos de generacion de imagenes. Agrega y activa NVIDIA, Gemini, OpenAI, OpenRouter, Qwen, Z.ai o MiniMax en la tab Providers.
           </p>
         )}
       </div>

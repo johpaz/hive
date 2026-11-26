@@ -1,6 +1,7 @@
 import type { Config } from "../config/loader";
 import { initGoogleFromEnv } from "./google-host.ts";
 import { syncGoogleCapabilities } from "../storage/google-capabilities.ts";
+import { syncVideoCapabilities } from "../storage/video-capabilities.ts";
 import { logger } from "../utils/logger";
 import { ensureHiveDb } from "../storage/bootstrap";
 import { col, fromIndexable } from "../storage/hive";
@@ -244,6 +245,7 @@ export async function initializeGateway(
 
     // 3b. Los agentes y tools de Google solo están activos mientras haya cuenta conectada.
     await syncGoogleCapabilities("boot").catch((err) => log.warn(`[initialize] google: ${(err as Error).message}`));
+    await syncVideoCapabilities("boot").catch((err) => log.warn(`[initialize] video: ${(err as Error).message}`));
 
     // 4. Sync HiveDB capability index (tools + skills + playbook + mcp_tools)
     log.info("[initialize] Syncing HiveDB capability index...")
