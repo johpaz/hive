@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="Licencia MIT" src="https://img.shields.io/badge/licencia-MIT-3b82f6.svg"></a>
-  <img alt="Versión" src="https://img.shields.io/badge/versi%C3%B3n-1.1.12-6f42c1.svg">
+  <img alt="Versión" src="https://img.shields.io/badge/versi%C3%B3n-1.2.0-6f42c1.svg">
   <img alt="Bun" src="https://img.shields.io/badge/bun-%3E%3D1.3-fbf0df?logo=bun&logoColor=000">
   <img alt="TypeScript" src="https://img.shields.io/badge/typescript-7.0-3178c6?logo=typescript&logoColor=fff">
   <a href="docs/README.md"><img alt="Documentación" src="https://img.shields.io/badge/docs-espa%C3%B1ol-0ea5e9.svg"></a>
@@ -26,7 +26,7 @@ Hive reemplaza el patrón de "un agente gigante con 80 herramientas cargadas de 
 
 ## ✨ Por qué Hive
 
-- **Catálogo persistente, no plantillas desechables.** 13 agentes especializados (investigación web, navegador, archivos, ingeniería de software, Office, automatizaciones cron, APIs, A2UI, Google: Gmail, Calendar y Drive, y el Director de video para reels con Gemini) enrutan el trabajo según el objetivo. Para MCP, el coordinador pide autorización y crea especialistas persistentes por servidor.
+- **Catálogo persistente, no plantillas desechables.** 14 agentes especializados (investigación web, navegador, archivos, ingeniería de software, Office, automatizaciones cron, APIs, A2UI, Google: Gmail, Calendar y Drive y el Director de video para reels con Gemini) enrutan el trabajo según el objetivo. Para MCP, el coordinador pide autorización y crea especialistas persistentes por servidor.
 - **Carga mínima + descubrimiento bajo demanda.** Cada turno arranca con 7 herramientas esenciales; `search_knowledge` incorpora el resto (99 herramientas, 26 skills) solo cuando la tarea lo necesita.
 - **Aceptación explícita, no confianza ciega.** Cada entrega pasa por checks determinísticos y el juicio del coordinador antes de reportar éxito; si no cumple sus criterios, vuelve al mismo worker con feedback concreto (`task_revise`) sin repetir el trabajo desde cero.
 - **Ejecución durable.** Jobs, leases y reintentos con backoff sobreviven caídas y reinicios del gateway — nada se pierde a mitad de camino.
@@ -115,7 +115,7 @@ El gateway escucha por defecto en `127.0.0.1:18790`. En el primer arranque, `hiv
 ### Instalación global
 
 ```bash
-bun add --global @johpaz/hive-agents@1.1.12
+bun add --global @johpaz/hive-agents@1.2.0
 hive start
 ```
 
@@ -125,7 +125,7 @@ hive start
 docker run --name hive \
   -p 18790:18790 \
   -v hive-data:/root/.hive \
-  johpaz/hive-agents:1.1.12
+  johpaz/hive-agents:1.2.0
 ```
 
 ### App de escritorio (Windows, macOS, Linux)

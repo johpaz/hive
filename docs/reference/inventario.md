@@ -2,22 +2,22 @@
 
 > No edites este archivo manualmente. Ejecuta `bun run docs:generate`.
 
-Generado desde el código fuente para Hive **1.1.12**.
+Generado desde el código fuente para Hive **1.2.0**.
 
 ## Versiones
 
 | Paquete | Versión |
 |---|---:|
-| `@johpaz/hive-agents` | `1.1.12` |
-| `@johpaz/hive-cli` | `1.1.12` |
-| `@johpaz/hive-agents-core` | `1.1.12` |
-| `@johpaz/hive-agents-ui` | `1.1.12` |
-| `@johpaz/hive-agents-mcp` | `1.1.12` |
-| `@johpaz/hive-agents-skills` | `1.1.12` |
-| `@johpaz/hive-desktop` | `1.1.12` |
-| `apps/hive-desktop/src-tauri/tauri.conf.json` | `1.1.12` |
+| `@johpaz/hive-agents` | `1.2.0` |
+| `@johpaz/hive-cli` | `1.2.0` |
+| `@johpaz/hive-agents-core` | `1.2.0` |
+| `@johpaz/hive-agents-ui` | `1.2.0` |
+| `@johpaz/hive-agents-mcp` | `1.2.0` |
+| `@johpaz/hive-agents-skills` | `1.2.0` |
+| `@johpaz/hive-desktop` | `1.2.0` |
+| `apps/hive-desktop/src-tauri/tauri.conf.json` | `1.2.0` |
 
-## Herramientas (132)
+## Herramientas (134)
 
 | Herramienta | Categoría | Descripción |
 |---|---|---|
@@ -31,6 +31,8 @@ Generado desde el código fuente para Hive **1.1.12**.
 | `api_request` | api | Make an HTTP request to a REST API endpoint. Supports GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS with custom headers, body, and query parameters. Spanish: llamar api, petición http, curl, post a api, put api, delete api, consumir servicio rest |
 | `artifact_inspect` | web | Inspect managed artifact metadata, integrity, MIME type and dimensions without returning or modifying its binary content. |
 | `artifact_read` | web | Read the text content of a managed artifact in slices, or search inside it. Use this on any artifact_ref a tool returned instead of guessing from its preview. Spanish: leer artefacto, ver contenido del artefacto, abrir resultado grande, buscar dentro del artefacto |
+| `audio_generate` | externa | Create an audio file (podcast episode, narration, voice-over) from text. Pass `texto` for one voice or `turnos` [{texto, voz}] for a multi-voice dialogue (hosts alternating). Default engine is the local Kitten TTS (free, Spanish); pass `modelo` (a TTS model id from audio_voices) to use ElevenLabs, OpenAI, Gemini, Groq or Qwen with their API key. Long texts are split and joined automatically. Returns an artifact_id: deliver it with send_file (or attach it to an email). Write plain spoken text: no markdown, no stage directions. Spanish: crear audio, generar audio, podcast, narración, locución, texto a voz, leer en voz alta |
+| `audio_voices` | externa | List the voices and TTS models available for audio_generate: local Kitten voices (free) and the cloud TTS models of providers that have an API key. Spanish: voces disponibles, modelos de voz, qué voces hay |
 | `browser_click` | web | Click on a web page element. Spanish: hacer clic, botón, enlace, interactuar |
 | `browser_extract` | web | Extract text, links, or structured data from page using CSS selectors or XPath. For general page overview without specific selectors, returns compact accessibility snapshot. Spanish: extraer datos, obtener información, scraping, selectores |
 | `browser_navigate` | web | Navigate browser to URL, get rendered page content (supports JS). Returns compact accessibility tree with element refs (@e1, @e2) for interaction. Spanish: navegar a url, abrir página, sitio web |
@@ -188,7 +190,7 @@ Generado desde el código fuente para Hive **1.1.12**.
 | `web_research` | web | 1.0.0 | `web_search`, `web_fetch` | — |
 | `workspace_file_operator` | filesystem | 1.0.0 | `fs_read`, `fs_write`, `fs_edit`, `fs_delete`, `fs_list`, `fs_glob`, `fs_exists` | `workspace_file_operator` |
 
-## Agentes de catálogo (13)
+## Agentes de catálogo (14)
 
 | ID | Nombre | Propósito | Herramientas autorizadas | Skills |
 |---|---|---|---|---|
@@ -205,6 +207,7 @@ Generado desde el código fuente para Hive **1.1.12**.
 | `google_calendar_agent` | Operador de Google Calendar | Consulta, crea, modifica y cancela eventos y revisa disponibilidad en Google Calendar. | `gcal_*` | `google_calendar` |
 | `google_drive_agent` | Operador de Google Drive | Busca, descarga y sube archivos y documentos en Google Drive. | `gdrive_*` | `google_drive` |
 | `video_director_agent` | Director de video | Planea y produce reels y videos cortos con Gemini: guion, escenas, personajes con Nano Banana y clips con Omni, en el Estudio de video. | `video_*` |  |
+| `podcast_producer_agent` | Productor de podcast | Escribe el guion de un podcast o narración y genera el audio con voces locales o de un proveedor. | `audio_*`, `send_file` |  |
 
 ## Exports públicos
 

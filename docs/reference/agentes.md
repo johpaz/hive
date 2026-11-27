@@ -1,6 +1,6 @@
 # Agentes y delegación
 
-Hive siembra 13 agentes de catálogo como filas normales de la colección `agents`. Sus IDs y contratos están en el [inventario generado](inventario.md).
+Hive siembra 14 agentes de catálogo como filas normales de la colección `agents`. Sus IDs y contratos están en el [inventario generado](inventario.md).
 
 ## Modelo
 
