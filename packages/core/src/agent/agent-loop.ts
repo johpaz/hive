@@ -13,6 +13,7 @@
  * Also used directly by runAgentIsolated() for worker tasks.
  */
 
+import { writtenPathFromResult } from "./written-files"
 import { logger } from "../utils/logger"
 import { col, fromIndexable } from "../storage/hive"
 import { getHiveDb } from "../storage/hivedb"
@@ -1297,9 +1298,10 @@ export interface IsolatedAgentOptions {
 
 export async function runAgentIsolatedDetailed(
   opts: IsolatedAgentOptions,
-): Promise<{ content: string; toolEvidence: string[] }> {
+): Promise<{ content: string; toolEvidence: string[]; writtenFiles: string[] }> {
   let lastContent = ""
   const toolEvidence: string[] = []
+  const writtenFiles: string[] = []
   for await (const chunk of runAgent({
     agentId: opts.agentId,
     userMessage: opts.taskDescription,
@@ -1323,11 +1325,13 @@ export async function runAgentIsolatedDetailed(
     for (const message of chunk.tools?.messages ?? []) {
       const raw = typeof message.content === "string" ? message.content : JSON.stringify(message.content)
       const safe = redactBinaryStrings(raw)
+      const written = writtenPathFromResult(message.name, raw)
+      if (written && !writtenFiles.includes(written)) writtenFiles.push(written)
       toolEvidence.push(`${message.name ?? "tool"}: ${safe.slice(0, 4000)}`)
       if (toolEvidence.length > 8) toolEvidence.shift()
     }
   }
-  return { content: lastContent, toolEvidence }
+  return { content: lastContent, toolEvidence, writtenFiles }
 }
 
 export async function runAgentIsolated(opts: IsolatedAgentOptions): Promise<string> {

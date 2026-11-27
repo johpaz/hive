@@ -23,6 +23,14 @@ import { handleVideoVoices, handleVideoStatus as statusRoute } from "../packages
 import { videoProjectProduceTool, videoProjectCreateTool } from "../packages/core/src/tools/video/index";
 import { handleVideoProjects, handleVideoStatus } from "../packages/core/src/gateway/routes/video";
 
+/** Estos tests miden clips, voz y unión: la música de fondo (de pago) tiene sus propios tests y aquí se apaga. */
+async function mkProject(input: Parameters<typeof createProject>[0]) {
+  const p = await createProject(input);
+  await updateProject(p.id, { style: { music: { enabled: false } } });
+  return p;
+}
+
+
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(300, 7)]);
 const MP4 = Buffer.concat([Buffer.from("AAAAGGZ0eXBtcDQy", "base64"), Buffer.alloc(2000, 1)]);
 const realSecrets = (Bun as any).secrets;
@@ -65,7 +73,7 @@ afterEach(() => {
 });
 
 async function twoSceneProject() {
-  const p = await createProject({ userId: "u1", title: "Gato astronauta", brief: "reel", targetSeconds: 8, resolution: "360p" });
+  const p = await mkProject({ userId: "u1", title: "Gato astronauta", brief: "reel", targetSeconds: 8, resolution: "360p" });
   return updateProject(p.id, {
     characters: [{ name: "Gato", description: "gato naranja con traje espacial" }],
     scenes: [{ seconds: 3, prompt: "El gato despega" }, { seconds: 5, prompt: "El gato saluda", character_ids: [] }],
@@ -112,7 +120,7 @@ describe("proyecto y costo", () => {
   });
 
   test("sin escenas no se aprueba, y sin clave tampoco", async () => {
-    const p = await createProject({ userId: "u1", title: "vacío" });
+    const p = await mkProject({ userId: "u1", title: "vacío" });
     await expect(approveProject(p.id)).rejects.toThrow(/sin escenas|no tiene escenas/);
     const q = await twoSceneProject();
     delete process.env.GEMINI_API_KEY;
@@ -189,7 +197,7 @@ describe("rostro, vestuario y escenografía", () => {
   const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47]), Buffer.alloc(400, 3)]);
 
   async function faceProject() {
-    const p = await createProject({ userId: "u1", title: "Mi reel", targetSeconds: 6, resolution: "360p" });
+    const p = await mkProject({ userId: "u1", title: "Mi reel", targetSeconds: 6, resolution: "360p" });
     const withChar = await updateProject(p.id, { characters: [{ name: "Ana", description: "presentadora, estilo fotográfico" }] });
     return { id: p.id, cid: withChar.characters[0].id };
   }
@@ -338,7 +346,7 @@ describe("voz con ElevenLabs", () => {
     expect(normalizeVoiceSettings(null)).toMatchObject({ volume: 1, ambient_volume: 0.3 });
     const body = JSON.stringify(ttsBody("Hola", normalizeVoiceSettings({ model_id: "eleven_multilingual_v2", volume: 1.7, ambient_volume: 0.1 })));
     expect(body).not.toContain("volume"); // el volumen lo aplica Hive en ffmpeg, no existe en la API
-    const p = await createProject({ userId: "u1", title: "Volumen", targetSeconds: 3, resolution: "360p" });
+    const p = await mkProject({ userId: "u1", title: "Volumen", targetSeconds: 3, resolution: "360p" });
     const c = await updateProject(p.id, { characters: [{ name: "Ana", description: "x", voice_id: "v", voice_settings: { mode: "narration", volume: 1.5, ambient_volume: 0.1 } }] });
     await updateProject(p.id, { scenes: [{ seconds: 3, prompt: "Ana", character_ids: [c.characters[0].id], dialogue: "Hola" }] });
     await approveProject(p.id);
@@ -392,7 +400,7 @@ describe("voz con ElevenLabs", () => {
   });
 
   test("la voz del personaje guarda sus ajustes y la producción los usa", async () => {
-    const p = await createProject({ userId: "u1", title: "Ajustes", targetSeconds: 3, resolution: "360p" });
+    const p = await mkProject({ userId: "u1", title: "Ajustes", targetSeconds: 3, resolution: "360p" });
     const withChar = await updateProject(p.id, { characters: [{ name: "Ana", description: "x", voice_id: "voz-ana", voice_settings: { mode: "narration", model_id: "eleven_multilingual_v2", speed: 1.15, stability: 0.3 } }] });
     expect(withChar.characters[0].voice_settings).toMatchObject({ model_id: "eleven_multilingual_v2", speed: 1.15, stability: 0.3, similarity: 0.75 });
     // editar solo el nombre no pierde los ajustes
@@ -423,7 +431,7 @@ describe("voz con ElevenLabs", () => {
     } finally { globalThis.fetch = realFetch; }
     const status = await (await statusRoute(new Request("http://x/api/video/status"), (r) => r)).json() as any;
     expect(status.voice_models.map((m: any) => m.id)).toEqual(["eleven_v4", "eleven_v4_turbo", "eleven_multilingual_v2", "eleven_flash_v2_5"]);
-    expect(status.voice_defaults).toMatchObject({ model_id: "eleven_v4", stability: 0.5 });
+    expect(status.voice_defaults).toMatchObject({ model_id: "eleven_v4", stability: 0 });
     expect(status.voice_preview_max_chars).toBe(300);
   });
 
@@ -466,7 +474,7 @@ describe("voz con ElevenLabs", () => {
   });
 
   test("modo narración: ElevenLabs narra sobre el clip y no se le pide hablar a Omni", async () => {
-    const p = await createProject({ userId: "u1", title: "Con voz", targetSeconds: 6, resolution: "360p" });
+    const p = await mkProject({ userId: "u1", title: "Con voz", targetSeconds: 6, resolution: "360p" });
     const withChar = await updateProject(p.id, { characters: [{ name: "Ana", description: "presentadora", voice_id: "voz-ana", voice_name: "Ana clonada", voice_settings: { mode: "narration" } }] });
     const cid = withChar.characters[0].id;
     expect(withChar.characters[0].voice_id).toBe("voz-ana");
@@ -487,7 +495,7 @@ describe("voz con ElevenLabs", () => {
   });
 
   test("sin voz asignada, Omni dice la línea con su voz nativa", async () => {
-    const p = await createProject({ userId: "u1", title: "Sin voz", targetSeconds: 3, resolution: "360p" });
+    const p = await mkProject({ userId: "u1", title: "Sin voz", targetSeconds: 3, resolution: "360p" });
     const withChar = await updateProject(p.id, { characters: [{ name: "Ana", description: "presentadora" }] });
     await updateProject(p.id, { scenes: [{ seconds: 3, prompt: "Ana habla", character_ids: [withChar.characters[0].id], dialogue: "Hola a todos" }] });
     await approveProject(p.id);
@@ -558,8 +566,11 @@ describe("voz propia ajustada a los labios", () => {
       const log = Bun.spawnSync(["ffmpeg", "-hide_banner", "-i", join(dir, "out.wav"), "-af", "silencedetect=noise=-40dB:d=0.05", "-f", "null", "-"]).stderr.toString();
       const ends = [...log.matchAll(/silence_end: ([\d.]+)/g)].map((m) => Number(m[1]));   // dónde EMPIEZA cada palabra
       const starts = [...log.matchAll(/silence_start: ([\d.]+)/g)].map((m) => Number(m[1])); // dónde TERMINA cada palabra
+      // Cada palabra ARRANCA donde Gemini mueve los labios y se reproduce casi a su ritmo natural (estirada ±12 %, no hasta llenar la ventana).
       expect(ends[0]).toBeCloseTo(0.5, 1); expect(ends[1]).toBeCloseTo(1.3, 1); expect(ends[2]).toBeCloseTo(2.2, 1);
-      expect(starts[1]).toBeCloseTo(0.9, 1); expect(starts[2]).toBeCloseTo(1.9, 1); expect(starts[3]).toBeCloseTo(2.5, 1);
+      expect(starts[1]).toBeCloseTo(0.9, 1);                 // a: 0,4 s → ocupa su ventana
+      expect(Math.abs(starts[2] - ends[1] - 0.44)).toBeLessThan(0.1); // b: 0,4 s en una ventana de 0,6 s → se alarga ~11 %, NO hasta 0,6 s
+      expect(Math.abs(starts[3] - ends[2] - 0.36)).toBeLessThan(0.1); // c: 0,4 s en una ventana de 0,3 s → se acorta ~12 %, NO hasta 0,3 s
       // sin palabras no hay nada que ajustar
       await expect(warpToTiming(tts, [], to, 3)).rejects.toBeInstanceOf(VoiceError);
     } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -590,17 +601,19 @@ describe("voz sincronizada con los labios, subtítulos y narración en vivo", ()
       burn: async (reel: Uint8Array, spec: any) => { seen.burn.push(spec); return new Uint8Array(Buffer.concat([reel, Buffer.from("SUBS")])); },
       join: async (paths: string[], durs: number[], t: any) => { seen.join.push({ paths, durs, t }); return new Uint8Array(Buffer.from("JOINED")); },
       duration: async () => 3,
+      trim: async () => {},
     };
   };
 
   async function talkingProject(opts: { voice?: boolean; mode?: "sync" | "convert" | "narration" } = { voice: true }) {
-    const p = await createProject({ userId: "u1", title: "Habla", targetSeconds: 6, resolution: "360p" });
+    const p = await mkProject({ userId: "u1", title: "Habla", targetSeconds: 6, resolution: "360p" });
     const c = await updateProject(p.id, { characters: [{ name: "Ana", description: "presentadora", ...(opts.voice ? { voice_id: "voz-ana", voice_name: "Ana clonada", voice_settings: { volume: 1.4, stability: 1, ...(opts.mode ? { mode: opts.mode } : {}) } } : {}) }] });
     const cid = c.characters[0].id;
     await updateProject(p.id, { scenes: [
       { seconds: 3, prompt: "Ana saluda", character_ids: [cid], dialogue: "[whispering] Hola mundo" },
       { seconds: 3, prompt: "Ana se despide", character_ids: [cid], dialogue: "Hola mundo" },
     ] });
+    await updateProject(p.id, { style: { trim: { enabled: false } } }); // estos tests miden otra cosa; el recorte tiene su propio test
     await approveProject(p.id);
     return p.id;
   }
@@ -678,6 +691,7 @@ describe("voz sincronizada con los labios, subtítulos y narración en vivo", ()
     expect(p0.style).toEqual({
       subtitles: { preset: "classic", position: "bottom", size: "m", uppercase: false, color: "#FFFFFF", highlight: "#FACC15", font: "montserrat" },
       transition: { type: "fade", duration: 0.4 }, graphics: { enabled: true, accent: "#2563EB", progress_bar: false },
+      trim: { enabled: false, lead: 0.2, tail: 0.35 }, music: { enabled: false, volume: 0.14, mood: "" },
     });
     const p1 = await updateProject(id, { style: {
       subtitles: { preset: "karaoke", position: "middle", size: "l", uppercase: true, color: "#ffffff", highlight: "#ff00aa", font: "serif" },
@@ -770,6 +784,23 @@ describe("voz sincronizada con los labios, subtítulos y narración en vivo", ()
     expect(done.activity.some((a) => a.kind === "warn" && a.text.includes("El reel se entrega sin ellos") && a.text.includes("sin libass"))).toBe(true);
     expect(done.activity.at(-1)!.text).not.toContain("con subtítulos");
     expect(seen.synth).toHaveLength(2);
+  });
+
+  test("con «Recortar silencios» cada escena hablada se corta a su tramo y los subtítulos se desplazan", async () => {
+    const id = await talkingProject();
+    await updateProject(id, { style: { trim: { enabled: true } } });
+    const cuts: Array<[number, number]> = [];
+    const { seen, ...hooks } = stubs({ synthTimed: async () => ({ bytes: TTS, words: [{ text: "Hola", start: 1.2, end: 1.6 }, { text: "mundo", start: 1.7, end: 2.0 }] }) });
+    const done = await startProduction(id, { fetchImpl: fakeFetch, concat: fakeConcat, wait: true, ...hooks, trim: async (_s: string, _o: string, a: number, b: number) => { cuts.push([a, b]); } });
+    expect(done.status).toBe("done");
+    expect(cuts).toHaveLength(2);
+    const w = done.scenes[0].captions;
+    const first = w[0].start, last = w[w.length - 1].end;
+    expect(cuts[0][0]).toBeCloseTo(Math.max(0, first - 0.2), 2);   // margen antes de la primera palabra
+    expect(cuts[0][1]).toBeCloseTo(Math.min(3, last + 0.35), 2);   // margen después de la última
+    expect(seen.burn[0].scenes[0].duration).toBeCloseTo(cuts[0][1] - cuts[0][0], 2);
+    expect(seen.burn[0].scenes[0].words[0].start).toBeCloseTo(first - cuts[0][0], 2); // desplazadas al nuevo inicio
+    expect(done.activity.at(-1)!.text).toContain("de silencio recortados");
   });
 
   test("si poner tu voz ajustada falla, se conserva la voz de Gemini, se avisa y la escena no falla", async () => {
@@ -893,5 +924,532 @@ describe("tools y rutas", () => {
     expect(approved!.status).toBe(200);
     expect((await mk("/api/video/otra", "GET"))).toBeNull();
     expect(StudioError).toBeDefined();
+  });
+});
+
+describe("rehacer la voz sin volver a generar el video", () => {
+  test("dubKeyFor cambia con la voz, sus ajustes o el diálogo; canRedub exige el clip original en disco", async () => {
+    const { dubKeyFor, canRedub } = await import("../packages/core/src/video/studio");
+    const ch = { id: "c1", name: "A", description: "", voice_id: "v1", voice_name: "V", voice_settings: {} } as any;
+    const scene = { character_ids: ["c1"], dialogue: "Hola", status: "done", raw_path: null } as any;
+    const base = dubKeyFor({ characters: [ch] } as any, scene);
+    expect(dubKeyFor({ characters: [{ ...ch, voice_id: "v2" }] } as any, scene)).not.toBe(base);
+    expect(dubKeyFor({ characters: [{ ...ch, voice_settings: { stability: 0.9 } }] } as any, scene)).not.toBe(base);
+    expect(dubKeyFor({ characters: [ch] } as any, { ...scene, dialogue: "Adiós" })).not.toBe(base);
+    expect(dubKeyFor({ characters: [ch] } as any, scene)).toBe(base);
+    expect(canRedub(scene)).toBe(false);                                     // sin clip original
+    expect(canRedub({ ...scene, raw_path: import.meta.path })).toBe(true);   // con un archivo existente
+    expect(canRedub({ ...scene, raw_path: import.meta.path, dialogue: "" })).toBe(false);
+  });
+});
+
+describe("warpToTiming con audio real de ElevenLabs (MP3) y tiempos irregulares", () => {
+  test("no falla con un MP3, con palabras pasadas del final ni con tiempos solapados", async () => {
+    const { warpToTiming } = await import("../packages/core/src/video/voice");
+    const { mkdtempSync, readFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "warp-mp3-"));
+    try {
+      Bun.spawnSync(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=f=220:d=3", "-b:a", "128k", join(dir, "t.mp3")]);
+      const mp3 = new Uint8Array(readFileSync(join(dir, "t.mp3")));
+      const W = (a: number[][]) => a.map(([start, end], i) => ({ text: `w${i}`, start, end }));
+      for (const [from, to] of [
+        [W([[0.3, 0.8], [0.9, 1.5], [1.6, 2.2]]), W([[1, 1.5], [1.6, 2.3], [2.4, 3]])],
+        [W([[0.3, 0.8], [5.9, 6.4], [7, 8]]), W([[1, 1.5], [1.6, 2.3], [2.4, 3]])],
+        [W([[0.3, 0.9], [0.8, 1.2], [1.2, 1.2]]), W([[1, 1.5], [1.4, 2], [2, 2]])],
+      ]) {
+        const out = await warpToTiming(mp3, from, to, 4);
+        expect(out.byteLength).toBeGreaterThan(44100 * 2 * 3.5);
+      }
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe("música de fondo (Lyria)", () => {
+  const MUSIC = { bytes: new Uint8Array(Buffer.alloc(5000, 3)), mimeType: "audio/mpeg", modelId: "lyria-3.5", costUsd: 0.08 };
+  async function reel() {
+    const p = await createProject({ userId: "u1", title: "Productividad con IA", brief: "consejos para ahorrar tiempo", targetSeconds: 6, resolution: "360p" });
+    await updateProject(p.id, { scenes: [{ seconds: 3, prompt: "a" }, { seconds: 3, prompt: "b" }] });
+    return p.id;
+  }
+
+  test("el costo incluye la música una sola vez y desaparece al apagarla o al tenerla", async () => {
+    const id = await reel();
+    const c = projectCost(await getProject(id));
+    expect(c.music_usd).toBeCloseTo(0.08, 4);
+    expect(c.total_usd).toBeCloseTo(c.estimated_usd + c.images_usd + 0.08, 4);
+    await updateProject(id, { style: { music: { enabled: false } } });
+    expect(projectCost(await getProject(id)).music_usd).toBe(0);
+  });
+
+  test("se compone una vez, se mezcla con el volumen pedido y un reintento la reutiliza", async () => {
+    const id = await reel();
+    await updateProject(id, { style: { music: { volume: 0.2, mood: "piano cálido" } } });
+    await approveProject(id);
+    const prompts: string[] = [];
+    const mixes: Array<{ path: string; volume: number }> = [];
+    const hooks = {
+      fetchImpl: fakeFetch, concat: fakeConcat, wait: true as const, duration: async () => 3,
+      musicGen: async (pr: string) => { prompts.push(pr); return MUSIC; },
+      musicMix: async (r: Uint8Array, path: string, o: { volume: number }) => { mixes.push({ path, volume: o.volume }); return new Uint8Array(Buffer.concat([r, Buffer.from("MUSIC")])); },
+      burn: async (r: Uint8Array) => r,
+    };
+    const done = await startProduction(id, hooks);
+    expect(done.status).toBe("done");
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("Instrumental only, no vocals");
+    expect(prompts[0]).toContain("Productividad con IA");
+    expect(prompts[0]).toContain("piano cálido");
+    expect(mixes).toHaveLength(1);
+    expect(mixes[0].volume).toBe(0.2);
+    expect(done.music?.path).toBe(mixes[0].path);
+    expect(done.activity.at(-1)!.text).toContain("música de fondo");
+    expect(done.spent_usd).toBeGreaterThanOrEqual(0.08);
+    // la música ya existe: no se vuelve a pedir ni a cobrar
+    expect(projectCost(await getProject(id)).music_usd).toBe(0);
+  });
+
+  test("si Lyria falla, el reel se entrega sin música y se avisa", async () => {
+    const id = await reel();
+    await approveProject(id);
+    const done = await startProduction(id, {
+      fetchImpl: fakeFetch, concat: fakeConcat, wait: true, duration: async () => 3,
+      musicGen: async () => { throw new Error("sin saldo"); }, burn: async (r: Uint8Array) => r,
+    });
+    expect(done.status).toBe("done");
+    expect(done.final_path).toBeTruthy();
+    expect(done.music).toBeNull();
+    expect(done.activity.some((a) => a.kind === "warn" && a.text.includes("música de fondo") && a.text.includes("sin saldo"))).toBe(true);
+  });
+
+  test("un reel terminado puede agregar la música sin volver a generar clips", async () => {
+    const id = await reel();
+    await updateProject(id, { style: { music: { enabled: false } } });
+    await approveProject(id);
+    await startProduction(id, { fetchImpl: fakeFetch, concat: fakeConcat, wait: true, duration: async () => 3, burn: async (r: Uint8Array) => r });
+    const clipCalls = calls.length;
+    await updateProject(id, { style: { music: { enabled: true } } });
+    const { startMusic } = await import("../packages/core/src/video/studio");
+    let mixed = 0;
+    const done = await startMusic(id, {
+      wait: true, concat: fakeConcat, duration: async () => 3, burn: async (r: Uint8Array) => r,
+      musicGen: async () => MUSIC, musicMix: async (r: Uint8Array) => { mixed++; return r; },
+    });
+    expect(done.status).toBe("done");
+    expect(done.music).not.toBeNull();
+    expect(mixed).toBe(1);
+    expect(calls.length).toBe(clipCalls); // ni un clip nuevo
+  });
+
+  test("generateMusic pide Lyria con la revisión de API y cae al modelo de clips si el principal no existe", async () => {
+    const { generateMusic, parseMusic, buildMusicPrompt } = await import("../packages/core/src/video/music");
+    const seen: Array<{ model: string; rev: string | null }> = [];
+    const f = (async (_u: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      seen.push({ model: body.model, rev: (init.headers as Record<string, string>)["Api-Revision"] ?? null });
+      if (body.model === "lyria-3.5") return new Response(JSON.stringify({ error: { message: "model not found" } }), { status: 404 });
+      return new Response(JSON.stringify({ status: "completed", steps: [{ type: "model_output", content: [{ type: "text", text: "x" }, { type: "audio", mime_type: "audio/mpeg", data: Buffer.alloc(4000, 1).toString("base64") }] }] }));
+    }) as unknown as typeof fetch;
+    const m = await generateMusic("prompt", { fetchImpl: f });
+    expect(m.modelId).toBe("lyria-3-clip-preview");
+    expect(m.costUsd).toBeCloseTo(0.04, 4);
+    expect(seen.map((s) => s.model)).toEqual(["lyria-3.5", "lyria-3-clip-preview"]);
+    expect(seen.every((s) => s.rev === "2026-05-20")).toBe(true);
+    expect(parseMusic({ steps: [{ content: [{ type: "audio", data: "QQ==" }] }] }).data).toBe("QQ==");
+    expect(buildMusicPrompt({ title: "T", mood: "jazz suave", seconds: 30 })).toContain("jazz suave");
+  });
+
+  test.skipIf(!Bun.which("ffmpeg"))("mixBackgroundMusic (ffmpeg real) conserva el video, el largo del reel y el audio", async () => {
+    const { mixBackgroundMusic } = await import("../packages/core/src/video/music");
+    const { ffmpegRun, durationOf } = await import("../packages/core/src/video/voice");
+    const { readFileSync, writeFileSync } = await import("node:fs");
+    const dir = mkdtempSync(join(tmpdir(), "mix-"));
+    try {
+      await ffmpegRun(["-y", "-f", "lavfi", "-i", "testsrc=size=160x90:rate=15:d=4", "-f", "lavfi", "-i", "sine=f=440:d=4", "-c:v", "mpeg4", "-c:a", "aac", "-shortest", "reel.mp4"], dir);
+      await ffmpegRun(["-y", "-f", "lavfi", "-i", "sine=f=220:d=2", "-b:a", "128k", "m.mp3"], dir); // más corta que el reel: se repite
+      const out = await mixBackgroundMusic(new Uint8Array(readFileSync(join(dir, "reel.mp4"))), join(dir, "m.mp3"), { volume: 0.15, totalSec: 4 });
+      writeFileSync(join(dir, "out.mp4"), out);
+      expect(await durationOf(join(dir, "out.mp4"))).toBeGreaterThan(3.5);
+      const probe = await ffmpegRun(["-i", "out.mp4", "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "-"], dir);
+      expect(probe.code).toBe(0);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe("pista de audio maestra (el sonido se arma una sola vez al final)", () => {
+  async function reel() {
+    const p = await createProject({ userId: "u1", title: "Maestra", targetSeconds: 6, resolution: "360p" });
+    await updateProject(p.id, { scenes: [{ seconds: 3, prompt: "a" }, { seconds: 3, prompt: "b" }], style: { music: { enabled: false } } });
+    await approveProject(p.id);
+    return p.id;
+  }
+
+  test("el video se une sin audio y el audio se arma desde los clips originales con la posición de cada escena", async () => {
+    const id = await reel();
+    const specs: any[] = [];
+    const joins: Array<{ audio?: boolean }> = [];
+    const done = await startProduction(id, {
+      fetchImpl: fakeFetch, concat: fakeConcat, wait: true, duration: async () => 3, burn: async (r: Uint8Array) => r,
+      join: async (_p: string[], _d: number[], _t: any, o?: { audio?: boolean }) => { joins.push(o ?? {}); return new Uint8Array(Buffer.from("VIDEO")); },
+      audioMaster: async (spec: any) => { specs.push(spec); return new Uint8Array(Buffer.from("AUDIO")); },
+      mux: async (v: Uint8Array, a: Uint8Array) => new Uint8Array(Buffer.concat([v, Buffer.from("+"), a])),
+    });
+    expect(done.status).toBe("done");
+    expect(joins).toEqual([{ audio: false }]);
+    expect(specs).toHaveLength(1);
+    const sp = specs[0];
+    expect(sp.scenes).toHaveLength(2);
+    expect(sp.overlap).toBeCloseTo(0.4, 2);
+    expect(sp.scenes[0].start).toBe(0);
+    expect(sp.scenes[1].start).toBeCloseTo(3 - 0.4, 2);   // la segunda entra donde empieza la transición
+    expect(sp.total).toBeCloseTo(6 - 0.4, 2);
+    expect(sp.scenes.every((s: any) => s.from === 0)).toBe(true);
+    expect(sp.music).toBeNull();
+    expect(done.activity.some((a) => a.kind === "warn")).toBe(false);
+  });
+
+  test("si armar el audio final falla, se usa el método anterior y se avisa; el reel no se pierde", async () => {
+    const id = await reel();
+    const { MasterAudioError } = await import("../packages/core/src/video/audio-master");
+    const joins: Array<{ audio?: boolean }> = [];
+    const done = await startProduction(id, {
+      fetchImpl: fakeFetch, concat: fakeConcat, wait: true, duration: async () => 3, burn: async (r: Uint8Array) => r,
+      join: async (_p: string[], _d: number[], _t: any, o?: { audio?: boolean }) => { joins.push(o ?? {}); return new Uint8Array(Buffer.from("VIDEO")); },
+      audioMaster: async () => { throw new MasterAudioError("sin memoria"); },
+    });
+    expect(done.status).toBe("done");
+    expect(done.final_path).toBeTruthy();
+    expect(joins).toEqual([{ audio: false }, { audio: true }]);
+    expect(done.activity.some((a) => a.kind === "warn" && a.text.includes("método anterior") && a.text.includes("sin memoria"))).toBe(true);
+  });
+
+  test.skipIf(!Bun.which("ffmpeg"))("buildMasterAudio + muxAudio (ffmpeg real): un solo AAC, largo exacto, voz mono sin perder nivel y música bajo la voz", async () => {
+    const { buildMasterAudio, muxAudio } = await import("../packages/core/src/video/audio-master");
+    const { ffmpegRun, durationOf } = await import("../packages/core/src/video/voice");
+    const { readFileSync, writeFileSync } = await import("node:fs");
+    const dir = mkdtempSync(join(tmpdir(), "master-"));
+    try {
+      // dos clips de 3 s con voz mono (tono) y un video sin audio de 5,6 s; música más corta que el reel (se repite)
+      for (const [n, f] of [["a", 440], ["b", 660]] as const) await ffmpegRun(["-y", "-f", "lavfi", "-i", "testsrc=size=160x90:rate=15:d=3", "-f", "lavfi", "-i", `sine=f=${f}:d=3,volume=0.5`, "-ac", "1", "-c:v", "mpeg4", "-c:a", "aac", n + ".mp4"], dir);
+      await ffmpegRun(["-y", "-f", "lavfi", "-i", "testsrc=size=160x90:rate=15:d=5.6", "-an", "-c:v", "mpeg4", "silent.mp4"], dir);
+      await ffmpegRun(["-y", "-f", "lavfi", "-i", "sine=f=220:d=2", "-b:a", "128k", "m.mp3"], dir);
+      const audio = await buildMasterAudio({
+        total: 5.6, overlap: 0.4, music: { path: join(dir, "m.mp3"), volume: 0.1 },
+        scenes: [
+          { path: join(dir, "a.mp4"), start: 0, duration: 3, from: 0, hasAudio: true, channels: 1 },
+          { path: join(dir, "b.mp4"), start: 2.6, duration: 3, from: 0, hasAudio: true, channels: 1 },
+        ],
+      });
+      writeFileSync(join(dir, "master.m4a"), audio);
+      const out = await muxAudio(new Uint8Array(readFileSync(join(dir, "silent.mp4"))), audio);
+      writeFileSync(join(dir, "out.mp4"), out);
+      expect(await durationOf(join(dir, "out.mp4"))).toBeGreaterThan(5.4);
+      expect(await durationOf(join(dir, "out.mp4"))).toBeLessThan(5.9);
+      const streams = Bun.spawnSync(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,codec_name", "-of", "csv=p=0", join(dir, "out.mp4")]).stdout.toString().trim().split("\n").sort();
+      expect(streams).toEqual(["aac,audio", "mpeg4,video"]);
+      // la voz mono conserva su nivel: el pico final es el del clip original (±2 dB, con la música muy baja debajo)
+      const peakOf = (f: string) => Number(/max_volume: (-?[\d.]+) dB/.exec(Bun.spawnSync(["ffmpeg", "-hide_banner", "-i", f, "-vn", "-af", "volumedetect", "-f", "null", "-"]).stderr.toString())![1]);
+      const src = peakOf(join(dir, "a.mp4")), res = peakOf(join(dir, "out.mp4"));
+      // la normalización final (−15 LUFS, pico máx. −1.5 dB) puede subir un clip muy bajo, pero nunca lo baja ni lo deja pegado al techo
+      expect(res).toBeGreaterThan(src - 2);
+      expect(res).toBeLessThan(-0.5);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe("efectos de voz", () => {
+  test("suggestVoiceFx sugiere según lo que se dice y se ve; sin diálogo no sugiere nada", async () => {
+    const { suggestVoiceFx, fxFilter, normalizeVoiceFx, VOICE_FX_IDS } = await import("../packages/core/src/video/voice-fx");
+    expect(suggestVoiceFx({ dialogue: "" })).toBeNull();
+    expect(suggestVoiceFx({ dialogue: "Última hora: la IA cambia el empleo" })!.id).toBe("radio");
+    expect(suggestVoiceFx({ dialogue: "Te cuento un secreto" })!.id).toBe("intimate");
+    expect(suggestVoiceFx({ dialogue: "[whispering] Ven" })!.id).toBe("intimate");
+    expect(suggestVoiceFx({ dialogue: "Imagina el futuro", prompt: "plano épico" })!.id).toBe("cinematic");
+    expect(suggestVoiceFx({ dialogue: "Hola, bienvenidos" , prompt: "mujer en un podcast"})!.id).toBe("podcast");
+    expect(suggestVoiceFx({ dialogue: "Hola, bienvenidos" })!.id).toBe("studio");
+    expect(normalizeVoiceFx("inventado")).toBe("none");
+    expect(fxFilter("none")).toBe("");
+    expect(fxFilter("radio")).toContain("highpass");
+    expect(VOICE_FX_IDS).toContain("studio");
+  });
+
+  test.skipIf(!Bun.which("ffmpeg"))("todos los presets corren en ffmpeg real y no dejan la voz recortada", async () => {
+    const { VOICE_FX } = await import("../packages/core/src/video/voice-fx");
+    const dir = mkdtempSync(join(tmpdir(), "fx-"));
+    try {
+      // «voz» sintética: tono modulado con ruido suave, estéreo a 48 kHz
+      Bun.spawnSync(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "aevalsrc=0.4*sin(2*PI*200*t)*(0.6+0.4*sin(2*PI*3*t))+0.1*sin(2*PI*2500*t):d=2:s=48000", "-ac", "2", join(dir, "src.wav")]);
+      for (const fx of VOICE_FX) {
+        const r = Bun.spawnSync(["ffmpeg", "-v", "error", "-y", "-i", join(dir, "src.wav"), ...(fx.filter ? ["-af", fx.filter] : []), join(dir, `${fx.id}.wav`)]);
+        expect(r.exitCode).toBe(0);
+        const log = Bun.spawnSync(["ffmpeg", "-hide_banner", "-i", join(dir, `${fx.id}.wav`), "-af", "astats=metadata=0", "-f", "null", "-"]).stderr.toString();
+        const peak = Number(/Peak level dB: (-?[\d.]+)/.exec(log)![1]);
+        expect(peak).toBeLessThan(0.5);        // el limitador del audio final hace el resto; aquí solo se descarta un desborde grave
+        expect(peak).toBeGreaterThan(-40);
+      }
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test("el efecto de la escena manda sobre el del personaje; cambiarlo no invalida clips ni cuesta y el audio lo recibe", async () => {
+    const { fxFilter } = await import("../packages/core/src/video/voice-fx");
+    const { dubKeyFor } = await import("../packages/core/src/video/studio");
+    const p = await mkProject({ userId: "u1", title: "FX", targetSeconds: 6, resolution: "360p" });
+    const c = await updateProject(p.id, { characters: [{ name: "Ana", description: "x", voice_id: "v1", voice_settings: { fx: "podcast" } }] });
+    const cid = c.characters[0].id;
+    await updateProject(p.id, { scenes: [
+      { seconds: 3, prompt: "a", character_ids: [cid], dialogue: "Hola" },
+      { seconds: 3, prompt: "b", character_ids: [cid], dialogue: "Adiós", fx: "radio" },
+      { seconds: 3, prompt: "c" },
+    ], style: { trim: { enabled: false } } });
+    await approveProject(p.id);
+    const specs: any[] = [];
+    const run = (extra = {}) => startProduction(p.id, {
+      fetchImpl: fakeFetch, concat: fakeConcat, wait: true, duration: async () => 3, burn: async (r: Uint8Array) => r,
+      join: async () => new Uint8Array(Buffer.from("V")), mux: async (v: Uint8Array) => v,
+      audioMaster: async (s: any) => { specs.push(s); return new Uint8Array(Buffer.from("A")); }, ...extra,
+    });
+    const done = await run({ voice: { enabled: false } });
+    expect(done.status).toBe("done");
+    expect(specs[0].scenes.map((s: any) => s.fx)).toEqual([fxFilter("podcast"), fxFilter("radio"), ""]); // personaje · escena · sin diálogo
+    const keyBefore = dubKeyFor(await getProject(p.id), done.scenes[0]);
+    const clipCalls = calls.length;
+    // cambiar el efecto del personaje y el de una escena: solo se vuelve a unir
+    await updateProject(p.id, { characters: [{ id: cid, name: "Ana", description: "x", voice_settings: { fx: "intimate" } }] });
+    let after = await getProject(p.id);
+    expect(after.final_path).toBeNull();                                   // el reel ya no corresponde
+    expect(after.scenes.every((s) => s.status === "done")).toBe(true);     // los clips siguen
+    expect(dubKeyFor(after, after.scenes[0])).toBe(keyBefore);             // la voz NO quedó desactualizada
+    expect(projectCost(after).total_usd).toBe(0);
+    await updateProject(p.id, { scenes: after.scenes.map((s) => ({ id: s.id, seconds: s.seconds, prompt: s.prompt, character_ids: s.character_ids, fx: s.id === after.scenes[1].id ? "none" : undefined })) });
+    after = await getProject(p.id);
+    expect(after.scenes.every((s) => s.status === "done")).toBe(true);
+    await run({ voice: { enabled: false } });
+    expect(calls.length).toBe(clipCalls);                                  // ni un clip nuevo
+    expect(specs[1].scenes.map((s: any) => s.fx)).toEqual([fxFilter("intimate"), "", ""]);
+  });
+});
+
+describe("reels sin personaje (voz en off)", () => {
+  async function noCharProject(narrator: boolean) {
+    const p = await mkProject({ userId: "u1", title: "Paisajes", targetSeconds: 6, resolution: "360p", narrator: narrator ? { voice_id: "voz-n", voice_name: "Narrador de prueba" } : undefined });
+    await updateProject(p.id, { scenes: [{ seconds: 3, prompt: "Amanecer sobre una ciudad", dialogue: "Cada día empieza igual." }, { seconds: 3, prompt: "Manos tecleando" }], style: { trim: { enabled: false } } });
+    await approveProject(p.id);
+    return p.id;
+  }
+  const hooks = (seen: { synth: any[]; mix: any[] }) => ({
+    voice: {
+      enabled: true,
+      synthesize: async (i: any) => { seen.synth.push(i); return { bytes: new Uint8Array(Buffer.alloc(400, 3)) }; },
+      mix: async (clip: Uint8Array, _v: Uint8Array, m: any) => { seen.mix.push(m); return clip; },
+      align: async () => [{ text: "Cada", start: 0.3, end: 0.6 }, { text: "día", start: 0.7, end: 1 }],
+    },
+  });
+
+  test("la escena sin personaje NO pide a nadie hablando a cámara y su línea se narra con la voz del narrador", async () => {
+    const id = await noCharProject(true);
+    const seen = { synth: [] as any[], mix: [] as any[] };
+    const done = await startProduction(id, { fetchImpl: fakeFetch, concat: fakeConcat, wait: true, duration: async () => 3, burn: async (r: Uint8Array) => r, ...hooks(seen) });
+    expect(done.status).toBe("done");
+    const prompt = String(calls.find((c) => String(c.url).includes("interactions"))!.body.input);
+    expect(prompt).not.toContain("speaks directly");
+    expect(prompt).toContain("voice-over");
+    expect(prompt).toContain("nobody talks to the camera");
+    expect(seen.synth).toHaveLength(1);                     // solo la escena con texto
+    expect(seen.synth[0].voiceId).toBe("voz-n");
+    expect(seen.synth[0].settings.mode).toBe("narration");
+    expect(done.scenes[0].captions.length).toBeGreaterThan(0); // subtítulos de la voz en off
+    expect(done.scenes[0].raw_path).toBeTruthy();              // permite rehacer la voz sin pagar el video
+  });
+
+  test("sin narrador de ElevenLabs la locución la hace Gemini (texto a voz) y la escena lleva subtítulos", async () => {
+    const id = await noCharProject(false);
+    const seen = { synth: [] as any[], mix: [] as any[] };
+    const gem: string[] = [];
+    const h = hooks(seen);
+    const done = await startProduction(id, { fetchImpl: fakeFetch, concat: fakeConcat, wait: true, duration: async () => 3, burn: async (r: Uint8Array) => r, ...h, voice: { ...h.voice, geminiSpeech: async (i: { text: string }) => { gem.push(i.text); return { bytes: new Uint8Array(Buffer.alloc(400, 4)) }; } } });
+    expect(done.status).toBe("done");
+    expect(seen.synth).toHaveLength(0);   // ElevenLabs no interviene
+    expect(gem.length).toBeGreaterThan(0); // la voz sale de Gemini
+    expect(String(calls[0].body.input)).not.toContain("speaks directly");
+    expect(done.scenes[0].captions.length).toBeGreaterThan(0);
+  });
+
+  test("si la voz de Gemini falla, el reel no falla: se avisa y la escena queda sin voz", async () => {
+    const id = await noCharProject(false);
+    const seen = { synth: [] as any[], mix: [] as any[] };
+    const h = hooks(seen);
+    const done = await startProduction(id, { fetchImpl: fakeFetch, concat: fakeConcat, wait: true, duration: async () => 3, burn: async (r: Uint8Array) => r, ...h, voice: { ...h.voice, geminiSpeech: async () => { throw new Error("cuota"); } } });
+    expect(done.status).toBe("done");
+    expect(done.activity.some((a) => a.kind === "warn" && a.text.includes("voz en off con Gemini"))).toBe(true);
+  });
+
+  test("el modo voz en off del guionista no usa personajes ni vestuario", async () => {
+    const { writeScript } = await import("../packages/core/src/video/ai-writer");
+    let userMsg = "";
+    const out = await writeScript({ title: "Café", brief: "cómo se hace", target_seconds: 6, mode: "voiceover", characters_detail: [{ id: "c1", name: "Ana" }] }, {
+      call: async (m: any[]) => { userMsg = m[1].content; return JSON.stringify({ script: "Un café.", scenes: [{ seconds: 3, prompt: "granos cayendo", wardrobe: "camisa", dialogue: "Todo empieza con un grano.", character_ids: ["c1"], graphic: { kind: "lower_third", text: "Ana", sub: "x" } }, { seconds: 3, prompt: "taza humeante", dialogue: "Y termina en tus manos.", character_ids: [] }] }); },
+    });
+    expect(userMsg).toContain("MODO VOZ EN OFF");
+    expect(userMsg).not.toContain('id "c1"');
+    expect(out.scenes.every((s) => s.character_ids.length === 0 && s.wardrobe === "")).toBe(true);
+  });
+});
+
+describe("tarjetas de gráficos, imágenes con movimiento e identidad visual", () => {
+  async function mixed() {
+    const p = await mkProject({ userId: "u1", title: "Datos", targetSeconds: 9, resolution: "360p", narrator: { voice_id: "voz-n", voice_name: "Narrador" } });
+    await updateProject(p.id, { scenes: [
+      { seconds: 3, prompt: "Ciudad al amanecer" },
+      { seconds: 3, source: "card", card: { kind: "stat", value: "73 %", title: "de los empleos cambiarán" }, dialogue: "Tres de cada cuatro." },
+      { seconds: 3, source: "image", prompt: "Infografía del proceso con el texto \"Aprende. Aplica.\"" },
+    ], style: { trim: { enabled: false }, music: { enabled: false } } });
+    return p.id;
+  }
+
+  test("el costo: el clip cuesta por segundo, la tarjeta nada y la imagen lo de una imagen", async () => {
+    const { sceneCostUsd } = await import("../packages/core/src/video/studio");
+    const id = await mixed();
+    const p = await getProject(id);
+    expect(p.scenes.map((s) => s.source)).toEqual(["clip", "card", "image"]);
+    expect(sceneCostUsd(p, p.scenes[1])).toBe(0);
+    expect(sceneCostUsd(p, p.scenes[2])).toBeGreaterThan(0);
+    expect(sceneCostUsd(p, p.scenes[2])).toBeLessThan(sceneCostUsd(p, p.scenes[0]));
+    const only = await mkProject({ userId: "u1", title: "Solo tarjetas", targetSeconds: 6, resolution: "360p" });
+    await updateProject(only.id, { scenes: [{ seconds: 3, source: "card", card: { kind: "title", title: "Hola" } }, { seconds: 3, source: "card", card: { kind: "cta", title: "Comenta" } }] });
+    expect(projectCost(await getProject(only.id)).total_usd).toBe(0);   // un reel solo de tarjetas es gratis
+  });
+
+  test("una tarjeta sin contenido no se acepta; tarjetas e imágenes no llevan personaje; la tarjeta se describe sola", async () => {
+    const p = await mkProject({ userId: "u1", title: "X", targetSeconds: 6 });
+    await expect(updateProject(p.id, { scenes: [{ seconds: 3, prompt: "", source: "card", card: { kind: "stat" } as any }] })).rejects.toBeInstanceOf(StudioError);
+    const c = await updateProject(p.id, { characters: [{ name: "Ana", description: "x" }] });
+    const out = await updateProject(p.id, { scenes: [{ seconds: 3, source: "card", card: { kind: "title", title: "El gancho" }, character_ids: [c.characters[0].id], wardrobe: "traje" }] });
+    expect(out.scenes[0].character_ids).toEqual([]);
+    expect(out.scenes[0].wardrobe).toBe("");
+    expect(out.scenes[0].prompt).toContain("El gancho");
+  });
+
+  test("producir un reel mixto: el clip va a Gemini, la tarjeta se dibuja con la identidad y la imagen se anima; la voz en off narra la tarjeta", async () => {
+    const id = await mixed();
+    await approveProject(id);
+    const cards: any[] = [];
+    const prompts: string[] = [];
+    const seen = { synth: [] as any[] };
+    const PNG = new Uint8Array(Buffer.alloc(300, 5));
+    const done = await startProduction(id, {
+      fetchImpl: fakeFetch, concat: fakeConcat, wait: true, duration: async () => 3, burn: async (r: Uint8Array) => r,
+      card: async (c: any, ident: any, o: any) => { cards.push({ c, ident, o }); return new Uint8Array(Buffer.from("CARD")); },
+      imageScene: async (pr: string) => { prompts.push(pr); return { bytes: PNG }; },
+      voice: { enabled: true, synthesize: async (i: any) => { seen.synth.push(i); return { bytes: new Uint8Array(Buffer.alloc(400, 3)) }; }, mix: async (c: Uint8Array) => c, align: async () => [{ text: "Tres", start: 0.2, end: 0.5 }] },
+    } as any).catch((e) => e);
+    // la imagen de apoyo exige ffmpeg real sobre bytes que no son una imagen: si falla ahí, lo comprobado antes igualmente debe haber ocurrido
+    expect(cards).toHaveLength(1);
+    expect(cards[0].c.kind).toBe("stat");
+    expect(cards[0].ident.preset).toBe("swiss");
+    expect(cards[0].o).toMatchObject({ aspect: "9:16", seconds: 3, resolution: "360p" });
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("\"Aprende. Aplica.\"");
+    expect(prompts[0]).toContain("#2F6BFF");                 // la identidad viaja en el pedido de imagen
+    expect(prompts[0]).toContain("correct Spanish");
+    expect(seen.synth).toHaveLength(1);                      // la voz en off narró la tarjeta
+    expect(seen.synth[0].voiceId).toBe("voz-n");
+    void done;
+  });
+
+  test("cambiar la identidad rehace las tarjetas (gratis), mueve el acento de los gráficos y no toca los clips", async () => {
+    const id = await mixed();
+    await updateProject(id, { scenes: (await getProject(id)).scenes.map((s) => ({ id: s.id, seconds: s.seconds, prompt: s.prompt, source: s.source, card: s.card as any })) });
+    // marca todo como hecho para comprobar qué se invalida
+    const c = await col<any>("videoProjects");
+    const doc = (await c.get(id))!.doc;
+    for (const s of doc.scenes) { s.status = "done"; s.artifact_id = "x"; s.path = import.meta.path; }
+    doc.final_path = import.meta.path; doc.final_artifact_id = "f";
+    await c.put(id, doc);
+    const out = await updateProject(id, { identity: { preset: "velvet" } });
+    expect(out.identity.accent).toBe("#C9A84C");
+    expect(out.style.graphics.accent).toBe("#C9A84C");
+    expect(out.scenes.map((s) => s.status)).toEqual(["done", "pending", "done"]);   // solo la tarjeta se rehace
+    expect(out.final_path).toBeNull();
+    expect(projectCost(out).total_usd).toBe(0);                                      // y no cuesta
+  });
+});
+
+describe("identidad y tarjetas (módulos)", () => {
+  test("normalizeIdentity parte de un preset, valida colores y avisa de bajo contraste", async () => {
+    const { normalizeIdentity, identityIssues, contrastRatio, IDENTITY_PRESETS } = await import("../packages/core/src/video/identity");
+    expect(normalizeIdentity().preset).toBe("swiss");
+    expect(normalizeIdentity({ preset: "soft" }).bg).toBe("#F6EFE7");
+    const custom = normalizeIdentity({ preset: "soft", accent: "#123456", bg: "no-es-color" });
+    expect(custom.accent).toBe("#123456");
+    expect(custom.bg).toBe("#F6EFE7");
+    expect(identityIssues({ ...normalizeIdentity(), fg: "#101010", bg: "#111111" }).length).toBeGreaterThan(0);
+    for (const p of IDENTITY_PRESETS) expect(contrastRatio(p.fg, p.bg)).toBeGreaterThan(4.5);   // todos los presets se leen
+  });
+
+  test("normalizeCard exige el texto mínimo de cada tipo y limita largos", async () => {
+    const { normalizeCard } = await import("../packages/core/src/video/cards");
+    expect(normalizeCard({ kind: "stat", value: "" } as any)).toBeNull();
+    expect(normalizeCard({ kind: "list", items: [] } as any)).toBeNull();
+    expect(normalizeCard({ kind: "compare", columns: [{ label: "a", text: "b" }] } as any)).toBeNull();
+    expect(normalizeCard({ kind: "raro", title: "x" } as any)).toBeNull();
+    const l = normalizeCard({ kind: "list", items: ["1", "2", "3", "4", "5", "6", "7"].map((x) => x.repeat(100)) } as any)!;
+    expect(l.items).toHaveLength(5);
+    expect(l.items[0].length).toBe(70);
+    expect(normalizeCard({ kind: "stat", value: "73 %", fill: 250 } as any)!.fill).toBe(100);
+  });
+
+  test("buildCardHtml escapa el texto, usa los colores de la identidad y anima la cifra", async () => {
+    const { buildCardHtml, normalizeCard, canvasFor } = await import("../packages/core/src/video/cards");
+    const { normalizeIdentity } = await import("../packages/core/src/video/identity");
+    const html = buildCardHtml(normalizeCard({ kind: "stat", value: "73 %", title: "Tom & <b>Jerry</b>" })!, normalizeIdentity({ preset: "drift" }), canvasFor("9:16"), 4);
+    expect(html).toContain("Tom &amp; &lt;b&gt;Jerry&lt;/b&gt;");
+    expect(html).not.toContain("<b>Jerry");
+    expect(html).toContain("#19C3A6");
+    expect(html).toContain('data-count="73"');
+    expect(html).toContain("white-space:nowrap");            // la cifra no se parte
+    expect(html).toContain("window.__seek");
+  });
+
+  test.skipIf(!Bun.which("ffmpeg"))("renderCard codifica los cuadros capturados a un MP4 del tamaño y los fps de los clips de Gemini", async () => {
+    const { renderCard, normalizeCard } = await import("../packages/core/src/video/cards");
+    const { normalizeIdentity } = await import("../packages/core/src/video/identity");
+    const dir = mkdtempSync(join(tmpdir(), "cardtest-"));
+    try {
+      Bun.spawnSync(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=red:s=720x1280:d=1", "-frames:v", "1", join(dir, "f.png")]);
+      const png = new Uint8Array(await Bun.file(join(dir, "f.png")).arrayBuffer());
+      const mp4 = await renderCard(normalizeCard({ kind: "title", title: "Hola" })!, normalizeIdentity(), { aspect: "9:16", seconds: 2, resolution: "360p", capture: async (_h, _c, times) => times.map(() => png) });
+      await Bun.write(join(dir, "o.mp4"), mp4);
+      const p = Bun.spawnSync(["ffprobe", "-v", "error", "-select_streams", "v", "-show_entries", "stream=width,height,r_frame_rate,nb_frames", "-of", "csv=p=0", join(dir, "o.mp4")]).stdout.toString().trim();
+      expect(p).toBe("360,640,24/1,48");                     // 360p = lado corto 360 como Gemini, 24 fps, 2 s
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test.skipIf(!Bun.which("ffmpeg"))("animateStill y motionFor: movimiento de cámara sobre una imagen fija", async () => {
+    const { animateStill, motionFor, buildImageScenePrompt } = await import("../packages/core/src/video/image-scene");
+    const { normalizeIdentity } = await import("../packages/core/src/video/identity");
+    expect([0, 1, 2, 3, 4].map(motionFor)).toEqual(["zoom_in", "zoom_out", "pan_left", "pan_right", "zoom_in"]);
+    expect(buildImageScenePrompt("Un cohete", normalizeIdentity(), "9:16")).toContain("Keep the lower fifth");
+    const dir = mkdtempSync(join(tmpdir(), "still-"));
+    try {
+      Bun.spawnSync(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=400x700:d=1", "-frames:v", "1", join(dir, "i.png")]);
+      const mp4 = await animateStill(new Uint8Array(await Bun.file(join(dir, "i.png")).arrayBuffer()), { aspect: "9:16", seconds: 2, resolution: "360p", motion: "pan_left" });
+      await Bun.write(join(dir, "o.mp4"), mp4);
+      expect(Bun.spawnSync(["ffprobe", "-v", "error", "-select_streams", "v", "-show_entries", "stream=width,height,r_frame_rate,nb_frames", "-of", "csv=p=0", join(dir, "o.mp4")]).stdout.toString().trim()).toBe("360,640,24/1,48");
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe("narrar un clip sin audio propio (tarjetas e imágenes)", () => {
+  test.skipIf(!Bun.which("ffmpeg"))("mixDialogue conserva el largo del video aunque la voz sea más corta", async () => {
+    const { mixDialogue, durationOf } = await import("../packages/core/src/video/voice");
+    const dir = mkdtempSync(join(tmpdir(), "mixsilent-"));
+    try {
+      Bun.spawnSync(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=blue:s=160x90:r=24:d=4", "-an", "-c:v", "mpeg4", join(dir, "card.mp4")]);   // 4 s sin audio
+      Bun.spawnSync(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=f=300:d=1.5", "-b:a", "128k", join(dir, "voice.mp3")]);                     // voz de 1,5 s
+      const out = await mixDialogue(new Uint8Array(await Bun.file(join(dir, "card.mp4")).arrayBuffer()), new Uint8Array(await Bun.file(join(dir, "voice.mp3")).arrayBuffer()), {});
+      await Bun.write(join(dir, "o.mp4"), out);
+      expect(await durationOf(join(dir, "o.mp4"))).toBeGreaterThan(3.8);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

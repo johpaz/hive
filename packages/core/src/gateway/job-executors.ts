@@ -17,6 +17,7 @@ import { col, updateDoc } from "../storage/hive";
 import { isRetryableError } from "../resilience/retry";
 import type { JobDoc, TaskDoc, AgentRunDoc, AgentDoc } from "../storage/collections";
 import { runAgent, runAgentIsolated, runAgentIsolatedDetailed } from "../agent/agent-loop";
+import { readTaskFiles, rejectedFilesToSupersede, supersedeFiles, withTaskFiles } from "../agent/written-files";
 import { createRun, completeRun, failRun, interruptRun, getRun, reclaimRun, bumpTurn, startLeaseRenewal, stopLeaseRenewal, deserializeAcceptance, deserializeEpoch } from "../agent/run-store";
 import { getDurableQueue } from "./durable-queue";
 import { sendToUserChannel } from "./channel-notify";
@@ -151,6 +152,15 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
     });
     const result = execution.content;
 
+    // Archivos de esta tarea: se anotan para que una corrección sepa qué sobrescribir y qué apartar.
+    const previousFiles = taskId ? readTaskFiles((await (await col<TaskDoc>("tasks")).get(taskId))?.doc.metadata) : [];
+    if (taskId && execution.writtenFiles.length) {
+      const entry = await (await col<TaskDoc>("tasks")).get(taskId);
+      await updateDoc<TaskDoc>("tasks", taskId, {
+        metadata: withTaskFiles(entry?.doc.metadata, [...previousFiles, ...execution.writtenFiles]),
+      } as Partial<TaskDoc>).catch(() => {});
+    }
+
     if (signal.aborted) {
       agentBus.notifyTaskFailed(workerId, workerName, 0, taskName, "", "Aborted");
       emitWorkEvent({
@@ -218,6 +228,42 @@ const workerTaskExecutor: JobExecutor = async (job, signal) => {
         error: checks.summary,
         retryable: false,
       };
+    }
+
+    // Una corrección que entregó reemplazos aparta los documentos rechazados del intento anterior.
+    if (payload.revision && previousFiles.length) {
+      const moved = supersedeFiles(previousFiles, execution.writtenFiles);
+      if (moved.length) {
+        log.info(`[worker_task] ${moved.length} documento(s) obsoleto(s) apartado(s) a .rechazados: ${moved.join(", ")}`);
+        if (taskId) {
+          const entry = await (await col<TaskDoc>("tasks")).get(taskId);
+          await updateDoc<TaskDoc>("tasks", taskId, {
+            metadata: withTaskFiles(entry?.doc.metadata, execution.writtenFiles),
+          } as Partial<TaskDoc>).catch(() => {});
+        }
+      }
+    }
+
+    // Re-delegación tras un fallo (task_delegate nuevo en vez de task_revise): se apartan los documentos
+    // de las tareas fallidas/bloqueadas anteriores del mismo worker en esta conversación.
+    if (!payload.revision && taskId && execution.writtenFiles.length) {
+      try {
+        const tasks = await col<TaskDoc>("tasks");
+        const current = (await tasks.get(taskId))?.doc;
+        if (current) {
+          const prior = (await tasks.findBy("agent_id", current.agent_id)).map((e) => e.doc);
+          for (const rej of rejectedFilesToSupersede(current, prior)) {
+            const moved = supersedeFiles(rej.files, execution.writtenFiles);
+            if (moved.length) {
+              log.info(`[worker_task] ${moved.length} documento(s) de la tarea fallida ${rej.taskId} apartado(s) a .rechazados`);
+              const entry = await tasks.get(rej.taskId);
+              await updateDoc<TaskDoc>("tasks", rej.taskId, { metadata: withTaskFiles(entry?.doc.metadata, []) } as Partial<TaskDoc>).catch(() => {});
+            }
+          }
+        }
+      } catch (err) {
+        log.warn(`[worker_task] no se pudieron apartar documentos de tareas fallidas: ${(err as Error).message}`);
+      }
     }
 
     await recordAgentOutcome(workerId, "helpful");

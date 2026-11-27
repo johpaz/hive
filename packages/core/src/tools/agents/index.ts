@@ -569,7 +569,8 @@ export const taskDelegateTool: Tool = {
           progress: 0,
           result: null,
           error: null,
-          metadata: null,
+          // Conversación de origen: permite reconocer una re-delegación tras un fallo y apartar sus documentos rechazados.
+          metadata: JSON.stringify({ origin_thread: config?.configurable?.thread_id ?? null }),
           job_id: null,
           run_id: null,
           thread_id: null,
@@ -865,6 +866,13 @@ export const taskReviseTool: Tool = {
     const previousAcceptance = previousRun ? deserializeAcceptance(previousRun) : null;
     const acceptance = (params.acceptance as AcceptanceCriterion[] | undefined) ?? previousAcceptance ?? [{ id: "objective", description: task.description ?? feedback }];
 
+    // Archivos que el intento anterior dejó escritos: la corrección debe reemplazarlos, no sumar otros.
+    const { readTaskFiles } = await import("../../agent/written-files.ts");
+    const previousFiles = readTaskFiles(task.metadata);
+    const filesNote = previousFiles.length
+      ? `\n\nARCHIVOS DEL INTENTO ANTERIOR (rechazados): ${previousFiles.join(", ")}. Corrige y guarda el resultado SOBRESCRIBIENDO esa misma ruta (usa exactamente la misma \`ruta\`); no crees otro archivo con otro nombre. Los archivos anteriores que no reutilices se apartarán automáticamente.`
+      : "";
+
     try {
       const run = await createRun({
         thread_id: task.thread_id,
@@ -899,7 +907,7 @@ export const taskReviseTool: Tool = {
         run_id: run.id,
         payload: {
           workerId: agentId,
-          taskDescription: `${task.description ?? ""}\n\nCORRECCIÓN SOLICITADA: ${feedback}`,
+          taskDescription: `${task.description ?? ""}\n\nCORRECCIÓN SOLICITADA: ${feedback}${filesNote}`,
           taskName: task.name,
           taskId,
           acceptance,

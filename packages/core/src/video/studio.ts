@@ -25,13 +25,19 @@ import {
 } from "../multimodal/video-generation"
 import {
   DEFAULT_VOICE_SETTINGS, alignWords, burnSubtitles, convertVoice, durationOf, extractAudio, isVoiceEnabled, mixDialogue, normalizeVoiceSettings, replaceAudio,
-  speechSpan, spreadWords, stripAudioTags, synthesizeLine, synthesizeLineTimed, warpToTiming, type VoiceSettings, type WordTiming,
+  speechSpan, spreadWords, stripAudioTags, synthesizeGeminiSpeech, synthesizeLine, synthesizeLineTimed, warpToTiming, type VoiceSettings, type WordTiming,
 } from "./voice"
 import {
-  burnOverlays, effectiveTransition, joinWithTransitions, normalizeGraphic, normalizeReelStyle, sceneStarts,
-  type GraphicsStyle, type OverlaySpec, type ReelStyle, type SceneGraphic, type SubtitleStyle, type TransitionStyle,
+  burnOverlays, effectiveTransition, joinWithTransitions, normalizeGraphic, normalizeReelStyle, sceneStarts, trimClipFile, trimWindow,
+  type GraphicsStyle, type OverlaySpec, type ReelStyle, type SceneGraphic, type MusicStyle, type SubtitleStyle, type TransitionStyle, type TrimStyle,
 } from "./render"
 import { AvatarError, getAvatar, upsertAvatar } from "./avatars"
+import { fxFilter, fxFilterFor, normalizeVoiceFx, suggestVoiceFx } from "./voice-fx"
+import { cardText, normalizeCard, renderCard, type SceneCard } from "./cards"
+import { DEFAULT_IDENTITY, normalizeIdentity, type Identity } from "./identity"
+import { animateStill, buildImageScenePrompt, motionFor } from "./image-scene"
+import { MasterAudioError, buildMasterAudio, muxAudio, probeAudio, type MasterAudioSpec } from "./audio-master"
+import { MUSIC_COST_USD, buildMusicPrompt, generateMusic, mixBackgroundMusic, type GeneratedMusic } from "./music"
 import { logger } from "../utils/logger"
 
 const log = logger.child("video-studio")
@@ -73,6 +79,13 @@ export interface StudioCharacter {
   voice_settings: VoiceSettings
 }
 
+export interface Narrator {
+  voice_id: string
+  voice_name: string | null
+  /** Siempre en modo «narration»: la voz va sobre el clip y nadie mueve los labios. */
+  voice_settings: VoiceSettings
+}
+
 export interface StudioScene {
   id: string
   seconds: number
@@ -99,7 +112,27 @@ export interface StudioScene {
   captions: WordTiming[]
   /** Gráfico animado sobre esta escena (título, tercio inferior, dato destacado, llamada a la acción). Lo decide el Director. */
   graphic: SceneGraphic
+  /**
+   * Clip ORIGINAL de Gemini (con su propio audio), antes de ponerle la voz del personaje. Se guarda para poder rehacer solo la voz
+   * sin pagar otra vez el video. null en escenas hechas antes de guardarlo o sin diálogo.
+   */
+  raw_artifact_id: string | null
+  raw_path: string | null
+  /** Huella de la voz con que se hizo el audio (voz, ajustes y texto): si cambia, la voz de la escena quedó desactualizada. */
+  dub_key: string | null
+  /** Efecto de voz de esta escena (null = el del personaje o narrador). Se aplica al armar el audio: cambiarlo es gratis. */
+  fx: string | null
+  /**
+   * De dónde sale la imagen de la escena: «clip» = video de Gemini (el de siempre), «card» = tarjeta de gráficos dibujada localmente
+   * (gratis, texto exacto), «image» = imagen de Nano Banana con movimiento de cámara (≈ el costo de una imagen). Las dos últimas
+   * son escenas SIN personaje.
+   */
+  source: SceneSource
+  card: SceneCard | null
 }
+
+export type SceneSource = "clip" | "card" | "image"
+export const SCENE_SOURCES: readonly SceneSource[] = ["clip", "card", "image"]
 
 /** Un paso de la producción, para contárselo al usuario en vivo («Escena 2 · Gemini está grabando el clip…»). */
 export interface ActivityEvent {
@@ -125,6 +158,12 @@ export interface VideoProjectDoc {
   status: ProjectStatus
   /** Costo aprobado por el usuario en la interfaz (null = sin aprobar). */
   approved_cost_usd: number | null
+  /** Identidad visual del reel: paleta y tipografías de las tarjetas, los gráficos y la imagen de apoyo. */
+  identity: Identity
+  /** Voz en off para las escenas SIN personaje (reels con imágenes, paisajes, producto, etc.). null = esas escenas no llevan voz. */
+  narrator: Narrator | null
+  /** Música de fondo ya generada (se reutiliza en cada unión del reel; null si aún no hay). */
+  music: { artifact_id: string; path: string; prompt: string; cost_usd: number } | null
   approved_at: number | null
   spent_usd: number
   final_artifact_id: string | null
@@ -173,13 +212,21 @@ export interface ProjectCost {
   looks_pending: number
   /** Costo estimado de esas imágenes. */
   images_usd: number
-  /** Lo que se aprueba y se tope: clips + imágenes de escena. */
+  /** Música de fondo pendiente de generar (≈0,08 USD, una vez por reel). Va incluida en total_usd. */
+  music_usd: number
+  /** Lo que se aprueba y se tope: clips + imágenes de escena + música. */
   total_usd: number
   /** Caracteres de diálogo que se narrarán con ElevenLabs (se cobra aparte, por caracteres). */
   dialogue_chars: number
+  /** Escenas con diálogo cuya voz quedó desactualizada (cambió la voz, sus ajustes o el texto) y se pueden rehacer sin costo de video. */
+  redub_stale: number
+  /** Escenas cuya voz se puede rehacer sin volver a generar el video. */
+  redub_available: number
+  /** Escenas con diálogo hechas antes de guardar el original: para cambiarles la voz hay que volver a generarlas. */
+  redub_unavailable: number
 }
 
-type CostInput = Pick<VideoProjectDoc, "scenes" | "resolution" | "characters" | "aspect_ratio">
+type CostInput = Pick<VideoProjectDoc, "scenes" | "resolution" | "characters" | "aspect_ratio"> & Partial<Pick<VideoProjectDoc, "style" | "music">>
 
 /** Imagen de identidad del personaje: la foto de rostro del usuario o, si no hay, su avatar generado. */
 export const identityPath = (c: StudioCharacter | undefined): string | null => c?.face_path ?? c?.image_path ?? null
@@ -205,11 +252,53 @@ function lookIsCurrent(p: Pick<VideoProjectDoc, "characters" | "aspect_ratio">, 
   return !!s.look_path && s.look_key === lookKeyFor(p, s)
 }
 
+/** Huella de la voz de una escena: quién habla, con qué ajustes y qué dice. Cambia si cambia cualquiera de esas cosas. */
+export function dubKeyFor(p: Pick<VideoProjectDoc, "characters"> & { narrator?: Narrator | null }, s: StudioScene): string {
+  const speaker = speakerFor(p, s)
+  // El efecto de voz no entra: se aplica al armar el audio y no obliga a rehacer la voz.
+  const st = speaker ? { ...normalizeVoiceSettings(speaker.voice_settings), fx: undefined } : null
+  return createHash("sha256").update(JSON.stringify({ v: speaker?.voice_id ?? null, st, t: s.dialogue.trim() })).digest("hex").slice(0, 16)
+}
+
+/** El narrador como si fuera un personaje (solo voz): quien dice las líneas de las escenas sin personaje. */
+export function narratorSpeaker(p: { narrator?: Narrator | null }): StudioCharacter | undefined {
+  if (!p.narrator?.voice_id) return undefined
+  return {
+    id: "narrator", name: "Narrador", description: "", image_artifact_id: null, image_path: null, face_artifact_id: null, face_path: null,
+    face_consent: false, voice_id: p.narrator.voice_id, voice_name: p.narrator.voice_name, voice_settings: { ...p.narrator.voice_settings, mode: "narration" },
+  }
+}
+
+/** Quién dice la línea de una escena: el personaje que sale (con voz, si hay) o, si no sale ninguno, el narrador. */
+export function speakerFor(p: Pick<VideoProjectDoc, "characters"> & { narrator?: Narrator | null }, s: Pick<StudioScene, "character_ids">): StudioCharacter | undefined {
+  const chars = s.character_ids.map((cid) => p.characters.find((c) => c.id === cid)).filter((c): c is StudioCharacter => !!c)
+  const c = chars.find((x) => !!x.voice_id) ?? chars[0]
+  if (c) return c
+  return s.character_ids.length === 0 ? narratorSpeaker(p) : undefined
+}
+
+/** Efecto de voz que se aplica a una escena: el suyo, o el de quien habla. Sin diálogo no hay voz que tratar. */
+export function fxFor(p: Pick<VideoProjectDoc, "characters"> & { narrator?: Narrator | null }, s: StudioScene): string {
+  if (!s.dialogue.trim()) return "none"
+  return normalizeVoiceFx(s.fx ?? speakerFor(p, s)?.voice_settings.fx, "none")
+}
+
+/** ¿Se puede rehacer la voz de esta escena sin volver a generar el video? (terminada, con diálogo y con su clip original en disco) */
+export function canRedub(s: StudioScene): boolean {
+  return s.status === "done" && !!s.dialogue.trim() && !!s.raw_path && existsSync(s.raw_path)
+}
+
+/** Costo estimado de producir una escena: un clip de Gemini por segundo, una imagen de Nano Banana, o nada (tarjeta). */
+export function sceneCostUsd(p: Pick<CostInput, "resolution">, s: Pick<StudioScene, "source" | "seconds">): number {
+  return s.source === "card" ? 0 : s.source === "image" ? IMAGE_COST_ESTIMATE_USD : estimateClipCostUsd(p.resolution, s.seconds)
+}
+
 export function projectCost(p: CostInput): ProjectCost {
   const pending = p.scenes.filter((s) => s.status !== "done")
-  const estimated = pending.reduce((sum, s) => sum + estimateClipCostUsd(p.resolution, s.seconds), 0)
-  const looks = pending.filter((s) => sceneNeedsLook(p, s) && !lookIsCurrent(p, s)).length
+  const estimated = pending.reduce((sum, s) => sum + sceneCostUsd(p, s), 0)
+  const looks = pending.filter((s) => s.source === "clip" && sceneNeedsLook(p, s) && !lookIsCurrent(p, s)).length
   const images = round4(looks * IMAGE_COST_ESTIMATE_USD)
+  const music = pending.length > 0 && p.style?.music.enabled && !p.music ? MUSIC_COST_USD : 0
   return {
     pending_scenes: pending.length,
     pending_seconds: pending.reduce((sum, s) => sum + s.seconds, 0),
@@ -217,8 +306,12 @@ export function projectCost(p: CostInput): ProjectCost {
     estimated_usd: round4(estimated),
     looks_pending: looks,
     images_usd: images,
-    total_usd: round4(estimated + images),
+    music_usd: music,
+    total_usd: round4(estimated + images + music),
     dialogue_chars: pending.reduce((sum, s) => sum + (s.dialogue?.trim().length ?? 0), 0),
+    redub_stale: p.scenes.filter((s) => canRedub(s) && s.dub_key !== dubKeyFor({ characters: p.characters, narrator: (p as { narrator?: Narrator | null }).narrator }, s)).length,
+    redub_available: p.scenes.filter(canRedub).length,
+    redub_unavailable: p.scenes.filter((s) => s.status === "done" && !!s.dialogue.trim() && !canRedub(s)).length,
   }
 }
 
@@ -241,9 +334,18 @@ function normalize(doc: VideoProjectDoc): VideoProjectDoc {
     s.look_key ??= null
     s.captions ??= []
     s.graphic = normalizeGraphic(s.graphic)
+    s.raw_artifact_id ??= null
+    s.raw_path ??= null
+    s.dub_key ??= null
+    s.fx ??= null
+    s.source ??= "clip"
+    s.card ??= null
   }
   doc.subtitles ??= true
   doc.style = normalizeReelStyle(doc.style)
+  doc.music ??= null
+  doc.narrator ??= null
+  doc.identity = normalizeIdentity(doc.identity)
   doc.activity ??= []
   doc.phase ??= null
   return doc
@@ -311,6 +413,10 @@ export async function createProject(input: {
   workspace?: string | null
   /** Empieza el reel con este avatar guardado como personaje (rostro y voz incluidos). */
   avatarId?: string
+  /** Voz en off para reels sin personaje. */
+  narrator?: NarratorPatch | null
+  /** Identidad visual (preset o colores); por omisión «Pulso suizo». */
+  identity?: Partial<Identity>
 }): Promise<VideoProjectDoc> {
   const title = input.title?.trim()
   if (!title) throw new StudioError("Falta el título del reel.")
@@ -332,6 +438,9 @@ export async function createProject(input: {
     scenes: [],
     status: "draft",
     approved_cost_usd: null,
+    music: null,
+    narrator: input.narrator?.voice_id ? makeNarrator(input.narrator) : null,
+    identity: normalizeIdentity(input.identity),
     approved_at: null,
     spent_usd: 0,
     final_artifact_id: null,
@@ -362,6 +471,11 @@ export interface ScenePatch {
   setting?: string
   dialogue?: string
   graphic?: Partial<SceneGraphic>
+  /** Efecto de voz de la escena (ver VOICE_FX_IDS); null o "" = el del personaje. */
+  fx?: string | null
+  /** «clip» (por omisión), «card» o «image». */
+  source?: SceneSource
+  card?: Partial<SceneCard> | null
 }
 export interface CharacterPatch {
   id?: string
@@ -372,7 +486,25 @@ export interface CharacterPatch {
   voice_settings?: Partial<VoiceSettings>
 }
 
+export interface NarratorPatch {
+  voice_id?: string | null
+  voice_name?: string | null
+  voice_settings?: Partial<VoiceSettings>
+}
+
+function makeNarrator(n: NarratorPatch, prev?: Narrator | null): Narrator | null {
+  const voiceId = n.voice_id === undefined ? (prev?.voice_id ?? null) : (n.voice_id || null)
+  if (!voiceId) return null
+  return {
+    voice_id: voiceId,
+    voice_name: n.voice_name === undefined ? (prev?.voice_name ?? null) : (n.voice_name || null),
+    voice_settings: { ...normalizeVoiceSettings({ ...prev?.voice_settings, ...n.voice_settings }), mode: "narration" },
+  }
+}
+
 export interface ProjectPatch {
+  narrator?: NarratorPatch | null
+  identity?: Partial<Identity>
   title?: string
   brief?: string
   script?: string
@@ -382,7 +514,7 @@ export interface ProjectPatch {
   scenes?: ScenePatch[]
   characters?: CharacterPatch[]
   subtitles?: boolean
-  style?: { subtitles?: Partial<SubtitleStyle>; transition?: Partial<TransitionStyle>; graphics?: Partial<GraphicsStyle> }
+  style?: { subtitles?: Partial<SubtitleStyle>; transition?: Partial<TransitionStyle>; graphics?: Partial<GraphicsStyle>; trim?: Partial<TrimStyle>; music?: Partial<MusicStyle> }
 }
 
 function assertEditable(p: VideoProjectDoc) {
@@ -402,7 +534,7 @@ export async function updateProject(id: string, patch: ProjectPatch): Promise<Vi
       // El acabado se aplica al unir los clips: cambiarlo solo rehace la unión (gratis), no los clips.
       const next = normalizeReelStyle({
         subtitles: { ...p.style.subtitles, ...patch.style.subtitles }, transition: { ...p.style.transition, ...patch.style.transition },
-        graphics: { ...p.style.graphics, ...patch.style.graphics },
+        graphics: { ...p.style.graphics, ...patch.style.graphics }, trim: { ...p.style.trim, ...patch.style.trim }, music: { ...p.style.music, ...patch.style.music },
       })
       if (JSON.stringify(next) !== JSON.stringify(p.style)) { p.style = next; p.final_artifact_id = null; p.final_path = null }
     }
@@ -424,7 +556,7 @@ export async function updateProject(id: string, patch: ProjectPatch): Promise<Vi
       if (a !== p.aspect_ratio) {
         // Un clip ya generado en otro formato no sirve para el reel: se rehace.
         p.aspect_ratio = a
-        for (const s of p.scenes) Object.assign(s, { status: "pending", artifact_id: null, path: null, interaction_id: null, error: null, captions: [] })
+        for (const s of p.scenes) Object.assign(s, { status: "pending", artifact_id: null, path: null, interaction_id: null, error: null, captions: [], raw_artifact_id: null, raw_path: null, dub_key: null })
         costChanged = true
       }
     }
@@ -432,13 +564,26 @@ export async function updateProject(id: string, patch: ProjectPatch): Promise<Vi
       const r = checkResolution(patch.resolution)
       if (r !== p.resolution) {
         p.resolution = r
-        for (const s of p.scenes) Object.assign(s, { status: "pending", artifact_id: null, path: null, interaction_id: null, error: null, captions: [] })
+        for (const s of p.scenes) Object.assign(s, { status: "pending", artifact_id: null, path: null, interaction_id: null, error: null, captions: [], raw_artifact_id: null, raw_path: null, dub_key: null })
+        costChanged = true
+      }
+    }
+    if (patch.identity !== undefined) {
+      // Con un preset nuevo se parte de SUS colores y fuentes (más lo que se pida expresamente); sin preset se ajusta la identidad actual.
+      const next = normalizeIdentity(patch.identity.preset ? patch.identity : { ...p.identity, ...patch.identity })
+      if (JSON.stringify(next) !== JSON.stringify(p.identity)) {
+        p.identity = next
+        // El acento de los gráficos sigue a la identidad; las tarjetas y las imágenes de apoyo se dibujan con ella, así que se rehacen (las tarjetas no cuestan).
+        p.style = normalizeReelStyle({ ...p.style, graphics: { ...p.style.graphics, accent: next.accent } })
+        for (const s of p.scenes) if (s.source === "card") Object.assign(s, { status: "pending", artifact_id: null, path: null, interaction_id: null, error: null, captions: [], raw_artifact_id: null, raw_path: null, dub_key: null })
+        finalStale = true
         costChanged = true
       }
     }
     if (patch.characters !== undefined) {
       if (patch.characters.length > MAX_CHARACTERS) throw new StudioError(`Máximo ${MAX_CHARACTERS} personajes.`)
       const byId = new Map(p.characters.map((c) => [c.id, c]))
+      const fxBefore = JSON.stringify(p.characters.map((c) => [c.id, c.voice_settings.fx]))
       p.characters = patch.characters.map((c) => {
         const name = c.name?.trim()
         if (!name) throw new StudioError("Cada personaje necesita un nombre.")
@@ -462,28 +607,43 @@ export async function updateProject(id: string, patch: ProjectPatch): Promise<Vi
       })
       const valid = new Set(p.characters.map((c) => c.id))
       for (const s of p.scenes) s.character_ids = s.character_ids.filter((cid) => valid.has(cid))
+      // El efecto de voz se aplica al armar el audio: cambiarlo solo rehace la unión (gratis).
+      if (fxBefore !== JSON.stringify(p.characters.map((c) => [c.id, c.voice_settings.fx]))) finalStale = true
+    }
+    if (patch.narrator !== undefined) {
+      const before = JSON.stringify(p.narrator?.voice_settings.fx ?? null)
+      p.narrator = patch.narrator === null ? null : makeNarrator(patch.narrator, p.narrator)
+      if (before !== JSON.stringify(p.narrator?.voice_settings.fx ?? null)) finalStale = true
     }
     if (patch.scenes !== undefined) {
       if (patch.scenes.length > MAX_SCENES) throw new StudioError(`Máximo ${MAX_SCENES} escenas.`)
       const byId = new Map(p.scenes.map((s) => [s.id, s]))
       const valid = new Set(p.characters.map((c) => c.id))
       const next = patch.scenes.map((s, i) => {
-        const prompt = s.prompt?.trim()
+        const prev0 = s.id ? byId.get(s.id) : undefined
+        const source: SceneSource = s.source === undefined ? (prev0?.source ?? "clip") : (SCENE_SOURCES as readonly string[]).includes(s.source) ? s.source : "clip"
+        const card = source === "card" ? normalizeCard(s.card === undefined ? prev0?.card : (s.card as Partial<SceneCard> | null)) : null
+        if (source === "card" && !card) throw new StudioError(`La escena ${i + 1} es una tarjeta de gráficos pero le falta su contenido (tipo y texto).`)
+        // Una tarjeta no necesita descripción de imagen: se describe sola.
+        const prompt = s.prompt?.trim() || (card ? cardText(card) : "")
         if (!prompt) throw new StudioError(`La escena ${i + 1} no tiene descripción.`)
-        const ids = (s.character_ids ?? []).filter((cid) => valid.has(cid)).slice(0, 2)
+        // Las tarjetas y las imágenes de apoyo son escenas SIN personaje.
+        const ids = source === "clip" ? (s.character_ids ?? []).filter((cid) => valid.has(cid)).slice(0, 2) : []
         const maxSeconds = ids.length === 2 ? MAX_FRAME_CLIP_SECONDS : MAX_CLIP_SECONDS
         const seconds = checkSeconds(s.seconds, `Escena ${i + 1}`, maxSeconds)
         const prev = s.id ? byId.get(s.id) : undefined
-        const wardrobe = (s.wardrobe ?? prev?.wardrobe ?? "").trim().slice(0, 1000)
+        const wardrobe = source === "clip" ? (s.wardrobe ?? prev?.wardrobe ?? "").trim().slice(0, 1000) : ""
         const setting = (s.setting ?? prev?.setting ?? "").trim().slice(0, 1000)
         const dialogue = (s.dialogue ?? prev?.dialogue ?? "").trim().slice(0, 1500)
         const graphic = normalizeGraphic(s.graphic ?? prev?.graphic)
+        const fx = s.fx === undefined ? (prev?.fx ?? null) : (s.fx ? normalizeVoiceFx(s.fx, "none") : null)
         const unchanged = prev && prev.prompt === prompt && prev.seconds === seconds
           && prev.character_ids.join() === ids.join() && prev.status === "done"
           && prev.wardrobe === wardrobe && prev.setting === setting && prev.dialogue === dialogue
+          && prev.source === source && JSON.stringify(prev.card) === JSON.stringify(card)
         // Una escena que no cambió conserva su clip (no se paga dos veces). El gráfico se dibuja al unir: cambiarlo no invalida el clip.
         if (unchanged) {
-          if (JSON.stringify(prev.graphic) !== JSON.stringify(graphic)) { finalStale = true; return { ...prev, graphic } }
+          if (JSON.stringify(prev.graphic) !== JSON.stringify(graphic) || prev.fx !== fx) { finalStale = true; return { ...prev, graphic, fx } }
           return prev
         }
         // El look (imagen de escena) se conserva mientras su huella siga igual; si no, se rehace al producir.
@@ -492,7 +652,7 @@ export async function updateProject(id: string, patch: ProjectPatch): Promise<Vi
           status: "pending" as SceneStatus, artifact_id: null, path: null, interaction_id: null, cost_usd: 0, error: null,
           wardrobe, setting, dialogue,
           look_artifact_id: prev?.look_artifact_id ?? null, look_path: prev?.look_path ?? null, look_key: prev?.look_key ?? null,
-          captions: [], graphic,
+          captions: [], graphic, raw_artifact_id: null, raw_path: null, dub_key: null, fx, source, card,
         }
       })
       p.scenes = next
@@ -578,7 +738,7 @@ function characterPrompt(c: StudioCharacter, hasFace: boolean): string {
 function invalidateCharacter(d: VideoProjectDoc, characterId: string) {
   for (const s of d.scenes) {
     if (s.character_ids.includes(characterId)) {
-      Object.assign(s, { status: "pending", artifact_id: null, path: null, interaction_id: null, error: null, captions: [] })
+      Object.assign(s, { status: "pending", artifact_id: null, path: null, interaction_id: null, error: null, captions: [], raw_artifact_id: null, raw_path: null, dub_key: null })
     }
   }
   d.final_artifact_id = null
@@ -793,7 +953,7 @@ export const isProducing = (id: string) => running.has(id)
  */
 type SceneVoice = "speak" | "silent"
 
-function scenePrompt(p: VideoProjectDoc, s: StudioScene, voice: SceneVoice): string {
+export function scenePrompt(p: VideoProjectDoc, s: StudioScene, voice: SceneVoice): string {
   const who = s.character_ids
     .map((cid) => p.characters.find((c) => c.id === cid))
     .filter((c): c is StudioCharacter => !!c)
@@ -809,7 +969,10 @@ function scenePrompt(p: VideoProjectDoc, s: StudioScene, voice: SceneVoice): str
       // (el cambio de voz de ElevenLabs lo agradece) y empezando pronto para que los subtítulos y la acción coincidan.
       ? `The character speaks directly to the viewer, in the same language as this line, saying exactly: "${line}". ` +
         "Natural lip movements perfectly in sync with the speech, starting to speak within the first half second, with gestures and expression that match the words. No background music, no other voices."
-      : "No spoken dialogue in this shot: ambient sound and effects only. The character does not speak.")
+      : who.length
+        ? "No spoken dialogue in this shot: ambient sound and effects only. The character does not speak."
+        // Sin personaje: la línea es una voz en off que se agrega después; nadie habla a cámara.
+        : "A voice-over will be added later. In this shot nobody speaks and nobody talks to the camera: ambient sound and natural effects only.")
   }
   return parts.join("\n")
 }
@@ -822,17 +985,19 @@ function scenePrompt(p: VideoProjectDoc, s: StudioScene, voice: SceneVoice): str
  * ffmpeg de la máquina (el de Fedora, por ejemplo, no incluye libx264). Si la copia falla se
  * recodifica con el primer codificador H.264 disponible.
  */
-export async function concatClips(paths: string[]): Promise<Uint8Array> {
+export async function concatClips(paths: string[], o: { silent?: boolean } = {}): Promise<Uint8Array> {
   const dir = mkdtempSync(join(tmpdir(), "hive-reel-"))
   try {
     const list = join(dir, "list.txt")
     writeFileSync(list, paths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n"))
     const out = join(dir, "reel.mp4")
-    const attempts: string[][] = [
+    const attempts: string[][] = o.silent
+      ? [["-c", "copy", "-an"], ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-an"], ["-c:v", "libopenh264", "-pix_fmt", "yuv420p", "-an"], ["-c:v", "mpeg4", "-q:v", "3", "-an"]]
+      : [
       ["-c", "copy"],
-      ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac"],
-      ["-c:v", "libopenh264", "-pix_fmt", "yuv420p", "-c:a", "aac"],
-      ["-c:v", "mpeg4", "-q:v", "3", "-c:a", "aac"],
+      ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "256k"],
+      ["-c:v", "libopenh264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "256k"],
+      ["-c:v", "mpeg4", "-q:v", "3", "-c:a", "aac", "-b:a", "256k"],
     ]
     let lastError = ""
     for (const codec of attempts) {
@@ -869,6 +1034,8 @@ interface ProductionOptions {
   voice?: {
     enabled?: boolean
     synthesize?: (input: { voiceId: string; text: string; settings?: Partial<VoiceSettings> }) => Promise<{ bytes: Uint8Array }>
+    /** Voz de Gemini (texto a voz) para escenas sin personaje ni narrador de ElevenLabs. */
+    geminiSpeech?: (input: { text: string }) => Promise<{ bytes: Uint8Array }>
     mix?: (clip: Uint8Array, voice: Uint8Array, mix?: { voiceGain?: number; ambientGain?: number }) => Promise<Uint8Array>
     extract?: (clip: Uint8Array) => Promise<Uint8Array>
     convert?: (input: { voiceId: string; audio: Uint8Array; settings?: Partial<VoiceSettings> }) => Promise<{ bytes: Uint8Array }>
@@ -881,9 +1048,21 @@ interface ProductionOptions {
   /** Graba subtítulos y gráficos en el reel (tests). */
   burn?: (reel: Uint8Array, spec: OverlaySpec) => Promise<Uint8Array>
   /** Une los clips con transición (tests). */
-  join?: (paths: string[], durations: number[], t: TransitionStyle) => Promise<Uint8Array>
+  join?: (paths: string[], durations: number[], t: TransitionStyle, o?: { audio?: boolean }) => Promise<Uint8Array>
+  /** Armado de la pista de audio maestra y su unión con el video (pruebas). */
+  audioMaster?: (spec: MasterAudioSpec) => Promise<Uint8Array>
+  mux?: (video: Uint8Array, audio: Uint8Array) => Promise<Uint8Array>
   /** Duración real de un clip en segundos (tests). */
   duration?: (path: string) => Promise<number>
+  trim?: typeof trimClipFile
+  /** Dibujo de tarjetas de gráficos (pruebas). */
+  card?: typeof renderCard
+  /** Generador de la imagen de una escena «image» (pruebas). */
+  imageScene?: (prompt: string) => Promise<{ bytes: Uint8Array }>
+  /** Generador de música (pruebas). */
+  musicGen?: (prompt: string) => Promise<GeneratedMusic>
+  /** Mezclador de música (pruebas). */
+  musicMix?: typeof mixBackgroundMusic
 }
 
 const MAX_ACTIVITY = 80
@@ -921,6 +1100,22 @@ async function dressClip(
   let voiceAudio: Uint8Array | null = null
   let voiceMime = "audio/wav"
   const settings = speaker?.voice_settings
+  // Sin personaje ni narrador de ElevenLabs: la locución la hace Gemini (texto a voz) y se mezcla en la escena.
+  // El audio final se arma después, una sola vez, en la pista maestra.
+  let geminiNarrated = false
+  if (!speaker && text && scene.character_ids.length === 0) {
+    await note(id, opts, "step", n, `${label} · Generando la voz en off con Gemini…`)
+    try {
+      const line = await (v?.geminiSpeech ?? ((i) => synthesizeGeminiSpeech(i, { fetchImpl: opts.fetchImpl })))({ text: scene.dialogue })
+      bytes = await (v?.mix ?? mixDialogue)(bytes, line.bytes, { voiceGain: 1, ambientGain: 1 })
+      voiceAudio = line.bytes
+      voiceMime = "audio/wav"
+      geminiNarrated = true
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err)
+      await note(id, opts, "warn", n, `${label} · No se pudo generar la voz en off con Gemini (${why.slice(0, 140)}). La escena queda sin voz ni subtítulos.`)
+    }
+  }
 
   if (speaker?.voice_id && voiceOk && settings?.mode === "narration") {
     await note(id, opts, "step", n, `${label} · Narrando con la voz «${speaker.voice_name ?? "del personaje"}» (ElevenLabs ${settings.model_id})…`)
@@ -928,7 +1123,7 @@ async function dressClip(
     bytes = await (v?.mix ?? mixDialogue)(bytes, line.bytes, { voiceGain: settings.volume, ambientGain: settings.ambient_volume })
     voiceAudio = line.bytes
     voiceMime = "audio/mpeg"
-  } else {
+  } else if (!geminiNarrated) {
     // El habla de Gemini es el punto de partida: da los labios y el tiempo.
     voiceAudio = await (v?.extract ?? extractAudio)(bytes).catch(() => null)
     const who = speaker?.voice_name ?? "la del personaje"
@@ -988,9 +1183,33 @@ async function dressClip(
  * Une los clips con la transición elegida y graba encima los subtítulos, los gráficos y la barra de progreso. Todo esto es
  * acabado y no cuesta nada: si algo falla, el reel se entrega igual con lo que sí se pudo y se avisa.
  */
-async function assembleReel(p: VideoProjectDoc, opts: ProductionOptions): Promise<{ bytes: Uint8Array | null; parts: string[]; warnings: string[] }> {
-  const clips = p.scenes.filter((s) => !!s.path)
+type Assembled = { bytes: Uint8Array | null; parts: string[]; warnings: string[] }
+
+/**
+ * Arma el reel. Con clips reales el video se une SIN audio y el sonido se arma una sola vez al final desde los clips originales
+ * (pista maestra, un solo AAC). Si eso falla se vuelve al método anterior (el audio viaja con cada clip) y se avisa.
+ */
+async function assembleReel(p: VideoProjectDoc, opts: ProductionOptions): Promise<Assembled> {
+  const real = p.scenes.filter((s) => !!s.path)
+  const master = opts.audioMaster !== undefined || (real.length > 0 && real.every((s) => probeAudio(s.path!) !== null))
+  const run = async (m: boolean) => {
+    const tmp = mkdtempSync(join(tmpdir(), "hive-assemble-"))
+    try { return await assembleReelIn(p, opts, tmp, m) } finally { rmSync(tmp, { recursive: true, force: true }) }
+  }
+  if (!master) return run(false)
+  try { return await run(true) } catch (err) {
+    if (!(err instanceof MasterAudioError)) throw err
+    const legacy = await run(false)
+    legacy.warnings.unshift(`No se pudo armar el audio final de una vez (${err.message.slice(0, 120)}). Se usó el método anterior.`)
+    return legacy
+  }
+}
+
+async function assembleReelIn(p: VideoProjectDoc, opts: ProductionOptions, tmp: string, master: boolean): Promise<Assembled> {
+  const clips = p.scenes.filter((s) => !!s.path).map((s) => ({ ...s, captions: s.captions.map((w) => ({ ...w })) }))
   const paths = clips.map((s) => s.path!)
+  const srcPaths = [...paths]
+  const winFrom = clips.map(() => 0)
   const durs = await Promise.all(clips.map(async (s) => {
     const d = await (opts.duration ?? durationOf)(s.path!).catch(() => 0)
     return d > 0 ? d : s.seconds
@@ -998,29 +1217,81 @@ async function assembleReel(p: VideoProjectDoc, opts: ProductionOptions): Promis
   const st = p.style
   const warnings: string[] = []
   const parts: string[] = []
+  // Recorte del aire muerto: cada escena hablada se corta a su tramo con voz. Se trabaja sobre copias: los clips guardados no se tocan.
+  let saved = 0
+  for (let i = 0; i < clips.length; i++) {
+    const win = trimWindow(clips[i].captions, durs[i], st.trim)
+    if (!win) continue
+    const out = join(tmp, `trim-${i}.mp4`)
+    try {
+      await (opts.trim ?? trimClipFile)(paths[i], out, win.start, win.end, { audio: !master })
+      winFrom[i] = win.start
+      for (const w of clips[i].captions) { w.start = Math.max(0, w.start - win.start); w.end = Math.max(w.start, w.end - win.start) }
+      saved += durs[i] - (win.end - win.start)
+      paths[i] = out
+      durs[i] = win.end - win.start
+    } catch (err) {
+      warnings.push(`No se pudo recortar el silencio de la escena ${p.scenes.findIndex((x) => x.id === clips[i].id) + 1} (${(err instanceof Error ? err.message : String(err)).slice(0, 100)}). Se deja completa.`)
+    }
+  }
+  if (saved >= 0.3) parts.push(`${saved.toFixed(1)} s de silencio recortados`)
+  const musicPath = st.music.enabled && p.music && existsSync(p.music.path) ? p.music.path : null
+  /** Mezcla la música bajo la voz como último paso; si falla, el reel se entrega sin música y se avisa. */
+  const finish = async (reel: Uint8Array, totalSec: number, starts: number[], overlap: number): Promise<Assembled> => {
+    if (master) {
+      // Pista maestra: el sonido se arma una sola vez, desde los clips originales, y se une al video sin recodificar.
+      try {
+        // El micrófono de estudio se ajusta a la voz de cada escena (mide su tono), salvo con audio simulado (tests).
+        const fxs = await Promise.all(clips.map((c, i) => opts.audioMaster ? Promise.resolve(fxFilter(fxFor(p, c))) : fxFilterFor(fxFor(p, c), srcPaths[i], winFrom[i])))
+        const spec: MasterAudioSpec = {
+          total: totalSec, overlap,
+          scenes: clips.map((_, i) => {
+            const a = opts.audioMaster ? { hasAudio: true, channels: 2 } : (probeAudio(srcPaths[i]) ?? { hasAudio: false, channels: 2 })
+            return { path: srcPaths[i], start: starts[i], duration: durs[i], from: winFrom[i], hasAudio: a.hasAudio, channels: a.channels, fx: fxs[i] }
+          }),
+          music: musicPath ? { path: musicPath, volume: st.music.volume } : null,
+        }
+        const audio = await (opts.audioMaster ?? buildMasterAudio)(spec)
+        const muxed = await (opts.mux ?? muxAudio)(reel, audio)
+        if (musicPath) parts.push("música de fondo")
+        return { bytes: muxed, parts, warnings }
+      } catch (err) {
+        throw err instanceof MasterAudioError ? err : new MasterAudioError(err instanceof Error ? err.message : String(err))
+      }
+    }
+    if (!musicPath) return { bytes: reel, parts, warnings }
+    try {
+      const mixed = await (opts.musicMix ?? mixBackgroundMusic)(reel, musicPath, { volume: st.music.volume, totalSec })
+      parts.push("música de fondo")
+      return { bytes: mixed, parts, warnings }
+    } catch (err) {
+      warnings.push(`No se pudo mezclar la música de fondo (${(err instanceof Error ? err.message : String(err)).slice(0, 120)}). El reel se entrega sin ella.`)
+      return { bytes: reel, parts, warnings }
+    }
+  }
   const wantsSubs = p.subtitles && p.scenes.some((s) => s.captions.length > 0)
   const wantsGraphics = st.graphics.enabled && (p.scenes.some((s) => s.graphic.kind !== "none") || st.graphics.progress_bar)
   const overlay = wantsSubs || wantsGraphics
   let overlap = effectiveTransition(st.transition, durs)
-  if (paths.length === 1 && !overlay) return { bytes: null, parts, warnings }
+  if (paths.length === 1 && !overlay && saved < 0.3 && !musicPath) return { bytes: null, parts: [], warnings }
 
   let reel: Uint8Array
   if (overlap > 0) {
     try {
-      reel = await (opts.join ?? joinWithTransitions)(paths, durs, st.transition)
+      reel = await (opts.join ?? joinWithTransitions)(paths, durs, st.transition, { audio: !master })
       parts.push("transiciones")
     } catch (err) {
       warnings.push(`No se pudieron aplicar las transiciones (${(err instanceof Error ? err.message : String(err)).slice(0, 120)}). Las escenas se unen con corte directo.`)
       overlap = 0
-      reel = await (opts.concat ?? concatClips)(paths)
+      reel = await (opts.concat ?? concatClips)(paths, { silent: master })
     }
   } else {
-    reel = paths.length === 1 ? new Uint8Array(readFileSync(paths[0])) : await (opts.concat ?? concatClips)(paths)
+    reel = paths.length === 1 ? new Uint8Array(readFileSync(paths[0])) : await (opts.concat ?? concatClips)(paths, { silent: master })
   }
-  if (!overlay) return { bytes: reel, parts, warnings }
-
   const starts = sceneStarts(durs, overlap)
   const total = durs.reduce((a, d) => a + d, 0) - Math.max(0, durs.length - 1) * overlap
+  if (!overlay) return finish(reel, total, starts, overlap)
+
   const spec: OverlaySpec = {
     total, subtitles: wantsSubs ? st.subtitles : null, graphics: st.graphics,
     scenes: clips.map((s, i) => ({ start: starts[i], duration: durs[i], words: wantsSubs ? s.captions : [], graphic: s.graphic })),
@@ -1032,7 +1303,146 @@ async function assembleReel(p: VideoProjectDoc, opts: ProductionOptions): Promis
   } catch (err) {
     warnings.push(`No se pudieron grabar los subtítulos y gráficos (${(err instanceof Error ? err.message : String(err)).slice(0, 120)}). El reel se entrega sin ellos.`)
   }
-  return { bytes: reel, parts, warnings }
+  return finish(reel, total, starts, overlap)
+}
+
+/**
+ * Compone la música de fondo (Lyria) si el reel la pide y aún no tiene. Con `force` la compone otra vez (cambió el ánimo pedido).
+ * Si falla no se pierde el reel: se avisa y se une sin música.
+ */
+async function ensureMusic(id: string, opts: ProductionOptions, force = false): Promise<void> {
+  const p = await getProject(id)
+  if (!p.style.music.enabled || (p.music && !force && existsSync(p.music.path))) return
+  const secs = p.scenes.reduce((a, s) => a + s.seconds, 0)
+  const prompt = buildMusicPrompt({ title: p.title, brief: p.brief, mood: p.style.music.mood, seconds: secs })
+  await note(id, opts, "step", null, "Componiendo la música de fondo (suave, instrumental, según el tema del reel)…")
+  try {
+    const music = await (opts.musicGen ?? ((pr: string) => generateMusic(pr, { fetchImpl: opts.fetchImpl })))(prompt)
+    const a = await createArtifact({
+      bytes: music.bytes, mimeType: music.mimeType, kind: "generated_audio", userId: p.user_id, expiresAt: null, extension: "mp3",
+      visible: { workspace: p.workspace, folder: `${STUDIO_FOLDER}/musica`, label: `${p.title} música` },
+    })
+    await mutate(id, (d) => {
+      d.music = { artifact_id: a.id, path: a.path, prompt, cost_usd: music.costUsd }
+      d.spent_usd = round4(d.spent_usd + music.costUsd)
+    })
+    await note(id, opts, "done", null, `Música de fondo lista (${music.costUsd.toFixed(2)} USD).`)
+  } catch (err) {
+    await note(id, opts, "warn", null, `No se pudo componer la música de fondo (${(err instanceof Error ? err.message : String(err)).slice(0, 140)}). El reel se entrega sin ella.`)
+  }
+}
+
+/**
+ * Agrega o rehace la música de fondo de un reel ya terminado y vuelve a unirlo. Cuesta ≈0,08 USD de Gemini: solo lo dispara la
+ * persona desde la interfaz (la herramienta de los agentes no puede aprobar costo).
+ */
+export async function startMusic(id: string, opts: ProductionOptions & { wait?: boolean } = {}): Promise<VideoProjectDoc> {
+  if (running.has(id)) throw new StudioError("Este proyecto ya se está produciendo.", "busy")
+  const p = await getProject(id)
+  if (!p.scenes.length || p.scenes.some((s) => s.status !== "done")) throw new StudioError("Primero termina de generar todas las escenas.")
+  if (!p.style.music.enabled) throw new StudioError("La música de fondo está desactivada en el acabado del reel.")
+  running.add(id)
+  const started = await mutate(id, (d) => { d.status = "producing"; d.error = null }).catch((err) => { running.delete(id); throw err })
+  const job = (async () => {
+    try {
+      await ensureMusic(id, opts, true)
+      await finalizeReel(id, opts)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      await mutate(id, (d) => { d.status = "failed"; d.error = message; d.phase = null }).catch(() => { /* proyecto borrado */ })
+      await note(id, opts, "error", null, `Agregar la música se detuvo: ${message.slice(0, 200)}`)
+    } finally { running.delete(id) }
+  })()
+  if (opts.wait) await job
+  else void job
+  return opts.wait ? getProject(id) : started
+}
+
+/** Une los clips (con transición, subtítulos y gráficos), guarda el reel y deja el proyecto en «terminado». */
+async function finalizeReel(id: string, opts: ProductionOptions): Promise<void> {
+  const p = await getProject(id)
+  const total = p.scenes.length
+  const extras = [p.subtitles && p.scenes.some((s) => s.captions.length > 0) ? "subtítulos" : "", p.style.graphics.enabled && (p.style.graphics.progress_bar || p.scenes.some((s) => s.graphic.kind !== "none")) ? "gráficos" : "", p.style.transition.type !== "none" && total > 1 ? "transiciones" : ""].filter(Boolean)
+  await note(id, opts, "step", null, extras.length ? `Uniendo ${total} clips con ${extras.join(", ").replace(/, ([^,]*)$/, " y $1")}…` : `Uniendo ${total} clips en el reel…`)
+  const assembled = await assembleReel(p, opts)
+  for (const w of assembled.warnings) await note(id, opts, "warn", null, w)
+  let finalArtifact: { id: string; path: string }
+  if (assembled.bytes === null) {
+    finalArtifact = { id: p.scenes[0].artifact_id!, path: p.scenes[0].path! }
+  } else {
+    const a = await createArtifact({
+      bytes: assembled.bytes, mimeType: "video/mp4", kind: "generated_video", userId: p.user_id, expiresAt: null, extension: "mp4",
+      visible: { workspace: p.workspace, folder: STUDIO_VIDEOS_FOLDER, label: `${p.title} reel` },
+    })
+    finalArtifact = { id: a.id, path: a.path }
+  }
+  await mutate(id, (d) => {
+    d.status = "done"
+    d.final_artifact_id = finalArtifact.id
+    d.final_path = finalArtifact.path
+    d.approved_cost_usd = null
+    d.approved_at = null
+    d.error = null
+    d.phase = null
+  })
+  await note(id, opts, "done", null, `Reel terminado${assembled.parts.length ? ` con ${assembled.parts.join(", ").replace(/, ([^,]*)$/, " y $1")}` : ""}. Gastado en total: ${p.spent_usd.toFixed(2)} USD.`)
+  log.info(`Reel «${p.title}» listo (${p.scenes.length} clips, ${p.spent_usd} USD acumulados)`)
+}
+
+/**
+ * Rehace SOLO la voz (y los subtítulos que dependen de ella) de las escenas con diálogo, partiendo del clip original de Gemini
+ * guardado: no vuelve a generar video ni imágenes, así que no cuesta nada de Gemini (solo los caracteres de ElevenLabs).
+ */
+async function runRedub(id: string, opts: ProductionOptions): Promise<void> {
+  try {
+    let p = await getProject(id)
+    const voiceOk = opts.voice?.enabled ?? await isVoiceEnabled()
+    const total = p.scenes.length
+    const targets = p.scenes.filter(canRedub)
+    await note(id, opts, "step", null, `Rehago la voz de ${targets.length} escena${targets.length === 1 ? "" : "s"} con el clip original de Gemini: no se vuelve a generar video.`)
+    for (const scene of targets) {
+      const n = p.scenes.findIndex((x) => x.id === scene.id) + 1
+      const speaker = speakerFor(p, scene)
+      const rawBytes = new Uint8Array(readFileSync(scene.raw_path!))
+      const dressed = await dressClip(id, opts, { bytes: rawBytes, scene, speaker, voiceOk, n, total })
+      const artifact = await createArtifact({
+        bytes: dressed.bytes, mimeType: "video/mp4", kind: "generated_video", userId: p.user_id, expiresAt: null, extension: "mp4",
+        visible: { workspace: p.workspace, folder: STUDIO_VIDEOS_FOLDER, label: `${p.title} escena ${n}` },
+      })
+      await mutate(id, (d) => {
+        const s = d.scenes.find((x) => x.id === scene.id)
+        if (!s) return
+        Object.assign(s, { artifact_id: artifact.id, path: artifact.path, captions: dressed.words, dub_key: dubKeyFor(d, s), error: null })
+      })
+      await note(id, opts, "done", n, `${sceneLabel(n, total)} · Voz rehecha.`)
+      p = await getProject(id)
+    }
+    await finalizeReel(id, opts)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    log.warn(`Rehacer la voz de ${id} se detuvo: ${message}`)
+    await mutate(id, (d) => { d.status = "failed"; d.error = message; d.phase = null }).catch(() => { /* proyecto borrado */ })
+    await note(id, opts, "error", null, `Rehacer la voz se detuvo: ${message.slice(0, 200)}`)
+  } finally {
+    running.delete(id)
+  }
+}
+
+/** Empieza a rehacer la voz en segundo plano. No exige aprobar costo: no hay costo de video (solo caracteres de ElevenLabs). */
+export async function startRedub(id: string, opts: ProductionOptions & { wait?: boolean } = {}): Promise<VideoProjectDoc> {
+  if (running.has(id)) throw new StudioError("Este proyecto ya se está produciendo.", "busy")
+  const p = await getProject(id)
+  if (!p.scenes.some(canRedub)) {
+    throw new StudioError(p.scenes.some((s) => s.status === "done" && s.dialogue.trim())
+      ? "Estas escenas se hicieron antes de guardar el clip original, así que para cambiarles la voz hay que volver a generarlas."
+      : "No hay escenas terminadas con diálogo a las que rehacerles la voz.")
+  }
+  running.add(id)
+  const started = await mutate(id, (d) => { d.status = "producing"; d.error = null }).catch((err) => { running.delete(id); throw err })
+  const job = runRedub(id, opts)
+  if (opts.wait) await job
+  else void job
+  return opts.wait ? getProject(id) : started
 }
 
 async function runProduction(id: string, opts: ProductionOptions): Promise<void> {
@@ -1050,8 +1460,8 @@ async function runProduction(id: string, opts: ProductionOptions): Promise<void>
       const n = p.scenes.findIndex((s) => s.id === scene.id) + 1
       const label = sceneLabel(n, total)
       // Tope duro: lo aprobado más una tolerancia pequeña por variación de tokens.
-      const sceneEstimate = estimateClipCostUsd(p.resolution, scene.seconds)
-        + (sceneNeedsLook(p, scene) && !lookIsCurrent(p, scene) ? IMAGE_COST_ESTIMATE_USD : 0)
+      const sceneEstimate = sceneCostUsd(p, scene)
+        + (scene.source === "clip" && sceneNeedsLook(p, scene) && !lookIsCurrent(p, scene) ? IMAGE_COST_ESTIMATE_USD : 0)
       if (spentThisRun + sceneEstimate > budget) {
         throw new StudioError(`Se alcanzó el costo aprobado (${approved.toFixed(2)} USD). Revisa el proyecto y vuelve a aprobar.`, "not_approved")
       }
@@ -1060,36 +1470,57 @@ async function runProduction(id: string, opts: ProductionOptions): Promise<void>
         if (s) Object.assign(s, { status: "generating", error: null })
       })
       try {
-        // Primero la imagen de escena: rostro de referencia + vestuario y escenografía que decidió el Director.
-        if (sceneNeedsLook(p, scene) && !lookIsCurrent(p, scene)) {
-          await note(id, opts, "step", n, `${label} · Creando la imagen de la escena: tu rostro con el vestuario y la escenografía elegidos (Nano Banana)…`)
-        }
-        const { look, generated } = await ensureLook(id, scene.id, opts)
-        if (generated) {
+        const speaker = scene.dialogue.trim() ? speakerFor(p, scene) : undefined
+        let clip: { bytes: Uint8Array; mimeType: string; interactionId: string | null; costUsd: number }
+        if (scene.source === "card") {
+          // Tarjeta de gráficos: se dibuja localmente con la identidad del reel. No cuesta nada y el texto sale exacto.
+          await note(id, opts, "step", n, `${label} · Dibujando la tarjeta de gráficos (sin costo)…`)
+          const bytes = await (opts.card ?? renderCard)(scene.card!, p.identity, { aspect: p.aspect_ratio, seconds: scene.seconds, resolution: p.resolution })
+          clip = { bytes, mimeType: "video/mp4", interactionId: null, costUsd: 0 }
+          await note(id, opts, "done", n, `${label} · Tarjeta lista.`)
+        } else if (scene.source === "image") {
+          // Imagen de apoyo con Nano Banana + movimiento de cámara.
+          await note(id, opts, "step", n, `${label} · Creando la imagen de la escena (Nano Banana) y dándole movimiento de cámara…`)
+          const still = await (opts.imageScene ?? ((pr: string) => generateImage({ prompt: pr, aspectRatio: p.aspect_ratio === "9:16" ? "portrait" : "landscape", modelId: STUDIO_IMAGE_MODEL }, opts)))(buildImageScenePrompt(scene.prompt, p.identity, p.aspect_ratio))
+          const bytes = await animateStill(still.bytes, { aspect: p.aspect_ratio, seconds: scene.seconds, resolution: p.resolution, motion: motionFor(n - 1) })
           spentThisRun += IMAGE_COST_ESTIMATE_USD
-          await note(id, opts, "done", n, `${label} · Imagen de la escena lista.`)
+          clip = { bytes, mimeType: "video/mp4", interactionId: null, costUsd: IMAGE_COST_ESTIMATE_USD }
+          await note(id, opts, "done", n, `${label} · Imagen lista (${IMAGE_COST_ESTIMATE_USD.toFixed(2)} USD).`)
+        } else {
+          // Primero la imagen de escena: rostro de referencia + vestuario y escenografía que decidió el Director.
+          if (sceneNeedsLook(p, scene) && !lookIsCurrent(p, scene)) {
+            await note(id, opts, "step", n, `${label} · Creando la imagen de la escena: tu rostro con el vestuario y la escenografía elegidos (Nano Banana)…`)
+          }
+          const { look, generated } = await ensureLook(id, scene.id, opts)
+          if (generated) {
+            spentThisRun += IMAGE_COST_ESTIMATE_USD
+            await note(id, opts, "done", n, `${label} · Imagen de la escena lista.`)
+          }
+          const lookRef = readReference(look.look_path)
+          const refs = lookRef && lookIsCurrent(p, look)
+            ? [lookRef]
+            : scene.character_ids
+                .map((cid) => readReference(identityPath(p.characters.find((c) => c.id === cid))))
+                .filter((r): r is ReferenceImage => !!r)
+          // Con voz de ElevenLabs en modo narración el personaje no habla; en cualquier otro caso habla y mueve los labios.
+          // Una escena SIN personaje nunca tiene a nadie hablando a cámara: su línea es una voz en off.
+          const voiceMode: SceneVoice = scene.character_ids.length === 0 || (speaker?.voice_id && voiceOk && speaker.voice_settings.mode === "narration") ? "silent" : "speak"
+          await note(id, opts, "step", n, `${label} · Gemini está grabando el clip de ${scene.seconds} s${scene.dialogue.trim() && voiceMode === "speak" ? " con el personaje hablando" : ""}… (puede tardar de 30 s a 2 min)`)
+          const made = await generateVideoClip({
+            prompt: scenePrompt(p, scene, voiceMode), aspectRatio: p.aspect_ratio, resolution: p.resolution,
+            durationSeconds: scene.seconds, referenceImages: refs,
+          }, opts)
+          spentThisRun += made.costUsd
+          await note(id, opts, "done", n, `${label} · Clip grabado (${scene.seconds} s, ${made.costUsd.toFixed(3)} USD).`)
+          clip = { bytes: made.bytes, mimeType: made.mimeType, interactionId: made.interactionId, costUsd: made.costUsd }
         }
-        const lookRef = readReference(look.look_path)
-        const refs = lookRef && lookIsCurrent(p, look)
-          ? [lookRef]
-          : scene.character_ids
-              .map((cid) => readReference(identityPath(p.characters.find((c) => c.id === cid))))
-              .filter((r): r is ReferenceImage => !!r)
-        const speaker = scene.dialogue.trim()
-          ? scene.character_ids.map((cid) => p.characters.find((c) => c.id === cid)).find((c) => !!c?.voice_id) ?? scene.character_ids.map((cid) => p.characters.find((c) => c.id === cid)).find(Boolean)
-          : undefined
-        // Con voz de ElevenLabs en modo narración el personaje no habla; en cualquier otro caso habla y mueve los labios.
-        const voiceMode: SceneVoice = speaker?.voice_id && voiceOk && speaker.voice_settings.mode === "narration" ? "silent" : "speak"
-        await note(id, opts, "step", n, `${label} · Gemini está grabando el clip de ${scene.seconds} s${scene.dialogue.trim() && voiceMode === "speak" ? " con el personaje hablando" : ""}… (puede tardar de 30 s a 2 min)`)
-        const clip = await generateVideoClip({
-          prompt: scenePrompt(p, scene, voiceMode), aspectRatio: p.aspect_ratio, resolution: p.resolution,
-          durationSeconds: scene.seconds, referenceImages: refs,
-        }, opts)
-        spentThisRun += clip.costUsd
-        await note(id, opts, "done", n, `${label} · Clip grabado (${scene.seconds} s, ${clip.costUsd.toFixed(3)} USD).`)
 
         let words: WordTiming[] = []
+        let raw: { id: string; path: string } | null = null
         if (scene.dialogue.trim()) {
+          // El clip original (con la voz de Gemini) se guarda aparte: así la voz se puede rehacer sin pagar otra vez el video.
+          const rawArtifact = await createArtifact({ bytes: clip.bytes, mimeType: clip.mimeType, kind: "generated_video_raw", userId: p.user_id, expiresAt: null, extension: "mp4" })
+          raw = { id: rawArtifact.id, path: rawArtifact.path }
           const dressed = await dressClip(id, opts, { bytes: clip.bytes, scene, speaker, voiceOk, n, total })
           clip.bytes = dressed.bytes
           words = dressed.words
@@ -1101,7 +1532,10 @@ async function runProduction(id: string, opts: ProductionOptions): Promise<void>
         await mutate(id, (d) => {
           const s = d.scenes.find((x) => x.id === scene.id)
           if (!s) return
-          Object.assign(s, { status: "done", artifact_id: artifact.id, path: artifact.path, interaction_id: clip.interactionId, cost_usd: clip.costUsd, error: null, captions: words })
+          Object.assign(s, {
+            status: "done", artifact_id: artifact.id, path: artifact.path, interaction_id: clip.interactionId, cost_usd: clip.costUsd, error: null, captions: words,
+            raw_artifact_id: raw?.id ?? null, raw_path: raw?.path ?? null, dub_key: raw ? dubKeyFor(d, s) : null,
+          })
           d.spent_usd = round4(d.spent_usd + clip.costUsd)
         })
         await note(id, opts, "done", n, `${label} · Lista.`)
@@ -1116,33 +1550,8 @@ async function runProduction(id: string, opts: ProductionOptions): Promise<void>
       }
       p = await getProject(id)
     }
-    // Reel final: todos los clips, en orden, con los subtítulos si el proyecto los pide.
-    p = await getProject(id)
-    const extras = [p.subtitles && p.scenes.some((s) => s.captions.length > 0) ? "subtítulos" : "", p.style.graphics.enabled && (p.style.graphics.progress_bar || p.scenes.some((s) => s.graphic.kind !== "none")) ? "gráficos" : "", p.style.transition.type !== "none" && total > 1 ? "transiciones" : ""].filter(Boolean)
-    await note(id, opts, "step", null, extras.length ? `Uniendo ${total} clips con ${extras.join(", ").replace(/, ([^,]*)$/, " y $1")}…` : `Uniendo ${total} clips en el reel…`)
-    const assembled = await assembleReel(p, opts)
-    for (const w of assembled.warnings) await note(id, opts, "warn", null, w)
-    let finalArtifact: { id: string; path: string }
-    if (assembled.bytes === null) {
-      finalArtifact = { id: p.scenes[0].artifact_id!, path: p.scenes[0].path! }
-    } else {
-      const a = await createArtifact({
-        bytes: assembled.bytes, mimeType: "video/mp4", kind: "generated_video", userId: p.user_id, expiresAt: null, extension: "mp4",
-        visible: { workspace: p.workspace, folder: STUDIO_VIDEOS_FOLDER, label: `${p.title} reel` },
-      })
-      finalArtifact = { id: a.id, path: a.path }
-    }
-    await mutate(id, (d) => {
-      d.status = "done"
-      d.final_artifact_id = finalArtifact.id
-      d.final_path = finalArtifact.path
-      d.approved_cost_usd = null
-      d.approved_at = null
-      d.error = null
-      d.phase = null
-    })
-    await note(id, opts, "done", null, `Reel terminado${assembled.parts.length ? ` con ${assembled.parts.join(", ").replace(/, ([^,]*)$/, " y $1")}` : ""}. Gastado en total: ${p.spent_usd.toFixed(2)} USD.`)
-    log.info(`Reel «${p.title}» listo (${p.scenes.length} clips, ${p.spent_usd} USD acumulados)`)
+    await ensureMusic(id, opts)
+    await finalizeReel(id, opts)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     log.warn(`Producción de ${id} se detuvo: ${message}`)

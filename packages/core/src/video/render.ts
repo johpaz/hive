@@ -64,20 +64,43 @@ export interface GraphicsStyle {
   progress_bar: boolean
 }
 
+/** Recorte del aire muerto: cada escena con diálogo se corta a su tramo hablado (con un pequeño margen antes y después). */
+export interface TrimStyle {
+  enabled: boolean
+  /** Segundos que se dejan antes de la primera palabra. */
+  lead: number
+  /** Segundos que se dejan después de la última palabra. */
+  tail: number
+}
+
+/** Música de fondo generada con Lyria: volumen bajo, se agacha sola cuando alguien habla. */
+export interface MusicStyle {
+  enabled: boolean
+  /** 0,02–0,6 (ganancia sobre la canción; 0,14 queda suave bajo la voz). */
+  volume: number
+  /** Ánimo o estilo que pide el usuario (vacío = el que encaje con el tema). */
+  mood: string
+}
+
 export interface ReelStyle {
   subtitles: SubtitleStyle
   transition: TransitionStyle
   graphics: GraphicsStyle
+  trim: TrimStyle
+  music: MusicStyle
 }
 
 export const DEFAULT_REEL_STYLE: ReelStyle = {
   subtitles: DEFAULT_SUBTITLE_STYLE,
   transition: { type: "fade", duration: 0.4 },
   graphics: { enabled: true, accent: "#2563EB", progress_bar: false },
+  trim: { enabled: true, lead: 0.2, tail: 0.35 },
+  music: { enabled: true, volume: 0.14, mood: "" },
 }
 
 const HEX = /^#[0-9a-fA-F]{6}$/
 const pick = <T extends string>(v: unknown, all: readonly T[], d: T): T => (all as readonly string[]).includes(v as string) ? (v as T) : d
+const clampNum = (v: unknown, lo: number, hi: number, d: number) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d }
 const color = (v: unknown, d: string) => (typeof v === "string" && HEX.test(v) ? v.toUpperCase() : d)
 
 export function normalizeSubtitleStyle(i?: Partial<SubtitleStyle> | null): SubtitleStyle {
@@ -89,7 +112,7 @@ export function normalizeSubtitleStyle(i?: Partial<SubtitleStyle> | null): Subti
   }
 }
 
-export function normalizeReelStyle(i?: { subtitles?: Partial<SubtitleStyle>; transition?: Partial<TransitionStyle>; graphics?: Partial<GraphicsStyle> } | null): ReelStyle {
+export function normalizeReelStyle(i?: { subtitles?: Partial<SubtitleStyle>; transition?: Partial<TransitionStyle>; graphics?: Partial<GraphicsStyle>; trim?: Partial<TrimStyle>; music?: Partial<MusicStyle> } | null): ReelStyle {
   const d = DEFAULT_REEL_STYLE
   const dur = Number(i?.transition?.duration)
   return {
@@ -99,6 +122,16 @@ export function normalizeReelStyle(i?: { subtitles?: Partial<SubtitleStyle>; tra
       enabled: typeof i?.graphics?.enabled === "boolean" ? i.graphics.enabled : d.graphics.enabled,
       accent: color(i?.graphics?.accent, d.graphics.accent),
       progress_bar: typeof i?.graphics?.progress_bar === "boolean" ? i.graphics.progress_bar : d.graphics.progress_bar,
+    },
+    trim: {
+      enabled: typeof i?.trim?.enabled === "boolean" ? i.trim.enabled : d.trim.enabled,
+      lead: clampNum(i?.trim?.lead, 0, 1, d.trim.lead),
+      tail: clampNum(i?.trim?.tail, 0, 1.5, d.trim.tail),
+    },
+    music: {
+      enabled: typeof i?.music?.enabled === "boolean" ? i.music.enabled : d.music.enabled,
+      volume: clampNum(i?.music?.volume, 0.02, 0.6, d.music.volume),
+      mood: typeof i?.music?.mood === "string" ? i.music.mood.replace(/[\n\r]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 200) : d.music.mood,
     },
   }
 }
@@ -245,6 +278,32 @@ const ENCODERS: string[][] = [
   ["-c:v", "mpeg4", "-q:v", "2", "-pix_fmt", "yuv420p"],
 ]
 
+/**
+ * Ventana [start, end] de un clip que conviene conservar: desde un poco antes de la primera palabra hasta un poco después de la
+ * última. null si no hay nada que recortar (sin palabras o el recorte ahorraría menos de 0,3 s).
+ */
+export function trimWindow(words: WordTiming[], duration: number, t: TrimStyle): { start: number; end: number } | null {
+  if (!t.enabled || words.length === 0 || !(duration > 0)) return null
+  const start = Math.max(0, words[0].start - t.lead)
+  const end = Math.min(duration, words[words.length - 1].end + t.tail)
+  if (end - start < 1) return null
+  return duration - (end - start) < 0.3 ? null : { start, end }
+}
+
+/** Corta un clip a [start, end] y lo escribe en `out` (recodifica para cortar en el fotograma exacto). */
+export async function trimClipFile(src: string, out: string, start: number, end: number, o: { audio?: boolean } = {}): Promise<void> {
+  const dir = mkdtempSync(join(tmpdir(), "hive-trim-"))
+  try {
+    let last = ""
+    for (const enc of ENCODERS) {
+      const r = await ffmpegRun(["-y", "-ss", start.toFixed(3), "-to", end.toFixed(3), "-i", src, ...enc, ...(o.audio === false ? ["-an"] : ["-c:a", "aac", "-b:a", "256k"]), "-movflags", "+faststart", out], dir)
+      if (r.code === 0) return
+      last = r.err
+    }
+    throw new VoiceError(`No se pudo recortar el clip: ${last.slice(-200)}`)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+}
+
 /** Graba subtítulos, gráficos y barra de progreso sobre el reel (recodifica el video; el audio no se toca). */
 export async function burnOverlays(clip: Uint8Array, spec: OverlaySpec): Promise<Uint8Array> {
   const dir = mkdtempSync(join(tmpdir(), "hive-overlay-"))
@@ -279,7 +338,7 @@ export function sceneStarts(durations: number[], overlap: number): number[] {
 }
 
 /** Une los clips con una transición (`xfade`/`acrossfade`) entre cada par. Recodifica el video. */
-export async function joinWithTransitions(paths: string[], durations: number[], t: TransitionStyle): Promise<Uint8Array> {
+export async function joinWithTransitions(paths: string[], durations: number[], t: TransitionStyle, o: { audio?: boolean } = {}): Promise<Uint8Array> {
   const T = effectiveTransition(t, durations)
   if (T <= 0 || paths.length < 2) throw new VoiceError("No hay transición que aplicar.")
   const dir = mkdtempSync(join(tmpdir(), "hive-xfade-"))
@@ -288,11 +347,14 @@ export async function joinWithTransitions(paths: string[], durations: number[], 
     const build = (audio: boolean) => {
       const f: string[] = []
       let acc = durations[0]
-      let vl = "[0:v]"
+      // xfade exige misma base de tiempo, fps, formato y SAR en todas las entradas: las tarjetas y los clips
+      // de Gemini vienen con bases distintas (p. ej. 1/12288 frente a 1/24).
+      for (let i = 0; i < paths.length; i++) f.push(`[${i}:v]settb=AVTB,fps=24,setsar=1,format=yuv420p[n${i}]`)
+      let vl = "[n0]"
       let al = "[0:a]"
       for (let i = 1; i < paths.length; i++) {
         const off = acc - T
-        f.push(`${vl}[${i}:v]xfade=transition=${t.type}:duration=${T.toFixed(3)}:offset=${off.toFixed(3)}[v${i}]`)
+        f.push(`${vl}[n${i}]xfade=transition=${t.type}:duration=${T.toFixed(3)}:offset=${off.toFixed(3)}[v${i}]`)
         vl = `[v${i}]`
         if (audio) { f.push(`${al}[${i}:a]acrossfade=d=${T.toFixed(3)}[a${i}]`); al = `[a${i}]` }
         acc = off + durations[i]
@@ -300,11 +362,11 @@ export async function joinWithTransitions(paths: string[], durations: number[], 
       return { filter: f.join(";"), vl, al }
     }
     let last = ""
-    for (const withAudio of [true, false]) {
+    for (const withAudio of o.audio === false ? [false] : [true, false]) {
       const { filter, vl, al } = build(withAudio)
       for (const enc of ENCODERS) {
         rmSync(join(dir, "out.mp4"), { force: true })
-        const r = await ffmpegRun(["-y", ...inputs, "-filter_complex", filter, "-map", vl, ...(withAudio ? ["-map", al, "-c:a", "aac"] : ["-an"]), ...enc, "-movflags", "+faststart", join(dir, "out.mp4")])
+        const r = await ffmpegRun(["-y", ...inputs, "-filter_complex", filter, "-map", vl, ...(withAudio ? ["-map", al, "-c:a", "aac", "-b:a", "256k"] : ["-an"]), ...enc, "-movflags", "+faststart", join(dir, "out.mp4")])
         if (r.code === 0) return new Uint8Array(readFileSync(join(dir, "out.mp4")))
         last = r.err
       }

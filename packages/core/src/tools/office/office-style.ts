@@ -189,7 +189,8 @@ export type Bloque =
   | { type: "code"; text: string }
   | { type: "rule" }
   | { type: "spacer"; height: number }
-  | { type: "page_break" };
+  | { type: "page_break" }
+  | { type: "image"; ref: Record<string, unknown>; widthCm?: number; align?: Alineacion; caption?: string; alt?: string };
 
 const TIPOS: Record<string, string> = {
   heading: "heading", encabezado: "heading", titulo: "heading", title: "heading",
@@ -203,6 +204,7 @@ const TIPOS: Record<string, string> = {
   rule: "rule", regla: "rule", linea: "rule",
   spacer: "spacer", espacio: "spacer",
   page_break: "page_break", salto_pagina: "page_break",
+  image: "image", imagen: "image", foto: "image",
 };
 
 const ALINEACIONES = new Set(["left", "center", "right", "justify"]);
@@ -345,6 +347,17 @@ function normalizarBloque(crudo: unknown): Bloque | null {
       return { type: "spacer", height: Number(g(o, "height", "alto") ?? 12) };
     case "page_break":
       return { type: "page_break" };
+    case "image": {
+      const ancho = Number(g(o, "ancho", "width", "ancho_cm"));
+      return {
+        type: "image",
+        ref: o,
+        widthCm: Number.isFinite(ancho) && ancho > 0 ? ancho : undefined,
+        align: alineacion(g(o, "align", "alineacion")),
+        caption: (g(o, "pie", "caption") as string | undefined) || undefined,
+        alt: (g(o, "alt") as string | undefined) || undefined,
+      };
+    }
   }
   return null;
 }

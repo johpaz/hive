@@ -9,6 +9,41 @@ export type SceneStatus = "pending" | "generating" | "done" | "failed";
 /** Controles de ElevenLabs de una voz (espejo de video/voice.ts del backend). */
 export type VoiceMode = "sync" | "convert" | "narration";
 
+export type SceneSource = "clip" | "card" | "image";
+export type CardKind = "title" | "stat" | "list" | "quote" | "compare" | "cta";
+export interface SceneCard { kind: CardKind; title: string; sub: string; value: string; fill: number | null; items: string[]; columns: Array<{ label: string; text: string }> }
+export const CARD_KINDS: Array<{ id: CardKind; label: string; hint: string }> = [
+  { id: "title", label: "Título", hint: "El gancho o el título de una parte, con subtítulo." },
+  { id: "stat", label: "Cifra", hint: "Un número grande con barra de progreso; solo con datos reales." },
+  { id: "list", label: "Lista", hint: "Hasta 5 puntos que van entrando de a uno." },
+  { id: "quote", label: "Cita", hint: "Una frase destacada con su autor." },
+  { id: "compare", label: "Comparación", hint: "Dos columnas: antes y ahora, mito y realidad." },
+  { id: "cta", label: "Llamada a la acción", hint: "Pide comentar, seguir o visitar, con @usuario o enlace." },
+];
+export interface Identity { preset: string; bg: string; fg: string; accent: string; heading_font: "montserrat" | "sans" | "serif"; body_font: "montserrat" | "sans" | "serif" }
+export const IDENTITY_PRESETS: Array<Identity & { label: string; mood: string }> = [
+  { preset: "swiss", label: "Pulso suizo", mood: "Datos, tecnología", bg: "#0F1218", fg: "#F2F4F8", accent: "#2F6BFF", heading_font: "montserrat", body_font: "montserrat" },
+  { preset: "velvet", label: "Terciopelo", mood: "Premium, marca personal", bg: "#0E1220", fg: "#F3EEE2", accent: "#C9A84C", heading_font: "serif", body_font: "sans" },
+  { preset: "soft", label: "Señal suave", mood: "Cálido, bienestar", bg: "#F6EFE7", fg: "#2B2420", accent: "#D9714A", heading_font: "serif", body_font: "sans" },
+  { preset: "maximal", label: "Tipografía fuerte", mood: "Anuncios, ofertas", bg: "#FFD60A", fg: "#111111", accent: "#E5173F", heading_font: "montserrat", body_font: "montserrat" },
+  { preset: "drift", label: "Deriva de datos", mood: "IA, ciencia", bg: "#09100F", fg: "#E6F2EF", accent: "#19C3A6", heading_font: "montserrat", body_font: "sans" },
+  { preset: "shadow", label: "Corte oscuro", mood: "Dramático, denuncia", bg: "#0C0C0D", fg: "#EEEBE6", accent: "#E03A3E", heading_font: "serif", body_font: "sans" },
+];
+
+export type VoiceFxId = "none" | "studio" | "podcast" | "intimate" | "radio" | "telephone" | "megaphone" | "cinematic" | "hall";
+/** Efectos de voz (se aplican al armar el audio del reel: cambiarlos es gratis). Misma lista que el servidor. */
+export const VOICE_FX: Array<{ id: VoiceFxId; label: string; hint: string }> = [
+  { id: "none", label: "Sin efecto", hint: "La voz tal cual sale." },
+  { id: "studio", label: "Micrófono de estudio", hint: "Voz cercana, limpia y con presencia, como grabada con un buen micrófono." },
+  { id: "podcast", label: "Podcast", hint: "Voz cálida y compacta, de conversación." },
+  { id: "intimate", label: "Íntima (micrófono pegado)", hint: "Cercana y suave, como un susurro a la oreja." },
+  { id: "radio", label: "Radio / noticiero", hint: "Voz de locución: recortada y con cuerpo en los medios." },
+  { id: "telephone", label: "Llamada telefónica", hint: "Suena a través de un teléfono." },
+  { id: "megaphone", label: "Megáfono", hint: "Voz estridente y comprimida, de altavoz." },
+  { id: "cinematic", label: "Cinematográfica (tráiler)", hint: "Voz grave y épica, con un poco de eco." },
+  { id: "hall", label: "Sala amplia (eco)", hint: "Como hablar en un salón o una catedral." },
+];
+
 export interface VoiceSettings {
   /** sync: tu voz (texto a voz) ajustada a los labios de Gemini; convert: cambio de voz; narration: narración sobre el clip. */
   mode: VoiceMode;
@@ -22,12 +57,14 @@ export interface VoiceSettings {
   volume: number;
   /** Nivel del sonido ambiente del clip bajo la voz (0 a 1). */
   ambient_volume: number;
+  /** Efecto de voz por omisión de este personaje o narrador. */
+  fx: VoiceFxId;
 }
 
 export interface VoiceModel { id: string; label: string; expressive: boolean }
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
-  mode: "sync", model_id: "eleven_v4", stability: 0.5, similarity: 0.75, style: 0, speed: 1, speaker_boost: true, volume: 1, ambient_volume: 0.3,
+  mode: "sync", model_id: "eleven_v4", stability: 0.5, similarity: 0.75, style: 0, speed: 1, speaker_boost: true, volume: 1, ambient_volume: 0.3, fx: "studio",
 };
 
 export type SubtitlePreset = "classic" | "karaoke" | "box" | "pop" | "minimal";
@@ -40,6 +77,8 @@ export interface ReelStyle {
   subtitles: SubtitleStyle;
   transition: { type: TransitionType; duration: number };
   graphics: { enabled: boolean; accent: string; progress_bar: boolean };
+  trim: { enabled: boolean; lead: number; tail: number };
+  music: { enabled: boolean; volume: number; mood: string };
 }
 export type GraphicKind = "none" | "title" | "lower_third" | "stat" | "cta";
 export interface SceneGraphic { kind: GraphicKind; text: string; sub: string }
@@ -48,6 +87,8 @@ export const DEFAULT_REEL_STYLE: ReelStyle = {
   subtitles: { preset: "classic", position: "bottom", size: "m", uppercase: false, color: "#FFFFFF", highlight: "#FACC15", font: "montserrat" },
   transition: { type: "fade", duration: 0.4 },
   graphics: { enabled: true, accent: "#2563EB", progress_bar: false },
+  trim: { enabled: true, lead: 0.2, tail: 0.35 },
+  music: { enabled: true, volume: 0.14, mood: "" },
 };
 
 export interface ActivityEvent { at: number; scene: number | null; kind: "step" | "done" | "warn" | "error"; text: string }
@@ -101,6 +142,11 @@ export interface Scene {
   look_artifact_id: string | null;
   look_path: string | null;
   graphic: SceneGraphic;
+  /** Efecto de voz de esta escena (null = el del personaje o narrador). */
+  fx: string | null;
+  /** clip = video de Gemini · card = tarjeta de gráficos (gratis) · image = imagen con movimiento. */
+  source: SceneSource;
+  card: SceneCard | null;
 }
 
 export interface Project {
@@ -123,15 +169,24 @@ export interface Project {
   subtitles: boolean;
   /** Acabado del reel (subtítulos, transición, gráficos): se aplica al unir los clips y no cuesta nada. */
   style: ReelStyle;
+  /** Música de fondo ya generada (null si aún no hay). */
+  music: { artifact_id: string; path: string; prompt: string; cost_usd: number } | null;
   /** Bitácora de la producción (la más reciente al final) y lo que se hace ahora. */
   activity: ActivityEvent[];
   phase: { label: string; scene: number | null; since: number } | null;
   updated_at: number;
   cost: {
     pending_scenes: number; pending_seconds: number; total_seconds: number;
-    estimated_usd: number; looks_pending: number; images_usd: number; total_usd: number; dialogue_chars: number;
+    estimated_usd: number; looks_pending: number; images_usd: number; music_usd: number; total_usd: number; dialogue_chars: number;
+    redub_stale: number; redub_available: number; redub_unavailable: number;
   };
   producing: boolean;
+  /** Identidad visual: paleta y tipografías de tarjetas, gráficos e imágenes. */
+  identity: Identity;
+  /** Voz en off para las escenas SIN personaje. */
+  narrator: { voice_id: string; voice_name: string | null; voice_settings: VoiceSettings } | null;
+  /** Efecto de voz sugerido para cada escena (null si no tiene voz). */
+  fx_suggestions?: Array<{ id: VoiceFxId; reason: string } | null>;
 }
 
 /** Un avatar guardado en «Mis avatares»: rostro, nombre y voz para reutilizar en cualquier reel. */
@@ -169,10 +224,12 @@ export const videoApi = {
   status: () => apiClient<StudioStatus>("/api/video/status"),
   list: () => apiClient<{ projects: Project[] }>("/api/video/projects").then((r) => r.projects),
   get: (id: string) => apiClient<{ project: Project }>(`/api/video/projects/${id}`).then((r) => r.project),
-  create: (body: { title: string; brief?: string; aspect_ratio: AspectRatio; resolution: Resolution; target_seconds: number; avatar_id?: string }) =>
+  create: (body: { title: string; brief?: string; aspect_ratio: AspectRatio; resolution: Resolution; target_seconds: number; avatar_id?: string; identity?: Partial<Identity>; narrator?: { voice_id: string; voice_name: string | null; voice_settings: VoiceSettings } }) =>
     apiClient<{ project: Project }>("/api/video/projects", { method: "POST", body }).then((r) => r.project),
   update: (id: string, body: Partial<Pick<Project, "title" | "brief" | "script" | "aspect_ratio" | "resolution" | "target_seconds" | "subtitles">> & {
-    scenes?: Array<{ id?: string; seconds: number; prompt: string; character_ids?: string[]; wardrobe?: string; setting?: string; dialogue?: string; graphic?: SceneGraphic }>;
+    scenes?: Array<{ id?: string; seconds: number; prompt: string; character_ids?: string[]; wardrobe?: string; setting?: string; dialogue?: string; graphic?: SceneGraphic; fx?: string | null; source?: SceneSource; card?: SceneCard | null }>;
+    identity?: Partial<Identity>;
+    narrator?: { voice_id: string; voice_name: string | null; voice_settings: VoiceSettings } | null;
     style?: { subtitles?: Partial<SubtitleStyle>; transition?: Partial<ReelStyle["transition"]>; graphics?: Partial<ReelStyle["graphics"]> };
     characters?: Array<{ id?: string; name: string; description: string; voice_id?: string | null; voice_name?: string | null; voice_settings?: VoiceSettings }>;
   }) => apiClient<{ project: Project }>(`/api/video/projects/${id}`, { method: "PATCH", body }).then((r) => r.project),
@@ -210,7 +267,8 @@ export const videoApi = {
   script: (body: {
     title: string; brief: string; aspect_ratio: AspectRatio; target_seconds: number;
     characters: Array<{ id: string; name: string; description: string; voice_expressive: boolean }>;
-  }) => apiClient<{ ok: true; script: string; scenes: Array<{ seconds: number; prompt: string; wardrobe: string; setting: string; dialogue: string; character_ids: string[]; graphic: SceneGraphic }> }>(
+    mode?: "avatar" | "voiceover";
+  }) => apiClient<{ ok: true; script: string; scenes: Array<{ seconds: number; prompt: string; wardrobe: string; setting: string; dialogue: string; character_ids: string[]; graphic: SceneGraphic; source?: SceneSource; card?: SceneCard | null }> }>(
     "/api/video/script", { method: "POST", body, showLoader: "Escribiendo el guion y las escenas..." }),
   avatars: () => apiClient<{ avatars: Avatar[] }>("/api/video/avatars", { showError: false }).then((r) => r.avatars),
   removeAvatar: (id: string) => apiClient<{ ok: true }>(`/api/video/avatars/${id}`, { method: "DELETE" }),
@@ -219,5 +277,7 @@ export const videoApi = {
     apiClient<{ project: Project }>(`/api/video/projects/${projectId}/avatars/${avatarId}${characterId ? `?character=${encodeURIComponent(characterId)}` : ""}`, { method: "POST" }).then((r) => r.project),
   approve: (id: string) => apiClient<{ project: Project }>(`/api/video/projects/${id}/approve`, { method: "POST" }).then((r) => r.project),
   revoke: (id: string) => apiClient<{ project: Project }>(`/api/video/projects/${id}/revoke`, { method: "POST" }).then((r) => r.project),
+  music: (id: string) => apiClient<{ project: Project }>(`/api/video/projects/${id}/music`, { method: "POST" }).then((r) => r.project),
+  redub: (id: string) => apiClient<{ project: Project }>(`/api/video/projects/${id}/redub`, { method: "POST" }).then((r) => r.project),
   produce: (id: string) => apiClient<{ project: Project }>(`/api/video/projects/${id}/produce`, { method: "POST" }).then((r) => r.project),
 };

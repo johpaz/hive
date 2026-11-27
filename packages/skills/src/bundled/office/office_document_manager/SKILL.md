@@ -143,6 +143,8 @@ rules:
   - "Para Excel, especifica el nombre de hoja con el parámetro 'hoja' si solo necesitas una"
   - "Al escribir DOCX, usa 'tipo: titulo1/titulo2/titulo3' para crear jerarquía de encabezados"
   - "Para presentaciones, usa 'puntos' en lugar de 'contenido' cuando el texto es una lista"
+  - "Imágenes (p. ej. las de image_generate): docx/pdf usan un bloque {tipo:'imagen', artifact_id|ruta, ancho (cm), alineacion, pie}; pptx usa 'imagen' en la diapositiva; xlsx usa 'imagenes' [{artifact_id|ruta, celda}] en la hoja. Para documentos ya existentes: 'anadir_imagenes' en office_editar_docx/pptx/xlsx. Pasa el artifact_id exacto; formatos PNG, JPEG o GIF (el PDF no admite GIF)"
+  - "Revisa 'imagenes' (o 'imagenes_anadidas') en la respuesta: si es menor a lo pedido, lee 'aviso' y corrige en vez de entregar el documento sin la imagen"
   - "Usa fs_read/fs_exists antes de leer un office file para confirmar que la ruta existe"
 
 output_format:

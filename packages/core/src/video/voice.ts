@@ -40,6 +40,8 @@ export const VOICE_MODELS: VoiceModelInfo[] = [
  */
 export type VoiceMode = "sync" | "convert" | "narration"
 
+import { normalizeVoiceFx, type VoiceFxId } from "./voice-fx"
+
 export interface VoiceSettings {
   /** Cómo se pone la voz del personaje. Por omisión «sync». */
   mode: VoiceMode
@@ -58,11 +60,15 @@ export interface VoiceSettings {
   volume: number
   /** Nivel del sonido ambiente del clip bajo la voz (0 a 1; 0,3 por omisión). */
   ambient_volume: number
+  /** Efecto de voz que se aplica al armar el audio final (micrófono de estudio, radio, etc.). Gratis: no regenera nada. */
+  fx: VoiceFxId
 }
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
-  mode: "sync", model_id: "eleven_v4", stability: 0.5, similarity: 0.75, style: 0, speed: 1, speaker_boost: true, volume: 1, ambient_volume: 0.3,
+  mode: "sync", model_id: "eleven_v4", stability: 0, similarity: 0.75, style: 0, speed: 1, speaker_boost: true, volume: 1, ambient_volume: 0.3, fx: "studio",
 }
+// Estabilidad «Creativa» (0) por omisión: en Eleven v4 es la que responde a las etiquetas de audio y varía la entonación; «Natural»
+// (0,5) deja la lectura plana, sin los cambios de intensidad que hacen viva una locución de reel.
 
 export const isExpressiveModel = (id: string) => VOICE_MODELS.find((m) => m.id === id)?.expressive ?? false
 
@@ -88,6 +94,7 @@ export function normalizeVoiceSettings(input?: Partial<VoiceSettings> | null): V
     speaker_boost: typeof input?.speaker_boost === "boolean" ? input.speaker_boost : d.speaker_boost,
     volume: clamp(input?.volume, 0.5, 2, d.volume),
     ambient_volume: clamp(input?.ambient_volume, 0, 1, d.ambient_volume),
+    fx: normalizeVoiceFx(input?.fx, d.fx),
   }
 }
 
@@ -272,7 +279,8 @@ export async function mixDialogue(clip: Uint8Array, voice: Uint8Array, mix: MixO
         // clip con audio ambiente: se ajusta y se mezcla con la voz
         ? `[0:a]volume=${ambientGain.toFixed(3)}[a0];${voiceChain};[a0][v]amix=inputs=2:duration=first:dropout_transition=0:normalize=0${tail}[a]`
         // clip sin pista de audio: solo la voz
-        : `${voiceChain.replace("[v]", "[v0]")};[v0]anull${tail}[a]`
+        // Sin audio propio (tarjetas, imágenes): la voz se rellena con silencio hasta el largo del clip; si no, `-shortest` recortaría el video a lo que dura la voz.
+        : `${voiceChain.replace("[v]", "[v0]")};[v0]${clipSec > 0 ? `apad=whole_dur=${clipSec.toFixed(3)},` : ""}anull${tail}[a]`
     }
     // Primero con limitador; si ese ffmpeg no lo trae, sin él. Con ambiente y, si el clip no tiene audio, solo voz.
     const attempts = [filters(true, true), filters(false, true), filters(true, false), filters(false, false)]
@@ -280,7 +288,7 @@ export async function mixDialogue(clip: Uint8Array, voice: Uint8Array, mix: MixO
     for (const filter of attempts) {
       rmSync(out, { force: true })
       const proc = Bun.spawn(
-        ["ffmpeg", "-v", "error", "-y", "-i", clipPath, "-i", voicePath, "-filter_complex", filter, "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-shortest", "-movflags", "+faststart", out],
+        ["ffmpeg", "-v", "error", "-y", "-i", clipPath, "-i", voicePath, "-filter_complex", filter, "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "256k", "-shortest", "-movflags", "+faststart", out],
         { stdout: "ignore", stderr: "pipe" },
       )
       const [code, err] = await Promise.all([proc.exited, new Response(proc.stderr as ReadableStream).text()])
@@ -525,7 +533,7 @@ export async function replaceAudio(clip: Uint8Array, audio: Uint8Array, gain = 1
     // `apad` + `-t`: si la voz dura menos que el clip se rellena con silencio; si dura más, se corta al largo del clip.
     const r = await ffmpegRun([
       "-y", "-i", "clip.mp4", "-i", "voz.mp3", "-filter_complex", `[1:a]volume=${g.toFixed(3)},alimiter=limit=0.97,apad[a]`,
-      "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", ...(clipSec > 0 ? ["-t", clipSec.toFixed(3)] : []), "-movflags", "+faststart", "out.mp4",
+      "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "256k", ...(clipSec > 0 ? ["-t", clipSec.toFixed(3)] : []), "-movflags", "+faststart", "out.mp4",
     ], dir)
     if (r.code !== 0) throw new VoiceError(`No se pudo poner la voz en el clip: ${r.err}`)
     return new Uint8Array(readFileSync(join(dir, "out.mp4")))
@@ -586,45 +594,233 @@ export async function synthesizeLineTimed(
   throw last ?? new VoiceError("No se pudo generar la voz.")
 }
 
+/** Audio decodificado a PCM f32 mono de 44,1 kHz (para buscar los puntos más silenciosos donde cortar). */
+async function decodePcm(bytes: Uint8Array): Promise<Float32Array> {
+  const dir = mkdtempSync(join(tmpdir(), "hive-pcm-"))
+  try {
+    writeFileSync(join(dir, "a.bin"), bytes)
+    const proc = Bun.spawn(["ffmpeg", "-v", "error", "-i", join(dir, "a.bin"), "-vn", "-ac", "1", "-ar", "44100", "-f", "f32le", "-"], { stdout: "pipe", stderr: "ignore" })
+    const buf = await new Response(proc.stdout as ReadableStream).arrayBuffer()
+    await proc.exited
+    return new Float32Array(buf)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+}
+
+const PCM_SR = 44100
+
 /**
- * Ajusta una voz (texto a voz) a los tiempos de otra: cada palabra de `from` se estira o acorta para ocupar la ventana de la
- * palabra correspondiente de `to`, y los huecos se rellenan con silencio. Así la voz de ElevenLabs cae donde Gemini mueve los
- * labios. Con distinto número de palabras se ajusta el habla completa de una vez. Devuelve un WAV mono de 44,1 kHz de `totalSec`.
+ * El punto de menor energía cerca de `center` (±35 ms), ajustado al cruce por cero más próximo. Cortar y pegar la voz ahí no deja
+ * chasquidos: cortar exactamente en el borde de una palabra, que suele ser mitad de una sílaba, sí los deja.
+ */
+export function quietestPoint(pcm: Float32Array, center: number, radius = 0.035): number {
+  const win = Math.round(PCM_SR * 0.004)
+  const step = Math.max(1, Math.round(PCM_SR * 0.001))
+  const lo = Math.max(win, Math.round((center - radius) * PCM_SR))
+  const hi = Math.min(pcm.length - win - 1, Math.round((center + radius) * PCM_SR))
+  if (hi <= lo) return Math.min(Math.max(center, 0), pcm.length / PCM_SR)
+  let best = lo
+  let bestE = Infinity
+  for (let i = lo; i <= hi; i += step) {
+    let e = 0
+    for (let k = 0; k < win; k++) e += pcm[i + k] * pcm[i + k]
+    if (e < bestE) { bestE = e; best = i + (win >> 1) }
+  }
+  const reach = Math.round(PCM_SR * 0.002)
+  for (let d = 0; d <= reach; d++) {
+    for (const j of [best + d, best - d]) if (j > 0 && j < pcm.length && pcm[j - 1] * pcm[j] <= 0) return j / PCM_SR
+  }
+  return best / PCM_SR
+}
+
+/** Rangos de estirado que se prueban, de más natural a más forzado, hasta que la voz cabe en el clip. */
+const STRETCH_STEPS: Array<[number, number]> = [[0.9, 1.12], [0.82, 1.25], [0.72, 1.4], [0.6, 1.6]]
+
+interface PlacedPiece { src0: number; src1: number; at: number; ratio: number }
+
+/**
+ * Reparte las palabras de la voz sobre la línea de tiempo del clip. Cada palabra arranca donde Gemini mueve los labios, pero se
+ * reproduce casi a su ritmo natural (estirada solo dentro de `range`): lo que sobra o falta se absorbe en las pausas. Si una
+ * palabra se desborda, la siguiente se retrasa un poco y se recupera en la primera pausa, en vez de acelerar o arrastrar la voz.
+ */
+function placePieces(
+  cuts: number[], words: Array<{ s: number; e: number }>, targets: Array<{ c: number; d: number }>, range: [number, number],
+): { pieces: PlacedPiece[]; end: number } {
+  const pieces: PlacedPiece[] = []
+  let cursor = 0
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i], t = targets[i]
+    const ratio = Math.min(range[1], Math.max(range[0], (w.e - w.s) / Math.max(0.04, t.d)))
+    // El trozo es la palabra con un margen de 60 ms: la pausa natural del origen no se arrastra, la pausa la decide la línea de tiempo.
+    const src0 = Math.max(cuts[i], w.s - 0.06), src1 = Math.min(cuts[i + 1], w.e + 0.06)
+    const lead = (w.s - src0) / ratio                            // lo que hay antes de la palabra dentro del trozo
+    const at = Math.max(cursor, Math.max(0, t.c - lead))
+    pieces.push({ src0, src1, at, ratio })
+    cursor = at + (src1 - src0) / ratio
+  }
+  return { pieces, end: cursor }
+}
+
+/**
+ * Ajusta una voz (texto a voz) a los tiempos de otra: cada palabra de `from` arranca donde empieza la palabra correspondiente de
+ * `to`, de modo que la voz de ElevenLabs cae donde Gemini mueve los labios. Con distinto número de palabras se ajusta el habla
+ * completa de una vez. Devuelve un WAV mono de 44,1 kHz de `totalSec`, con el volumen nivelado.
+ *
+ * Para que suene natural: las palabras casi no se estiran (±12 % y solo se amplía el rango si la voz no cabe en el clip), los
+ * trozos se cortan en el punto más silencioso de cada hueco, cada empalme lleva un fundido de 4 ms y el estirado usa `rubberband`
+ * (calidad de voz). Al final se nivela el volumen (la voz de ElevenLabs sale mucho más baja que la de Gemini).
  */
 export async function warpToTiming(
   tts: Uint8Array, from: WordTiming[], to: WordTiming[], totalSec: number,
 ): Promise<Uint8Array> {
   if (from.length === 0 || to.length === 0) throw new VoiceError("No hay tiempos de palabras para ajustar la voz.")
-  const pairs = from.length === to.length
-    ? from.map((f, i) => ({ a: f.start, b: f.end, c: to[i].start, d: to[i].end }))
-    : [{ a: from[0].start, b: from[from.length - 1].end, c: to[0].start, d: to[to.length - 1].end }]
-  const MIN = 0.04
-  const nodes: string[] = []
-  const labels: string[] = []
-  const fmt = "aformat=sample_rates=44100:channel_layouts=mono"
-  let cursor = 0
-  const silence = (sec: number, tag: string) => {
-    if (sec < 0.005) return
-    nodes.push(`anullsrc=r=44100:cl=mono,atrim=0:${sec.toFixed(4)},${fmt}[${tag}]`)
-    labels.push(`[${tag}]`)
+  const pcm = await decodePcm(tts)
+  const srcDur = pcm.length / PCM_SR
+  const PAD = 0.02
+  const equal = from.length === to.length
+  const words = equal ? from.map((f) => ({ s: f.start, e: f.end })) : [{ s: from[0].start, e: from[from.length - 1].end }]
+  const targets = equal ? to.map((t) => ({ c: t.start, d: t.end - t.start })) : [{ c: to[0].start, d: to[to.length - 1].end - to[0].start }]
+  const n = words.length
+  // Cortes en el origen: antes de la primera palabra, en el punto más silencioso de cada hueco y tras la última.
+  const cuts: number[] = [Math.max(0, words[0].s - PAD)]
+  for (let i = 1; i < n; i++) {
+    const g0 = words[i - 1].e, g1 = Math.max(g0, words[i].s)
+    cuts.push(Math.min(g1, Math.max(g0, quietestPoint(pcm, (g0 + g1) / 2))))
   }
-  pairs.forEach((p, i) => {
-    const target = Math.max(MIN, p.d - p.c)
-    silence(p.c - cursor, `g${i}`)
-    const src = Math.max(MIN, p.b - p.a)
-    const ratio = Math.min(1.8, Math.max(0.6, src / target))
-    // `atempo` acelera (>1) o frena (<1); lo que quede corto se rellena con silencio y lo que sobre se recorta.
-    nodes.push(`[0:a]atrim=${Math.max(0, p.a).toFixed(4)}:${(p.b + 0.01).toFixed(4)},asetpts=PTS-STARTPTS,atempo=${ratio.toFixed(4)},apad=whole_dur=${target.toFixed(4)},atrim=0:${target.toFixed(4)},${fmt}[w${i}]`)
-    labels.push(`[w${i}]`)
-    cursor = Math.max(cursor, p.c) + target
-  })
-  silence(Math.max(0, totalSec - cursor), "tail")
-  const filter = nodes.join(";") + `;${labels.join("")}concat=n=${labels.length}:v=0:a=1[a]`
+  cuts.push(Math.min(srcDur, words[n - 1].e + PAD))
+  for (let i = 1; i < cuts.length; i++) cuts[i] = Math.min(srcDur, Math.max(cuts[i], cuts[i - 1]))
+
+  // Se elige el rango de estirado más natural con el que la voz entera cabe en el clip.
+  let plan = placePieces(cuts, words, targets, STRETCH_STEPS[0])
+  for (const range of STRETCH_STEPS.slice(1)) {
+    if (plan.end <= totalSec - 0.05) break
+    plan = placePieces(cuts, words, targets, range)
+  }
+
+  const build = (mode: "rubberband" | "atempo" | "none") => {
+    const nodes: string[] = []
+    const labels: string[] = []
+    const fmt = "aformat=sample_rates=44100:channel_layouts=mono"
+    const FADE = 0.004
+    let seq = 0, cursor = 0
+    const silence = (sec: number) => {
+      if (sec < 0.004) return
+      const tag = `s${seq++}`
+      nodes.push(`anullsrc=r=44100:cl=mono,atrim=0:${sec.toFixed(4)},${fmt}[${tag}]`)
+      labels.push(`[${tag}]`)
+    }
+    for (const pc of plan.pieces) {
+      silence(pc.at - cursor)
+      const sa = Math.min(Math.max(0, pc.src0), srcDur), sb = Math.min(Math.max(0, pc.src1), srcDur)
+      const src = sb - sa
+      if (src < 0.004) { cursor = Math.max(cursor, pc.at); continue }
+      const out = src / pc.ratio
+      const stretch = mode === "none" || src < 0.06 || Math.abs(pc.ratio - 1) < 0.02 ? "anull"
+        : mode === "rubberband" ? `rubberband=tempo=${pc.ratio.toFixed(4)}:pitch=1:formant=preserved:transients=mixed` : `atempo=${pc.ratio.toFixed(4)}`
+      const eff = stretch === "anull" ? src : out
+      const f = Math.min(FADE, eff / 2)
+      const tag = `p${seq++}`
+      nodes.push(
+        `[0:a]atrim=${sa.toFixed(4)}:${sb.toFixed(4)},asetpts=PTS-STARTPTS,${stretch},apad=whole_dur=${eff.toFixed(4)},atrim=0:${eff.toFixed(4)},` +
+        `afade=t=in:d=${f.toFixed(4)},afade=t=out:st=${(eff - f).toFixed(4)}:d=${f.toFixed(4)},${fmt}[${tag}]`,
+      )
+      labels.push(`[${tag}]`)
+      cursor = pc.at + eff
+    }
+    silence(Math.max(0, totalSec - cursor))
+    // Nivelado final: la voz de ElevenLabs sale ~10 dB por debajo de la de Gemini y quedaba enterrada.
+    return nodes.join(";") + `;${labels.join("")}concat=n=${labels.length}:v=0:a=1[cat];[cat]apad=whole_dur=${(totalSec + 0.2).toFixed(4)},loudnorm=I=-16:TP=-1.5:LRA=9,aresample=44100,atrim=0:${totalSec.toFixed(4)}[a]`
+  }
+
   const dir = mkdtempSync(join(tmpdir(), "hive-warp-"))
   try {
-    writeFileSync(join(dir, "tts.mp3"), tts)
-    const r = await ffmpegRun(["-y", "-i", "tts.mp3", "-filter_complex", filter, "-map", "[a]", "-ar", "44100", "-ac", "1", "-c:a", "pcm_s16le", "warp.wav"], dir)
-    if (r.code !== 0) throw new VoiceError(`No se pudo ajustar la voz a los labios: ${r.err}`)
-    return new Uint8Array(readFileSync(join(dir, "warp.wav")))
+    // El MP3 se pasa antes a WAV: leer un mismo MP3 desde muchos trozos a la vez hace fallar el filtro («Invalid data found»).
+    writeFileSync(join(dir, "tts.bin"), tts)
+    const conv = await ffmpegRun(["-y", "-i", "tts.bin", "-vn", "-ac", "1", "-ar", "44100", "-c:a", "pcm_s16le", "tts.wav"], dir)
+    if (conv.code !== 0) throw new VoiceError(`No se pudo leer el audio de la voz: ${conv.err.slice(-200)}`)
+    let last = ""
+    for (const mode of ["rubberband", "atempo", "none"] as const) {
+      const r = await ffmpegRun(["-y", "-i", "tts.wav", "-filter_complex", build(mode), "-map", "[a]", "-t", totalSec.toFixed(3), "-ar", "44100", "-ac", "1", "-c:a", "pcm_s16le", "warp.wav"], dir)
+      if (r.code === 0) return new Uint8Array(readFileSync(join(dir, "warp.wav")))
+      last = r.err
+    }
+    throw new VoiceError(`No se pudo ajustar la voz a los labios: ${last}`)
   } finally { rmSync(dir, { recursive: true, force: true }) }
+}
+
+// ─── Voz de Gemini (texto a voz) ─────────────────────────────────────────────
+
+export const GEMINI_TTS_MODEL = "gemini-3.8-flash-tts"
+/** Respaldo si el modelo nuevo no responde (misma clave, API generateContent). */
+export const GEMINI_TTS_FALLBACK = "gemini-2.5-flash-preview-tts"
+export const GEMINI_TTS_VOICE = "Kore"
+const GEMINI_TTS_STYLE = "energetic, expressive Spanish reel narrator with natural rhythm, emphasizing the key words"
+
+/** PCM 16 bits mono → WAV. */
+export function pcmToWav(pcm: Uint8Array, rate = 24000): Uint8Array {
+  const h = Buffer.alloc(44)
+  h.write("RIFF", 0); h.writeUInt32LE(36 + pcm.length, 4); h.write("WAVEfmt ", 8)
+  h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22)
+  h.writeUInt32LE(rate, 24); h.writeUInt32LE(rate * 2, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34)
+  h.write("data", 36); h.writeUInt32LE(pcm.length, 40)
+  return new Uint8Array(Buffer.concat([h, Buffer.from(pcm)]))
+}
+
+/** WAV tal cual si ya trae cabecera (Gemini 3.8); PCM sin cabecera (modelos anteriores) se envuelve. */
+function asWav(raw: Uint8Array): Uint8Array {
+  const riff = raw.length > 12 && raw[0] === 0x52 && raw[1] === 0x49 && raw[2] === 0x46 && raw[3] === 0x46
+  return riff ? raw : pcmToWav(raw)
+}
+
+/**
+ * Locución con la voz de Gemini (API de Gemini, la misma clave del estudio). Se usa para los reels sin personaje cuando no hay
+ * una voz de ElevenLabs elegida. Modelo gemini-3.8-flash-tts (Interactions API); si falla, se prueba el 2.5 por generateContent.
+ * Las etiquetas [..] de ElevenLabs no se envían: Gemini las leería en voz alta.
+ */
+export async function synthesizeGeminiSpeech(input: { text: string; voiceName?: string }, opts: { fetchImpl?: typeof fetch } = {}): Promise<{ bytes: Uint8Array }> {
+  const key = await apiKeyFor("gemini")
+  if (!key) throw new VoiceError("Conecta la API key de Gemini en Providers para generar la voz.", "no_key")
+  const text = stripAudioTags(input.text).trim()
+  if (!text) throw new VoiceError("No hay texto para la voz.", "invalid")
+  const f = opts.fetchImpl ?? fetch
+  const voice = input.voiceName || GEMINI_TTS_VOICE
+  const base = "https://generativelanguage.googleapis.com/v1beta"
+  let first = ""
+  try {
+    const res = await f(`${base}/interactions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({
+        model: GEMINI_TTS_MODEL,
+        input: [{ type: "user_input", content: [{ type: "text", text, annotations: [{ type: "speech_metadata", style: GEMINI_TTS_STYLE }] }] }],
+        response_format: { type: "audio" },
+        generation_config: { speech_config: [{ voice }] },
+      }),
+      signal: AbortSignal.timeout(90_000),
+    })
+    const body = await res.text()
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`)
+    const j = JSON.parse(body) as { steps?: Array<{ content?: Array<{ type?: string; data?: string }> }> }
+    const data = (j.steps ?? []).flatMap((st) => st.content ?? []).find((c) => c.data && (!c.type || c.type === "audio"))?.data
+    if (!data) throw new Error("sin audio en la respuesta")
+    const bytes = new Uint8Array(Buffer.from(data, "base64"))
+    if (bytes.byteLength < 1000) throw new Error("audio vacío")
+    return { bytes: asWav(bytes) }
+  } catch (err) {
+    first = err instanceof Error ? err.message : String(err)
+    logger.warn(`[video-voice] ${GEMINI_TTS_MODEL} falló (${first.slice(0, 160)}); se prueba ${GEMINI_TTS_FALLBACK}`)
+  }
+  const res = await f(`${base}/models/${GEMINI_TTS_FALLBACK}:generateContent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: `Di esto en español, con energía y ritmo de narrador de reels, marcando las palabras clave: ${text}` }] }],
+      generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } },
+    }),
+    signal: AbortSignal.timeout(90_000),
+  })
+  if (!res.ok) throw new VoiceError(`La voz de Gemini falló (${GEMINI_TTS_MODEL}: ${first.slice(0, 100)}; ${GEMINI_TTS_FALLBACK}: HTTP ${res.status})`)
+  const j = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { data?: string } }> } }> }
+  const data = j.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data)?.inlineData?.data
+  if (!data) throw new VoiceError("Gemini no devolvió audio para la voz.")
+  return { bytes: asWav(new Uint8Array(Buffer.from(data, "base64"))) }
 }

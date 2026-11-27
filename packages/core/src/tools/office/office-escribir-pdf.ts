@@ -31,6 +31,7 @@ import {
   type TemaDocumento,
   type Tramo,
 } from "./office-style";
+import { ajustarCm, cargarImagen } from "./office-imagen.ts";
 
 const log = logger.child("office-escribir-pdf");
 
@@ -101,7 +102,7 @@ export const officeEscribirPdfTool: Tool = {
       pie: { type: "object", description: "Banda inferior en cada página: {izquierda, centro, derecha, tamano, color, linea}. Ej: {derecha: 'Página {page} de {pages}'}" },
       bloques: {
         type: "array",
-        description: "Contenido en bloques. tipo: titulo(nivel) | parrafo(texto|tramos, alineacion, tamano, negrita, cursiva, color) | lista(estilo vinetas|numerada, elementos: string|{texto, elementos}) | tabla(encabezado, cebra, columnas: pesos, alineacion: [..], filas: [[celda|{texto,negrita,color,relleno,alineacion}]]) | cita(texto, autor) | codigo(texto) | regla | espacio(alto) | salto_pagina",
+        description: "Contenido en bloques. tipo: titulo(nivel) | parrafo(texto|tramos, alineacion, tamano, negrita, cursiva, color) | lista(estilo vinetas|numerada, elementos: string|{texto, elementos}) | tabla(encabezado, cebra, columnas: pesos, alineacion: [..], filas: [[celda|{texto,negrita,color,relleno,alineacion}]]) | cita(texto, autor) | codigo(texto) | regla | espacio(alto) | salto_pagina | imagen(artifact_id|ruta, ancho en cm, alineacion, pie; PNG o JPEG)",
         items: { type: "object" },
       },
     },
@@ -117,6 +118,8 @@ export const officeEscribirPdfTool: Tool = {
       const tema = resolverTemaDocumento(params.tema);
       const titulo = typeof params.titulo === "string" ? params.titulo : "";
       const bloques = bloquesDeParametros(params);
+      const imagenesFallidas: string[] = [];
+      let imagenesInsertadas = 0;
       if (!titulo && bloques.length === 0) {
         return { ok: false, error: "Falta contenido: da `contenido` o `bloques`." };
       }
@@ -504,6 +507,29 @@ export const officeEscribirPdfTool: Tool = {
           case "page_break":
             nuevaPagina();
             break;
+          case "image": {
+            const cargada = cargarImagen(b.ref, config);
+            if ("error" in cargada) { imagenesFallidas.push(cargada.error); break; }
+            const img = cargada.imagen;
+            if (img.tipo === "gif") { imagenesFallidas.push(`${img.origen}: el PDF no admite GIF; usa PNG o JPEG.`); break; }
+            const incrustada = img.tipo === "png" ? await pdf.embedPng(img.bytes) : await pdf.embedJpg(img.bytes);
+            // 1 cm = 28.35 pt. Cabe en una página completa: nunca más alto que el área útil.
+            const cm = ajustarCm(img, b.widthCm, anchoUtil / 28.35, (alto - margen * 2 - fs0 * 3) / 28.35);
+            const w = cm.w * 28.35, h = cm.h * 28.35;
+            asegurar(h + fs0);
+            y -= fs0 * 0.4;
+            const x = b.align === "right" ? izq + anchoUtil - w : b.align === "left" ? izq : izq + (anchoUtil - w) / 2;
+            pagina.drawImage(incrustada, { x, y: y - h, width: w, height: h });
+            y -= h;
+            if (b.caption) {
+              const segs = tramosASegmentos([{ text: b.caption, italic: true }], fs0 * 0.85, tema.atenuado, tema.fuenteCuerpo);
+              y -= fs0 * 0.3;
+              parrafo(segs, izq, anchoUtil, b.align === "right" ? "right" : b.align === "left" ? "left" : "center");
+            }
+            y -= fs0 * 0.8;
+            imagenesInsertadas++;
+            break;
+          }
         }
       }
 
@@ -548,6 +574,8 @@ export const officeEscribirPdfTool: Tool = {
         ruta: rutaAbsoluta,
         paginas: pdf.getPageCount(),
         bytesEscritos: pdfBytes.length,
+        imagenes: imagenesInsertadas,
+        ...(imagenesFallidas.length ? { aviso_imagenes: `Imágenes omitidas: ${imagenesFallidas.join(" | ")}` } : {}),
         ...(reemplazados > 0
           ? { caracteresReemplazados: reemplazados, aviso: "Algunos caracteres fuera del alfabeto latino occidental se sustituyeron por «?»." }
           : {}),

@@ -11,7 +11,7 @@ import { AuthImage } from "@/components/AuthImage";
 import { swal } from "@/lib/swal";
 import { AuthVideo } from "./AuthVideo";
 import {
-  DEFAULT_REEL_STYLE, DEFAULT_VOICE_SETTINGS, artifactUrl, videoApi, type Avatar, type AspectRatio, type GraphicKind, type Project, type ReelStyle, type Resolution, type Scene, type SceneGraphic, type StudioStatus, type SubtitlePreset, type TransitionType, type Voice, type VoiceSettings,
+  CARD_KINDS, DEFAULT_REEL_STYLE, DEFAULT_VOICE_SETTINGS, IDENTITY_PRESETS, VOICE_FX, artifactUrl, videoApi, type Avatar, type AspectRatio, type GraphicKind, type Identity, type Project, type SceneCard, type SceneSource, type ReelStyle, type Resolution, type Scene, type SceneGraphic, type StudioStatus, type SubtitlePreset, type TransitionType, type Voice, type VoiceSettings,
 } from "./videoApi";
 
 const usd = (n: number) => `${n.toFixed(n < 1 ? 3 : 2)} USD`;
@@ -31,7 +31,11 @@ interface DraftCharacter {
   /** Tarjeta de bienvenida que aún nadie tocó: no se guarda hasta que el usuario la use. */
   pristine?: boolean
 }
-interface DraftScene { key: string; id?: string; seconds: number; prompt: string; characterKeys: string[]; wardrobe: string; setting: string; dialogue: string; graphic: SceneGraphic }
+interface DraftScene { key: string; id?: string; seconds: number; prompt: string; characterKeys: string[]; wardrobe: string; setting: string; dialogue: string; graphic: SceneGraphic; fx: string | null; source: SceneSource; card: SceneCard | null }
+const EMPTY_CARD: SceneCard = { kind: "title", title: "", sub: "", value: "", fill: null, items: [], columns: [{ label: "", text: "" }, { label: "", text: "" }] };
+interface DraftNarrator { voiceId: string | null; voiceName: string | null; settings: VoiceSettings }
+const narratorDraft = (p: Project): DraftNarrator => ({ voiceId: p.narrator?.voice_id ?? null, voiceName: p.narrator?.voice_name ?? null, settings: { ...(p.narrator?.voice_settings ?? DEFAULT_VOICE_SETTINGS), mode: "narration" } });
+const fxLabel = (id: string) => VOICE_FX.find((f) => f.id === id)?.label ?? id;
 const NO_GRAPHIC: SceneGraphic = { kind: "none", text: "", sub: "" };
 
 let keySeq = 0;
@@ -46,7 +50,8 @@ function toDraft(p: Project): { characters: DraftCharacter[]; scenes: DraftScene
     characters: !saved ? [starterCharacter()] : p.characters.map((c) => ({ key: c.id, id: c.id, name: c.name, description: c.description, voiceId: c.voice_id, voiceName: c.voice_name, voiceSettings: c.voice_settings ?? DEFAULT_VOICE_SETTINGS })),
     scenes: p.scenes.map((s) => ({
       key: s.id, id: s.id, seconds: s.seconds, prompt: s.prompt, characterKeys: s.character_ids,
-      wardrobe: s.wardrobe ?? "", setting: s.setting ?? "", dialogue: s.dialogue ?? "", graphic: s.graphic ?? NO_GRAPHIC,
+      wardrobe: s.wardrobe ?? "", setting: s.setting ?? "", dialogue: s.dialogue ?? "", graphic: s.graphic ?? NO_GRAPHIC, fx: s.fx ?? null,
+      source: s.source ?? "clip", card: s.card ?? null,
     })),
   };
 }
@@ -137,14 +142,16 @@ function AiImprove({ title, brief, aspect, seconds, characters, onApply }: {
   );
 }
 
-type ScriptProposal = { script: string; scenes: Array<{ seconds: number; prompt: string; wardrobe: string; setting: string; dialogue: string; character_ids: string[]; graphic?: SceneGraphic }> };
+type ScriptProposal = { script: string; scenes: Array<{ seconds: number; prompt: string; wardrobe: string; setting: string; dialogue: string; character_ids: string[]; graphic?: SceneGraphic; source?: SceneSource; card?: SceneCard | null }> };
 
 /**
  * «Escribir guion y escenas con IA»: a partir del título y la idea propone el guion y las escenas con
  * vestuario, escenografía y diálogo. Muestra la propuesta al lado; el usuario decide si la usa.
  */
-function AiScript({ title, brief, aspect, seconds, people, hasContent, disabled, ensureSaved, onApply }: {
+function AiScript({ title, brief, aspect, seconds, people, hasContent, disabled, ensureSaved, onApply, mode }: {
   title: string; brief: string; aspect: AspectRatio; seconds: number;
+  /** «voiceover»: reel sin personaje (imágenes + voz en off). */
+  mode: "avatar" | "voiceover";
   people: Array<{ id: string; name: string; description: string; voice_expressive: boolean }>;
   hasContent: boolean; disabled: boolean;
   /** Guarda lo pendiente (para que los personajes nuevos tengan id) y devuelve los personajes con id. */
@@ -159,7 +166,7 @@ function AiScript({ title, brief, aspect, seconds, people, hasContent, disabled,
     setBusy(true);
     try {
       const chars = await ensureSaved();
-      const r = await videoApi.script({ title, brief, aspect_ratio: aspect, target_seconds: seconds, characters: chars });
+      const r = await videoApi.script({ title, brief, aspect_ratio: aspect, target_seconds: seconds, characters: chars, mode });
       setProposal({ script: r.script, scenes: r.scenes, names: new Map(chars.map((c) => [c.id, c.name])) });
     } catch (e) {
       const msg = (e as Error).message;
@@ -246,9 +253,11 @@ function NewProjectForm({ status, avatars, onCreated, onAvatarsChange }: { statu
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(status.voice_defaults ?? DEFAULT_VOICE_SETTINGS);
   // Avatar guardado elegido: trae su rostro, su nombre y su voz, así que no hay que subir nada.
   const [avatarId, setAvatarId] = useState<string | null>(null);
+  // «avatar»: con protagonista que habla a cámara · «voiceover»: sin personaje, un narrador cuenta la historia sobre las imágenes.
+  const [kind, setKind] = useState<"avatar" | "voiceover">("avatar");
   const avatar = avatars.find((a) => a.id === avatarId) ?? null;
   const estimate = status.price_per_second_usd[resolution] * seconds;
-  const wantsHero = !!faceFile || !!voiceId || !!avatar;
+  const wantsHero = kind === "avatar" && (!!faceFile || !!voiceId || !!avatar);
 
   const pickAvatar = (a: Avatar) => {
     setAvatarId(a.id); setFaceFile(null); setConsent(true);
@@ -272,12 +281,19 @@ function NewProjectForm({ status, avatars, onCreated, onAvatarsChange }: { statu
 
   const create = async () => {
     if (!title.trim()) return;
-    if (!avatar && faceFile && !consent) {
+    if (kind === "avatar" && !avatar && faceFile && !consent) {
       void swal.fire({ title: "Falta una confirmación", text: "Marca que el rostro es tuyo o que tienes permiso de la persona para usarlo.", icon: "info" });
       return;
     }
     setBusy(true);
     try {
+      if (kind === "voiceover") {
+        onCreated(await videoApi.create({
+          title: title.trim(), brief, aspect_ratio: aspect, resolution, target_seconds: seconds,
+          narrator: voiceId ? { voice_id: voiceId, voice_name: voiceName, voice_settings: { ...voiceSettings, mode: "narration" } } : undefined,
+        }));
+        return;
+      }
       let project = await videoApi.create({ title: title.trim(), brief, aspect_ratio: aspect, resolution, target_seconds: seconds, avatar_id: avatar?.id });
       if (avatar && project.characters[0]) {
         // El avatar ya trae rostro y voz; solo se aplican los cambios de nombre y de voz hechos en este formulario.
@@ -334,6 +350,15 @@ function NewProjectForm({ status, avatars, onCreated, onAvatarsChange }: { statu
               </div>
             </div>
           </div>
+          <div className="space-y-1.5">
+            <span className="hive-label--field">Tipo de reel</span>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className={choice(kind === "avatar")} onClick={() => setKind("avatar")}><UserRound className="h-3 w-3" />Con protagonista</button>
+              <button type="button" className={choice(kind === "voiceover")} onClick={() => setKind("voiceover")}><Film className="h-3 w-3" />Sin personaje · voz en off</button>
+            </div>
+            <p className="text-[11px] text-white/35">{kind === "avatar" ? "Alguien (tú o un avatar) habla a cámara." : "Imágenes, producto, paisajes o animación con un narrador. No hace falta rostro."}</p>
+          </div>
+          {kind === "avatar" ? (
           <div className="hive-info-card space-y-3">
             <div>
               <span className="hive-label--field flex items-center gap-1.5"><UserRound className="h-3.5 w-3.5" />Protagonista <span className="font-normal normal-case text-white/30">(opcional)</span></span>
@@ -405,6 +430,22 @@ function NewProjectForm({ status, avatars, onCreated, onAvatarsChange }: { statu
             <VoicePicker enabled={status.voice_enabled} voiceId={voiceId} voiceName={voiceName} disabled={false} status={status}
               settings={voiceSettings} onSettings={setVoiceSettings} onPick={(id, name) => { setVoiceId(id); setVoiceName(name); }} />
           </div>
+          ) : (
+          <div className="hive-info-card space-y-3">
+            <div>
+              <span className="hive-label--field flex items-center gap-1.5"><Mic className="h-3.5 w-3.5" />Voz en off <span className="font-normal normal-case text-white/30">(opcional)</span></span>
+              <p className="mt-1 text-xs leading-relaxed text-white/40">Un narrador cuenta la historia sobre las imágenes del reel. Elige su voz y, si quieres, un efecto (micrófono de estudio, radio, tráiler…).</p>
+            </div>
+            {!status.voice_enabled && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-500/20 bg-blue-500/5 p-3 text-xs text-white/60">
+                <span className="flex items-center gap-2"><Mic className="h-3.5 w-3.5 text-blue-300" />ElevenLabs no está conectado: sin él no puedes elegir la voz del narrador.</span>
+                <Link to="/providers" className={`${ghostBtn} !border-blue-500/30 !text-blue-200`}>Conectar ElevenLabs en Providers</Link>
+              </div>
+            )}
+            <VoicePicker hideMode enabled={status.voice_enabled} voiceId={voiceId} voiceName={voiceName} disabled={false} status={status}
+              settings={{ ...voiceSettings, mode: "narration" }} onSettings={(v) => setVoiceSettings({ ...v, mode: "narration" })} onPick={(id, name) => { setVoiceId(id); setVoiceName(name); }} />
+          </div>
+          )}
           <div className="hive-info-card text-sm text-white/50">
             Costo aproximado de los clips: <span className="font-bold text-blue-300">{usd(estimate)}</span>. Nada se cobra hasta que apruebes el costo en el paso final.
           </div>
@@ -413,6 +454,62 @@ function NewProjectForm({ status, avatars, onCreated, onAvatarsChange }: { statu
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Tarjeta de gráficos ──────────────────────────────────────────────────────
+
+/** Editor del contenido de una tarjeta: el tipo decide qué campos se piden. Los textos son cortos a propósito (lo que mejor se lee en un reel). */
+function CardEditor({ card, onChange, disabled }: { card: SceneCard; onChange: (c: SceneCard) => void; disabled: boolean }) {
+  const set = (patch: Partial<SceneCard>) => onChange({ ...card, ...patch });
+  const k = card.kind;
+  const cols = [card.columns[0] ?? { label: "", text: "" }, card.columns[1] ?? { label: "", text: "" }];
+  const labels: Record<SceneCard["kind"], { title: string; sub?: string }> = {
+    title: { title: "Título (30 a 45 caracteres rinde mejor)", sub: "Subtítulo (opcional)" },
+    stat: { title: "Qué significa la cifra", sub: "Fuente o aclaración (opcional)" },
+    list: { title: "Encabezado (opcional)" },
+    quote: { title: "La cita", sub: "Autor (opcional)" },
+    compare: { title: "Encabezado (opcional)" },
+    cta: { title: "Qué quieres que hagan", sub: "@usuario o enlace" },
+  };
+  return (
+    <div className="space-y-2.5 rounded-xl border border-white/10 bg-white/[0.02] p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <select className={`${inputCls} rounded-md px-2 !h-8 text-xs text-white [color-scheme:dark]`} value={k} disabled={disabled} onChange={(e) => set({ kind: e.target.value as SceneCard["kind"] })}>
+          {CARD_KINDS.map((c) => <option key={c.id} className={OPTION_CLS} value={c.id}>{c.label}</option>)}
+        </select>
+        <span className="text-[11px] text-white/35">{CARD_KINDS.find((c) => c.id === k)?.hint}</span>
+      </div>
+      {k === "stat" && (
+        <div className="grid gap-2 sm:grid-cols-[1fr_140px]">
+          <Field label="Cifra (solo datos reales)"><Input className={`${inputCls} !h-9`} value={card.value} maxLength={12} disabled={disabled} placeholder="73 %" onChange={(e) => set({ value: e.target.value })} /></Field>
+          <Field label="Barra (0-100, opcional)"><Input type="number" className={`${inputCls} !h-9`} min={0} max={100} value={card.fill ?? ""} disabled={disabled} placeholder="auto"
+            onChange={(e) => set({ fill: e.target.value === "" ? null : Number(e.target.value) })} /></Field>
+        </div>
+      )}
+      {k !== "list" || labels.list.title ? (
+        <Field label={labels[k].title}><Input className={`${inputCls} !h-9`} value={card.title} maxLength={90} disabled={disabled} onChange={(e) => set({ title: e.target.value })} /></Field>
+      ) : null}
+      {k === "list" && (
+        <Field label="Elementos (uno por línea, hasta 5)">
+          <Textarea className={`${inputCls} !h-auto`} rows={4} disabled={disabled} value={card.items.join("\n")}
+            onChange={(e) => set({ items: e.target.value.split("\n").slice(0, 5) })} />
+        </Field>
+      )}
+      {k === "compare" && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {[0, 1].map((i) => (
+            <div key={i} className="space-y-1.5">
+              <Input className={`${inputCls} !h-9`} value={cols[i].label} maxLength={24} disabled={disabled} placeholder={i === 0 ? "Antes" : "Ahora"}
+                onChange={(e) => { const next = [...cols]; next[i] = { ...next[i], label: e.target.value }; set({ columns: next }); }} />
+              <Input className={`${inputCls} !h-9`} value={cols[i].text} maxLength={90} disabled={disabled} placeholder="Una frase corta"
+                onChange={(e) => { const next = [...cols]; next[i] = { ...next[i], text: e.target.value }; set({ columns: next }); }} />
+            </div>
+          ))}
+        </div>
+      )}
+      {labels[k].sub && <Field label={labels[k].sub!}><Input className={`${inputCls} !h-9`} value={card.sub} maxLength={120} disabled={disabled} onChange={(e) => set({ sub: e.target.value })} /></Field>}
     </div>
   );
 }
@@ -433,7 +530,7 @@ function Slider({ label, value, min, max, step, format, disabled, hint, onChange
 }
 
 /** Etiquetas de audio que entiende Eleven v4 (dirigen la entonación; no cuentan para el tiempo). Pueden variar según el modelo. */
-const AUDIO_TAGS = ["[whispering]", "[laughing]", "[sighs]", "[excited]", "[sarcastic]"];
+const AUDIO_TAGS = ["[curious]", "[excited]", "[serious]", "[whispering]", "[sighs]", "[laughing]", "[sarcastic]"];
 const stripTags = (t: string) => t.replace(/\[[^\]\n]{1,40}\]/g, "").replace(/[ \t]{2,}/g, " ").trim();
 
 const STABILITY_LEVELS: Array<{ v: number; label: string }> = [{ v: 0, label: "Creativa" }, { v: 0.5, label: "Natural" }, { v: 1, label: "Estable" }];
@@ -443,8 +540,8 @@ const STABILITY_LEVELS: Array<{ v: number; label: string }> = [{ v: 0, label: "C
  * ni velocidad) y se dirige con etiquetas de audio; Multilingual v2 y Flash añaden estilo, velocidad y
  * speaker boost. El volumen no existe en ElevenLabs: lo aplica Hive al mezclar la voz con el clip.
  */
-function VoiceControls({ settings, onChange, voiceId, status, disabled }: {
-  settings: VoiceSettings; onChange: (v: VoiceSettings) => void; voiceId: string | null; status: StudioStatus; disabled: boolean;
+function VoiceControls({ settings, onChange, voiceId, status, disabled, hideMode }: {
+  settings: VoiceSettings; onChange: (v: VoiceSettings) => void; voiceId: string | null; status: StudioStatus; disabled: boolean; hideMode?: boolean;
 }) {
   const [text, setText] = useState("Hola, esta es mi voz en el reel.");
   const [busy, setBusy] = useState(false);
@@ -476,7 +573,7 @@ function VoiceControls({ settings, onChange, voiceId, status, disabled }: {
         <span className="ml-auto text-[10px] font-normal normal-case text-white/30">{settings.mode === "sync" ? `Tu voz ajustada a los labios · ${model?.label.split(" · ")[0] ?? settings.model_id}` : settings.mode === "convert" ? "Cambio de voz" : `Narración · ${model?.label.split(" · ")[0] ?? settings.model_id}`}</span>
       </summary>
       <div className="mt-3 space-y-3.5">
-        <div className="space-y-1.5">
+        <div className={`space-y-1.5 ${hideMode ? "hidden" : ""}`}>
           <span className="hive-label--field">Cómo se pone la voz</span>
           <div className="grid gap-2">
             {([
@@ -548,6 +645,15 @@ function VoiceControls({ settings, onChange, voiceId, status, disabled }: {
             hint="Qué tanto se oye el audio original del clip por debajo de la voz. 0 % deja solo la voz." onChange={(v) => set({ ambient_volume: v })} />}
         </div>
 
+        <div className="space-y-1.5 border-t border-white/10 pt-3">
+          <span className="hive-label--field">Efecto de voz</span>
+          <select className={`${inputCls} w-full rounded-md px-3 !h-9 text-sm text-white [color-scheme:dark]`} value={settings.fx ?? "studio"} disabled={disabled}
+            onChange={(e) => set({ fx: e.target.value as VoiceSettings["fx"] })}>
+            {VOICE_FX.map((f) => <option key={f.id} className={OPTION_CLS} value={f.id}>{f.label}</option>)}
+          </select>
+          <p className="text-[11px] leading-snug text-white/40">{VOICE_FX.find((f) => f.id === (settings.fx ?? "studio"))?.hint} Se aplica al armar el reel: cambiarlo es gratis y no regenera nada. Puedes darle otro efecto a cada escena. Pruébalo abajo.</p>
+        </div>
+
         <div className="space-y-2 border-t border-white/10 pt-3">
           <span className="hive-label--field">Probar voz</span>
           <Input className={`${inputCls} !h-9`} value={text} maxLength={status.voice_preview_max_chars} disabled={disabled} onChange={(e) => setText(e.target.value)} />
@@ -566,8 +672,8 @@ function VoiceControls({ settings, onChange, voiceId, status, disabled }: {
   );
 }
 
-function VoicePicker({ enabled, voiceId, voiceName, disabled, onPick, status, settings, onSettings }: {
-  enabled: boolean; voiceId: string | null; voiceName: string | null; disabled: boolean; onPick: (id: string | null, name: string | null) => void;
+function VoicePicker({ enabled, voiceId, voiceName, disabled, onPick, status, settings, onSettings, hideMode }: {
+  hideMode?: boolean; enabled: boolean; voiceId: string | null; voiceName: string | null; disabled: boolean; onPick: (id: string | null, name: string | null) => void;
   status: StudioStatus; settings: VoiceSettings; onSettings: (v: VoiceSettings) => void;
 }) {
   const [voices, setVoices] = useState<Voice[] | null>(null);
@@ -627,7 +733,7 @@ function VoicePicker({ enabled, voiceId, voiceName, disabled, onPick, status, se
         </div>
       )}
       {current?.preview_url && <audio controls src={current.preview_url} className="h-8 w-full" />}
-      <VoiceControls settings={settings} onChange={onSettings} voiceId={voiceId} status={status} disabled={disabled} />
+      <VoiceControls settings={settings} onChange={onSettings} voiceId={voiceId} status={status} disabled={disabled} hideMode={hideMode} />
       {!cloning ? (
         <button type="button" className={ghostBtn} disabled={disabled} onClick={() => setCloning(true)}><Upload className="h-3 w-3" />Clonar una voz desde una muestra</button>
       ) : (
@@ -805,8 +911,9 @@ function ColorField({ label, value, disabled, onChange }: { label: string; value
  * Cómo se ve el reel por encima de los clips: estilo de los subtítulos, efecto entre escenas y gráficos animados.
  * Se aplica al unir los clips, así que cambiarlo no cuesta nada ni vuelve a generar video.
  */
-function FinishSection({ style, setStyle, subtitles, onToggleSubtitles, locked, busy }: {
-  style: ReelStyle; setStyle: (s: ReelStyle) => void; subtitles: boolean; onToggleSubtitles: (on: boolean) => void; locked: boolean; busy: boolean;
+function FinishSection({ style, setStyle, identity, setIdentity, subtitles, onToggleSubtitles, locked, busy, hasMusic }: {
+  identity: Identity; setIdentity: (i: Identity) => void;
+  style: ReelStyle; setStyle: (s: ReelStyle) => void; subtitles: boolean; onToggleSubtitles: (on: boolean) => void; locked: boolean; busy: boolean; hasMusic: boolean;
 }) {
   const st = style.subtitles;
   const setSub = (patch: Partial<ReelStyle["subtitles"]>) => setStyle({ ...style, subtitles: { ...st, ...patch } });
@@ -815,6 +922,27 @@ function FinishSection({ style, setStyle, subtitles, onToggleSubtitles, locked, 
     <div className="grid gap-5 lg:grid-cols-[1fr_190px]">
       <div className="space-y-5">
         <div className="space-y-3">
+          <span className="text-sm font-semibold text-white">Identidad visual</span>
+          <p className="text-[11px] text-white/30">La paleta y las tipografías de las tarjetas de gráficos, los gráficos y las imágenes de apoyo. Un solo acento y un fondo único hacen que el reel se vea hecho por una sola mano. Cambiarla redibuja las tarjetas (gratis).</p>
+          <div className="flex flex-wrap gap-2">
+            {IDENTITY_PRESETS.map((p) => (
+              <button key={p.preset} type="button" disabled={locked} title={p.mood}
+                className={`${seg(identity.preset === p.preset)} !gap-2`} onClick={() => setIdentity({ ...p })}>
+                <span className="flex h-4 w-7 overflow-hidden rounded-sm border border-white/20"><span className="h-full w-1/2" style={{ background: p.bg }} /><span className="h-full w-1/2" style={{ background: p.accent }} /></span>{p.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <ColorField label="Fondo" value={identity.bg} disabled={locked} onChange={(v) => setIdentity({ ...identity, preset: "custom", bg: v })} />
+            <ColorField label="Texto" value={identity.fg} disabled={locked} onChange={(v) => setIdentity({ ...identity, preset: "custom", fg: v })} />
+            <ColorField label="Acento" value={identity.accent} disabled={locked} onChange={(v) => setIdentity({ ...identity, preset: "custom", accent: v })} />
+            <select className={`${inputCls} rounded-md px-2 !h-8 text-xs text-white [color-scheme:dark]`} value={identity.heading_font} disabled={locked}
+              onChange={(e) => setIdentity({ ...identity, preset: "custom", heading_font: e.target.value as Identity["heading_font"] })}>
+              <option className={OPTION_CLS} value="montserrat">Títulos: Montserrat</option><option className={OPTION_CLS} value="sans">Títulos: Sans</option><option className={OPTION_CLS} value="serif">Títulos: Serif</option>
+            </select>
+          </div>
+        </div>
+        <div className="space-y-3 border-t border-white/10 pt-4">
           <label className="flex items-center gap-2 text-sm font-semibold text-white">
             <input type="checkbox" className="accent-blue-500" checked={subtitles} disabled={locked || busy} onChange={(e) => onToggleSubtitles(e.target.checked)} />
             Subtítulos
@@ -864,6 +992,28 @@ function FinishSection({ style, setStyle, subtitles, onToggleSubtitles, locked, 
 
         <div className="space-y-2 border-t border-white/10 pt-4">
           <label className="flex items-center gap-2 text-sm font-semibold text-white">
+            <input type="checkbox" className="accent-blue-500" checked={style.music.enabled} disabled={locked} onChange={(e) => setStyle({ ...style, music: { ...style.music, enabled: e.target.checked } })} />
+            Música de fondo suave
+          </label>
+          <div className={`space-y-2 ${style.music.enabled ? "" : "pointer-events-none opacity-40"}`}>
+            <p className="text-[11px] text-white/30">Gemini (Lyria) compone un instrumental según el tema del reel; queda bajito y se agacha solo cuando alguien habla. Cuesta unos US$0,08 por reel{hasMusic ? " (ya está compuesta: no se vuelve a cobrar)" : ""}.</p>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+              <label className="flex items-center gap-2 text-[11px] text-white/60">Volumen
+                <input type="range" min={0.04} max={0.4} step={0.02} value={style.music.volume} disabled={locked} className="accent-blue-500"
+                  onChange={(e) => setStyle({ ...style, music: { ...style.music, volume: Number(e.target.value) } })} />
+                <span className="w-9 text-white/40">{Math.round(style.music.volume * 100)} %</span>
+              </label>
+              <input className="min-w-[220px] flex-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-white placeholder:text-white/30" maxLength={200} disabled={locked}
+                placeholder="Estilo (opcional): piano cálido, electrónica suave, cuerdas esperanzadoras…" value={style.music.mood}
+                onChange={(e) => setStyle({ ...style, music: { ...style.music, mood: e.target.value } })} />
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm font-semibold text-white">
+            <input type="checkbox" className="accent-blue-500" checked={style.trim.enabled} disabled={locked} onChange={(e) => setStyle({ ...style, trim: { ...style.trim, enabled: e.target.checked } })} />
+            Recortar silencios
+          </label>
+          <p className="text-[11px] text-white/30">Gemini empieza a hablar con retraso y deja aire al final de cada clip. Al unir las escenas se corta cada una a su tramo hablado, con un pequeño margen. Es gratis y no toca los clips guardados.</p>
+          <label className="flex items-center gap-2 text-sm font-semibold text-white">
             <input type="checkbox" className="accent-blue-500" checked={style.graphics.enabled} disabled={locked} onChange={(e) => setStyle({ ...style, graphics: { ...style.graphics, enabled: e.target.checked } })} />
             Gráficos animados
           </label>
@@ -893,6 +1043,8 @@ function ProjectEditor({ project, status, avatars, onChange, onDeleted, onAvatar
   const [editingBasics, setEditingBasics] = useState(() => !project.brief.trim());
   const [characters, setCharacters] = useState<DraftCharacter[]>(() => toDraft(project).characters);
   const [scenes, setScenes] = useState<DraftScene[]>(() => toDraft(project).scenes);
+  const [narrator, setNarrator] = useState<DraftNarrator>(() => narratorDraft(project));
+  const [identity, setIdentity] = useState<Identity>(project.identity ?? IDENTITY_PRESETS[0]);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [consents, setConsents] = useState<Record<string, boolean>>({});
@@ -909,7 +1061,7 @@ function ProjectEditor({ project, status, avatars, onChange, onDeleted, onAvatar
   useEffect(() => {
     if (dirty) return;
     const d = toDraft(project);
-    setScript(project.script); setBrief(project.brief); setTitle(project.title); setStyle(project.style ?? DEFAULT_REEL_STYLE); setCharacters(d.characters); setScenes(d.scenes);
+    setScript(project.script); setBrief(project.brief); setTitle(project.title); setStyle(project.style ?? DEFAULT_REEL_STYLE); setCharacters(d.characters); setScenes(d.scenes); setNarrator(narratorDraft(project)); setIdentity(project.identity ?? IDENTITY_PRESETS[0]);
   }, [project.updated_at]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const touch = () => setDirty(true);
@@ -926,14 +1078,15 @@ function ProjectEditor({ project, status, avatars, onChange, onDeleted, onAvatar
     const toSave = characters.filter((c) => !c.pristine || c.key === forceKey);
     // 1) personajes (para tener sus ids), 2) escenas con esos ids.
     let saved = await videoApi.update(project.id, {
-      title: title.trim() || project.title, brief, script, style,
+      title: title.trim() || project.title, brief, script, style, identity,
+      narrator: narrator.voiceId ? { voice_id: narrator.voiceId, voice_name: narrator.voiceName, voice_settings: narrator.settings } : null,
       characters: toSave.map((c) => ({ id: c.id, name: c.name, description: c.description, voice_id: c.voiceId, voice_name: c.voiceName, voice_settings: c.voiceSettings })),
     });
     const idByKey = new Map<string, string>();
     toSave.forEach((c, i) => idByKey.set(c.key, saved.characters[i]?.id ?? c.key));
     saved = await videoApi.update(project.id, {
       scenes: scenes.map((s) => ({
-        id: s.id, seconds: Number(s.seconds), prompt: s.prompt, wardrobe: s.wardrobe, setting: s.setting, dialogue: s.dialogue, graphic: s.graphic,
+        id: s.id, seconds: Number(s.seconds), prompt: s.prompt, wardrobe: s.wardrobe, setting: s.setting, dialogue: s.dialogue, graphic: s.graphic, fx: s.fx, source: s.source, card: s.source === "card" ? s.card : null,
         character_ids: s.characterKeys.map((k) => idByKey.get(k) ?? k),
       })),
     });
@@ -941,7 +1094,14 @@ function ProjectEditor({ project, status, avatars, onChange, onDeleted, onAvatar
     setCharacters(d.characters); setScenes(d.scenes); setDirty(false);
     onChange(saved);
     return saved;
-  }, [project.id, title, brief, script, style, characters, scenes, onChange]);
+  }, [project.id, title, brief, script, style, identity, characters, scenes, narrator, onChange]);
+
+  /** Efecto de voz que heredaría una escena: el de su personaje o, sin personaje, el del narrador. */
+  const inheritedFx = (s: DraftScene): string => {
+    const c = characters.find((x) => s.characterKeys.includes(x.key));
+    return c ? (c.voiceSettings.fx ?? "none") : s.characterKeys.length === 0 ? (narrator.voiceId ? narrator.settings.fx : "none") : "none";
+  };
+  const suggestionFor = (s: DraftScene) => (s.id ? project.fx_suggestions?.[project.scenes.findIndex((x) => x.id === s.id)] ?? null : null);
 
   const run = async (label: string, fn: () => Promise<void>) => {
     setBusy(label);
@@ -992,7 +1152,7 @@ function ProjectEditor({ project, status, avatars, onChange, onDeleted, onAvatar
     const ok = await swal.fire({
       title: "Aprobar costo y producir",
       html: `Se generarán <b>${c.pending_scenes}</b> clip(s) (${c.pending_seconds} s) a ${saved.resolution}` +
-        (c.looks_pending ? ` y <b>${c.looks_pending}</b> imagen(es) de escena con tu rostro de referencia` : "") + `.<br/>` +
+        (c.looks_pending ? ` y <b>${c.looks_pending}</b> imagen(es) de escena con tu rostro de referencia` : "") + (c.music_usd ? ` y la música de fondo (Lyria)` : "") + `.<br/>` +
         `Costo estimado: <b>${usd(c.total_usd)}</b>. Se cobra a tu saldo de Gemini y no se puede deshacer.` +
         (c.dialogue_chars ? `<br/><small>Además, ElevenLabs descuenta ${c.dialogue_chars} caracteres de tu plan por la voz.</small>` : ""),
       icon: "question", showCancelButton: true, confirmButtonText: "Aprobar y producir", cancelButtonText: "Cancelar",
@@ -1000,6 +1160,31 @@ function ProjectEditor({ project, status, avatars, onChange, onDeleted, onAvatar
     if (!ok.isConfirmed) return;
     await videoApi.approve(project.id);
     onChange(await videoApi.produce(project.id));
+  });
+
+  /** Agrega (o rehace) la música de fondo de un reel terminado: una sola llamada a Lyria, sin tocar los clips. */
+  const addMusic = () => run("music", async () => {
+    const saved = dirty ? await save() : project;
+    const ok = await swal.fire({
+      title: saved.music ? "Rehacer la música" : "Agregar música de fondo",
+      html: `Gemini (Lyria) compondrá una música instrumental suave según el tema del reel y se mezclará bajo la voz.<br/>Costo estimado: <b>${usd(0.08)}</b>. <b>No se vuelve a generar el video.</b>`,
+      icon: "question", showCancelButton: true, confirmButtonText: saved.music ? "Rehacer la música" : "Agregar la música", cancelButtonText: "Cancelar",
+    });
+    if (!ok.isConfirmed) return;
+    onChange(await videoApi.music(project.id));
+  });
+
+  /** Rehace solo la voz con el clip original de Gemini guardado: no se vuelve a pagar el video. */
+  const redub = () => run("redub", async () => {
+    const saved = dirty ? await save() : project;
+    const ok = await swal.fire({
+      title: "Rehacer la voz",
+      html: `Se rehace la voz de <b>${saved.cost.redub_available}</b> escena(s) con el clip original de Gemini.<br/><b>No se vuelve a generar el video</b> (sin costo de Gemini).` +
+        (saved.cost.dialogue_chars || saved.scenes.length ? `<br/><small>ElevenLabs descuenta de nuevo los caracteres del diálogo.</small>` : ""),
+      icon: "question", showCancelButton: true, confirmButtonText: "Rehacer la voz", cancelButtonText: "Cancelar",
+    });
+    if (!ok.isConfirmed) return;
+    onChange(await videoApi.redub(project.id));
   });
 
   const remove = async () => {
@@ -1059,7 +1244,7 @@ function ProjectEditor({ project, status, avatars, onChange, onDeleted, onAvatar
           </div>
         )}
         {!locked && (
-          <AiScript title={title} brief={brief} aspect={project.aspect_ratio} seconds={project.target_seconds} disabled={!!busy}
+          <AiScript mode={characters.every((c) => c.pristine) ? "voiceover" : "avatar"} title={title} brief={brief} aspect={project.aspect_ratio} seconds={project.target_seconds} disabled={!!busy}
             hasContent={!!script.trim() || scenes.length > 0}
             people={characters.filter((c) => c.id).map((c) => ({ id: c.id!, name: c.name, description: c.description, voice_expressive: status.voice_models.find((m) => m.id === c.voiceSettings.model_id)?.expressive === true && !!c.voiceId }))}
             ensureSaved={async () => {
@@ -1084,7 +1269,8 @@ function ProjectEditor({ project, status, avatars, onChange, onDeleted, onAvatar
                 }
                 setScenes(p.scenes.map((s) => ({
                   key: newKey(), seconds: s.seconds, prompt: s.prompt, characterKeys: s.character_ids,
-                  wardrobe: s.wardrobe, setting: s.setting, dialogue: s.dialogue, graphic: s.graphic ?? NO_GRAPHIC,
+                  wardrobe: s.wardrobe, setting: s.setting, dialogue: s.dialogue, graphic: s.graphic ?? NO_GRAPHIC, fx: null,
+                  source: s.source ?? "clip", card: s.card ?? null,
                 })));
               }
               touch();
@@ -1187,11 +1373,28 @@ function ProjectEditor({ project, status, avatars, onChange, onDeleted, onAvatar
 
       <SectionCard step={3} title="Escenas" hint={`Cada escena es un clip de ${status.limits.min_clip_seconds} a ${status.limits.max_clip_seconds} s. El vestuario y la escenografía los propone el Director de video; puedes ajustarlos.`}
         action={
+          <div className="flex flex-wrap gap-2">
+          <button className={ghostBtn} disabled={locked || !scenes.some((s) => s.dialogue.trim())} title="Pone en cada escena con voz el efecto que le va según lo que dice"
+            onClick={() => { setScenes((ss) => ss.map((x) => { const sug = suggestionFor(x); return sug && x.dialogue.trim() ? { ...x, fx: sug.id } : x; })); touch(); }}>
+            <Sparkles className="h-3 w-3 text-blue-300" />Efectos de voz sugeridos
+          </button>
           <button className={ghostBtn} disabled={locked || scenes.length >= status.limits.max_scenes}
-            onClick={() => { setScenes((ss) => [...ss, { key: newKey(), seconds: 5, prompt: "", characterKeys: [], wardrobe: "", setting: "", dialogue: "", graphic: NO_GRAPHIC }]); touch(); }}>
+            onClick={() => { setScenes((ss) => [...ss, { key: newKey(), seconds: 5, prompt: "", characterKeys: [], wardrobe: "", setting: "", dialogue: "", graphic: NO_GRAPHIC, fx: null, source: "clip", card: null }]); touch(); }}>
             <Plus className="h-3 w-3" />Escena
           </button>
+          </div>
         }>
+        {characters.every((c) => c.pristine) && (
+          <div className="hive-info-card space-y-3">
+            <div>
+              <span className="hive-label--field flex items-center gap-1.5"><Mic className="h-3.5 w-3.5" />Voz en off <span className="font-normal normal-case text-white/30">(escenas sin personaje)</span></span>
+              <p className="mt-1 text-xs leading-relaxed text-white/40">Las escenas sin personaje no tienen a nadie hablando: su diálogo lo dice este narrador sobre las imágenes.</p>
+            </div>
+            <VoicePicker hideMode enabled={status.voice_enabled} voiceId={narrator.voiceId} voiceName={narrator.voiceName} disabled={locked} status={status}
+              settings={narrator.settings} onSettings={(v) => { setNarrator((n) => ({ ...n, settings: { ...v, mode: "narration" } })); touch(); }}
+              onPick={(id, name) => { setNarrator((n) => ({ ...n, voiceId: id, voiceName: name })); touch(); }} />
+          </div>
+        )}
         {scenes.length === 0 && <p className="text-sm text-white/35">Añade escenas a mano o pídele al Director de video que las prepare.</p>}
         {over && <p className="text-sm text-red-300">Las escenas suman {localSeconds} s; el máximo es {status.limits.max_project_seconds} s.</p>}
         <div className="space-y-3">
@@ -1216,9 +1419,22 @@ function ProjectEditor({ project, status, avatars, onChange, onDeleted, onAvatar
                     <span className={`${tag.cls} justify-center`}>{tag.label}</span>
                   </div>
                   <div className="min-w-0 flex-1 space-y-2.5">
-                    <Textarea className={`${inputCls} !h-auto`} value={s.prompt} rows={2} disabled={locked} placeholder="Qué se ve y qué pasa: sujeto, acción, cámara y luz."
-                      onChange={(e) => { setScenes((ss) => ss.map((x) => x.key === s.key ? { ...x, prompt: e.target.value } : x)); touch(); }} />
-                    <div className="grid gap-2.5 sm:grid-cols-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {([["clip", "Clip de Gemini"], ["card", "Tarjeta de gráficos · gratis"], ["image", "Imagen con movimiento"]] as Array<[SceneSource, string]>).map(([src, label]) => (
+                        <button key={src} type="button" disabled={locked || (!!server && server.status === "done" && server.source !== src && false)}
+                          className={`${ghostBtn} !px-2.5 !py-1 !text-[11px] ${s.source === src ? "!border-blue-500/40 !bg-blue-500/15 !text-blue-200" : ""}`}
+                          onClick={() => { setScenes((ss) => ss.map((x) => x.key === s.key ? { ...x, source: src, card: src === "card" ? (x.card ?? { ...EMPTY_CARD }) : null, characterKeys: src === "clip" ? x.characterKeys : [] } : x)); touch(); }}>{label}</button>
+                      ))}
+                      <span className="text-[11px] text-white/30">{s.source === "card" ? "Texto exacto con tu identidad visual, sin avatar y sin costo." : s.source === "image" ? "Una imagen de Nano Banana con zoom o paneo (≈ US$ 0,04). Sin avatar." : "Video de Gemini: movimiento real, personas, acción."}</span>
+                    </div>
+                    {s.source === "card" && s.card ? (
+                      <CardEditor card={s.card} disabled={locked} onChange={(c) => { setScenes((ss) => ss.map((x) => x.key === s.key ? { ...x, card: c } : x)); touch(); }} />
+                    ) : (
+                      <Textarea className={`${inputCls} !h-auto`} value={s.prompt} rows={2} disabled={locked}
+                        placeholder={s.source === "image" ? "La imagen: sujeto, estilo, composición. El texto que deba aparecer escríbelo entre comillas y corto." : "Qué se ve y qué pasa: sujeto, acción, cámara y luz."}
+                        onChange={(e) => { setScenes((ss) => ss.map((x) => x.key === s.key ? { ...x, prompt: e.target.value } : x)); touch(); }} />
+                    )}
+                    {s.source === "clip" && <div className="grid gap-2.5 sm:grid-cols-2">
                       <Field label="Vestuario">
                         <div className="relative"><Shirt className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/25" />
                           <Input className={`${inputCls} !h-9 pl-9`} value={s.wardrobe} disabled={locked} placeholder="Lo decide el Director de video"
@@ -1229,10 +1445,10 @@ function ProjectEditor({ project, status, avatars, onChange, onDeleted, onAvatar
                           <Input className={`${inputCls} !h-9 pl-9`} value={s.setting} disabled={locked} placeholder="Lugar, luz y ambiente"
                             onChange={(e) => { setScenes((ss) => ss.map((x) => x.key === s.key ? { ...x, setting: e.target.value } : x)); touch(); }} /></div>
                       </Field>
-                    </div>
-                    <Field label={`Diálogo (${spoken}/${maxChars})`}>
+                    </div>}
+                    <Field label={`${s.source === "clip" ? "Diálogo" : "Voz en off"} (${spoken}/${maxChars})`}>
                       <Textarea className={`${inputCls} !h-auto ${spoken > maxChars ? "!border-red-500/50" : ""}`} value={s.dialogue} rows={2} disabled={locked}
-                        placeholder="Lo que dice el personaje (opcional). Si tiene voz de ElevenLabs se narra con ella."
+                        placeholder={s.source === "clip" ? "Lo que dice el personaje (opcional). Si tiene voz de ElevenLabs se narra con ella." : "Lo que cuenta el narrador sobre esta escena (opcional). Se narra con la voz en off."}
                         onChange={(e) => { setScenes((ss) => ss.map((x) => x.key === s.key ? { ...x, dialogue: e.target.value } : x)); touch(); }} />
                     </Field>
                     {speakerExpressive && (
@@ -1244,6 +1460,27 @@ function ProjectEditor({ project, status, avatars, onChange, onDeleted, onAvatar
                         ))}
                       </div>
                     )}
+                    {s.dialogue.trim() && (() => {
+                      const sug = suggestionFor(s);
+                      const current = s.fx ?? inheritedFx(s);
+                      return (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label className="flex items-center gap-2 text-[11px] text-white/55">Efecto de voz
+                            <select className={`${inputCls} rounded-md px-2 !h-8 text-xs text-white [color-scheme:dark]`} value={s.fx ?? ""} disabled={locked}
+                              onChange={(e) => { setScenes((ss) => ss.map((x) => x.key === s.key ? { ...x, fx: e.target.value || null } : x)); touch(); }}>
+                              <option className={OPTION_CLS} value="">Como el {s.characterKeys.length ? "personaje" : "narrador"} ({fxLabel(inheritedFx(s))})</option>
+                              {VOICE_FX.map((f) => <option key={f.id} className={OPTION_CLS} value={f.id}>{f.label}</option>)}
+                            </select>
+                          </label>
+                          {sug && sug.id !== current && (
+                            <button type="button" disabled={locked} className={`${ghostBtn} !px-2 !py-0.5 !text-[11px]`} title={sug.reason}
+                              onClick={() => { setScenes((ss) => ss.map((x) => x.key === s.key ? { ...x, fx: sug.id } : x)); touch(); }}>
+                              <Sparkles className="h-3 w-3 text-blue-300" />Sugerido: {fxLabel(sug.id)} · {sug.reason}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <div className="grid gap-2 sm:grid-cols-[190px_1fr_1fr]">
                       <label className="block space-y-1.5"><span className="hive-label--field">Gráfico</span>
                         <select className={`${inputCls} w-full rounded-md px-2 !h-9 text-xs text-white [color-scheme:dark]`} value={s.graphic.kind} disabled={locked}
@@ -1300,7 +1537,7 @@ function ProjectEditor({ project, status, avatars, onChange, onDeleted, onAvatar
       </SectionCard>
 
       <SectionCard step={4} title="Acabado: subtítulos, efectos y gráficos" hint="Se aplica al unir los clips: cambiarlo no cuesta nada ni vuelve a generar video.">
-        <FinishSection style={style} setStyle={(v) => { setStyle(v); touch(); }} subtitles={project.subtitles} locked={locked} busy={!!busy}
+        <FinishSection identity={identity} setIdentity={(i) => { setIdentity(i); setStyle({ ...style, graphics: { ...style.graphics, accent: i.accent } }); touch(); }} style={style} setStyle={(v) => { setStyle(v); touch(); }} subtitles={project.subtitles} locked={locked} busy={!!busy} hasMusic={!!project.music}
           onToggleSubtitles={(on) => { void run("subs", async () => { onChange(await videoApi.update(project.id, { subtitles: on })); }); }} />
       </SectionCard>
 
@@ -1322,7 +1559,27 @@ function ProjectEditor({ project, status, avatars, onChange, onDeleted, onAvatar
           </div>
         )}
         {project.final_artifact_id && !dirty && cost.pending_scenes === 0 ? (
-          <p className="text-sm text-emerald-300">Todos los clips están listos y el reel está terminado. Si cambias una escena, solo se vuelve a generar esa.</p>
+          <div className="space-y-2">
+            <p className="text-sm text-emerald-300">Todos los clips están listos y el reel está terminado. Si cambias una escena, solo se vuelve a generar esa.</p>
+            {style.music.enabled && !locked && (
+              <div className="flex flex-wrap items-center gap-3">
+                <button className={primaryBtn} onClick={addMusic} disabled={busy === "music"}>
+                  {busy === "music" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+                  {project.music ? "Rehacer la música" : "Agregar música de fondo"}
+                </button>
+                <span className="text-[11px] text-white/30">{project.music ? "Usa el estilo y volumen de «Acabado». " : "Este reel aún no tiene música. "}Cuesta ≈ US$0,08; los clips no se regeneran.</span>
+              </div>
+            )}
+            {cost.redub_available > 0 && !locked && (
+              <div className="flex flex-wrap items-center gap-3">
+                <button className={primaryBtn} onClick={redub} disabled={busy === "redub"}>
+                  {busy === "redub" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+                  Rehacer la voz{cost.redub_stale > 0 ? ` (${cost.redub_stale} desactualizada${cost.redub_stale === 1 ? "" : "s"})` : ""}
+                </button>
+                <span className="text-[11px] text-white/30">Usa el clip original guardado: sin costo de video. {cost.redub_unavailable > 0 ? `${cost.redub_unavailable} escena(s) antiguas no se pueden rehacer sin volver a generarlas.` : ""}</span>
+              </div>
+            )}
+          </div>
         ) : (
           <div className="flex flex-wrap items-center gap-3">
             <button className={primaryBtn} onClick={approveAndProduce} disabled={!canProduce || over}>

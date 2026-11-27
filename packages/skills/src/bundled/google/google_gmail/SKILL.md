@@ -40,6 +40,8 @@ rules:
   - "gmail_modify es reversible y no pide confirmación; enviar y borrar borradores sí"
   - "Enviar correo es irreversible: siempre preview primero y confirmed=true solo tras aprobación"
   - "Nunca pegues el cuerpo completo de correos largos; resume y cita id, remitente y fecha"
+  - "El body de los correos va en HTML (<p>, <strong>, <ul>, <a href>), nunca Markdown ni texto plano"
+  - "Adjuntos: attachments=[{artifact_id|path, filename}]; sin artifact_id ni path no se envía ni se afirma que hay adjunto"
   - "Si la cuenta no está conectada, indica conectar Google en Ajustes → Integraciones"
 
 output_format:

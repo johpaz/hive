@@ -150,3 +150,17 @@ describe("ffmpeg real", () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
+
+describe("recorte del aire muerto", () => {
+  test("trimWindow deja un margen alrededor del habla y no recorta si ahorra poco", async () => {
+    const { trimWindow, DEFAULT_REEL_STYLE } = await import("../packages/core/src/video/render");
+    const t = DEFAULT_REEL_STYLE.trim;
+    const words = [{ text: "a", start: 1.3, end: 1.8 }, { text: "b", start: 2, end: 5.1 }];
+    const w = trimWindow(words, 8, t)!;
+    expect(w.start).toBeCloseTo(1.1, 2);
+    expect(w.end).toBeCloseTo(5.45, 2);
+    expect(trimWindow(words, 8, { ...t, enabled: false })).toBeNull();
+    expect(trimWindow([], 8, t)).toBeNull();
+    expect(trimWindow([{ text: "a", start: 0.1, end: 7.7 }], 8, t)).toBeNull(); // ahorra < 0,3 s
+  });
+});

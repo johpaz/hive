@@ -10,6 +10,11 @@ import { getWorkspace } from "../filesystem/workspace-guard";
 import { publishNarration } from "../../events/narration";
 import { listAvatars } from "../../video/avatars";
 import { backfillAvatars } from "../../video/studio";
+import { VOICE_FX_IDS, suggestVoiceFx } from "../../video/voice-fx";
+import { CARD_KINDS } from "../../video/cards";
+import { IDENTITY_PRESETS } from "../../video/identity";
+
+const PRESET_HELP = IDENTITY_PRESETS.map((p) => `${p.preset} (${p.label}: ${p.mood})`).join("; ");
 import {
   StudioError, createProject, generateCharacterImage, getProject, projectCost, startProduction, updateProject,
   type ProjectPatch, type VideoProjectDoc,
@@ -31,14 +36,18 @@ function summarize(p: VideoProjectDoc) {
     script: p.script || null,
     characters: p.characters.map((c) => ({
       id: c.id, name: c.name, has_image: !!c.image_path, image_path: c.image_path,
-      has_face_reference: !!c.face_path, voice: c.voice_name ?? c.voice_id ?? null,
+      has_face_reference: !!c.face_path, voice: c.voice_name ?? c.voice_id ?? null, voice_fx: c.voice_settings.fx,
     })),
+    narrator: p.narrator ? { voice: p.narrator.voice_name ?? p.narrator.voice_id, voice_fx: p.narrator.voice_settings.fx } : null,
     scenes: p.scenes.map((s, i) => ({
       n: i + 1, id: s.id, seconds: s.seconds, status: s.status, prompt: s.prompt, characters: s.character_ids,
       wardrobe: s.wardrobe || null, setting: s.setting || null, dialogue: s.dialogue || null,
       graphic: s.graphic.kind === "none" ? null : s.graphic,
+      voice_fx: s.fx, suggested_voice_fx: suggestVoiceFx(s)?.id ?? null,
+      source: s.source, card: s.card,
       path: s.path, error: s.error,
     })),
+    identity: p.identity,
     style: p.style,
     total_seconds: cost.total_seconds,
     estimated_cost_usd: cost.total_usd,
@@ -80,7 +89,20 @@ const sceneSchema = {
       description: "Gráfico animado sobre la escena: kind = title (gancho arriba, primera escena), lower_third (nombre en text y cargo en sub, cuando un personaje aparece), stat (cifra grande en text y su significado en sub; solo con datos reales) o cta (llamada a la acción abajo, última escena); none si no aporta. text corto (máx. 32 caracteres).",
       properties: { kind: { type: "string", enum: ["none", "title", "lower_third", "stat", "cta"] }, text: { type: "string" }, sub: { type: "string" } },
     },
-    dialogue: { type: "string", description: "Lo que dice el personaje en esta escena, tal cual se narrará con su voz (déjalo vacío si no habla). Máximo 14 caracteres por cada segundo de la escena (3 s = 42 caracteres); si no cabe, alarga la escena o divide el diálogo en dos." },
+    fx: { type: "string", enum: [...VOICE_FX_IDS], description: "Efecto de voz de ESTA escena (gratis, se aplica al armar el audio): studio = micrófono de estudio, podcast, intimate = micrófono pegado/susurro, radio = noticiero, telephone = llamada, megaphone, cinematic = tráiler, hall = eco de sala, none. Si no lo pones, usa el del personaje o narrador. Cada escena trae suggested_voice_fx en video_project_status." },
+    source: {
+      type: "string", enum: ["clip", "card", "image"],
+      description: "De dónde sale la imagen de la escena. clip = video de Gemini (por omisión; cuesta por segundo; úsalo para movimiento real, personas, acción). card = TARJETA DE GRÁFICOS dibujada localmente: GRATIS, el texto sale exacto (acentos, ñ) y usa la identidad visual del reel; úsala para títulos, cifras, listas, citas, comparaciones y llamadas a la acción, sin avatar. image = imagen de Nano Banana con movimiento de cámara (≈0,04 USD, mucho más barata que un clip): infografías, producto, paisajes, planos de apoyo. card e image son escenas SIN personaje; su dialogue se narra con la voz del narrador.",
+    },
+    card: {
+      type: "object",
+      description: `Contenido de una escena source=card. kind: ${CARD_KINDS.join(" | ")}. title = texto principal (el título, qué significa la cifra, el encabezado de la lista, la cita o la llamada a la acción); sub = apoyo (subtítulo, autor de la cita, @usuario o enlace de la llamada a la acción); value = SOLO stat, la cifra tal cual se ve («73 %», «3x») y solo con datos reales; fill 0-100 = cuánto llena la barra (si value es un porcentaje se deduce); items = SOLO list, hasta 5 elementos cortos; columns = SOLO compare, exactamente 2 {label, text}. Textos CORTOS: título máx. 90 caracteres, mejor 30-45; una idea por tarjeta.`,
+      properties: {
+        kind: { type: "string", enum: [...CARD_KINDS] }, title: { type: "string" }, sub: { type: "string" }, value: { type: "string" }, fill: { type: "number" },
+        items: { type: "array", items: { type: "string" } }, columns: { type: "array", items: { type: "object", properties: { label: { type: "string" }, text: { type: "string" } } } },
+      },
+    },
+    dialogue: { type: "string", description: "Lo que dice el personaje en esta escena (o la voz en off si la escena no tiene personaje), tal cual se narrará con su voz (déjalo vacío si no habla). Máximo 14 caracteres por cada segundo de la escena (3 s = 42 caracteres); si no cabe, alarga la escena o divide el diálogo en dos." },
   },
   required: ["seconds", "prompt"],
 };
@@ -99,6 +121,8 @@ export const videoProjectCreateTool: Tool = {
       aspect_ratio: { type: "string", enum: ["9:16", "16:9"], description: "9:16 para reels/shorts/TikTok (por defecto), 16:9 horizontal." },
       target_seconds: { type: "number", description: "Duración total deseada, 3 a 90 s." },
       resolution: { type: "string", enum: ["360p", "720p", "1080p", "4k"], description: "720p por defecto; más resolución cuesta más." },
+      identity_preset: { type: "string", description: `Identidad visual del reel (paleta y tipografías de tarjetas, gráficos e imágenes). Elige según el ánimo del contenido: ${PRESET_HELP}. Por omisión swiss.` },
+      narrator_voice_id: { type: "string", description: "voice_id de ElevenLabs de un NARRADOR para reels SIN personaje (imágenes, paisajes, producto…): sus escenas llevan voz en off en vez de alguien hablando a cámara." },
       avatar_id: { type: "string", description: "Id de un avatar guardado (ver video_avatar_list): el reel empieza con su rostro y su voz, sin pedirle la foto de nuevo al usuario." },
     },
     required: ["title"],
@@ -110,6 +134,8 @@ export const videoProjectCreateTool: Tool = {
       resolution: typeof params.resolution === "string" ? params.resolution : undefined,
       targetSeconds: params.target_seconds === undefined ? undefined : Number(params.target_seconds),
       avatarId: typeof params.avatar_id === "string" && params.avatar_id ? params.avatar_id : undefined,
+      identity: typeof params.identity_preset === "string" && params.identity_preset ? { preset: params.identity_preset } : undefined,
+      narrator: typeof params.narrator_voice_id === "string" && params.narrator_voice_id ? { voice_id: params.narrator_voice_id } : undefined,
       workspace: getWorkspace(config) ?? null,
     });
     return { ok: true, ...summarize(p), next: "Define guion, personajes y escenas con video_project_update." };
@@ -136,12 +162,21 @@ export const videoProjectUpdateTool: Tool = {
       target_seconds: { type: "number" },
       style: {
         type: "object",
-        description: "Acabado del reel (gratis; se aplica al unir los clips): subtitles {preset classic|karaoke|box|pop|minimal, position bottom|middle|top, size s|m|l, uppercase, color #RRGGBB, highlight #RRGGBB}, transition {type fade|fadeblack|dissolve|wipeleft|slideleft|circleopen|zoomin|none…, duration 0.2-1 s} y graphics {enabled, accent #RRGGBB, progress_bar}.",
+        description: "Acabado del reel (gratis; se aplica al unir los clips): subtitles {preset classic|karaoke|box|pop|minimal, position bottom|middle|top, size s|m|l, uppercase, color #RRGGBB, highlight #RRGGBB}, transition {type fade|fadeblack|dissolve|wipeleft|slideleft|circleopen|zoomin|none…, duration 0.2-1 s}, graphics {enabled, accent #RRGGBB, progress_bar} y trim {enabled, lead, tail}: recorta el aire muerto de cada escena hablada (activo por defecto) y music {enabled, volume 0.02-0.6, mood}: música de fondo suave generada con Lyria (≈0,08 USD, va incluida en el costo que aprueba el usuario; mood describe el estilo, p. ej. «piano cálido, esperanzador»).",
+      },
+      identity: {
+        type: "object",
+        description: `Identidad visual del reel: {preset?, bg?, fg?, accent?, heading_font?, body_font?} (colores #RRGGBB; fuentes montserrat|sans|serif). Presets: ${PRESET_HELP}. Reglas: un solo acento, fondo único, texto que contraste (mínimo 4,5:1). Cambiarla rehace las tarjetas (gratis).`,
+      },
+      narrator: {
+        type: "object",
+        description: "Voz en off para las escenas SIN personaje: {voice_id, voice_name?, voice_settings?: {fx, volume, stability…}}. null la quita.",
+        properties: { voice_id: { type: "string" }, voice_name: { type: "string" }, voice_settings: { type: "object" } },
       },
       characters: {
         type: "array",
         description: "Personajes recurrentes (máximo 4). Descríbelos en detalle: aspecto, ropa, estilo.",
-        items: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, description: { type: "string" }, voice_id: { type: "string", description: "voice_id de ElevenLabs para sus diálogos (opcional)." } }, required: ["name", "description"] },
+        items: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, description: { type: "string" }, voice_id: { type: "string", description: "voice_id de ElevenLabs para sus diálogos (opcional)." }, voice_settings: { type: "object", description: "Ajustes de su voz; fx = efecto de voz por omisión (studio = micrófono de estudio)." } }, required: ["name", "description"] },
       },
       scenes: { type: "array", description: "Escenas en orden.", items: { ...sceneSchema, properties: { ...sceneSchema.properties, id: { type: "string" } } } as any },
     },

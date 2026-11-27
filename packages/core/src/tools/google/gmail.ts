@@ -6,7 +6,9 @@
  */
 import type { ToolParameter } from "../types.ts";
 import { googleJson } from "../../google/client.ts";
-import { getWorkspace } from "../filesystem/workspace-guard.ts";
+import { getWorkspace, resolveInWorkspace } from "../filesystem/workspace-guard.ts";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { basename, extname } from "node:path";
 import { createArtifact, readArtifactBytes } from "../../artifacts/store.ts";
 import { CONFIRMED_PARAM, googleTool, headerSafe, needsConfirmation, num, str } from "./shared.ts";
 
@@ -125,18 +127,42 @@ const MAX_ATTACH_TOTAL = 18 * 1024 * 1024; // el límite de Gmail es 25 MB y bas
 
 const ATTACHMENTS_PARAM: ToolParameter = {
   type: "array",
-  description: "Files to attach, taken from Hive artifacts.",
+  description:
+    "Files to attach. Each item needs EITHER artifact_id (Hive artifact, e.g. from image_generate, office_*, gdrive_download) OR path (file inside the workspace). filename is optional (defaults to the original name).",
   items: {
     type: "object",
     properties: {
-      artifact_id: { type: "string" },
+      artifact_id: { type: "string", description: "Hive artifact id." },
+      path: { type: "string", description: "Workspace file path, used when there is no artifact_id." },
       filename: { type: "string", description: "Name shown to the recipient, with extension." },
     },
-    required: ["artifact_id", "filename"],
   },
 };
 
 const wrap76 = (b64: string) => b64.replace(/(.{76})/g, "$1\r\n");
+
+const escapeHtml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const looksLikeHtml = (t: string) => /<\/?(p|div|br|h[1-6]|ul|ol|li|table|a|strong|b|em|span|html|body)\b[^>]*>/i.test(t);
+
+/** El cuerpo siempre sale como HTML: si el agente mandó texto plano, se convierte en párrafos. */
+function toHtmlBody(body: string): string {
+  const inner = looksLikeHtml(body)
+    ? body
+    : body.split(/\n{2,}/).map((para) => `<p>${escapeHtml(para.trim()).replace(/\n/g, "<br>")}</p>`).join("\n");
+  return /<html[\s>]/i.test(inner)
+    ? inner
+    : `<!doctype html><html><head><meta charset="utf-8"></head><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#222">${inner}</body></html>`;
+}
+
+function htmlToText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>|<head[\s\S]*?<\/head>/gi, "")
+    .replace(/<br\s*\/?>|<\/(p|div|h[1-6]|li|tr)>/gi, "\n")
+    .replace(/<a\s[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, "$2 ($1)")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&")
+    .replace(/\n{3,}/g, "\n\n").trim();
+}
 
 interface RawMessage {
   to: string; cc?: string; bcc?: string; subject: string; body: string;
@@ -152,14 +178,22 @@ function buildRaw(m: RawMessage): string {
   if (m.inReplyTo) lines.push(`In-Reply-To: ${headerSafe(m.inReplyTo, "Message-ID")}`);
   if (m.references) lines.push(`References: ${headerSafe(m.references, "References")}`);
   lines.push("MIME-Version: 1.0");
-  const bodyB64 = wrap76(Buffer.from(m.body, "utf-8").toString("base64"));
+  const html = toHtmlBody(m.body);
+  const text = looksLikeHtml(m.body) ? htmlToText(m.body) : m.body;
+  const b64 = (t: string) => wrap76(Buffer.from(t, "utf-8").toString("base64"));
+  const alt = `hive_alt_${crypto.randomUUID()}`;
+  const altPart = [
+    `Content-Type: multipart/alternative; boundary="${alt}"`, "",
+    `--${alt}`, "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64", "", b64(text),
+    `--${alt}`, "Content-Type: text/html; charset=UTF-8", "Content-Transfer-Encoding: base64", "", b64(html),
+    `--${alt}--`,
+  ];
   const files = m.attachments ?? [];
   if (!files.length) {
-    lines.push("Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64", "", bodyB64);
+    lines.push(...altPart);
   } else {
     const b = `hive_${crypto.randomUUID()}`;
-    lines.push(`Content-Type: multipart/mixed; boundary="${b}"`, "",
-      `--${b}`, "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64", "", bodyB64);
+    lines.push(`Content-Type: multipart/mixed; boundary="${b}"`, "", `--${b}`, ...altPart);
     for (const f of files) {
       const name = encodeWord(headerSafe(f.filename, "filename")).replace(/"/g, "");
       lines.push(`--${b}`, `Content-Type: ${f.mimeType}; name="${name}"`, `Content-Disposition: attachment; filename="${name}"`,
@@ -170,18 +204,31 @@ function buildRaw(m: RawMessage): string {
   return Buffer.from(lines.join("\r\n"), "utf-8").toString("base64url");
 }
 
-async function loadAttachments(p: Record<string, unknown>) {
+async function loadAttachments(p: Record<string, unknown>, config?: any) {
   const list = Array.isArray(p.attachments) ? (p.attachments as Array<Record<string, unknown>>) : [];
   const out: NonNullable<RawMessage["attachments"]> = [];
   let total = 0;
   for (const a of list.slice(0, 10)) {
-    const id = str(a.artifact_id), filename = str(a.filename);
-    if (!id || !filename) throw new Error("Cada adjunto necesita artifact_id y filename.");
-    const art = await readArtifactBytes(id);
-    if (!art) throw new Error(`No existe el artifact ${id} o ya expiró.`);
-    total += art.bytes.byteLength;
+    const id = str(a.artifact_id), filePath = str(a.path);
+    let filename = str(a.filename);
+    let bytes: Uint8Array, mimeType: string;
+    if (id) {
+      const art = await readArtifactBytes(id);
+      if (!art) throw new Error(`No existe el artifact ${id} o ya expiró. Usa el artifact_id exacto que devolvió la tool que generó el archivo, o pasa path.`);
+      ({ bytes, mimeType } = art);
+      filename ??= `adjunto-${id.slice(0, 8)}${extname(id)}`;
+    } else if (filePath) {
+      const resolved = resolveInWorkspace(filePath, getWorkspace(config));
+      if (!existsSync(resolved) || !statSync(resolved).isFile()) throw new Error(`No existe el archivo ${filePath}.`);
+      bytes = readFileSync(resolved);
+      mimeType = Bun.file(resolved).type.split(";")[0] || "application/octet-stream";
+      filename ??= basename(resolved);
+    } else {
+      throw new Error("Cada adjunto necesita artifact_id o path.");
+    }
+    total += bytes.byteLength;
     if (total > MAX_ATTACH_TOTAL) throw new Error("Los adjuntos superan los 18 MB permitidos por correo.");
-    out.push({ filename, mimeType: art.mimeType, bytes: art.bytes });
+    out.push({ filename, mimeType, bytes });
   }
   return out;
 }
@@ -223,7 +270,7 @@ export const gmailSendTool = googleTool({
     properties: {
       to: { type: "string", description: "Recipients, comma separated." },
       subject: { type: "string" },
-      body: { type: "string", description: "Plain-text body." },
+      body: { type: "string", description: "Email body as HTML (<p>, <strong>, <ul>, <a href>, <table>…). Plain text is auto-converted." },
       cc: { type: "string" },
       bcc: { type: "string" },
       attachments: ATTACHMENTS_PARAM,
@@ -231,13 +278,13 @@ export const gmailSendTool = googleTool({
     },
     required: ["to", "subject", "body"],
   },
-  run: async (p, { userId }) => {
+  run: async (p, { userId, config }) => {
     const to = str(p.to), subject = str(p.subject), body = typeof p.body === "string" ? p.body : "";
     if (!to || !subject || !body) return { ok: false, error: "to, subject y body son obligatorios." };
     const cc = str(p.cc), bcc = str(p.bcc);
     const pending = needsConfirmation(p, { to, cc, bcc, subject, body: body.slice(0, 500), attachments: attachSummary(p) });
     if (pending) return pending;
-    const raw = buildRaw({ to, cc, bcc, subject, body, attachments: await loadAttachments(p) });
+    const raw = buildRaw({ to, cc, bcc, subject, body, attachments: await loadAttachments(p, config) });
     const sent = await googleJson<any>(userId, "gmail", `${API}/messages/send`, { method: "POST", body: { raw } });
     return { ok: true, id: sent.id, thread_id: sent.threadId };
   },
@@ -253,7 +300,7 @@ export const gmailReplyTool = googleTool({
     type: "object",
     properties: {
       message_id: { type: "string", description: "Id of the message being answered (from gmail_search/gmail_read)." },
-      body: { type: "string", description: "Plain-text reply." },
+      body: { type: "string", description: "Reply body as HTML. Plain text is auto-converted." },
       reply_all: { type: "boolean", description: "Include the original To/Cc recipients. Default false." },
       save_as_draft: { type: "boolean", description: "Save the reply as a draft instead of sending." },
       attachments: ATTACHMENTS_PARAM,
@@ -261,7 +308,7 @@ export const gmailReplyTool = googleTool({
     },
     required: ["message_id", "body"],
   },
-  run: async (p, { userId }) => {
+  run: async (p, { userId, config }) => {
     const id = str(p.message_id), body = typeof p.body === "string" ? p.body : "";
     if (!id || !body) return { ok: false, error: "message_id y body son obligatorios." };
     const ctx = await replyContext(userId, id, p.reply_all === true);
@@ -270,7 +317,7 @@ export const gmailReplyTool = googleTool({
       const pending = needsConfirmation(p, { to: ctx.to, cc: ctx.cc, subject: ctx.subject, body: body.slice(0, 500), attachments: attachSummary(p) });
       if (pending) return pending;
     }
-    const raw = buildRaw({ ...ctx, body, attachments: await loadAttachments(p) });
+    const raw = buildRaw({ ...ctx, body, attachments: await loadAttachments(p, config) });
     if (draft) {
       const d = await googleJson<any>(userId, "gmail", `${API}/drafts`, { method: "POST", body: { message: { raw, threadId: ctx.threadId } } });
       return { ok: true, draft_id: d.id, message_id: d.message?.id, thread_id: ctx.threadId };
@@ -291,16 +338,16 @@ export const gmailDraftSaveTool = googleTool({
     type: "object",
     properties: {
       draft_id: { type: "string", description: "Existing draft to replace. Omit to create a new one." },
-      to: { type: "string" }, subject: { type: "string" }, body: { type: "string" },
+      to: { type: "string" }, subject: { type: "string" }, body: { type: "string", description: "HTML body (plain text is auto-converted)." },
       cc: { type: "string" }, bcc: { type: "string" },
       attachments: ATTACHMENTS_PARAM,
     },
     required: ["to", "subject", "body"],
   },
-  run: async (p, { userId }) => {
+  run: async (p, { userId, config }) => {
     const to = str(p.to), subject = str(p.subject), body = typeof p.body === "string" ? p.body : "";
     if (!to || !subject || !body) return { ok: false, error: "to, subject y body son obligatorios." };
-    const raw = buildRaw({ to, cc: str(p.cc), bcc: str(p.bcc), subject, body, attachments: await loadAttachments(p) });
+    const raw = buildRaw({ to, cc: str(p.cc), bcc: str(p.bcc), subject, body, attachments: await loadAttachments(p, config) });
     const id = str(p.draft_id);
     const d = await googleJson<any>(userId, "gmail", id ? `${API}/drafts/${encodeURIComponent(id)}` : `${API}/drafts`, {
       method: id ? "PUT" : "POST", body: { message: { raw } },

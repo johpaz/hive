@@ -8,7 +8,7 @@ import { col } from "../../storage/hive"
 import type { UserDoc } from "../../storage/collections"
 import {
   IMAGE_COST_ESTIMATE_USD, MAX_CHARACTERS, MAX_PROJECT_SECONDS, MAX_SCENES, STUDIO_FOLDER, STUDIO_IMAGE_MODEL, StudioError,
-  applyAvatar, approveProject, backfillAvatars, clearCharacterFace, createProject, deleteProject, generateCharacterImage, setCharacterFace, MAX_FACE_BYTES, getProject, isProducing, isVideoStudioEnabled,
+  applyAvatar, approveProject, backfillAvatars, startMusic, startRedub, clearCharacterFace, createProject, deleteProject, generateCharacterImage, setCharacterFace, MAX_FACE_BYTES, getProject, isProducing, isVideoStudioEnabled,
   listProjects, projectCost, revokeApproval, startProduction, updateProject, type ProjectPatch, type VideoProjectDoc,
 } from "../../video/studio"
 import {
@@ -17,6 +17,7 @@ import {
 import { resolveOutputDir } from "../../artifacts/store"
 import { ImageGenerationError } from "../../multimodal/image-generation"
 import { WriterError, improveBrief, writeScript, type ScriptCharacter } from "../../video/ai-writer"
+import { applyVoiceFx, suggestVoiceFx } from "../../video/voice-fx"
 import { AvatarError, deleteAvatar, listAvatars, renameAvatar, toView } from "../../video/avatars"
 import { getResearchJob, startResearch } from "../../video/research"
 import {
@@ -37,7 +38,8 @@ async function singleUserId(): Promise<string> {
 }
 
 function view(p: VideoProjectDoc) {
-  return { ...p, cost: projectCost(p), producing: isProducing(p.id) }
+  // Efecto de voz sugerido para cada escena con voz (reglas simples, sin IA): la interfaz lo ofrece con un clic.
+  return { ...p, cost: projectCost(p), producing: isProducing(p.id), fx_suggestions: p.scenes.map((s) => suggestVoiceFx(s)) }
 }
 
 function fail(req: Request, cors: Cors, err: unknown): Response {
@@ -84,7 +86,7 @@ export async function handleVideoProjects(req: Request, cors: Cors): Promise<Res
     try { return cors(Response.json({ ok: true, project: view(await applyAvatar(av[1], av[2], url.searchParams.get("character") || undefined)) }), req) }
     catch (err) { return fail(req, cors, err) }
   }
-  const m = url.pathname.match(/^\/api\/video\/projects(?:\/([^/]+))?(?:\/(approve|revoke|produce)|\/characters\/([^/]+)\/(image|face))?$/)
+  const m = url.pathname.match(/^\/api\/video\/projects(?:\/([^/]+))?(?:\/(approve|revoke|produce|redub|music)|\/characters\/([^/]+)\/(image|face))?$/)
   if (!m) return null
   const [, id, action, characterId, characterAction] = m
   try {
@@ -95,6 +97,8 @@ export async function handleVideoProjects(req: Request, cors: Cors): Promise<Res
         const p = await createProject({
           userId: await singleUserId(), title: String(body.title ?? ""), brief: body.brief, aspectRatio: body.aspect_ratio,
           resolution: body.resolution, targetSeconds: body.target_seconds, avatarId: typeof body.avatar_id === "string" ? body.avatar_id : undefined,
+          narrator: body.narrator && typeof body.narrator === "object" ? body.narrator : undefined,
+          identity: body.identity && typeof body.identity === "object" ? body.identity : undefined,
         })
         return cors(Response.json({ ok: true, project: view(p) }, { status: 201 }), req)
       }
@@ -117,6 +121,8 @@ export async function handleVideoProjects(req: Request, cors: Cors): Promise<Res
     if (action && req.method === "POST") {
       if (action === "approve") return cors(Response.json({ ok: true, project: view(await approveProject(id)) }), req)
       if (action === "revoke") return cors(Response.json({ ok: true, project: view(await revokeApproval(id)) }), req)
+      if (action === "music") return cors(Response.json({ ok: true, project: view(await startMusic(id)) }, { status: 202 }), req)
+      if (action === "redub") return cors(Response.json({ ok: true, project: view(await startRedub(id)) }, { status: 202 }), req)
       return cors(Response.json({ ok: true, project: view(await startProduction(id)) }, { status: 202 }), req)
     }
     if (req.method === "GET") return cors(Response.json({ project: view(await getProject(id)) }), req)
@@ -151,7 +157,9 @@ export async function handleVideoVoices(req: Request, cors: Cors): Promise<Respo
       if (!text) throw new VoiceError("Escribe una frase corta para probar la voz.", "invalid")
       if (text.length > MAX_PREVIEW_CHARS) throw new VoiceError(`La prueba admite hasta ${MAX_PREVIEW_CHARS} caracteres.`, "invalid")
       const audio = await synthesizeLine({ voiceId, text, settings: body.settings as never })
-      return cors(new Response(audio.bytes as BodyInit, { headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store", "X-Voice-Model": audio.modelId } }), req)
+      // El efecto elegido se oye ya en la prueba (en el reel se aplica al armar el audio).
+      const heard = await applyVoiceFx(audio.bytes, typeof body.settings?.fx === "string" ? body.settings.fx : "none")
+      return cors(new Response(heard as BodyInit, { headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store", "X-Voice-Model": audio.modelId } }), req)
     }
     if (url.pathname === "/api/video/voices/clone" && req.method === "POST") {
       const declared = Number(req.headers.get("content-length") ?? 0)
@@ -226,6 +234,7 @@ export async function handleVideoScript(req: Request, cors: Cors): Promise<Respo
       title: typeof body.title === "string" ? body.title : "", brief: typeof body.brief === "string" ? body.brief : "",
       aspect_ratio: body.aspect_ratio, target_seconds: body.target_seconds === undefined ? undefined : Number(body.target_seconds),
       characters_detail: detail,
+      mode: body.mode === "voiceover" ? "voiceover" : "avatar",
     })
     return cors(Response.json({ ok: true, ...result }), req)
   } catch (err) {

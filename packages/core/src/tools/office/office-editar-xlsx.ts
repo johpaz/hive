@@ -16,6 +16,7 @@ import { logger } from "../../utils/logger.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { resolveOfficeInput, ARTIFACT_ID_PARAM } from "./resolve-input.ts";
+import { cargarImagen } from "./office-imagen.ts";
 import { resolveInWorkspace, getWorkspace } from "../filesystem/workspace-guard.ts";
 
 const log = logger.child("office-editar-xlsx");
@@ -50,15 +51,21 @@ export const officeEditarXlsxTool: Tool = {
           required: ["hoja", "celda"],
         },
       },
+      anadir_imagenes: {
+        type: "array",
+        description: "Imágenes a anclar: [{hoja, celda (esquina superior izquierda, p. ej. F2), artifact_id | ruta, ancho (cm, default 8)}]. PNG, JPEG o GIF.",
+        items: { type: "object" },
+      },
       guardar_como: { type: "string", description: "Ruta de salida (default: <nombre>_corregido.xlsx junto al original)" },
     },
-    required: ["cambios"],
+    required: [],
   },
   execute: async (params: Record<string, unknown>, config?: any) => {
     const entrada = await resolveOfficeInput(params);
     if ("error" in entrada) return { ok: false, error: entrada.error };
     const cambios = Array.isArray(params.cambios) ? (params.cambios as Cambio[]) : [];
-    if (cambios.length === 0) return { ok: false, error: "Indica al menos un cambio en 'cambios'." };
+    const imagenesPedidas = (Array.isArray(params.anadir_imagenes) ? params.anadir_imagenes : []) as Array<Record<string, unknown>>;
+    if (cambios.length === 0 && imagenesPedidas.length === 0) return { ok: false, error: "Indica 'cambios' y/o 'anadir_imagenes'." };
     if (cambios.length > 2000) return { ok: false, error: "Demasiados cambios en una llamada (máximo 2000)." };
 
     try {
@@ -103,7 +110,23 @@ export const officeEditarXlsxTool: Tool = {
         }
         aplicados.push(`${c.hoja}!${c.celda.toUpperCase()}`);
       }
-      if (aplicados.length === 0) return { ok: false, error: `No se aplicó ningún cambio. ${omitidos.join("; ")}` };
+      let imagenesAnadidas = 0;
+      for (const ref of imagenesPedidas.slice(0, 20)) {
+        const hoja = wb.getWorksheet(String(ref.hoja ?? "")) ?? (typeof ref.hoja === "undefined" ? wb.worksheets[0] : undefined);
+        const cargada = cargarImagen(ref, config);
+        if ("error" in cargada) { omitidos.push(cargada.error); continue; }
+        if (!hoja) { omitidos.push(`${cargada.imagen.origen} (no existe la hoja ${ref.hoja})`); continue; }
+        const celdaRef = String(ref.celda ?? "A1");
+        if (!/^[A-Za-z]{1,3}[0-9]{1,7}$/.test(celdaRef)) { omitidos.push(`${cargada.imagen.origen} (celda inválida ${celdaRef})`); continue; }
+        const img = cargada.imagen;
+        const cm = Number(ref.ancho ?? ref.width);
+        const wPx = Math.round((Number.isFinite(cm) && cm > 0 ? Math.min(cm, 40) : 8) * 37.8);
+        const id = wb.addImage({ buffer: img.bytes as any, extension: img.tipo === "jpg" ? "jpeg" : img.tipo });
+        const c0 = hoja.getCell(celdaRef.toUpperCase());
+        hoja.addImage(id, { tl: { col: Number(c0.col) - 1, row: Number(c0.row) - 1 }, ext: { width: wPx, height: Math.round(wPx * img.alto / img.ancho) } } as any);
+        imagenesAnadidas++;
+      }
+      if (aplicados.length === 0 && imagenesAnadidas === 0) return { ok: false, error: `No se aplicó ningún cambio. ${omitidos.join("; ")}` };
 
       fs.mkdirSync(path.dirname(destino), { recursive: true });
       await wb.xlsx.writeFile(destino);
@@ -112,6 +135,7 @@ export const officeEditarXlsxTool: Tool = {
         ok: true,
         ruta: destino,
         celdas_modificadas: aplicados.length,
+        imagenes_anadidas: imagenesAnadidas,
         ...(omitidos.length ? { omitidos } : {}),
         nota: "Las fórmulas se recalculan al abrir el archivo en Excel. Envíalo con send_file.",
       };

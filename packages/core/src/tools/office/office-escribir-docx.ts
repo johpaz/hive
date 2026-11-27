@@ -26,6 +26,7 @@ import {
   type Familia,
   type Tramo,
 } from "./office-style";
+import { ajustarCm, cargarImagen } from "./office-imagen.ts";
 
 const log = logger.child("office-escribir-docx");
 
@@ -50,7 +51,7 @@ export const officeEscribirDocxTool: Tool = {
       pie: { type: "object", description: "Pie de página: {texto, alineacion}. Ej: {texto: 'Página {page} de {pages}', alineacion: 'center'}" },
       bloques: {
         type: "array",
-        description: "Contenido ordenado en bloques. tipo: titulo(nivel 1-3) | parrafo(texto|tramos, alineacion, negrita, cursiva, color) | lista(estilo vinetas|numerada, elementos) | tabla(encabezado, cebra, columnas: pesos, alineacion: [..], filas: [[celda]]) | cita(texto, autor) | codigo(texto) | regla | espacio(alto) | salto_pagina",
+        description: "Contenido ordenado en bloques. tipo: titulo(nivel 1-3) | parrafo(texto|tramos, alineacion, negrita, cursiva, color) | lista(estilo vinetas|numerada, elementos) | tabla(encabezado, cebra, columnas: pesos, alineacion: [..], filas: [[celda]]) | cita(texto, autor) | codigo(texto) | regla | espacio(alto) | salto_pagina | imagen(artifact_id|ruta, ancho en cm, alineacion, pie, alt)",
         items: { type: "object" },
       },
       parrafos: {
@@ -92,7 +93,7 @@ export const officeEscribirDocxTool: Tool = {
       const {
         Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType,
         BorderStyle, ShadingType, AlignmentType, LevelFormat, PageBreak, Header, Footer,
-        PageNumber, ExternalHyperlink, TableLayoutType,
+        PageNumber, ExternalHyperlink, TableLayoutType, ImageRun,
       } = d;
 
       const tema = resolverTemaDocumento(params.tema);
@@ -159,6 +160,8 @@ export const officeEscribirDocxTool: Tool = {
 
       // ─── Bloques → hijos de la sección ─────────────────────────────────
       const hijos: any[] = [];
+      const imagenesFallidas: string[] = [];
+      let imagenesInsertadas = 0;
 
       const itemsLista = (items: ElementoLista[], estilo: "bullet" | "numbered", nivel: number, ref: string) => {
         for (const it of items) {
@@ -284,6 +287,32 @@ export const officeEscribirDocxTool: Tool = {
           case "page_break":
             hijos.push(new Paragraph({ children: [new PageBreak()] }));
             break;
+          case "image": {
+            const cargada = cargarImagen(b.ref, config);
+            if ("error" in cargada) { imagenesFallidas.push(cargada.error); break; }
+            const img = cargada.imagen;
+            const cm = ajustarCm(img, b.widthCm, (anchoUtil / 567), 22);
+            const px = (c: number) => Math.round(c * 37.8);
+            hijos.push(new Paragraph({
+              alignment: alin(b.align ?? "center"),
+              keepNext: !!b.caption,
+              spacing: { before: 120, after: b.caption ? 40 : 160 },
+              children: [new ImageRun({
+                type: img.tipo, data: img.bytes,
+                transformation: { width: px(cm.w), height: px(cm.h) },
+                altText: { name: img.origen, title: b.alt ?? b.caption ?? "Imagen", description: b.alt ?? b.caption ?? "Imagen" },
+              })],
+            }));
+            if (b.caption) {
+              hijos.push(new Paragraph({
+                alignment: alin(b.align ?? "center"),
+                spacing: { after: 160 },
+                children: [new TextRun({ text: b.caption, italics: true, color: tema.atenuado, size: 18 })],
+              }));
+            }
+            imagenesInsertadas++;
+            break;
+          }
         }
       }
       if (hijos.length === 0) hijos.push(new Paragraph({ text: "" }));
@@ -352,10 +381,15 @@ export const officeEscribirDocxTool: Tool = {
 
       log.info(`DOCX generado: ${rutaAbsoluta} (${buffer.length} bytes)`);
 
+      if (imagenesFallidas.length > 0 && imagenesInsertadas === 0 && bloques.every((x) => x.type === "image")) {
+        return { ok: false, error: `No se pudo insertar ninguna imagen: ${imagenesFallidas.join(" | ")}` };
+      }
       return {
         ok: true,
         ruta: rutaAbsoluta,
         bytesEscritos: buffer.length,
+        imagenes: imagenesInsertadas,
+        ...(imagenesFallidas.length ? { aviso: `Imágenes omitidas: ${imagenesFallidas.join(" | ")}` } : {}),
         bloques: bloques.length,
         parrafos: bloques.filter((b) => b.type === "paragraph" || b.type === "heading").length,
         tablas: bloques.filter((b) => b.type === "table").length,

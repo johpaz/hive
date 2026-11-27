@@ -17,6 +17,7 @@ import { logger } from "../../utils/logger.ts";
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { resolverPaleta } from "./office-style";
+import { cargarImagen } from "./office-imagen.ts";
 
 const log = logger.child("office-escribir-pptx");
 
@@ -25,6 +26,8 @@ interface DiapositivaInput {
   contenido?: string;
   puntos?: string[];
   notas?: string;
+  /** {artifact_id | ruta, pie}. Con texto va a la derecha; sin texto ocupa el área de contenido. */
+  imagen?: Record<string, unknown> | string;
 }
 
 export const officeEscribirPptxTool: Tool = {
@@ -52,6 +55,7 @@ export const officeEscribirPptxTool: Tool = {
             contenido: { type: "string" },
             puntos: { type: "array", items: { type: "string" } },
             notas: { type: "string" },
+            imagen: { type: "object", description: "Imagen de la diapositiva: {artifact_id | ruta, pie}. artifact_id es el que devolvió image_generate. Con texto/puntos queda a la derecha; sola ocupa todo el espacio. PNG, JPEG o GIF." },
           },
         },
       },
@@ -77,6 +81,8 @@ export const officeEscribirPptxTool: Tool = {
       if (tituloPresentacion) pres.title = tituloPresentacion;
       pres.author = "Hive Agent";
 
+      const imagenesFallidas: string[] = [];
+      let imagenesInsertadas = 0;
       const ANCHO = 10;
       const ALTO = 5.625;
 
@@ -118,6 +124,32 @@ export const officeEscribirPptxTool: Tool = {
         const y = d.titulo ? 1.6 : 0.6;
         const h = ALTO - y - 0.6;
 
+        // Con imagen y texto, el texto se queda a la izquierda y la imagen ocupa la derecha.
+        let anchoTexto = ANCHO - 1.2;
+        if (d.imagen) {
+          const cargada = cargarImagen(d.imagen, config);
+          if ("error" in cargada) {
+            imagenesFallidas.push(cargada.error);
+          } else {
+            const img = cargada.imagen;
+            const hayTexto = !!((d.puntos && d.puntos.length) || d.contenido);
+            const pie = typeof d.imagen === "object" ? (d.imagen.pie ?? d.imagen.caption) as string | undefined : undefined;
+            const caja = hayTexto
+              ? { x: 5.5, y, w: ANCHO - 5.5 - 0.5, h: h - (pie ? 0.35 : 0) }
+              : { x: 0.6, y, w: ANCHO - 1.2, h: h - (pie ? 0.35 : 0) };
+            if (hayTexto) anchoTexto = 4.6;
+            // Se escala a la caja conservando la proporción y se centra en ella.
+            const k = Math.min(caja.w / img.ancho, caja.h / img.alto);
+            const w = img.ancho * k, hh = img.alto * k;
+            const ix = caja.x + (caja.w - w) / 2, iy = caja.y + (caja.h - hh) / 2;
+            s.addImage({ data: `image/${img.tipo === "jpg" ? "jpeg" : img.tipo};base64,${img.bytes.toString("base64")}`, x: ix, y: iy, w, h: hh, altText: pie ?? d.titulo ?? "Imagen" });
+            if (pie) {
+              s.addText(pie, { x: caja.x, y: caja.y + caja.h + 0.03, w: caja.w, h: 0.3, fontFace: paleta.fuenteCuerpo, fontSize: 11, italic: true, color: paleta.texto, align: "center", fit: "shrink" });
+            }
+            imagenesInsertadas++;
+          }
+        }
+
         if (d.puntos && d.puntos.length > 0) {
           const largoTotal = d.puntos.reduce((a, p) => a + p.length, 0);
           const tam = d.puntos.length > 7 || largoTotal > 520 ? 15 : d.puntos.length > 5 || largoTotal > 360 ? 17 : 20;
@@ -127,14 +159,14 @@ export const officeEscribirPptxTool: Tool = {
               options: { bullet: { indent: 20 }, breakLine: true, paraSpaceAfter: 8 },
             })),
             {
-              x: 0.6, y, w: ANCHO - 1.2, h,
+              x: 0.6, y, w: anchoTexto, h,
               fontFace: paleta.fuenteCuerpo, fontSize: tam, color: paleta.texto,
               valign: "top", fit: "shrink",
             },
           );
         } else if (d.contenido) {
           s.addText(d.contenido, {
-            x: 0.6, y, w: ANCHO - 1.2, h,
+            x: 0.6, y, w: anchoTexto, h,
             fontFace: paleta.fuenteCuerpo, fontSize: d.contenido.length > 600 ? 15 : d.contenido.length > 350 ? 17 : 20,
             color: paleta.texto, valign: "top", paraSpaceAfter: 8, fit: "shrink",
           });
@@ -165,6 +197,8 @@ export const officeEscribirPptxTool: Tool = {
         ruta: rutaAbsoluta,
         totalDiapositivas: diapositivasInput.length + (tituloPresentacion ? 1 : 0),
         bytesEscritos: stats.size,
+        imagenes: imagenesInsertadas,
+        ...(imagenesFallidas.length ? { aviso: `Imágenes omitidas: ${imagenesFallidas.join(" | ")}` } : {}),
       };
     } catch (error) {
       log.error(`Error generando PPTX: ${(error as Error).message}`);

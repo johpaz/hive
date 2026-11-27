@@ -52,6 +52,11 @@ export async function connectedGoogleServices(): Promise<GoogleService[]> {
  *    vez que encuentra una conexión ya existente (migración), activa sus agentes.
  */
 export async function syncGoogleCapabilities(reason: "connect" | "disconnect" | "boot" | "seed"): Promise<void> {
+  // El seed corre antes de que el gateway lea GOOGLE_CLIENT_ID/SECRET: sin configurar no se puede
+  // saber qué está conectado, y "no conectado" apagaba todo en cada arranque (los agentes de
+  // Google quedaban inactivos aunque la cuenta siguiera vinculada). El sync de "boot" ya corre
+  // con Google configurado y alinea tools y agentes con la conexión real.
+  if (!isGoogleConfigured() && reason === "seed") return;
   const connected = new Set(await connectedGoogleServices());
   // Migración de una sola vez: quien conectó Google antes de que los agentes nacieran apagados
   // tiene una conexión viva y agentes inactivos. La primera vez que se ve una conexión se

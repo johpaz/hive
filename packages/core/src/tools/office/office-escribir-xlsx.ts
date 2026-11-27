@@ -20,6 +20,7 @@ import { logger } from "../../utils/logger.ts";
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { hexValido } from "./office-style";
+import { cargarImagen } from "./office-imagen.ts";
 
 const log = logger.child("office-escribir-xlsx");
 
@@ -42,6 +43,8 @@ interface HojaInput {
   estilo_encabezado?: { negrita?: boolean; color?: string; relleno?: string; alineacion?: string };
   congelar_encabezado?: boolean;
   autofiltro?: boolean;
+  /** [{artifact_id | ruta, celda (p. ej. "F2"), ancho (cm)}] */
+  imagenes?: Array<Record<string, unknown>>;
 }
 
 const FORMATOS: Record<string, string> = {
@@ -118,6 +121,7 @@ export const officeEscribirXlsxTool: Tool = {
             estilo_encabezado: { type: "object" },
             congelar_encabezado: { type: "boolean" },
             autofiltro: { type: "boolean" },
+            imagenes: { type: "array", items: { type: "object" }, description: "Imágenes de la hoja: [{artifact_id | ruta, celda: 'F2' (esquina superior izquierda), ancho: cm (default 8)}]. PNG, JPEG o GIF." },
           },
         },
       },
@@ -140,6 +144,8 @@ export const officeEscribirXlsxTool: Tool = {
       libro.created = new Date();
 
       let totalFilas = 0;
+      const imagenesFallidas: string[] = [];
+      let imagenesInsertadas = 0;
       const usados = new Set<string>();
 
       for (const hojaInput of hojasInput) {
@@ -246,6 +252,19 @@ export const officeEscribirXlsxTool: Tool = {
         }
 
         totalFilas += Math.max(0, matriz.length - 1);
+
+        for (const ref of Array.isArray(hojaInput.imagenes) ? hojaInput.imagenes : []) {
+          const cargada = cargarImagen(ref, config);
+          if ("error" in cargada) { imagenesFallidas.push(cargada.error); continue; }
+          const img = cargada.imagen;
+          const celda = typeof ref.celda === "string" && /^[A-Za-z]{1,3}[0-9]{1,7}$/.test(ref.celda.trim()) ? ref.celda.trim().toUpperCase() : `${letraDeColumna(nCols + 2)}1`;
+          const cm = Number(ref.ancho ?? ref.width);
+          const wPx = Math.round((Number.isFinite(cm) && cm > 0 ? Math.min(cm, 40) : 8) * 37.8);
+          const id = libro.addImage({ buffer: img.bytes as any, extension: img.tipo === "jpg" ? "jpeg" : img.tipo });
+          const c0 = hoja.getCell(celda);
+          hoja.addImage(id, { tl: { col: Number(c0.col) - 1, row: Number(c0.row) - 1 }, ext: { width: wPx, height: Math.round(wPx * img.alto / img.ancho) } } as any);
+          imagenesInsertadas++;
+        }
       }
 
       const rutaAbsoluta = path.resolve(resolveInWorkspace(ruta, getWorkspace(config)));
@@ -264,6 +283,8 @@ export const officeEscribirXlsxTool: Tool = {
         totalHojas: hojasInput.length,
         totalFilas,
         bytesEscritos: buffer.length,
+        imagenes: imagenesInsertadas,
+        ...(imagenesFallidas.length ? { aviso: `Imágenes omitidas: ${imagenesFallidas.join(" | ")}` } : {}),
       };
     } catch (error) {
       log.error(`Error generando XLSX: ${(error as Error).message}`);

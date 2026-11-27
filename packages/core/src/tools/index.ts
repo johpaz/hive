@@ -41,6 +41,9 @@ import * as api from "./api/index.ts";
 // Image (1) - generación de imágenes con el modelo elegido en Providers → Imagen
 import * as image from "./image/index.ts";
 
+// Audio (2) - voz sintetizada (podcast, narración) con Kitten local o un proveedor TTS
+import * as audio from "./audio/index.ts";
+
 // Video (5) - estudio de reels; activas solo con API key de Gemini (ver storage/video-capabilities)
 import * as video from "./video/index.ts";
 
@@ -85,6 +88,9 @@ export function createAllTools(config: Config): Tool[] {
 
     // IMAGE (1)
     ...image.createTools(),
+
+    // AUDIO (2)
+    ...audio.createTools(),
     ...video.createTools(),
 
     // GOOGLE (21) — opt-in: sin credenciales no hay tools que fallen en silencio
@@ -120,6 +126,8 @@ export function createToolsByCategory(category: string, config: Config): Tool[] 
       return api.createTools();
     case "image":
       return image.createTools();
+    case "audio":
+      return audio.createTools();
     case "video":
       return video.createTools();
     case "google":
@@ -133,6 +141,7 @@ export function createToolsByCategory(category: string, config: Config): Tool[] 
 export * from "./types.ts";
 
 export { imageGenerateTool } from "./image/index.ts";
+export { audioGenerateTool, audioVoicesTool } from "./audio/index.ts";
 
 export {
   gmailSearchTool, gmailReadTool, gmailThreadTool, gmailSendTool, gmailReplyTool, gmailForwardTool,
